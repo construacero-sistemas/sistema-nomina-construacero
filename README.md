@@ -34,7 +34,7 @@ npm run build
 npm run dev
 ```
 
-`npm run dev` levanta Vite y el Worker local. La aplicación usa `/api/*` same-origin; `VITE_WORKER_ORIGIN` solo es necesario cuando el Worker vive en otro dominio. Para Vercel, `vercel.json` compila `dist` y `api/[...path].js` adapta las mismas rutas del Worker a una función serverless.
+`npm run dev` levanta Vite y el Worker local. La aplicación usa `/api/*` same-origin; `VITE_WORKER_ORIGIN` solo es necesario cuando el Worker vive en otro dominio. Para Vercel, `vercel.json` compila `dist` y reescribe todas las rutas anidadas `/api/*` hacia `api/index.js`, que adapta las mismas rutas del Worker a una función serverless.
 
 No uses `npm run dev:vite` para probar el flujo completo: ese comando solo levanta la interfaz y el proxy espera un Worker en `localhost:8788`. Si `/api/auth/switch-operator` responde 401 en local, copia `.dev.vars.example` a `.dev.vars`, configura las claves del proyecto Supabase y ejecuta `npm run dev`. El logout del navegador usa alcance local y limpia el cache aunque Supabase no pueda revocar un refresh token vencido. Para activar trazas de autenticación únicamente durante diagnóstico local, define `VITE_AUTH_DEBUG=true`; permanece desactivado por defecto.
 

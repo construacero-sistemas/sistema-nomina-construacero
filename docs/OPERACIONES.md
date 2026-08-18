@@ -82,7 +82,7 @@ Mantener `ENABLE_DEV_MASTER_PIN=false` y `ENABLE_DEVELOPER_ACCESS=false` en prod
 
 ## Deploy Vercel
 
-El repositorio incluye `vercel.json` y `api/[...path].js`: Vercel sirve el frontend Vite y adapta las rutas `/api/*` del Worker. Configurar en el proyecto Vercel, como variables de producción y preview según corresponda:
+El repositorio incluye `vercel.json` y `api/index.js`: Vercel sirve el frontend Vite y reescribe todas las rutas anidadas `/api/*` hacia una única función que adapta las rutas del Worker. Configurar en el proyecto Vercel, como variables de producción y preview según corresponda:
 
 ```text
 SUPABASE_URL
@@ -92,7 +92,7 @@ NOMINA_TIMEZONE
 NOMINA_ALLOWED_ORIGINS
 ```
 
-El despliegue de producción ya está listo en `https://nomina-construacero.vercel.app` y la función `api/[...path]` quedó como una única función serverless. Para publicar una nueva versión:
+El despliegue de producción ya está listo en `https://nomina-construacero.vercel.app` y la función `api/index.js` atiende las rutas simples y anidadas mediante el rewrite de Vercel. Para publicar una nueva versión:
 
 ```bash
 vercel --prod

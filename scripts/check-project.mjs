@@ -45,7 +45,7 @@ const requiredFiles = [
   'package-lock.json',
   'worker.js',
   'server/lib/egressCache.js',
-  'api/[...path].js',
+  'api/index.js',
   'wrangler.toml',
   'vercel.json',
   '.env.example',
@@ -73,6 +73,8 @@ const loginSource = await read('compat/modules/auth/LoginPage.jsx')
 const authStoreSource = await read('compat/store/useAuthStore.js')
 const pinModalSource = await read('compat/components/auth/LoginPinModal.jsx')
 const cssSource = await read('compat/index.css')
+const vercelApiSource = await read('api/index.js')
+const vercelConfig = await read('vercel.json')
 const shellSource = await read('src/NominaApp.jsx')
 const tailwindSource = await read('tailwind.config.js')
 const supabaseConfig = await read('supabase/config.toml')
@@ -83,6 +85,8 @@ for (const [name, source, markers] of [
   ['compat/store/useAuthStore.js', authStoreSource, ["signOut({ scope: 'local' })", 'finally {', 'isLocalApi', 'VITE_AUTH_DEBUG']],
   ['compat/components/auth/LoginPinModal.jsx', pinModalSource, ['pin-modal-backdrop', 'pin-modal-card', 'pin-modal-pad', 'pin-modal-input', 'aria-modal="true"']],
   ['compat/index.css', cssSource, ['.pin-modal-card', 'overflow-x: hidden', 'overflow-y: auto', 'overscroll-behavior: contain']],
+  ['api/index.js', vercelApiSource, ['__route__', 'new URL(req.url']],
+  ['vercel.json', vercelConfig, ['"/api/:path*"', '"/api?__route__=:path*"', '"api/index.js"']],
   ['src/NominaApp.jsx', shellSource, ['Nómina y Finanzas', 'className="loader"', 'className="loader-square"', 'Array.from({ length: 7 }', 'md:hidden', 'translate-x-0', 'safe-area-inset-bottom']],
   ['tailwind.config.js', tailwindSource, ['./compat/**/*.{js,jsx}', "darkMode: 'class'", '.scrollbar-hide']],
 ]) {
