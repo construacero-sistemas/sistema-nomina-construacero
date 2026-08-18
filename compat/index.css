@@ -918,17 +918,39 @@
 
 .login-field-control {
   min-height: 50px;
+  padding-top: 0 !important;
+  padding-right: 16px !important;
+  padding-bottom: 0 !important;
+  padding-left: 44px !important;
   border: 1px solid rgba(148,163,184,0.28) !important;
   border-radius: 14px !important;
   color: #f8fafc !important;
   background: rgba(3,12,26,0.5) !important;
   box-shadow: inset 0 1px 2px rgba(0,0,0,0.16);
   font-size: 14px !important;
+  line-height: 1.25;
   transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
+.login-field-password-control {
+  padding-right: 48px !important;
+}
+
+.login-field-icon {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  z-index: 2;
+  width: 17px;
+  height: 17px;
+  pointer-events: none;
+  color: rgba(226,232,240,0.62);
+  transform: translateY(-50%);
+}
+
 .login-field-control::placeholder {
-  color: rgba(226,232,240,0.3) !important;
+  color: rgba(226,232,240,0.46) !important;
+  opacity: 1;
 }
 
 .login-field-control:focus {
@@ -938,10 +960,19 @@
 }
 
 .login-password-toggle {
-  right: 12px;
-  padding: 5px;
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   border-radius: 8px;
-  color: rgba(226,232,240,0.55) !important;
+  color: rgba(226,232,240,0.62) !important;
+  transform: translateY(-50%);
   transition: color 160ms ease, background 160ms ease;
 }
 
@@ -993,8 +1024,8 @@
 
 .login-submit:disabled {
   cursor: not-allowed;
-  filter: saturate(0.7);
-  opacity: 0.62;
+  filter: none;
+  opacity: 1;
 }
 
 @keyframes loginPanelIn {

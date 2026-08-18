@@ -248,6 +248,7 @@ function GateStep({ onPass }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const { login } = useAuthStore()
+  const submitReady = Boolean(email.trim() && password) && !loading
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -310,18 +311,21 @@ function GateStep({ onPass }) {
           <div className="login-field">
             <label className="login-field-label" htmlFor="nomina-login-email">Correo de la empresa</label>
             <div className="relative">
-              <Mail size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'rgba(226,232,240,0.5)' }} aria-hidden="true" />
+              <Mail size={17} className="login-field-icon" aria-hidden="true" />
               <input
                 id="nomina-login-email"
                 type="email"
                 value={email}
                 onChange={e => { setEmail(e.target.value); if (error) setError(null) }}
-                className="login-field-control w-full pl-11 pr-4 outline-none"
+                className="login-field-control w-full outline-none"
                 style={{ minHeight: '50px' }}
                 onFocus={e => e.target.style.borderColor = 'rgba(184,134,11,0.75)'}
                 onBlur={e => e.target.style.borderColor = 'rgba(148,163,184,0.28)'}
                 placeholder="correo@empresa.com"
                 autoComplete="email"
+                inputMode="email"
+                autoCapitalize="none"
+                spellCheck={false}
                 aria-required="true"
                 aria-invalid={Boolean(error)}
                 aria-describedby={error ? 'nomina-login-error' : undefined}
@@ -334,13 +338,13 @@ function GateStep({ onPass }) {
           <div className="login-field">
             <label className="login-field-label" htmlFor="nomina-login-password">Contraseña</label>
             <div className="relative">
-              <Key size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'rgba(226,232,240,0.5)' }} aria-hidden="true" />
+              <Key size={17} className="login-field-icon" aria-hidden="true" />
               <input
                 id="nomina-login-password"
                 type={showPass ? 'text' : 'password'}
                 value={password}
                 onChange={e => { setPassword(e.target.value); if (error) setError(null) }}
-                className="login-field-control w-full pl-11 pr-12 outline-none"
+                className="login-field-control login-field-password-control w-full outline-none"
                 style={{ minHeight: '50px' }}
                 onFocus={e => e.target.style.borderColor = 'rgba(184,134,11,0.75)'}
                 onBlur={e => e.target.style.borderColor = 'rgba(148,163,184,0.28)'}
@@ -369,11 +373,14 @@ function GateStep({ onPass }) {
 
           <button
             type="submit"
-            disabled={loading || !email.trim() || !password}
+            disabled={!submitReady}
             className="login-submit w-full flex items-center justify-center gap-2 text-sm font-bold text-white transition-all"
             style={{
-              background: 'linear-gradient(135deg, #B8860B 0%, #8B6914 100%)',
-              boxShadow: '0 4px 20px rgba(184,134,11,0.3)',
+              background: submitReady
+                ? 'linear-gradient(135deg, #B8860B 0%, #8B6914 100%)'
+                : 'linear-gradient(135deg, rgba(184,134,11,0.58) 0%, rgba(139,105,20,0.62) 100%)',
+              color: submitReady ? '#ffffff' : 'rgba(255,255,255,0.8)',
+              boxShadow: submitReady ? '0 4px 20px rgba(184,134,11,0.3)' : '0 6px 16px rgba(0,0,0,0.16)',
             }}
           >
             {loading ? <RefreshCw size={16} className="animate-spin" /> : <ArrowRight size={16} />}
