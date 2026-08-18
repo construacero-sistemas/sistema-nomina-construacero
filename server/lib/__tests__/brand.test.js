@@ -44,6 +44,7 @@ describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
     expect(loginSource).toContain('login-form-error')
     expect(loginSource).toContain('operator-grid')
     expect(loginSource).toContain('operator-card')
+    expect(loginSource).toContain('operator-card-avatar-wrap')
     expect(loginSource).toContain('operator-list-summary')
     expect(loginSource).toContain('await logout()')
     expect(loginSource).not.toContain('supabase.auth.signOut')
@@ -93,6 +94,9 @@ describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
     expect(cssSource).toContain('overscroll-behavior: contain')
     expect(cssSource).toContain('.operator-grid.single')
     expect(cssSource).toContain('.operator-card-avatar')
+    expect(cssSource).toContain('.operator-card-avatar-wrap')
+    expect(cssSource).toContain('.operator-card-role')
+    expect(cssSource).toContain('text-wrap: balance')
   })
 
   it('incluye los assets corporativos servidos por la pantalla de acceso', async () => {

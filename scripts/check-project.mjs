@@ -81,10 +81,10 @@ const supabaseConfig = await read('supabase/config.toml')
 
 for (const [name, source, markers] of [
   ['index.html', indexHtml, ['Nómina y Finanzas · Construacero Carabobo', 'Nómina y finanzas de Construacero Carabobo C.A.']],
-  ['compat/modules/auth/LoginPage.jsx', loginSource, ['¿Quién está operando?', 'Selecciona tu usuario e ingresa tu PIN', 'Nómina y Finanzas', 'LoginPinModal', 'switchOperator', 'listar_usuarios_login', '/logo.png', 'login-stage', 'login-panel', 'login-empty', 'Actualizar operadores', 'login-field-control', 'login-field-icon', 'login-field-password-control', 'login-submit', 'submitReady', 'nomina-login-email', 'nomina-login-password', 'noValidate', 'Ingresa un correo válido.', 'login-form-error', 'operator-grid', 'operator-card', 'operator-list-summary', 'await logout()']],
+  ['compat/modules/auth/LoginPage.jsx', loginSource, ['¿Quién está operando?', 'Selecciona tu usuario e ingresa tu PIN', 'Nómina y Finanzas', 'LoginPinModal', 'switchOperator', 'listar_usuarios_login', '/logo.png', 'login-stage', 'login-panel', 'login-empty', 'Actualizar operadores', 'login-field-control', 'login-field-icon', 'login-field-password-control', 'login-submit', 'submitReady', 'nomina-login-email', 'nomina-login-password', 'noValidate', 'Ingresa un correo válido.', 'login-form-error', 'operator-grid', 'operator-card', 'operator-card-avatar-wrap', 'operator-list-summary', 'await logout()']],
   ['compat/store/useAuthStore.js', authStoreSource, ["signOut({ scope: 'local' })", 'finally {', 'isLocalApi', 'VITE_AUTH_DEBUG']],
   ['compat/components/auth/LoginPinModal.jsx', pinModalSource, ['pin-modal-backdrop', 'pin-modal-card', 'pin-modal-pad', 'pin-modal-input', 'aria-modal="true"']],
-  ['compat/index.css', cssSource, ['.pin-modal-card', 'overflow-x: hidden', 'overflow-y: auto', 'overscroll-behavior: contain']],
+  ['compat/index.css', cssSource, ['.pin-modal-card', 'overflow-x: hidden', 'overflow-y: auto', 'overscroll-behavior: contain', '.operator-card-avatar-wrap', '.operator-card-role', 'text-wrap: balance']],
   ['api/index.js', vercelApiSource, ['__route__', 'new URL(req.url']],
   ['vercel.json', vercelConfig, ['"/api/:path*"', '"/api?__route__=:path*"', '"api/index.js"']],
   ['src/NominaApp.jsx', shellSource, ['Nómina y Finanzas', 'className="loader"', 'className="loader-square"', 'Array.from({ length: 7 }', 'md:hidden', 'translate-x-0', 'safe-area-inset-bottom']],

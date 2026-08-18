@@ -101,7 +101,7 @@ function UserCard({ user, onClick, index }) {
             opacity: hovered ? 0.8 : 0.2,
           }}
         />
-        <div className="relative">
+        <div className="operator-card-avatar-wrap relative">
           <div
             className="absolute inset-0 rounded-2xl blur-xl transition-opacity duration-300"
             style={{ background: acc.glow, opacity: hovered ? 1 : 0.4, transform: 'scale(1.3)' }}
@@ -113,8 +113,8 @@ function UserCard({ user, onClick, index }) {
             className="operator-card-name font-black text-white leading-tight line-clamp-2 break-words w-full"
             style={{
               textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-              fontSize: nombre.length > 14 ? '10px' : nombre.length > 10 ? '12px' : nombre.length > 7 ? '13px' : '14px',
-              letterSpacing: nombre.length > 12 ? '0' : undefined,
+              fontSize: nombre.length > 20 ? '11px' : nombre.length > 14 ? '12px' : '14px',
+              letterSpacing: nombre.length > 16 ? '0' : '0.01em',
               wordBreak: 'break-word',
             }}>
             {nombre}
