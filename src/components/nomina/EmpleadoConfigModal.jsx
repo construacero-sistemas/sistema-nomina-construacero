@@ -1,6 +1,7 @@
 // src/components/nomina/EmpleadoConfigModal.jsx
 // Alta/edición de la configuración de nómina de un empleado.
 import { useState, useMemo } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { useNominaEmpleados, useCrearConfigEmpleado, useActualizarConfigEmpleado } from '../../hooks/useNomina'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
@@ -12,7 +13,12 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const crear      = useCrearConfigEmpleado()
   const actualizar = useActualizarConfigEmpleado()
 
-  const { data: clientes = [], isLoading: clientesCargando } = useNominaEmpleados()
+  const {
+    data: clientes = [],
+    isLoading: clientesCargando,
+    isError: clientesError,
+    refetch: recargarClientes,
+  } = useNominaEmpleados()
 
   const [empleadoId, setEmpleadoId] = useState(config?.empleado_id ?? '')
   const [cargo, setCargo]           = useState(config?.cargo ?? '')
@@ -24,13 +30,17 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const [activo, setActivo]         = useState(config?.activo ?? true)
   const [error, setError]           = useState('')
 
-  // Solo empleados (tipo_cliente = 'personal') que aún no estén en nómina
-  const opcionesEmpleados = useMemo(() => {
-    return (clientes || [])
-      .filter(c => c.tipo_cliente === 'personal' && c.activo !== false)
+  // Solo empleados (tipo_cliente = 'personal') que aún no estén en nómina.
+  // Esta pantalla configura una ficha existente; no crea personas en Personal.
+  const empleadosPersonales = useMemo(() => (
+    (clientes || []).filter(c => c.tipo_cliente === 'personal' && c.activo !== false)
+  ), [clientes])
+
+  const opcionesEmpleados = useMemo(() => (
+    empleadosPersonales
       .filter(c => !empleadosYaEnNomina.includes(c.id))
       .map(c => ({ value: c.id, label: c.nombre }))
-  }, [clientes, empleadosYaEnNomina])
+  ), [empleadosPersonales, empleadosYaEnNomina])
 
   const tarifaHora = (Number(salarioDia) || 0) / (Number(horasJornada) || 8)
   const cargando = crear.isPending || actualizar.isPending
@@ -84,10 +94,39 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
             <label className="text-sm font-medium text-slate-700">Empleado *</label>
             {clientesCargando ? (
               <div className="text-xs text-slate-400 py-2">Cargando empleados...</div>
+            ) : clientesError ? (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-800" role="alert">
+                <p>No se pudo cargar el personal disponible.</p>
+                <button
+                  type="button"
+                  onClick={() => recargarClientes()}
+                  disabled={cargando}
+                  className="mt-2 inline-flex items-center gap-1.5 text-red-700 font-bold hover:text-red-900 disabled:opacity-50"
+                >
+                  <RefreshCw size={13} />
+                  Reintentar
+                </button>
+              </div>
             ) : opcionesEmpleados.length === 0 ? (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
-                No hay empleados disponibles. Registra primero al personal en la sección{' '}
-                <strong>Personal</strong> (tipo de cliente: personal).
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800" role="status">
+                <p>
+                  {empleadosPersonales.length === 0
+                    ? 'No hay empleados disponibles.'
+                    : 'Todos los empleados de Personal ya están configurados en nómina.'}
+                </p>
+                <p className="mt-1 text-amber-700">
+                  Este formulario solo configura una persona existente; no crea fichas nuevas.
+                  {empleadosPersonales.length === 0 && <> Registra primero al personal en la sección <strong>Personal</strong> con tipo de cliente <strong>personal</strong>.</>}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => recargarClientes()}
+                  disabled={cargando}
+                  className="mt-2 inline-flex items-center gap-1.5 text-amber-800 font-bold hover:text-amber-950 disabled:opacity-50"
+                >
+                  <RefreshCw size={13} />
+                  Actualizar lista
+                </button>
               </div>
             ) : (
               <CustomSelect
@@ -187,8 +226,12 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
           className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
           Cancelar
         </button>
-        <button onClick={guardar} disabled={cargando || (!esEdicion && opcionesEmpleados.length === 0)}
-          className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-sm font-bold">
+        <button
+          onClick={guardar}
+          disabled={cargando || (!esEdicion && opcionesEmpleados.length === 0)}
+          title={!esEdicion && opcionesEmpleados.length === 0 ? 'Primero registra o sincroniza un empleado de Personal' : undefined}
+          className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-sm font-bold"
+        >
           {cargando ? 'Guardando...' : 'Guardar'}
         </button>
       </div>

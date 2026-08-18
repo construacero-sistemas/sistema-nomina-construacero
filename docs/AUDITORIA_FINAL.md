@@ -24,6 +24,7 @@
 | Referencias SQL de tenant quedaban a cargo exclusivo del código | Service role omite RLS | Migración 220 añade FKs, checks y triggers de consistencia entre cuenta, empleado, período, línea, concepto y tasa |
 | El autoenvío del PIN podía emitir dos POST en el mismo tick | React actualiza `working` de forma asíncrona y el efecto usa un temporizador | `LoginPinModal` usa un lock síncrono por intento; solo el primer envío llega al Worker |
 | Un 401 local podía confundirse con PIN incorrecto | El Worker de Wrangler sin `.dev.vars` no puede validar el JWT | El store distingue errores de sesión local y muestra el comando/configuración accionable; nunca valida el PIN en el navegador |
+| El modal de nómina permitía llegar a un formulario sin empleado seleccionable | `clientes` no tenía fichas activas con `tipo_cliente=personal` o todos ya tenían configuración | El modal mantiene Guardar bloqueado, explica el contrato de Personal y permite actualizar la lista; no crea fichas duplicadas |
 | Plantilla de entorno contenía marcadores duplicados | `.env.example` tenía dos líneas `[TEMPLATE]` | Plantilla única, sin secretos reales |
 
 ## Auditoría UI/UX y responsive
@@ -40,6 +41,7 @@ Se comparó el login, splash, navegación y componentes de nómina con `construa
 - El login limita el contenido a una composición central de máximo 1120 px; el branding y el panel de acceso dejan de estirarse por toda la pantalla en monitores grandes.
 - El estado sin operadores muestra una tarjeta de configuración pendiente con CTA visible de actualización, explicación de la sesión y contraste suficiente; el error de carga tiene una acción de reintento equivalente.
 - La zona de operadores usa tarjetas acotadas por cantidad: un operador queda centrado, dos se distribuyen en dos columnas y varios usan una grilla adaptable; el avatar mantiene tamaño mínimo, el nombre tiene jerarquía legible, el rol usa una insignia equilibrada y el foco de teclado es visible.
+- El modal de configuración de nómina explica que la ficha debe existir previamente en Personal, diferencia lista vacía de error de red, ofrece reintento y conserva Guardar bloqueado hasta tener un empleado elegible.
 - El acceso por correo y contraseña usa campos identificados, altura táctil de 50 px, iconos separados del texto mediante padding explícito, placeholders legibles, estados de foco visibles, botón de contraseña accesible, validación propia sin tooltip nativo del navegador y un botón de acceso legible incluso cuando está deshabilitado.
 - El logout pasa por el store, limpia cache aunque Supabase no responda y usa alcance local para no convertir refresh tokens vencidos en errores 403; los diagnósticos de auth quedan desactivados salvo `VITE_AUTH_DEBUG=true` en desarrollo.
 - El cliente identifica un Worker local sin `.dev.vars` y muestra una instrucción accionable en vez de tratarlo como PIN incorrecto.

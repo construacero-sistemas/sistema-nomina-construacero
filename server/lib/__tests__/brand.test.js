@@ -11,12 +11,13 @@ async function readProjectFile(path) {
 
 describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
   it('conserva la interfaz y el flujo de login del sistema de referencia', async () => {
-    const [indexHtml, loginSource, pinModalSource, shellSource, authStoreSource] = await Promise.all([
+    const [indexHtml, loginSource, pinModalSource, shellSource, authStoreSource, employeeModalSource] = await Promise.all([
       readProjectFile('index.html'),
       readProjectFile('compat/modules/auth/LoginPage.jsx'),
       readProjectFile('compat/components/auth/LoginPinModal.jsx'),
       readProjectFile('src/NominaApp.jsx'),
       readProjectFile('compat/store/useAuthStore.js'),
+      readProjectFile('src/components/nomina/EmpleadoConfigModal.jsx'),
     ])
 
     expect(indexHtml).toContain('<title>Nómina y Finanzas · Construacero Carabobo</title>')
@@ -69,6 +70,9 @@ describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
     expect(authStoreSource).toContain('isLocalApi')
     expect(authStoreSource).toContain('localSessionRejected')
     expect(authStoreSource).toContain('VITE_AUTH_DEBUG')
+    expect(employeeModalSource).toContain('tipo_cliente === \'personal\'')
+    expect(employeeModalSource).toContain('no crea fichas nuevas')
+    expect(employeeModalSource).toContain('Actualizar lista')
   })
 
   it('escanea los puentes visuales y oculta scrollbars como el proyecto de referencia', async () => {
