@@ -421,7 +421,7 @@ function UserSelectStep({ onLogout }) {
   const [superError, setSuperError]     = useState('')
   const logoTapTimer = React.useRef(null)
 
-  const { switchOperator } = useAuthStore()
+  const { switchOperator, logout } = useAuthStore()
   const navigate = useNavigate()
 
   function handleLogoTap() {
@@ -588,7 +588,7 @@ function UserSelectStep({ onLogout }) {
                 </button>
                 <button
                   onClick={async () => {
-                    await supabase.auth.signOut()
+                    await logout()
                     onLogout()
                   }}
                   className="login-icon-button danger"

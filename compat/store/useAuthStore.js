@@ -4,9 +4,14 @@
 // El JWT lleva operator_id y operator_rol en app_metadata
 import { create } from 'zustand'
 import supabase from '../services/supabase/client'
-import { apiUrl } from '../services/apiBase'
+import { apiUrl, isLocalApi } from '../services/apiBase'
 import queryClient from '../lib/queryClient'
 import { indexedDbPersister } from '../lib/queryPersister'
+
+const AUTH_DEBUG = import.meta.env.DEV && import.meta.env.VITE_AUTH_DEBUG === 'true'
+const authLog = (...args) => {
+  if (AUTH_DEBUG) console.debug(...args)
+}
 
 // ─── Mapear mensajes de error de Supabase a español ───────────────────────────
 function traducirError(mensaje) {
@@ -115,7 +120,7 @@ async function fetchAndCacheOperators(token, userId) {
     const { operators } = await res.json()
     if (Array.isArray(operators) && operators.length > 0) {
       guardarOperadoresCache(operators, userId)
-      console.log('[AUTH] operadores cacheados para uso offline:', operators.length)
+      authLog('[AUTH] operadores cacheados para uso offline:', operators.length)
     }
   } catch { /* ignorar — no crítico */ }
 }
@@ -135,7 +140,7 @@ const useAuthStore = create((set, get) => ({
 
   // ─── Inicializar: suscribirse a cambios de auth ────────────────────────────
   initialize: () => {
-    console.log('[AUTH] initialize() llamado')
+    authLog('[AUTH] initialize() llamado')
     // Detectar si hay sesión guardada para dar más tiempo
     let haySession = false
     try {
@@ -143,7 +148,7 @@ const useAuthStore = create((set, get) => ({
       const sbKey = keys.find(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
       if (sbKey && localStorage.getItem(sbKey)) haySession = true
     } catch { /* ignorar */ }
-    console.log('[AUTH] haySession:', haySession)
+    authLog('[AUTH] haySession:', haySession)
 
     // ── Offline awareness ──
     // Obtener userId de la sesión (si existe) para leer cache correcto
@@ -162,7 +167,7 @@ const useAuthStore = create((set, get) => ({
     set({ offline: estaOffline })
 
     if (estaOffline && perfilCacheado) {
-      console.log('[AUTH] offline detectado con perfil cacheado — modo sin conexión activado')
+      authLog('[AUTH] offline detectado con perfil cacheado — modo sin conexión activado')
       // No limpiar el cache — se restaurará en INITIAL_SESSION
     }
     // El cache NO se borra online: persiste hasta logout/switchOut explícito.
@@ -173,7 +178,7 @@ const useAuthStore = create((set, get) => ({
     // solo invalidar una vez que la conexión se estabilice (3s sin cortes)
     let onlineDebounceId = null
     const handleOnline = () => {
-      console.log('[AUTH] conexión restaurada — refrescando datos')
+      authLog('[AUTH] conexión restaurada — refrescando datos')
       set({ offline: false, error: null })
       if (onlineDebounceId) clearTimeout(onlineDebounceId)
       onlineDebounceId = setTimeout(() => {
@@ -184,7 +189,7 @@ const useAuthStore = create((set, get) => ({
       }, 3000)
     }
     const handleOffline = () => {
-      console.log('[AUTH] conexión perdida')
+      authLog('[AUTH] conexión perdida')
       set({ offline: true })
     }
     window.addEventListener('online', handleOnline)
@@ -192,9 +197,9 @@ const useAuthStore = create((set, get) => ({
 
     const timeoutId = setTimeout(() => {
       const state = get()
-      console.log('[AUTH] timeout principal disparado — initialized:', state.initialized, 'user:', !!state.user, 'perfil:', !!state.perfil)
+      authLog('[AUTH] timeout principal disparado — initialized:', state.initialized, 'user:', !!state.user, 'perfil:', !!state.perfil)
       if (!state.initialized) {
-        console.log('[AUTH] forzando initialized=true por timeout')
+        authLog('[AUTH] forzando initialized=true por timeout')
         set({ initialized: true })
       }
     }, haySession ? 3000 : 1500)
@@ -202,17 +207,17 @@ const useAuthStore = create((set, get) => ({
     // Segundo timeout: si hay user pero no perfil después de 12s, limpiar para evitar loop
     const safetyTimeoutId = setTimeout(() => {
       const { user, perfil, initialized } = get()
-      console.log('[AUTH] safety timeout — initialized:', initialized, 'user:', !!user, 'perfil:', !!perfil)
+      authLog('[AUTH] safety timeout — initialized:', initialized, 'user:', !!user, 'perfil:', !!perfil)
       if (user && !perfil) {
-        console.log('[AUTH] safety: user sin perfil, forzando perfil=null')
+        authLog('[AUTH] safety: user sin perfil, forzando perfil=null')
         set({ initialized: true, perfil: null })
       }
     }, 6000)
 
-    console.log('[AUTH] registrando onAuthStateChange...')
+    authLog('[AUTH] registrando onAuthStateChange...')
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('[AUTH] evento:', event, 'session:', !!session, 'user:', session?.user?.email)
+        authLog('[AUTH] evento:', event, 'session:', !!session, 'user:', session?.user?.email)
         // Mantener el canal Realtime autenticado con el token actual —
         // necesario para que postgres_changes sobre tablas con RLS entregue eventos
         if (session?.access_token) {
@@ -222,19 +227,19 @@ const useAuthStore = create((set, get) => ({
         if (event === 'INITIAL_SESSION') {
           try {
             if (session?.user) {
-              console.log('[AUTH] INITIAL_SESSION con user, seteando user...')
+              authLog('[AUTH] INITIAL_SESSION con user, seteando user...')
               // La sesión de negocio puede persistir, pero el operador debe volver a
               // verificar su PIN: el perfil cacheado nunca es una autorización offline.
               set({ user: session.user, _cargandoPerfil: false })
             } else {
-              console.log('[AUTH] INITIAL_SESSION sin user (no hay sesión)')
+              authLog('[AUTH] INITIAL_SESSION sin user (no hay sesión)')
             }
           } catch (err) {
-            console.log('[AUTH] error en INITIAL_SESSION:', err.message)
+            authLog('[AUTH] error en INITIAL_SESSION:', err.message)
           } finally {
             clearTimeout(timeoutId)
             clearTimeout(safetyTimeoutId)
-            console.log('[AUTH] seteando initialized=true')
+            authLog('[AUTH] seteando initialized=true')
             set({ initialized: true, _cargandoPerfil: false })
           }
         }
@@ -255,12 +260,12 @@ const useAuthStore = create((set, get) => ({
           // lo que borraría el cache y expulsaría al usuario innecesariamente.
           const esManual = get()._logoutManual
           if (!esManual) {
-            console.log('[AUTH] SIGNED_OUT detectado de Supabase (sin logout manual). Verificando si podemos conservar la sesión...')
+            authLog('[AUTH] SIGNED_OUT detectado de Supabase (sin logout manual). Verificando si podemos conservar la sesión...')
             
             // Si hay un perfil de operador activo en el store, ignoramos el deslogueo automático de Supabase.
             // Esto previene que micro-cortes de red o fallos momentáneos de Supabase expulsen al usuario.
             if (get().perfil) {
-              console.log('[AUTH] micro-corte o refresh fallido detectado. Manteniendo sesión local activa.')
+              authLog('[AUTH] micro-corte o refresh fallido detectado. Manteniendo sesión local activa.')
               set({ error: 'Conexión inestable detectada. Operando en modo de respaldo local.' })
               return
             }
@@ -466,17 +471,17 @@ const useAuthStore = create((set, get) => ({
       let res = await callWorker(token)
       let result = await readResponseJson(res)
 
-      // Si el worker responde 401 "No autenticado" → sesión expirada
-      // Intentar refrescar el token y reintentar una vez
-      if (!res.ok && res.status === 401 && result.error?.includes('autenticado')) {
-        console.log('[AUTH] switchOperator: sesión expirada, intentando refresh...')
+      // Un 401 puede venir de un JWT expirado o de un Worker local sin
+      // `.dev.vars`. Solo reintentar una vez y nunca validar el PIN en el navegador.
+      if (!res.ok && res.status === 401 && result.error?.includes('autenticado') && !isLocalApi) {
+        authLog('[AUTH] switchOperator: sesión expirada, intentando refresh...')
         try {
           const { data: refreshData } = await supabase.auth.refreshSession()
           const freshToken = refreshData?.session?.access_token
           if (freshToken) {
             set({ user: refreshData.user })
             res = await callWorker(freshToken)
-            result = await res.json()
+            result = await readResponseJson(res)
           } else {
             // El refresh falló, lanzamos error para disparar la validación offline de respaldo en el catch
             throw new Error('refresh_failed_offline_fallback')
@@ -492,6 +497,13 @@ const useAuthStore = create((set, get) => ({
         // Esto evita falsos "PIN incorrecto" cuando wrangler no corre localmente
         if (res.status === 500) {
           throw new Error('worker_unavailable')
+        }
+        if (res.status === 401 && isLocalApi) {
+          set({
+            loading: false,
+            error: 'La API local rechazó la sesión. Ejecuta npm run dev y configura .dev.vars con las credenciales de Supabase.',
+          })
+          return { ok: false }
         }
         set({ loading: false, error: result.error || 'PIN incorrecto' })
         return { ok: false }
@@ -536,7 +548,7 @@ const useAuthStore = create((set, get) => ({
 
       return { ok: true }
     } catch (err) {
-      console.warn('[AUTH] Error en switchOperator, intentando fallback offline:', err.message);
+      authLog('[AUTH] Error en switchOperator, intentando fallback offline:', err.message);
       // No validar PIN offline: ni los hashes ni la autorización se confían al cliente.
       set({
         loading: false,
@@ -586,7 +598,8 @@ const useAuthStore = create((set, get) => ({
 
   // ─── Logout completo ─────────────────────────────────────────────────────
   logout: async () => {
-    // Limpiar operador antes de cerrar sesión
+    // Limpiar operador antes de cerrar sesión. El endpoint puede rechazar un
+    // token ya vencido; el logout local debe continuar de todas formas.
     try {
       const token = await getAccessToken()
       if (token) {
@@ -595,16 +608,27 @@ const useAuthStore = create((set, get) => ({
           headers: { Authorization: `Bearer ${token}` },
         })
       }
-    } catch { /* ignorar */ }
+    } catch { /* ignorar: la limpieza local no depende del Worker */ }
 
     set({ _logoutManual: true })
     const userId = get().user?.id
-    await supabase.auth.signOut()
-    // Limpiar TODO el cache (memoria + persistido) — evita fugas entre cuentas de negocio
-    queryClient.clear()
-    indexedDbPersister.removeClient().catch(() => {})
-    guardarPerfilCache(null, userId)
-    set({ user: null, perfil: null, error: null, _logoutManual: false })
+    try {
+      // Solo se cierra esta sesión del navegador. El alcance global intenta
+      // revocar un refresh token que puede estar vencido y provoca 403 en
+      // Supabase; la sesión local ya no conserva ningún token utilizable.
+      const { error } = await supabase.auth.signOut({ scope: 'local' })
+      if (error) authLog('[AUTH] logout local:', error.message)
+    } catch (error) {
+      authLog('[AUTH] logout local no pudo contactar Supabase:', error?.message || error)
+    } finally {
+      // Limpiar TODO el cache (memoria + persistido) — evita fugas entre cuentas
+      // de negocio aunque Supabase responda con error o no haya red.
+      queryClient.clear()
+      indexedDbPersister.removeClient().catch(() => {})
+      guardarPerfilCache(null, userId)
+      set({ user: null, perfil: null, error: null, _logoutManual: false })
+    }
+    return { ok: true }
   },
 
   // ─── Limpiar error manualmente ─────────────────────────────────────────────

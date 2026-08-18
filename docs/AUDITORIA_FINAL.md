@@ -39,6 +39,8 @@ Se comparó el login, splash, navegación y componentes de nómina con `construa
 - El estado sin operadores muestra una tarjeta de configuración pendiente con CTA visible de actualización, explicación de la sesión y contraste suficiente; el error de carga tiene una acción de reintento equivalente.
 - La zona de operadores usa tarjetas acotadas por cantidad: un operador queda centrado, dos se distribuyen en dos columnas y varios usan una grilla adaptable; el avatar mantiene tamaño mínimo y el foco de teclado es visible.
 - El acceso por correo y contraseña usa campos identificados, altura táctil de 50 px, iconos separados del texto mediante padding explícito, placeholders legibles, estados de foco visibles, botón de contraseña accesible, validación propia sin tooltip nativo del navegador y un botón de acceso legible incluso cuando está deshabilitado.
+- El logout pasa por el store, limpia cache aunque Supabase no responda y usa alcance local para no convertir refresh tokens vencidos en errores 403; los diagnósticos de auth quedan desactivados salvo `VITE_AUTH_DEBUG=true` en desarrollo.
+- El cliente identifica un Worker local sin `.dev.vars` y muestra una instrucción accionable en vez de tratarlo como PIN incorrecto.
 - Se agregaron etiquetas ARIA para navegación, tabs, loader, drawer, paneles, estado vacío, campos y acciones móviles.
 
 Pendiente de validación manual en dispositivos físicos: Safari iOS, Chrome Android y una pantalla desktop de 1366 px. La suite automatizada valida el contrato estructural y el build, pero no sustituye una prueba visual con datos reales.

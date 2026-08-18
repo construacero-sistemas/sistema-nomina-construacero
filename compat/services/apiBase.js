@@ -7,7 +7,14 @@
 import supabase from './supabase/client'
 import useAuthStore from '../store/useAuthStore'
 
-const WORKER_ORIGIN = import.meta.env.VITE_WORKER_ORIGIN || ''
+const WORKER_ORIGIN = String(import.meta.env.VITE_WORKER_ORIGIN || '').replace(/\/+$/, '')
+const LOCAL_WORKER_ORIGINS = new Set(['http://localhost:8788', 'http://127.0.0.1:8788'])
+
+// Vite solo puede resolver /api/* mediante el Worker de Wrangler local cuando
+// se ejecuta `npm run dev` y existe un `.dev.vars` válido.
+export const isLocalApi = import.meta.env.DEV && (
+  !WORKER_ORIGIN || LOCAL_WORKER_ORIGINS.has(WORKER_ORIGIN)
+)
 
 export function apiUrl(path) {
   if (!WORKER_ORIGIN) return path

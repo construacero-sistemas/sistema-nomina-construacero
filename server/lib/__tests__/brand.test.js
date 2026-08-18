@@ -11,11 +11,12 @@ async function readProjectFile(path) {
 
 describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
   it('conserva la interfaz y el flujo de login del sistema de referencia', async () => {
-    const [indexHtml, loginSource, pinModalSource, shellSource] = await Promise.all([
+    const [indexHtml, loginSource, pinModalSource, shellSource, authStoreSource] = await Promise.all([
       readProjectFile('index.html'),
       readProjectFile('compat/modules/auth/LoginPage.jsx'),
       readProjectFile('compat/components/auth/LoginPinModal.jsx'),
       readProjectFile('src/NominaApp.jsx'),
+      readProjectFile('compat/store/useAuthStore.js'),
     ])
 
     expect(indexHtml).toContain('<title>Nómina y Finanzas · Construacero Carabobo</title>')
@@ -44,6 +45,8 @@ describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
     expect(loginSource).toContain('operator-grid')
     expect(loginSource).toContain('operator-card')
     expect(loginSource).toContain('operator-list-summary')
+    expect(loginSource).toContain('await logout()')
+    expect(loginSource).not.toContain('supabase.auth.signOut')
     expect(loginSource).not.toContain('Completa este campo')
     expect(loginSource).not.toContain('Gestión de cotizaciones, inventario y clientes')
     expect(pinModalSource).toContain('pin-modal-backdrop')
@@ -58,6 +61,10 @@ describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
     expect(shellSource).toContain('md:hidden')
     expect(shellSource).toContain('translate-x-0')
     expect(shellSource).toContain('safe-area-inset-bottom')
+    expect(authStoreSource).toContain("signOut({ scope: 'local' })")
+    expect(authStoreSource).toContain('finally {')
+    expect(authStoreSource).toContain('isLocalApi')
+    expect(authStoreSource).toContain('VITE_AUTH_DEBUG')
   })
 
   it('escanea los puentes visuales y oculta scrollbars como el proyecto de referencia', async () => {
