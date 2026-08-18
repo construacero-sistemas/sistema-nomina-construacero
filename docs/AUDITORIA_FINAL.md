@@ -22,6 +22,8 @@
 | Un marcaje podía perder el feriado configurado | Entrada operativa fijaba `es_feriado=false` | El Worker consulta el calendario del tenant y congela el flag |
 | Una asistencia podía declarar un feriado inexistente | El cliente controlaba el booleano | El Worker exige que el feriado exista en calendario cuando se marca manualmente |
 | Referencias SQL de tenant quedaban a cargo exclusivo del código | Service role omite RLS | Migración 220 añade FKs, checks y triggers de consistencia entre cuenta, empleado, período, línea, concepto y tasa |
+| El autoenvío del PIN podía emitir dos POST en el mismo tick | React actualiza `working` de forma asíncrona y el efecto usa un temporizador | `LoginPinModal` usa un lock síncrono por intento; solo el primer envío llega al Worker |
+| Un 401 local podía confundirse con PIN incorrecto | El Worker de Wrangler sin `.dev.vars` no puede validar el JWT | El store distingue errores de sesión local y muestra el comando/configuración accionable; nunca valida el PIN en el navegador |
 | Plantilla de entorno contenía marcadores duplicados | `.env.example` tenía dos líneas `[TEMPLATE]` | Plantilla única, sin secretos reales |
 
 ## Auditoría UI/UX y responsive
@@ -41,6 +43,7 @@ Se comparó el login, splash, navegación y componentes de nómina con `construa
 - El acceso por correo y contraseña usa campos identificados, altura táctil de 50 px, iconos separados del texto mediante padding explícito, placeholders legibles, estados de foco visibles, botón de contraseña accesible, validación propia sin tooltip nativo del navegador y un botón de acceso legible incluso cuando está deshabilitado.
 - El logout pasa por el store, limpia cache aunque Supabase no responda y usa alcance local para no convertir refresh tokens vencidos en errores 403; los diagnósticos de auth quedan desactivados salvo `VITE_AUTH_DEBUG=true` en desarrollo.
 - El cliente identifica un Worker local sin `.dev.vars` y muestra una instrucción accionable en vez de tratarlo como PIN incorrecto.
+- El modal PIN bloquea de forma síncrona el autoenvío mientras la petición está en curso, evitando POST duplicados aun bajo re-render/StrictMode.
 - Se agregaron etiquetas ARIA para navegación, tabs, loader, drawer, paneles, estado vacío, campos y acciones móviles.
 
 Pendiente de validación manual en dispositivos físicos: Safari iOS, Chrome Android y una pantalla desktop de 1366 px. La suite automatizada valida el contrato estructural y el build, pero no sustituye una prueba visual con datos reales.

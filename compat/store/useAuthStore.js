@@ -498,10 +498,18 @@ const useAuthStore = create((set, get) => ({
         if (res.status === 500) {
           throw new Error('worker_unavailable')
         }
-        if (res.status === 401 && isLocalApi) {
+        const apiError = String(result.error || '').toLowerCase()
+        const localSessionRejected = isLocalApi && res.status === 401 && (
+          apiError.includes('autenticad') ||
+          apiError.includes('sesión') ||
+          apiError.includes('session') ||
+          apiError.includes('autoriz')
+        )
+        if (localSessionRejected) {
+          authLog('[AUTH] switchOperator: Worker local no pudo validar la sesión')
           set({
             loading: false,
-            error: 'La API local rechazó la sesión. Ejecuta npm run dev y configura .dev.vars con las credenciales de Supabase.',
+            error: 'La API local no pudo validar la sesión. Ejecuta npm run dev y configura .dev.vars con las credenciales de Supabase.',
           })
           return { ok: false }
         }

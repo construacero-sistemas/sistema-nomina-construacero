@@ -16,22 +16,42 @@ export default function LoginPinModal({ isOpen, onClose, user, onSubmit }) {
   const [error, setError] = useState(false)
   const [working, setWorking] = useState(false)
   const inputRef = useRef(null)
+  // El estado de React se actualiza después del evento actual. Este lock síncrono
+  // evita dos POST si el efecto de autoenvío y una pulsación coinciden en el mismo
+  // tick, o si React reejecuta un efecto durante StrictMode en desarrollo.
+  const submitLockRef = useRef(false)
 
   const submit = useCallback(async () => {
-    if (pin.length !== PIN_LEN || working) return
+    if (pin.length !== PIN_LEN || working || submitLockRef.current) return
+    submitLockRef.current = true
     setWorking(true)
-    const ok = await onSubmit(pin)
+
+    let ok = false
+    try {
+      ok = await onSubmit(pin)
+    } catch {
+      // El componente solo necesita un resultado negativo para desbloquear el
+      // modal; el detalle de red queda a cargo del store.
+      ok = false
+    }
+
     if (!ok) {
       setError(true)
       setPin('')
-      setWorking(false)
       window.setTimeout(() => setError(false), 600)
       if (!isTactileDevice()) window.setTimeout(() => inputRef.current?.focus(), 100)
     }
+
+    submitLockRef.current = false
+    setWorking(false)
   }, [PIN_LEN, onSubmit, pin, working])
 
   useEffect(() => {
-    if (!isOpen) return undefined
+    if (!isOpen) {
+      submitLockRef.current = false
+      return undefined
+    }
+    submitLockRef.current = false
     const resetTimer = window.setTimeout(() => {
       setPin('')
       setError(false)

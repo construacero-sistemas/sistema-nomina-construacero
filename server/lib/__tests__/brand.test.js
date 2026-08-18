@@ -55,6 +55,8 @@ describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
     expect(pinModalSource).toContain('pin-modal-pad')
     expect(pinModalSource).toContain('pin-modal-input')
     expect(pinModalSource).toContain('aria-modal="true"')
+    expect(pinModalSource).toContain('submitLockRef')
+    expect(pinModalSource).toContain('if (pin.length !== PIN_LEN || working || submitLockRef.current) return')
     expect(shellSource).toContain('Nómina y Finanzas')
     expect(shellSource).toContain('className="loader"')
     expect(shellSource).toContain('className="loader-square"')
@@ -65,6 +67,7 @@ describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
     expect(authStoreSource).toContain("signOut({ scope: 'local' })")
     expect(authStoreSource).toContain('finally {')
     expect(authStoreSource).toContain('isLocalApi')
+    expect(authStoreSource).toContain('localSessionRejected')
     expect(authStoreSource).toContain('VITE_AUTH_DEBUG')
   })
 
