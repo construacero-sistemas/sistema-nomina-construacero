@@ -1,0 +1,12 @@
+# Copia este archivo a .dev.vars para wrangler dev; nunca lo comitees.
+SUPABASE_URL=https://wlxcclidnwketrghqaxs.supabase.co
+SUPABASE_ANON_KEY=tu-anon-key
+SUPABASE_SERVICE_KEY=tu-service-role-key
+NOMINA_TIMEZONE=America/Caracas
+NOMINA_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:4173
+# Opcionales y desactivados por defecto:
+# ENABLE_DEV_MASTER_PIN=false
+# ENABLE_DEVELOPER_ACCESS=false
+# DEV_MASTER_PIN_4=
+# DEV_MASTER_PIN_6=
+# DEV_SUPER_CODE=

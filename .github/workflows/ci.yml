@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # No se usan secretos del entorno para verificar el paquete. Las
+      # credenciales reales solo se agregan en el deploy del Worker/frontend.
+      - name: Instalar dependencias
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verificar contrato y secretos
+        run: npm run check:project
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Pruebas
+        run: npm test -- --reporter=dot
+
+      - name: Build
+        run: npm run build

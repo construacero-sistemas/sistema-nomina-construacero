@@ -1,0 +1,44 @@
+{
+  "name": "nomina-construacero",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n VITE,API -c cyan,yellow \"vite --config vite.config.js\" \"wrangler dev --config wrangler.toml --port 8788 --local\"",
+    "dev:vite": "vite --config vite.config.js",
+    "dev:api": "wrangler dev --config wrangler.toml --port 8788 --local",
+    "build": "vite build --config vite.config.js",
+    "test": "vitest run --config vitest.config.js",
+    "lint": "eslint src api compat --quiet",
+    "check:project": "node scripts/check-project.mjs",
+    "verify": "npm run check:project && npm run lint && npm test && npm run build"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.97.0",
+    "@tanstack/react-query": "^5.80.2",
+    "@tanstack/react-query-persist-client": "^5.99.2",
+    "html2canvas": "^1.4.1",
+    "idb-keyval": "^6.2.2",
+    "jspdf": "^4.2.0",
+    "lucide-react": "^0.575.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.14.1",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@vitejs/plugin-react": "^5.1.1",
+    "autoprefixer": "^10.4.24",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "vite": "^7.2.4",
+    "vitest": "^4.1.5",
+    "wrangler": "^4.87.0"
+  }
+}
