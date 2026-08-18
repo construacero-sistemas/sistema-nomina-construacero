@@ -11,9 +11,10 @@ async function readProjectFile(path) {
 
 describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
   it('conserva la interfaz y el flujo de login del sistema de referencia', async () => {
-    const [indexHtml, loginSource, shellSource] = await Promise.all([
+    const [indexHtml, loginSource, pinModalSource, shellSource] = await Promise.all([
       readProjectFile('index.html'),
       readProjectFile('compat/modules/auth/LoginPage.jsx'),
+      readProjectFile('compat/components/auth/LoginPinModal.jsx'),
       readProjectFile('src/NominaApp.jsx'),
     ])
 
@@ -37,8 +38,16 @@ describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
     expect(loginSource).toContain('noValidate')
     expect(loginSource).toContain('Ingresa un correo válido.')
     expect(loginSource).toContain('login-form-error')
+    expect(loginSource).toContain('operator-grid')
+    expect(loginSource).toContain('operator-card')
+    expect(loginSource).toContain('operator-list-summary')
     expect(loginSource).not.toContain('Completa este campo')
     expect(loginSource).not.toContain('Gestión de cotizaciones, inventario y clientes')
+    expect(pinModalSource).toContain('pin-modal-backdrop')
+    expect(pinModalSource).toContain('pin-modal-card')
+    expect(pinModalSource).toContain('pin-modal-pad')
+    expect(pinModalSource).toContain('pin-modal-input')
+    expect(pinModalSource).toContain('aria-modal="true"')
     expect(shellSource).toContain('Nómina y Finanzas')
     expect(shellSource).toContain('className="loader"')
     expect(shellSource).toContain('className="loader-square"')
@@ -65,6 +74,8 @@ describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
     expect(cssSource).toContain('.login-form-error')
     expect(cssSource).toContain('@media (max-width: 639px) and (max-height: 560px)')
     expect(cssSource).toContain('overflow-y: auto')
+    expect(cssSource).toContain('.operator-grid.single')
+    expect(cssSource).toContain('.operator-card-avatar')
   })
 
   it('incluye los assets corporativos servidos por la pantalla de acceso', async () => {

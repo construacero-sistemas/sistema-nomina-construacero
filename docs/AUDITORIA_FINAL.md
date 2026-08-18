@@ -33,10 +33,11 @@ Se comparó el login, splash, navegación y componentes de nómina con `construa
 - El shell de nómina incorpora barra superior, logo móvil, drawer lateral móvil, sidebar desktop colapsable, perfil/rol y navegación inferior táctil.
 - El historial pagado usa tabla completa en escritorio y tarjetas accionables en móvil para evitar columnas comprimidas.
 - La grilla semanal mantiene scroll horizontal controlado porque sus siete días requieren ancho mínimo; el nombre del empleado queda fijo al desplazarse.
-- Los modales conservan foco, cierre con Escape, scroll interno, límite de altura y `safe-area-inset-bottom`.
+- El modal PIN usa una única tarjeta autocontenida, overlay real, teclado numérico centrado, input físico invisible, cierre con Escape, foco accesible, scroll interno y límite de altura; ya no puede descomponerse en elementos sueltos de pantalla completa.
 - Tailwind ahora escanea `compat/`, activa modo oscuro por clase y genera `scrollbar-hide`, evitando estilos visuales faltantes en componentes puente.
 - El login limita el contenido a una composición central de máximo 1120 px; el branding y el panel de acceso dejan de estirarse por toda la pantalla en monitores grandes.
 - El estado sin operadores muestra una tarjeta de configuración pendiente con CTA visible de actualización, explicación de la sesión y contraste suficiente; el error de carga tiene una acción de reintento equivalente.
+- La zona de operadores usa tarjetas acotadas por cantidad: un operador queda centrado, dos se distribuyen en dos columnas y varios usan una grilla adaptable; el avatar mantiene tamaño mínimo y el foco de teclado es visible.
 - El acceso por correo y contraseña usa campos identificados, altura táctil de 50 px, estados de foco visibles, botón de contraseña accesible, validación propia sin tooltip nativo del navegador y un botón de acceso legible incluso cuando está deshabilitado.
 - Se agregaron etiquetas ARIA para navegación, tabs, loader, drawer, paneles, estado vacío, campos y acciones móviles.
 

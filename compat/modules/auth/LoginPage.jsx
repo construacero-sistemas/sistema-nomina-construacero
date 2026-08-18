@@ -70,7 +70,7 @@ function UserCard({ user, onClick, index }) {
       onClick={() => onClick(user)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="cursor-pointer outline-none h-full"
+      className="operator-card"
       role="button"
       tabIndex={0}
       aria-label={`Seleccionar operador ${nombre}`}
@@ -83,7 +83,7 @@ function UserCard({ user, onClick, index }) {
       style={{ animation: `fadeSlideUp 0.5s ease forwards`, animationDelay: `${index * 0.07}s`, opacity: 0 }}
     >
       <div
-        className="relative flex flex-col items-center justify-center gap-2 sm:gap-3 px-3 sm:px-4 pt-4 sm:pt-6 pb-3 sm:pb-5 rounded-2xl transition-all duration-300 h-full"
+        className="operator-card-surface"
         style={{
           background: hovered ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.04)',
           border: `1px solid ${hovered ? acc.color + '60' : 'rgba(255,255,255,0.08)'}`,
@@ -106,11 +106,11 @@ function UserCard({ user, onClick, index }) {
             className="absolute inset-0 rounded-2xl blur-xl transition-opacity duration-300"
             style={{ background: acc.glow, opacity: hovered ? 1 : 0.4, transform: 'scale(1.3)' }}
           />
-          <LoginAvatar user={user} className="relative z-10" />
+          <LoginAvatar user={user} className="operator-card-avatar relative z-10" />
         </div>
-        <div className="text-center space-y-1.5 sm:space-y-2 min-w-0 w-full">
+        <div className="operator-card-info">
           <p
-            className="font-black text-white leading-tight line-clamp-2 break-words w-full"
+            className="operator-card-name font-black text-white leading-tight line-clamp-2 break-words w-full"
             style={{
               textShadow: '0 2px 10px rgba(0,0,0,0.5)',
               fontSize: nombre.length > 14 ? '10px' : nombre.length > 10 ? '12px' : nombre.length > 7 ? '13px' : '14px',
@@ -120,7 +120,7 @@ function UserCard({ user, onClick, index }) {
             {nombre}
           </p>
           <span
-            className="inline-flex items-center px-2 py-0.5 rounded-full text-[8px] sm:text-[9px] font-bold uppercase tracking-wide transition-all duration-300 max-w-full text-center leading-tight"
+            className="operator-card-role inline-flex items-center px-2 py-0.5 rounded-full text-[8px] sm:text-[9px] font-bold uppercase tracking-wide transition-all duration-300 max-w-full text-center leading-tight"
             style={{
               background: acc.chip,
               border: `1px solid ${acc.chipBorder}`,
@@ -510,6 +510,8 @@ function UserSelectStep({ onLogout }) {
     return ok
   }
 
+  const gridMode = usuarios.length === 1 ? 'single' : usuarios.length === 2 ? 'double' : 'many'
+
   return (
     <>
       <style>{`
@@ -633,11 +635,12 @@ function UserSelectStep({ onLogout }) {
                 </div>
               </div>
             ) : (
-              <div className={`grid gap-2.5 sm:gap-4 ${
-                usuarios.length === 1 ? 'grid-cols-1 max-w-[160px] sm:max-w-[180px] mx-auto' :
-                usuarios.length === 2 ? 'grid-cols-2 max-w-[320px] sm:max-w-[360px] mx-auto' :
-                'grid-cols-2 sm:grid-cols-3'
-              }`}>
+              <>
+                <div className="operator-list-summary" aria-live="polite">
+                  <span><span className="operator-list-dot" />{usuarios.length} operador{usuarios.length === 1 ? '' : 'es'} disponible{usuarios.length === 1 ? '' : 's'}</span>
+                  <span className="operator-list-hint">Selecciona para continuar</span>
+                </div>
+                <div className={`operator-grid ${gridMode}`}>
                 {[...usuarios].sort((a, b) => {
                   const orden = { jefe: 0, logistica: 1, administracion: 1, supervisor: 2, vendedor: 3 }
                   return (orden[a.rol] ?? 4) - (orden[b.rol] ?? 4)
@@ -646,7 +649,8 @@ function UserSelectStep({ onLogout }) {
                     <UserCard user={u} onClick={setSeleccionado} index={i} />
                   </div>
                 ))}
-              </div>
+                </div>
+              </>
             )}
 
           </div>
