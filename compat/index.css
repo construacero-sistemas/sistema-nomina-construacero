@@ -577,6 +577,7 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
+  overflow: hidden;
   background: rgba(3,10,22,0.84);
   backdrop-filter: blur(9px);
   animation: pinModalFadeIn 180ms ease-out both;
@@ -587,7 +588,9 @@
   isolation: isolate;
   width: min(390px, 100%);
   max-height: calc(100dvh - 32px);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid rgba(148,163,184,0.25);
   border-radius: 28px;
   background: linear-gradient(160deg, #132944 0%, #0b1b32 56%, #081522 100%);
@@ -825,6 +828,7 @@
   .pin-modal-card {
     width: 100%;
     max-height: calc(100dvh - 24px);
+    overflow-x: hidden;
     border-radius: 24px;
   }
 
