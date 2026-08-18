@@ -424,11 +424,8 @@ const useAuthStore = create((set, get) => ({
     // Setear user — el perfil SOLO se establece al seleccionar operador con PIN
     set({ user: data.user, loading: false, _cargandoPerfil: false, error: null })
 
-    // Descargar operadores en background para cache offline
-    const userId = data.user.id
-    getAccessToken()
-      .then(token => { if (token) fetchAndCacheOperators(token, userId) })
-      .catch(() => { /* ignorar */ })
+    // La pantalla de selección ya carga la lista desde su caché/RPC; no repetir
+    // una segunda lectura a Supabase en cada login solo para precargar operadores.
 
     return { ok: true }
   },

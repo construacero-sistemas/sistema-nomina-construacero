@@ -1,4 +1,4 @@
-# Auditoría final — Nómina Construacero
+# Auditoría final — Nómina y Finanzas Construacero Carabobo
 
 **Corte:** 2026-08-17  
 **Alcance:** frontend React/Vite, Worker, handlers REST, autenticación, aislamiento multi-tenant, motores de cálculo, migraciones Supabase, PDFs, configuración y pruebas.
@@ -24,6 +24,21 @@
 | Referencias SQL de tenant quedaban a cargo exclusivo del código | Service role omite RLS | Migración 220 añade FKs, checks y triggers de consistencia entre cuenta, empleado, período, línea, concepto y tasa |
 | Plantilla de entorno contenía marcadores duplicados | `.env.example` tenía dos líneas `[TEMPLATE]` | Plantilla única, sin secretos reales |
 
+## Auditoría UI/UX y responsive
+
+Se comparó el login, splash, navegación y componentes de nómina con `construacero-staging`.
+
+- El login conserva la composición dark premium, logo, tarjetas por operador, flujo email/contraseña → operador → PIN y modal numérico táctil.
+- El splash usa el logo corporativo y el loader cuadrado animado del proyecto de referencia.
+- El shell de nómina incorpora barra superior, logo móvil, drawer lateral móvil, sidebar desktop colapsable, perfil/rol y navegación inferior táctil.
+- El historial pagado usa tabla completa en escritorio y tarjetas accionables en móvil para evitar columnas comprimidas.
+- La grilla semanal mantiene scroll horizontal controlado porque sus siete días requieren ancho mínimo; el nombre del empleado queda fijo al desplazarse.
+- Los modales conservan foco, cierre con Escape, scroll interno, límite de altura y `safe-area-inset-bottom`.
+- Tailwind ahora escanea `compat/`, activa modo oscuro por clase y genera `scrollbar-hide`, evitando estilos visuales faltantes en componentes puente.
+- Se agregaron etiquetas ARIA para navegación, tabs, loader, drawer, paneles y acciones móviles.
+
+Pendiente de validación manual en dispositivos físicos: Safari iOS, Chrome Android y una pantalla desktop de 1366 px. La suite automatizada valida el contrato estructural y el build, pero no sustituye una prueba visual con datos reales.
+
 ## Guardrails entregados
 
 - `npm run check:project`: estructura, archivos críticos, variables, migraciones, `.gitignore`, imports fuera del paquete y patrones de secretos.
@@ -32,28 +47,34 @@
 - `X-Content-Type-Options`, `X-Frame-Options`, CSP, Referrer-Policy, Permissions-Policy y HSTS en HTTPS.
 - Auth de operador con PIN PBKDF2 en Worker; hashes y salts no se envían al navegador.
 - Matriz de roles con logística sin acceso salarial.
-- Tests de body inválido, UUID, fechas, tenant, permisos, idempotencia, calendario, tasas, reglas, conciliación y ciclo de pagos.
+- Caché de egress acotado por fingerprint de sesión/operador/origen, con expiración y limpieza global tras mutaciones.
+- Proyecciones SQL explícitas, límites de 500 filas y prohibición automatizada de `select=*`/límite 1000.
+- React Query persistido, sin refetch por foco ni retries automáticos; PDFs generados localmente.
+- Tests de body inválido, UUID, fechas, tenant, permisos, idempotencia, calendario, tasas, reglas, conciliación, ciclo de pagos y caché de egress.
 
 ## Evidencia ejecutada
 
 ```text
 npm run check:project  -> OK
 npm run lint           -> OK (0 errores; warnings heredados no bloqueantes)
-npm test               -> 17 archivos, 203 tests aprobados
+npm test               -> 19 archivos, 211 tests aprobados
 npm run build          -> OK
+supabase db push       -> remoto al día; 001 y 208–220 local=remoto
+Vercel producción      -> Ready; https://nomina-construacero.vercel.app
 ```
 
 El build mantiene un warning informativo de chunks PDF grandes; no es un fallo funcional. Los PDFs se cargan con `import()` al abrir el detalle para no bloquear el shell inicial.
 
 ## Riesgos residuales explícitos
 
-1. No se ejecutó `supabase db push`: no hay credenciales ni aprobación para tocar un proyecto remoto.
-2. No se verificó RLS contra una instancia real; los tests usan fetch mock y el SQL debe probarse en staging.
-3. Las fuentes BCV, Euro y USDT y las reglas legales requieren aprobación del negocio antes de activar cierres.
-4. El contrato de sincronización de Personal debe tener un proceso real y un responsable de reconciliación.
-5. El lockfile local fue generado para este paquete y el CI usa `npm ci`; si el repositorio destino cambia de package manager debe conservar un lockfile equivalente y actualizar el workflow.
-6. No se hizo deploy ni se crearon ramas/commits/remoto; esas acciones corresponden al propietario del repositorio.
+1. El esquema remoto está migrado, pero RLS y el flujo completo todavía deben probarse contra datos reales con dos tenants y los cuatro roles.
+2. Las fuentes BCV, Euro y USDT y las reglas legales requieren aprobación del negocio antes de activar cierres.
+3. El contrato de sincronización de Personal debe tener un proceso real y un responsable de reconciliación.
+4. El lockfile local fue generado para este paquete y el CI usa `npm ci`; si el repositorio destino cambia de package manager debe conservar un lockfile equivalente y actualizar el workflow.
+5. Vercel está publicado, pero GitHub aún no contiene la extracción porque la cuenta autenticada recibió HTTP 403 al hacer push.
+6. Las credenciales usadas para el despliegue viven fuera del repositorio y deben rotarse si fueron compartidas fuera del gestor seguro.
+7. El plan Free tiene una cuota de egress finita: Usage debe revisarse diariamente y el objetivo interno es 100 MB/día y 3 GB/mes; el caché en memoria no persiste entre reinicios o escalado.
 
 ## Decisión de salida
 
-El código está listo para recibir variables y un Supabase nuevo. No debe declararse producción hasta cerrar los cinco riesgos residuales mediante staging, respaldo/restauración, prueba de dos tenants y aprobación contable.
+El código está publicado en Vercel y el esquema remoto está al día. No debe declararse la nómina operativa como producción hasta cerrar los riesgos residuales mediante staging, respaldo/restauración, prueba de dos tenants, aprobación contable y publicación del repositorio con una cuenta autorizada.

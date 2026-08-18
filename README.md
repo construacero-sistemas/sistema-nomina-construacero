@@ -1,6 +1,8 @@
-# Nómina Construacero
+# Nómina y Finanzas Construacero Carabobo
 
-Aplicación independiente para gestionar nómina, asistencia y pagos de Construacero. El paquete no monta cotizaciones, inventario, clientes, despachos ni la ficha de Personal del POS.
+Aplicación independiente para gestionar nómina, asistencia, pagos y finanzas de Construacero Carabobo C.A. El paquete no monta cotizaciones, inventario, clientes, despachos ni la ficha de Personal del POS.
+
+**Entrega actual:** frontend y API publicados en `https://nomina-construacero.vercel.app` (Nómina y Finanzas Construacero Carabobo); esquema Supabase `wlxcclidnwketrghqaxs` aplicado y verificado local=remoto.
 
 ## Alcance entregado
 
@@ -15,6 +17,7 @@ Aplicación independiente para gestionar nómina, asistencia y pagos de Construa
 - Recibos y planilla PDF.
 - Conceptos, reglas legales versionadas y snapshots de tasas.
 - RLS, guardrails de tenant, límites de body, CORS explícito y headers de seguridad.
+- UI responsive alineada con Construacero: login premium, drawer móvil, sidebar desktop, navegación táctil y tarjetas móviles para historial.
 
 ## Inicio local
 
@@ -31,7 +34,7 @@ npm run build
 npm run dev
 ```
 
-`npm run dev` levanta Vite y el Worker local. La aplicación usa `/api/*` same-origin; `VITE_WORKER_ORIGIN` solo es necesario cuando el Worker vive en otro dominio.
+`npm run dev` levanta Vite y el Worker local. La aplicación usa `/api/*` same-origin; `VITE_WORKER_ORIGIN` solo es necesario cuando el Worker vive en otro dominio. Para Vercel, `vercel.json` compila `dist` y `api/[...path].js` adapta las mismas rutas del Worker a una función serverless.
 
 ## Variables y secretos
 
@@ -52,6 +55,21 @@ npm run dev
 - `ENABLE_DEVELOPER_ACCESS=false`
 
 Las plantillas no contienen credenciales. El guardrail `npm run check:project` comprueba que no haya secretos conocidos, imports fuera del paquete ni migraciones ausentes.
+
+## Operación en Supabase Free y control de egress
+
+La app está diseñada para el plan gratuito actual de Supabase: **5 GB de egress y 5 GB de cached egress**, con 500 MB de base de datos. Verificar siempre la cuota vigente en [Supabase Pricing](https://supabase.com/pricing).
+
+Guardrails aplicados:
+
+- El frontend no consulta tablas de nómina directamente; el Worker concentra las lecturas y mantiene el tenant.
+- Las respuestas de lectura usan `select` explícito; el guardrail rechaza `select=*` y límites de 1000 filas.
+- El Worker/Vercel mantiene un caché de respuestas acotado a 2 MB, con entradas máximas de 512 KB y TTL corto por ruta; cualquier POST lo invalida.
+- React Query persiste datos en IndexedDB, no revalida al cambiar de ventana y no reintenta automáticamente las lecturas fallidas.
+- No existe polling automático de marcaje; la actualización es manual o al abrir la vista.
+- Los PDFs se generan en el navegador y no se almacenan en Supabase Storage.
+
+Presupuesto operativo recomendado: mantener el consumo por debajo de **100 MB/día** y **3 GB/mes**, dejando margen para picos. Revisar Usage al menos diariamente; detener exportaciones/rangos innecesarios si el proyecto supera 4 GB mensuales.
 
 ## Supabase nuevo: orden obligatorio
 
@@ -100,4 +118,4 @@ El paquete está **listo para conectar** cuando se entreguen únicamente:
 5. fuente aprobada de BCV/Euro/USDT y reglas legales vigentes;
 6. repositorio destino y secretos de despliegue.
 
-No ejecutar `supabase db push`, `wrangler deploy` ni configurar secretos de producción sin la aprobación del propietario del proyecto. Ver `docs/OPERACIONES.md`, `docs/PLAN_MAESTRO.md` y `docs/AUDITORIA_FINAL.md`.
+El flag `nomina_v2_enabled` permanece apagado hasta completar las pruebas funcionales de staging, la validación de RLS y la aprobación contable. Para operación, rollback y rotación de secretos, ver `docs/OPERACIONES.md`, `docs/PLAN_MAESTRO.md` y `docs/AUDITORIA_FINAL.md`.

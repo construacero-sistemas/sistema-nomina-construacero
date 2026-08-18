@@ -1,4 +1,4 @@
-# Supabase de Nómina Construacero
+# Supabase de Nómina y Finanzas Construacero Carabobo
 
 Este directorio pertenece al proyecto independiente de Nómina. El destino informado es `https://wlxcclidnwketrghqaxs.supabase.co` (ref. `wlxcclidnwketrghqaxs`). **No ejecutar estas migraciones en el Supabase del POS.** El paquete actual conserva referencias de compatibilidad a `clientes`, `usuarios`, `configuracion_negocio` y las funciones de autenticación del POS; antes de producción deben sustituirse por el contrato del repositorio nuevo.
 
@@ -15,6 +15,12 @@ Este directorio pertenece al proyecto independiente de Nómina. El destino infor
 - guardrails SQL de integridad cross-tenant (migración `220_nomina_integrity_guardrails.sql`).
 
 El Worker usa service role para operaciones de negocio, por lo que cada handler debe conservar el filtro explícito `cuenta_id` y el guard de tenant. RLS no es un sustituto de ese filtro.
+
+## Límite de egress del plan Free
+
+El plan Free actual incluye 5 GB de egress y 5 GB de cached egress. La aplicación mantiene un objetivo interno de 100 MB diarios y 3 GB mensuales. El Worker proyecta columnas explícitamente, limita lecturas de nómina a 500 filas, cachea respuestas de lectura en memoria acotada y limpia ese caché en cada mutación. React Query conserva datos exitosos en IndexedDB para evitar descargas repetidas.
+
+No usar `select=*`, no subir límites sin revisar Usage y no implementar polling de asistencia. Los PDFs se generan en el navegador. Consultar la cuota vigente en [Supabase Pricing](https://supabase.com/pricing) antes de cambiar estos presupuestos.
 
 ## Contrato mínimo de integración
 
@@ -78,10 +84,14 @@ Las políticas incluidas son una base de contrato para el proyecto nuevo. Deben 
 
 No se incluyen credenciales ni proveedores implícitos para BCV, Euro o USDT. Antes de activarlos, el negocio debe aprobar fuente, frecuencia, timeout, fallback y responsable. Toda tasa manual debe conservar fuente y observación; una liquidación debe usar el snapshot del período, nunca la tasa actual.
 
-## Comandos sugeridos en el repositorio destino
+## Estado de la instancia entregada
+
+El proyecto `wlxcclidnwketrghqaxs` quedó enlazado y `supabase db push` confirmó que el remoto está al día. `supabase migration list` mostró coincidencia local/remota para `001` y `208`–`220`. Esto valida la aplicación del esquema, no sustituye la prueba funcional de RLS con dos tenants.
+
+Para cambios futuros en el repositorio destino:
 
 ```bash
-supabase link --project-ref <NUEVO_PROJECT_REF>
+supabase link --project-ref wlxcclidnwketrghqaxs
 supabase db push
 npm ci
 npm run lint
@@ -89,4 +99,4 @@ npm test
 npm run build
 ```
 
-La ejecución real de `supabase link`, `supabase db push` y el deploy requiere credenciales y aprobación del propietario del proyecto; no forma parte de esta extracción local.
+Las credenciales deben inyectarse desde el gestor seguro del entorno y nunca escribirse en `.env.example`, `.dev.vars.example` ni Git.

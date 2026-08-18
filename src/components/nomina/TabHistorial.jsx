@@ -37,6 +37,7 @@ export default function TabHistorial() {
 
   const totales = useMemo(() => ({
     periodos: filtrados.length,
+    bruto: filtrados.reduce((s, p) => s + (Number(p.total_bruto_usd) || 0), 0),
     neto: filtrados.reduce((s, p) => s + (Number(p.total_neto_usd) || 0), 0),
     recibos: filtrados.reduce((s, p) => s + (Number(p.total_empleados) || 0), 0),
   }), [filtrados])
@@ -52,7 +53,7 @@ export default function TabHistorial() {
 
       {/* Filtro por año */}
       {anios.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar historial por año">
           <button onClick={() => setAnio('todos')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               anio === 'todos' ? 'bg-primary text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -84,56 +85,84 @@ export default function TabHistorial() {
           description="Los períodos completamente liquidados aparecerán aquí para consulta y reimpresión."
         />
       ) : (
-        <div className="overflow-x-auto bg-white border border-slate-200 rounded-2xl">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase tracking-wide">
-              <tr>
-                <th className="text-left px-3 py-2.5 font-semibold">Período</th>
-                <th className="text-left px-3 py-2.5 font-semibold">Rango</th>
-                <th className="text-center px-3 py-2.5 font-semibold">Tipo</th>
-                <th className="text-right px-3 py-2.5 font-semibold">Empleados</th>
-                <th className="text-right px-3 py-2.5 font-semibold">Bruto</th>
-                <th className="text-right px-3 py-2.5 font-semibold">Neto pagado</th>
-                <th className="px-3 py-2.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtrados.map(p => (
-                <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50/50 transition-colors">
-                  <td className="px-3 py-2.5 font-semibold text-slate-700">{p.nombre}</td>
-                  <td className="px-3 py-2.5 text-slate-500">
-                    {fmtFecha(p.desde)} – {fmtFecha(p.hasta)}
-                  </td>
-                  <td className="text-center px-3 py-2.5">
-                    <span className="inline-block px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold capitalize">
-                      {p.tipo}
-                    </span>
-                  </td>
-                  <td className="text-right px-3 py-2.5 text-slate-600">{p.total_empleados ?? 0}</td>
-                  <td className="text-right px-3 py-2.5 text-slate-600">${fmt(p.total_bruto_usd)}</td>
-                  <td className="text-right px-3 py-2.5 font-black text-green-600">${fmt(p.total_neto_usd)}</td>
-                  <td className="px-3 py-2.5 text-right">
-                    <button onClick={() => setDetalle(p)} title="Ver recibos"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-colors">
-                      <Eye size={14} />
-                    </button>
-                  </td>
+        <>
+          {/* Escritorio/tablet: tabla completa con scroll seguro */}
+          <div className="hidden sm:block overflow-x-auto bg-white border border-slate-200 rounded-2xl">
+            <table className="w-full min-w-[720px] text-xs" aria-label="Historial de períodos pagados">
+              <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase tracking-wide">
+                <tr>
+                  <th className="text-left px-3 py-2.5 font-semibold">Período</th>
+                  <th className="text-left px-3 py-2.5 font-semibold">Rango</th>
+                  <th className="text-center px-3 py-2.5 font-semibold">Tipo</th>
+                  <th className="text-right px-3 py-2.5 font-semibold">Empleados</th>
+                  <th className="text-right px-3 py-2.5 font-semibold">Bruto</th>
+                  <th className="text-right px-3 py-2.5 font-semibold">Neto pagado</th>
+                  <th className="px-3 py-2.5"></th>
                 </tr>
-              ))}
+              </thead>
+              <tbody>
+                {filtrados.map(p => (
+                  <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50/50 transition-colors">
+                    <td className="px-3 py-2.5 font-semibold text-slate-700">{p.nombre}</td>
+                    <td className="px-3 py-2.5 text-slate-500">{fmtFecha(p.desde)} – {fmtFecha(p.hasta)}</td>
+                    <td className="text-center px-3 py-2.5">
+                      <span className="inline-block px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold capitalize">
+                        {p.tipo}
+                      </span>
+                    </td>
+                    <td className="text-right px-3 py-2.5 text-slate-600">{p.total_empleados ?? 0}</td>
+                    <td className="text-right px-3 py-2.5 text-slate-600">${fmt(p.total_bruto_usd)}</td>
+                    <td className="text-right px-3 py-2.5 font-black text-green-600">${fmt(p.total_neto_usd)}</td>
+                    <td className="px-3 py-2.5 text-right">
+                      <button onClick={() => setDetalle(p)} title="Ver recibos"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-colors">
+                        <Eye size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-slate-200 bg-slate-50">
+                  <td colSpan={3} className="px-3 py-2.5 font-black text-slate-700">Total</td>
+                  <td className="text-right px-3 py-2.5 font-bold text-slate-600">{totales.recibos}</td>
+                  <td className="text-right px-3 py-2.5 font-bold text-slate-700">${fmt(totales.bruto)}</td>
+                  <td className="text-right px-3 py-2.5 font-black text-green-700">${fmt(totales.neto)}</td>
+                  <td />
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-              {/* Totales */}
-              <tr className="border-t-2 border-slate-200 bg-slate-50">
-                <td colSpan={3} className="px-3 py-2.5 font-black text-slate-700">Total</td>
-                <td className="text-right px-3 py-2.5 font-bold text-slate-600">{totales.recibos}</td>
-                <td className="text-right px-3 py-2.5 font-bold text-slate-700">
-                  ${fmt(filtrados.reduce((s, p) => s + (Number(p.total_bruto_usd) || 0), 0))}
-                </td>
-                <td className="text-right px-3 py-2.5 font-black text-green-700">${fmt(totales.neto)}</td>
-                <td />
-              </tr>
-            </tbody>
-          </table>
-        </div>
+          {/* Móvil: tarjetas sin columnas comprimidas ni scroll horizontal */}
+          <div className="sm:hidden space-y-3" aria-label="Historial de períodos pagados">
+            {filtrados.map(p => (
+              <article key={p.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-black text-slate-800 text-sm truncate">{p.nombre}</h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{fmtFecha(p.desde)} – {fmtFecha(p.hasta)}</p>
+                  </div>
+                  <span className="shrink-0 px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 text-[10px] font-bold uppercase">
+                    Pagado
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-slate-100">
+                  <MobileMetric label="Empleados" value={p.total_empleados ?? 0} />
+                  <MobileMetric label="Bruto" value={`$${fmt(p.total_bruto_usd)}`} />
+                  <MobileMetric label="Neto" value={`$${fmt(p.total_neto_usd)}`} accent />
+                </div>
+                <button onClick={() => setDetalle(p)}
+                  className="w-full mt-3 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary/5 text-primary hover:bg-primary/10 text-xs font-bold transition-colors">
+                  <Eye size={14} /> Ver recibos
+                </button>
+              </article>
+            ))}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between text-xs">
+              <span className="font-black text-slate-700">Total</span>
+              <span className="font-bold text-slate-600">{totales.recibos} recibos</span>
+              <span className="font-black text-green-700">${fmt(totales.neto)}</span>
+            </div>
+          </div>
+        </>
       )}
 
       {detalle && (
@@ -143,6 +172,15 @@ export default function TabHistorial() {
           onClose={() => setDetalle(null)}
         />
       )}
+    </div>
+  )
+}
+
+function MobileMetric({ label, value, accent = false }) {
+  return (
+    <div className="text-center min-w-0">
+      <div className="text-[10px] text-slate-400 font-medium truncate">{label}</div>
+      <div className={`text-sm font-black mt-0.5 truncate ${accent ? 'text-green-600' : 'text-slate-700'}`}>{value}</div>
     </div>
   )
 }

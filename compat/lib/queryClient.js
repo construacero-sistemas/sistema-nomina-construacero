@@ -7,7 +7,9 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 1000 * 60 * 5,        // 5 minutos — datos frescos sin refetch
       gcTime: 1000 * 60 * 60 * 24,     // 24h — requerido para persistencia IndexedDB
-      retry: 1,
+      // Un retry automático duplica lecturas contra Supabase en redes inestables;
+      // las vistas ya ofrecen reintento manual y React Query conserva IndexedDB.
+      retry: 0,
       refetchOnWindowFocus: false,       // don't refetch on tab switch — save egress
     },
   },

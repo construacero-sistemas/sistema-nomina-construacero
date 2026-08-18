@@ -31,12 +31,12 @@ export default function NominaView() {
         subtitle={esAdmin ? 'Gestión de salarios, asistencia y liquidaciones' : 'Registro de asistencia (solo lectura en nómina)'}
       />
 
-      <div className="flex gap-1 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-hide">
+      <div className="flex gap-1 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-hide" role="tablist" aria-label="Secciones de nómina">
         {tabsVisibles.map(t => {
           const Icon = t.icon
           const activo = tabActivo === t.id
           return (
-            <button key={t.id} onClick={() => setTab(t.id)}
+            <button key={t.id} id={t.id} onClick={() => setTab(t.id)} role="tab" aria-selected={activo} aria-controls={`nomina-panel-${t.id}`}
               className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap transition-all border shrink-0 ${activo ? 'bg-primary text-white border-primary shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
               <Icon size={12} className="sm:w-3.5 sm:h-3.5" />
               <span className="sm:hidden">{t.short}</span>
@@ -46,10 +46,12 @@ export default function NominaView() {
         })}
       </div>
 
-      {tabActivo === 'empleados' && <TabEmpleados esAdmin={esAdmin} />}
-      {tabActivo === 'asistencia' && <TabAsistencia esAdmin={esAdmin} />}
-      {tabActivo === 'periodos' && esAdmin && <TabPeriodos esAdmin={esAdmin} />}
-      {tabActivo === 'historial' && esAdmin && <TabHistorial />}
+      <div id={`nomina-panel-${tabActivo}`} role="tabpanel" aria-labelledby={tabActivo}>
+        {tabActivo === 'empleados' && <TabEmpleados esAdmin={esAdmin} />}
+        {tabActivo === 'asistencia' && <TabAsistencia esAdmin={esAdmin} />}
+        {tabActivo === 'periodos' && esAdmin && <TabPeriodos esAdmin={esAdmin} />}
+        {tabActivo === 'historial' && esAdmin && <TabHistorial />}
+      </div>
     </div>
   )
 }

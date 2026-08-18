@@ -115,8 +115,12 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
               Aún no se ha calculado la nómina de este período.
             </div>
           ) : (
-            <div className="overflow-x-auto bg-white border border-slate-200 rounded-xl">
-              <table className="w-full text-xs">
+            <>
+              <p className="sm:hidden text-[11px] text-slate-400 px-1">
+                Desliza horizontalmente para consultar todos los conceptos del recibo.
+              </p>
+              <div className="overflow-x-auto bg-white border border-slate-200 rounded-xl">
+              <table className="w-full min-w-[900px] text-xs" aria-label="Detalle de recibos del período">
                 <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase tracking-wide">
                   <tr>
                     <th className="text-left px-3 py-2 font-semibold">Empleado</th>
@@ -225,7 +229,8 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
                   </tr>
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </div>
 

@@ -75,7 +75,7 @@ export async function handleGetEmpleados(request, env) {
   const res = await fetch(
     `${env.SUPABASE_URL}/rest/v1/clientes?tipo_cliente=eq.personal&activo=eq.true` +
     `${nominaTenantFilter(operador.cuenta_id)}` +
-    '&select=id,nombre,tipo_cliente,activo&order=nombre.asc&limit=1000',
+    '&select=id,nombre,tipo_cliente,activo&order=nombre.asc&limit=500',
     { headers },
   )
   if (!res.ok) return jsonError('Error al leer empleados', 500, request)
@@ -303,7 +303,7 @@ export async function handleGetAsistencia(request, env) {
 
   const res = await fetch(
     `${env.SUPABASE_URL}/rest/v1/registro_asistencia?order=fecha.asc${filtros}` +
-    `&select=*,empleado:clientes!empleado_id(id,nombre)&limit=500`,
+    '&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,nota&limit=500',
     { headers }
   )
   if (!res.ok) return jsonError('Error al leer asistencia', 500, request)
@@ -334,7 +334,8 @@ function idempotencyKeyValida(value) {
 async function fetchRegistroDelDia(env, headers, operador, empleadoId, fecha) {
   const res = await fetch(
     `${env.SUPABASE_URL}/rest/v1/registro_asistencia?empleado_id=eq.${empleadoId}` +
-    `&fecha=eq.${fecha}${nominaTenantFilter(operador.cuenta_id)}&select=*&limit=1`,
+    `&fecha=eq.${fecha}${nominaTenantFilter(operador.cuenta_id)}` +
+    '&select=id,hora_entrada,hora_salida,es_feriado,nota,entrada_idempotency_key,salida_idempotency_key&limit=1',
     { headers }
   )
   if (!res.ok) return { error: true, row: null }
@@ -452,7 +453,10 @@ export async function handleMarcarEntrada(request, env) {
     registrado_por: operador.id,
     cuenta_id: operador.cuenta_id,
   }
-  const insRes = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia`, {
+  const insRes = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/registro_asistencia` +
+    '?select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_feriado,es_ausencia,estado_marcaje,nota',
+    {
     method: 'POST', headers: { ...svcHeaders(env), Prefer: 'return=representation' },
     body: JSON.stringify(fila),
   })
@@ -509,7 +513,8 @@ export async function handleMarcarSalida(request, env) {
     return jsonError(err.message || 'Horas inválidas', 400, request)
   }
   const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?id=eq.${existente.row.id}` +
-    nominaTenantFilter(operador.cuenta_id), {
+    nominaTenantFilter(operador.cuenta_id) +
+    '&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_feriado,es_ausencia,estado_marcaje,nota', {
     method: 'PATCH', headers: { ...svcHeaders(env), Prefer: 'return=representation' },
     body: JSON.stringify({
       ...calc,
@@ -741,7 +746,8 @@ export async function handleRegistrarAsistencia(request, env) {
 
   // Upsert por (empleado_id, fecha)
   const upRes = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/registro_asistencia?on_conflict=empleado_id,fecha`,
+    `${env.SUPABASE_URL}/rest/v1/registro_asistencia?on_conflict=empleado_id,fecha` +
+    '&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,nota',
     {
       method: 'POST',
       headers: { ...svcHeaders(env), Prefer: 'resolution=merge-duplicates,return=representation' },
@@ -1066,7 +1072,8 @@ export async function handleGetPeriodos(request, env) {
 
   const cuentaFilter = nominaTenantFilter(operador.cuenta_id)
   const res = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/nomina_periodos?order=desde.desc${cuentaFilter}&select=*&limit=500`,
+    `${env.SUPABASE_URL}/rest/v1/nomina_periodos?order=desde.desc${cuentaFilter}` +
+    '&select=id,nombre,desde,hasta,tipo,estado&limit=500',
     { headers }
   )
   if (!res.ok) return jsonError('Error al leer períodos', 500, request)
@@ -1173,7 +1180,7 @@ export async function handleCalcularPeriodo(request, env) {
   // 1. Período
   const pRes = await fetch(
     `${env.SUPABASE_URL}/rest/v1/nomina_periodos?id=eq.${periodoId}` +
-    `${nominaTenantFilter(operador.cuenta_id)}&select=*&limit=1`,
+    `${nominaTenantFilter(operador.cuenta_id)}&select=id,nombre,desde,hasta,estado&limit=1`,
     { headers }
   )
   const [periodo] = pRes.ok ? await pRes.json() : []
@@ -1183,7 +1190,8 @@ export async function handleCalcularPeriodo(request, env) {
   // 2. Empleados activos + factores + asistencia del rango (en paralelo)
   const cuentaFilter = nominaTenantFilter(operador.cuenta_id)
   const [cfgRes, configNomina, aRes, prevRes] = await Promise.all([
-    fetch(`${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?activo=eq.true${cuentaFilter}&select=*`, { headers }),
+    fetch(`${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?activo=eq.true${cuentaFilter}` +
+      '&select=empleado_id,cargo,salario_dia_usd,horas_jornada', { headers }),
     fetchConfigNomina(env, headers, operador.cuenta_id),
     fetch(
       `${env.SUPABASE_URL}/rest/v1/registro_asistencia` +
@@ -1405,8 +1413,12 @@ export async function handleGetLineas(request, env) {
   const res = await fetch(
     `${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}` +
     `${nominaTenantFilter(operador.cuenta_id)}` +
-    `&select=*,empleado:clientes!empleado_id(id,nombre,rif,telefono)` +
-    `&order=empleado(nombre).asc&limit=1000`,
+    '&select=id,empleado_id,cargo_snap,salario_dia_usd_snap,horas_jornada_snap,' +
+    'dias_trabajados,horas_normales,horas_extra,dias_sabado,dias_feriado,dias_ausencia,' +
+    'monto_normal_usd,monto_extra_usd,monto_sabado_usd,monto_feriado_usd,bonos_usd,' +
+    'deducciones_usd,total_bruto_usd,total_neto_usd,nota_bonos,nota_deducciones,pagado,' +
+    'pagado_en,pagado_por_nombre,referencia_pago,empleado:clientes!empleado_id(id,nombre,rif)' +
+    '&order=empleado(nombre).asc&limit=500',
     { headers }
   )
   if (!res.ok) return jsonError('Error al leer líneas', 500, request)
@@ -1464,7 +1476,8 @@ export async function handleAjustarLinea(request, env) {
   const neto  = r4(Math.max(0, bruto - deduc))
 
   const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?id=eq.${lineaId}` +
-    nominaTenantFilter(operador.cuenta_id), {
+    nominaTenantFilter(operador.cuenta_id) +
+    '&select=id,bonos_usd,deducciones_usd,total_bruto_usd,total_neto_usd,nota_bonos,nota_deducciones', {
     method: 'PATCH', headers: svcHeaders(env),
     body: JSON.stringify({
       bonos_usd:        r4(bonos),
@@ -1523,7 +1536,7 @@ export async function handlePagarLineas(request, env) {
 
   const ahora = new Date().toISOString()
   const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?id=in.(${ids.join(',')})` +
-    nominaTenantFilter(operador.cuenta_id) + '&pagado=eq.false', {
+    nominaTenantFilter(operador.cuenta_id) + '&pagado=eq.false&select=id', {
     method: 'PATCH', headers: svcHeaders(env, 'return=representation'),
     body: JSON.stringify({
       pagado:            true,
@@ -1599,7 +1612,7 @@ export async function handleRevertirPagoLinea(request, env) {
   if (!linea.pagado) return jsonError('Este recibo no está pagado', 400, request)
 
   const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?id=eq.${lineaId}` +
-    nominaTenantFilter(operador.cuenta_id) + '&pagado=eq.true', {
+    nominaTenantFilter(operador.cuenta_id) + '&pagado=eq.true&select=id', {
     method: 'PATCH', headers: svcHeaders(env, 'return=representation'),
     body: JSON.stringify({
       pagado: false, pagado_en: null, pagado_por: null,

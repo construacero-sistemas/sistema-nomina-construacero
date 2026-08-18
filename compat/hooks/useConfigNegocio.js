@@ -29,7 +29,7 @@ export function useConfigNegocio() {
       const data = await res.json()
       return data ?? {}
     },
-    retry: 1,
+    retry: 0, // evitar una segunda lectura de configuración por fallo transitorio
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000, // config rarely changes, keep in cache 30 min
   })

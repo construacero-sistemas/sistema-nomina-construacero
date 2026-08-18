@@ -1,4 +1,4 @@
-# Plan de entrega — Nómina Construacero
+# Plan de entrega — Nómina y Finanzas Construacero Carabobo
 
 ## Objetivo
 
@@ -25,7 +25,7 @@ Entregar una aplicación independiente de nómina, visualmente coherente con Lis
 
 - [x] Ruta, navegación, botón desde Personal y configuración de nómina retirados del POS.
 - [x] Personal permanece sin cambios funcionales.
-- [x] Frontend de nómina separado en un shell independiente con nombre **Nómina Construacero**.
+- [x] Frontend de nómina separado en un shell independiente con nombre **Nómina y Finanzas Construacero Carabobo**.
 - [x] Worker de nómina separado del Worker del POS.
 - [x] Migraciones de nómina separadas del directorio de migraciones del POS.
 - [x] Validación de tenant y permisos para administración, jefe, desarrollador y logística.

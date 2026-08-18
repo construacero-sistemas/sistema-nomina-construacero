@@ -51,13 +51,13 @@ async function apiPost(path, body) {
 
 // ─── Empleados y configuración ─────────────────────────────────────────────────
 
-export function useNominaEmpleados() {
+export function useNominaEmpleados({ enabled = true } = {}) {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
   const puede  = ROLES_VER.includes(perfil?.rol)
   return useQuery({
     queryKey: KEY_EMPLEADOS,
     queryFn: () => apiGet('/api/nomina/empleados'),
-    enabled: !!perfil && puede,
+    enabled: enabled && !!perfil && puede,
     staleTime: 1000 * 60 * 5,
   })
 }

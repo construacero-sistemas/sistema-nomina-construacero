@@ -8,11 +8,19 @@ import {
   handleGetTasasSnapshots, handleCrearTasaSnapshot,
   handleGetPeriodos, handleCrearPeriodo, handleCalcularPeriodo, handleCerrarPeriodo, handleReabrirPeriodo,
   handleGetLineas, handleAjustarLinea, handlePagarLineas, handleRevertirPagoLinea,
-} from './api/handlers/nomina.js'
+} from './server/handlers/nomina.js'
 import {
   handleSwitchOperator, handleClearOperator, handleGetOperators, handleSuperAdmin,
-} from './api/handlers/auth-operators.js'
-import { handleGetConfig, handlePing } from './api/handlers/config.js'
+} from './server/handlers/auth-operators.js'
+import { handleGetConfig, handlePing } from './server/handlers/config.js'
+import {
+  cacheResponse,
+  clearEgressCache,
+  egressRequestKey,
+  getEgressCache,
+  isEgressCacheMiss,
+  responseFromEgressCache,
+} from './server/lib/egressCache.js'
 
 const routes = new Map([
   ['GET /api/ping', handlePing],
@@ -54,6 +62,22 @@ const routes = new Map([
 ])
 
 const MAX_BODY_BYTES = 256 * 1024
+
+function egressCacheTtl(pathname) {
+  if (pathname === '/api/auth/operators') return 5 * 60 * 1000
+  if (pathname === '/api/config') return 5 * 60 * 1000
+  if (pathname === '/api/nomina/empleados') return 5 * 60 * 1000
+  if (pathname === '/api/nomina/config-empleados') return 30 * 1000
+  if (pathname === '/api/nomina/asistencia') return 15 * 1000
+  if (pathname === '/api/nomina/marcaje/hoy') return 5 * 1000
+  if (pathname.startsWith('/api/nomina/calendario/')) return 10 * 60 * 1000
+  if (pathname === '/api/nomina/conceptos') return 10 * 60 * 1000
+  if (pathname === '/api/nomina/reglas-legales') return 10 * 60 * 1000
+  if (pathname === '/api/nomina/tasas-snapshots') return 10 * 60 * 1000
+  if (pathname === '/api/nomina/periodos') return 30 * 1000
+  if (pathname === '/api/nomina/lineas') return 30 * 1000
+  return 0
+}
 
 function allowedOrigins(env) {
   const configured = String(env.NOMINA_ALLOWED_ORIGINS || '')
@@ -147,9 +171,25 @@ export default {
 
     const handler = routes.get(`${request.method} ${url.pathname}`)
     if (handler) {
+      const cacheTtl = request.method === 'GET' ? egressCacheTtl(url.pathname) : 0
+      let cacheKey = null
       try {
-        return withHeaders(await handler(request, env), request, env)
+        if (cacheTtl > 0) {
+          cacheKey = await egressRequestKey(request)
+          const cached = getEgressCache(cacheKey)
+          if (!isEgressCacheMiss(cached)) {
+            return withHeaders(responseFromEgressCache(cached), request, env)
+          }
+        }
+
+        const response = withHeaders(await handler(request, env), request, env)
+        // Toda mutación puede invalidar varias lecturas relacionadas; limpiar
+        // globalmente es barato y evita servir totales o permisos antiguos.
+        if (request.method === 'POST') clearEgressCache()
+        if (cacheTtl > 0 && cacheKey) await cacheResponse(cacheKey, response, cacheTtl)
+        return response
       } catch (error) {
+        if (request.method === 'POST') clearEgressCache()
         return internalError(request, env, error)
       }
     }

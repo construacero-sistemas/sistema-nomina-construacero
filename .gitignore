@@ -8,7 +8,9 @@ coverage/
 .dev.vars.*
 !.dev.vars.example
 .wrangler/
+.vercel/
 .freebuff/
 .supabase/
+supabase/.temp/
 *.log
 .DS_Store

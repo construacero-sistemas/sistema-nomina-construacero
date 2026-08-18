@@ -1,5 +1,5 @@
 -- 001_nomina_base_contract.sql
--- Contrato mínimo del repositorio independiente de Nómina Construacero.
+-- Contrato mínimo del repositorio independiente de Nómina y Finanzas Construacero Carabobo.
 --
 -- Este archivo NO migra Personal ni las tablas del POS. La identidad de cada
 -- cuenta es un usuario de auth.users; Personal puede sincronizar empleados a

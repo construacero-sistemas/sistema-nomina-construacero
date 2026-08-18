@@ -1,4 +1,4 @@
-# Plan maestro — Nómina Construacero
+# Plan maestro — Nómina y Finanzas Construacero Carabobo
 
 **Fecha de corte:** 2026-08-17  
 **Objetivo:** dejar el módulo de nómina autocontenido y verificable, pendiente únicamente de conectar el Supabase nuevo, los secretos y el repositorio de destino.
@@ -13,9 +13,10 @@
 | Dominio | Asistencia, extras, feriados, rotaciones, períodos, cálculo, ajustes, pagos y reversión | ✅ Ejecutada |
 | QA automatizado | Suite de handlers y motores de cálculo sin red real | ✅ Ejecutada |
 | Handoff | README, operación, CI, variables de entorno y contrato de integración | ✅ Ejecutada |
-| Supabase real | Crear proyecto, aplicar migraciones, cargar operadores y probar RLS | ⏳ Requiere credenciales |
+| Egress Free | Caché acotado, proyecciones explícitas, límites, persistencia local y presupuesto operativo | ✅ Ejecutada |
+| Supabase real | Proyecto enlazado; migraciones 001 y 208–220 aplicadas y verificadas local=remoto | ✅ Ejecutada; falta la validación funcional con usuarios reales |
 | Legal/proveedores | Aprobar reglas fiscales y fuentes BCV/Euro/USDT | ⏳ Requiere decisión del negocio |
-| Deploy | Configurar dominio, secretos y publicar Worker/frontend | ⏳ Requiere repositorio y aprobación |
+| Deploy | Frontend y función API publicados en Vercel producción | ✅ Ejecutada; el push a GitHub sigue bloqueado por permisos |
 
 ## Arquitectura objetivo
 
@@ -72,10 +73,10 @@ Supabase independiente
 
 ## Handoff Supabase
 
-**Destino informado por el propietario:** `https://wlxcclidnwketrghqaxs.supabase.co` (ref. `wlxcclidnwketrghqaxs`). La URL ya queda en las plantillas públicas; las claves no se escriben en el repositorio.
+**Destino informado por el propietario:** `https://wlxcclidnwketrghqaxs.supabase.co` (ref. `wlxcclidnwketrghqaxs`). Las migraciones `001` y `208`–`220` ya fueron aplicadas; `supabase migration list` confirmó que todas las versiones locales coinciden con remoto. Las claves no se escriben en el repositorio.
 
-1. Crear un proyecto nuevo y activar Auth según la política del negocio.
-2. Aplicar `001` y luego `208`–`220` con Supabase CLI en staging.
+1. Mantener Auth según la política del negocio.
+2. Para cambios futuros, aplicar nuevas migraciones con Supabase CLI en staging.
 3. Crear una cuenta de negocio en `auth.users`.
 4. Crear al menos dos operadores de prueba por cuenta con PIN PBKDF2 generado por un procedimiento controlado; no insertar PIN en claro.
 5. Sincronizar empleados mínimos desde Personal.
@@ -88,7 +89,7 @@ Supabase independiente
 
 **Repositorio destino informado:** `https://github.com/construacero-sistemas/sistema-nomina-construacero`.
 
-El checkout actual sigue apuntando al repositorio histórico del POS y contiene trabajo local no comiteado; no se cambia ese remoto ni se sube código automáticamente para no alterar el repositorio propietario equivocado. Para cerrar el handoff se requiere una sesión autenticada con permiso de escritura y la aprobación explícita del propietario para inicializar, comitear y publicar el contenido de esta carpeta en el repositorio destino.
+El commit local base `25e1876` quedó preparado y el remoto destino está configurado, pero GitHub rechazó el push con HTTP 403 para `luiggiberaldi`. El despliegue de producción sí quedó publicado en `https://nomina-construacero.vercel.app`; para cerrar el handoff del repositorio aún hace falta autenticar una cuenta con permiso de escritura y publicar los cambios posteriores de la extracción.
 
 ## Fuera del alcance local
 
@@ -98,7 +99,7 @@ No se inventan ni se activan automáticamente:
 - sincronización POS → Nómina en producción;
 - proveedores externos de tasas;
 - fórmulas fiscales no aprobadas;
-- deploy, DNS, dominios o secretos;
+- DNS, dominios adicionales o rotación de secretos;
 - creación de un repositorio remoto.
 
 Esas tareas requieren acceso y decisiones que no deben quedar hardcodeadas en el código.

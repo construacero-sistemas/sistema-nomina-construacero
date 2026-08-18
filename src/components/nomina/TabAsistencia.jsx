@@ -136,7 +136,7 @@ export default function TabAsistencia({ esAdmin }) {
         />
       ) : (
         <div className="overflow-x-auto bg-white border border-slate-200 rounded-2xl">
-          <table className="w-full text-xs">
+          <table className="w-full min-w-[760px] text-xs" aria-label="Asistencia semanal">
             <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wide">
               <tr>
                 <th className="text-left px-3 py-2.5 font-semibold sticky left-0 bg-slate-50 z-10 min-w-[140px]">

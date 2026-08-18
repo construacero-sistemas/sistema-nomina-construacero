@@ -71,6 +71,15 @@ function UserCard({ user, onClick, index }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className="cursor-pointer outline-none h-full"
+      role="button"
+      tabIndex={0}
+      aria-label={`Seleccionar operador ${nombre}`}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick(user)
+        }
+      }}
       style={{ animation: `fadeSlideUp 0.5s ease forwards`, animationDelay: `${index * 0.07}s`, opacity: 0 }}
     >
       <div
@@ -266,7 +275,7 @@ function GateStep({ onPass }) {
           <div className="relative flex items-center justify-center">
             <div className="absolute rounded-full opacity-25 blur-3xl"
               style={{ width: '200px', height: '200px', background: 'radial-gradient(circle, #B8860B 0%, transparent 70%)' }} />
-            <img src="/logo.png" alt="Construacero Carabobo"
+            <img src="/logo.png" alt="Construacero Carabobo C.A."
               className="relative z-10 w-auto object-contain select-none pointer-events-none drop-shadow-2xl"
               style={{ height: '140px', filter: 'drop-shadow(0 0 40px rgba(184,134,11,0.35)) brightness(1.05)' }}
               draggable={false} />
@@ -534,13 +543,13 @@ function UserSelectStep({ onLogout }) {
           <div className="flex items-center justify-center gap-2 sm:gap-3 w-full">
             <div className="h-px flex-1 max-w-[36px] sm:max-w-[48px] opacity-40" style={{ background: 'linear-gradient(to right, transparent, #B8860B)' }} />
             <span className="text-[9px] sm:text-xs font-bold tracking-[0.25em] sm:tracking-[0.3em] uppercase whitespace-nowrap" style={{ color: '#B8860B' }}>
-              Sistema de Gestión
+              Nómina y Finanzas
             </span>
             <div className="h-px flex-1 max-w-[36px] sm:max-w-[48px] opacity-40" style={{ background: 'linear-gradient(to left, transparent, #B8860B)' }} />
           </div>
 
           <p className="hidden lg:block text-sm leading-relaxed max-w-[280px] text-center" style={{ color: 'rgba(255,255,255,0.3)' }}>
-            Gestión de cotizaciones, inventario y clientes para Construacero Carabobo C.A.
+            Gestión de nómina, asistencia y finanzas para Construacero Carabobo C.A.
           </p>
         </div>
 
@@ -766,16 +775,17 @@ export default function LoginPage() {
     return (
       <>
         <DarkBackground />
-        <div className="relative z-10 min-h-screen flex flex-col items-center justify-center">
-          <div className="relative flex items-center justify-center" style={{ animation: 'logoReveal 0.8s ease forwards' }}>
-            <div className="absolute rounded-full opacity-25 blur-3xl"
-              style={{ width: '200px', height: '200px', background: 'radial-gradient(circle, #B8860B 0%, transparent 70%)' }} />
-            <img src="/logo.png" alt="Construacero Carabobo"
-              className="relative z-10 w-auto object-contain select-none pointer-events-none drop-shadow-2xl"
-              style={{ height: '140px', filter: 'drop-shadow(0 0 40px rgba(184,134,11,0.35)) brightness(1.05)' }}
-              draggable={false} />
+        <div className="relative z-10 min-h-screen flex items-center justify-center">
+          <div className="flex flex-col items-center gap-6">
+            <img
+              src="/logo.png"
+              alt="Construacero Carabobo C.A."
+              className="h-32 md:h-48 w-auto object-contain opacity-90 drop-shadow-2xl"
+            />
+            <div className="loader" role="status" aria-label="Cargando aplicación">
+              {Array.from({ length: 7 }, (_, index) => <div key={index} className="loader-square" />)}
+            </div>
           </div>
-          <RefreshCw size={20} className="animate-spin mt-8" style={{ color: 'rgba(255,255,255,0.3)' }} />
         </div>
         <style>{`
           @keyframes logoReveal {

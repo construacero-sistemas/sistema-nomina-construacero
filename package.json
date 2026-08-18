@@ -9,7 +9,7 @@
     "dev:api": "wrangler dev --config wrangler.toml --port 8788 --local",
     "build": "vite build --config vite.config.js",
     "test": "vitest run --config vitest.config.js",
-    "lint": "eslint src api compat --quiet",
+    "lint": "eslint src api compat server --quiet",
     "check:project": "node scripts/check-project.mjs",
     "verify": "npm run check:project && npm run lint && npm test && npm run build"
   },

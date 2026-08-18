@@ -44,10 +44,19 @@ const requiredFiles = [
   'package.json',
   'package-lock.json',
   'worker.js',
+  'server/lib/egressCache.js',
+  'api/[...path].js',
   'wrangler.toml',
+  'vercel.json',
   '.env.example',
   '.dev.vars.example',
   'supabase/config.toml',
+  'index.html',
+  'compat/modules/auth/LoginPage.jsx',
+  'src/NominaApp.jsx',
+  'tailwind.config.js',
+  'public/logo.png',
+  'public/favicon.png',
   'supabase/migrations/001_nomina_base_contract.sql',
   'supabase/migrations/208_nomina_config_empleado.sql',
   'supabase/migrations/219_nomina_rollout_flag.sql',
@@ -59,7 +68,25 @@ for (const path of requiredFiles) {
 
 const envExample = await read('.env.example')
 const devVarsExample = await read('.dev.vars.example')
+const indexHtml = await read('index.html')
+const loginSource = await read('compat/modules/auth/LoginPage.jsx')
+const shellSource = await read('src/NominaApp.jsx')
+const tailwindSource = await read('tailwind.config.js')
 const supabaseConfig = await read('supabase/config.toml')
+
+for (const [name, source, markers] of [
+  ['index.html', indexHtml, ['Nómina y Finanzas · Construacero Carabobo', 'Nómina y finanzas de Construacero Carabobo C.A.']],
+  ['compat/modules/auth/LoginPage.jsx', loginSource, ['¿Quién está operando?', 'Selecciona tu usuario e ingresa tu PIN', 'Nómina y Finanzas', 'LoginPinModal', 'switchOperator', 'listar_usuarios_login', '/logo.png']],
+  ['src/NominaApp.jsx', shellSource, ['Nómina y Finanzas', 'className="loader"', 'className="loader-square"', 'Array.from({ length: 7 }', 'md:hidden', 'translate-x-0', 'safe-area-inset-bottom']],
+  ['tailwind.config.js', tailwindSource, ['./compat/**/*.{js,jsx}', "darkMode: 'class'", '.scrollbar-hide']],
+]) {
+  for (const marker of markers) {
+    if (!source.includes(marker)) fail(`${name} perdió el contrato de identidad/login: ${marker}`)
+  }
+}
+if (loginSource.includes('Gestión de cotizaciones, inventario y clientes')) {
+  fail('La pantalla de login no debe mostrar textos del POS')
+}
 if (!/^project_id\s*=\s*"wlxcclidnwketrghqaxs"\s*$/m.test(supabaseConfig)) {
   fail('supabase/config.toml no apunta al proyecto Supabase entregado')
 }
@@ -69,7 +96,10 @@ for (const key of ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_WORKER_O
 for (const key of ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_KEY', 'NOMINA_TIMEZONE', 'NOMINA_ALLOWED_ORIGINS']) {
   if (!new RegExp(`^${key}=`, 'm').test(devVarsExample)) fail(`.dev.vars.example no documenta ${key}`)
 }
-if (/^SUPABASE_(?:URL|ANON_KEY|SERVICE_KEY)=/m.test(envExample)) fail('.env.example no debe contener variables privadas del Worker')
+if (/^SUPABASE_(?:URL|ANON_KEY|SERVICE_KEY)=/m.test(envExample) ||
+    /^(?:SUPABASE_ACCESS_TOKEN|DB_PASSWORD|VERCEL_TOKEN|verceltoken)=/mi.test(envExample)) {
+  fail('.env.example no debe contener secretos de Supabase, base de datos o Vercel')
+}
 if (envExample.includes('[TEMPLATE]') || devVarsExample.includes('[TEMPLATE]')) fail('Las plantillas de entorno contienen marcadores corruptos')
 if (/SUPABASE_SERVICE_KEY\s*=\s*(?!tu-service-role-key\s*$)[^#\s]+/m.test(envExample)) fail('.env.example contiene una service key real')
 if (/SUPABASE_SERVICE_KEY\s*=\s*(?!tu-service-role-key\s*$)[^#\s]+/m.test(devVarsExample)) fail('.dev.vars.example contiene una service key real')
@@ -114,11 +144,26 @@ for (const path of sourceFiles) {
       /(?:sk_live_|sk_test_|eyJhbGciOiJIUzI1Ni[A-Za-z0-9_-]{20,})/.test(text)) {
     fail(`Posible secreto incrustado en ${path}`)
   }
+  if (path === 'server/handlers/nomina.js' && /select=\*/.test(text)) {
+    fail('El handler de nómina no debe usar select=*; proyecta columnas para proteger egress')
+  }
+  if (path.startsWith('server/') && /limit=1000/.test(text)) {
+    fail(`Límite de egress demasiado alto detectado en ${path}`)
+  }
 }
 
 const gitignore = await read('.gitignore')
 for (const line of ['.env', '.dev.vars', 'node_modules/', 'dist/']) {
   if (!gitignore.split(/\r?\n/).includes(line)) fail(`.gitignore no protege ${line}`)
+}
+
+const workerSource = await read('worker.js')
+const egressCacheSource = await read('server/lib/egressCache.js')
+for (const marker of ['egressCacheTtl', 'clearEgressCache', 'cacheResponse']) {
+  if (!workerSource.includes(marker)) fail(`worker.js no aplica guardrail de egress: ${marker}`)
+}
+for (const marker of ['MAX_ENTRY_BYTES', 'MAX_TOTAL_BYTES', 'egressRequestKey']) {
+  if (!egressCacheSource.includes(marker)) fail(`Falta límite del caché de egress: ${marker}`)
 }
 
 const packageJson = JSON.parse(await read('package.json'))

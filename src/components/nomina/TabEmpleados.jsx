@@ -16,7 +16,8 @@ const normalizar = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toL
 export default function TabEmpleados({ esAdmin }) {
   const { data: configs = [], isLoading, isError, refetch } = useConfigEmpleados()
   // Solo administración necesita detectar pendientes: es quien puede configurarlos.
-  const { data: clientes = [] } = useNominaEmpleados()
+  // Logística no necesita descargar otra lista: ya recibe el nombre dentro de config-empleados.
+  const { data: clientes = [] } = useNominaEmpleados({ enabled: esAdmin })
   const [modal, setModal] = useState(null) // { modo: 'crear'|'editar', config }
   const [busqueda, setBusqueda] = useState('')
 
