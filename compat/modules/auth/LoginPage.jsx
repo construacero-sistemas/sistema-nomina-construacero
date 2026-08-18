@@ -1,7 +1,7 @@
 // src/modules/auth/LoginPage.jsx
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { RefreshCw, Mail, Key, Eye, EyeOff, ArrowRight, Download, LogOut } from 'lucide-react'
+import { CircleAlert, Download, Eye, EyeOff, Key, LogOut, Mail, RefreshCw, ShieldCheck, UsersRound, ArrowRight } from 'lucide-react'
 import supabase from '../../services/supabase/client'
 import useAuthStore from '../../store/useAuthStore'
 import { apiUrl } from '../../services/apiBase'
@@ -251,10 +251,22 @@ function GateStep({ onPass }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!email.trim() || !password) return
+    const normalizedEmail = email.trim()
+    if (!normalizedEmail) {
+      setError('Ingresa el correo de la empresa.')
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError('Ingresa un correo válido.')
+      return
+    }
+    if (!password) {
+      setError('Ingresa la contraseña para continuar.')
+      return
+    }
     setLoading(true)
     setError(null)
-    const { ok } = await login(email, password)
+    const { ok } = await login(normalizedEmail, password)
     setLoading(false)
     if (ok) {
       onPass()
@@ -269,36 +281,24 @@ function GateStep({ onPass }) {
   return (
     <>
       <DarkBackground />
-      <div className="relative z-10 min-h-screen w-full flex flex-col items-center justify-center px-4 sm:px-6 py-8">
+      <div className="login-stage">
         {/* Logo */}
-        <div className="flex flex-col items-center gap-4 mb-8 select-none" style={{ animation: 'logoReveal 0.8s ease forwards' }}>
-          <div className="relative flex items-center justify-center">
-            <div className="absolute rounded-full opacity-25 blur-3xl"
-              style={{ width: '200px', height: '200px', background: 'radial-gradient(circle, #B8860B 0%, transparent 70%)' }} />
+        <div className="login-brand select-none" style={{ animation: 'logoReveal 0.8s ease forwards' }}>
+          <div className="login-brand-logo-wrap">
             <img src="/logo.png" alt="Construacero Carabobo C.A."
-              className="relative z-10 w-auto object-contain select-none pointer-events-none drop-shadow-2xl"
-              style={{ height: '140px', filter: 'drop-shadow(0 0 40px rgba(184,134,11,0.35)) brightness(1.05)' }}
+              className="login-brand-logo select-none pointer-events-none"
+              style={{ height: 'clamp(116px, 14vw, 188px)' }}
               draggable={false} />
           </div>
-          <div className="flex items-center gap-3">
-            <div className="h-px w-12 opacity-40" style={{ background: 'linear-gradient(to right, transparent, #B8860B)' }} />
-            <span className="text-[10px] font-bold tracking-[0.3em] uppercase" style={{ color: '#B8860B' }}>Acceso al Sistema</span>
-            <div className="h-px w-12 opacity-40" style={{ background: 'linear-gradient(to left, transparent, #B8860B)' }} />
-          </div>
+          <span className="login-brand-kicker">Acceso seguro</span>
         </div>
 
         {/* Formulario login negocio */}
         <form
           onSubmit={handleSubmit}
-          className="w-full max-w-sm rounded-2xl p-6 sm:p-8"
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            boxShadow: '0 25px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)',
-            animation: 'fadeSlideUp 0.6s ease 0.2s forwards',
-            opacity: 0,
-          }}
+          noValidate
+          className="login-panel login-gate-panel login-panel-ready"
+          style={{ width: '100%', maxWidth: '460px' }}
         >
           <div className="absolute top-0 left-[10%] right-[10%] h-px"
             style={{ background: 'linear-gradient(to right, transparent, rgba(184,134,11,0.6), transparent)' }} />
@@ -307,56 +307,70 @@ function GateStep({ onPass }) {
           <p className="text-xs mb-6" style={{ color: 'rgba(255,255,255,0.4)' }}>Ingresa las credenciales del negocio</p>
 
           {/* Email */}
-          <div className="mb-4">
-            <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>Correo</label>
+          <div className="login-field">
+            <label className="login-field-label" htmlFor="nomina-login-email">Correo de la empresa</label>
             <div className="relative">
-              <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.3)' }} />
+              <Mail size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'rgba(226,232,240,0.5)' }} aria-hidden="true" />
               <input
+                id="nomina-login-email"
                 type="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm text-white placeholder-white/20 outline-none transition-colors"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                onFocus={e => e.target.style.borderColor = 'rgba(184,134,11,0.5)'}
-                onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
+                onChange={e => { setEmail(e.target.value); if (error) setError(null) }}
+                className="login-field-control w-full pl-11 pr-4 outline-none"
+                style={{ minHeight: '50px' }}
+                onFocus={e => e.target.style.borderColor = 'rgba(184,134,11,0.75)'}
+                onBlur={e => e.target.style.borderColor = 'rgba(148,163,184,0.28)'}
                 placeholder="correo@empresa.com"
                 autoComplete="email"
+                aria-required="true"
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? 'nomina-login-error' : undefined}
                 required
               />
             </div>
           </div>
 
           {/* Password */}
-          <div className="mb-5">
-            <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>Contraseña</label>
+          <div className="login-field">
+            <label className="login-field-label" htmlFor="nomina-login-password">Contraseña</label>
             <div className="relative">
-              <Key size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.3)' }} />
+              <Key size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'rgba(226,232,240,0.5)' }} aria-hidden="true" />
               <input
+                id="nomina-login-password"
                 type={showPass ? 'text' : 'password'}
                 value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="w-full pl-10 pr-10 py-2.5 rounded-xl text-sm text-white placeholder-white/20 outline-none transition-colors"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                onFocus={e => e.target.style.borderColor = 'rgba(184,134,11,0.5)'}
-                onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
+                onChange={e => { setPassword(e.target.value); if (error) setError(null) }}
+                className="login-field-control w-full pl-11 pr-12 outline-none"
+                style={{ minHeight: '50px' }}
+                onFocus={e => e.target.style.borderColor = 'rgba(184,134,11,0.75)'}
+                onBlur={e => e.target.style.borderColor = 'rgba(148,163,184,0.28)'}
                 placeholder="••••••••"
+                autoComplete="current-password"
+                aria-required="true"
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? 'nomina-login-error' : undefined}
                 required
               />
               <button type="button" onClick={() => setShowPass(!showPass)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                className="login-password-toggle absolute top-1/2 -translate-y-1/2"
+                style={{ color: 'rgba(226,232,240,0.55)' }}
+                aria-label={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
+                {showPass ? <EyeOff size={17} /> : <Eye size={17} />}
               </button>
             </div>
           </div>
 
           {error && (
-            <p className="text-xs text-red-400 mb-4 text-center">{error}</p>
+            <p id="nomina-login-error" className="login-form-error" role="alert">
+              <CircleAlert size={15} aria-hidden="true" />
+              <span>{error}</span>
+            </p>
           )}
 
           <button
             type="submit"
             disabled={loading || !email.trim() || !password}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40"
+            className="login-submit w-full flex items-center justify-center gap-2 text-sm font-bold text-white transition-all"
             style={{
               background: 'linear-gradient(135deg, #B8860B 0%, #8B6914 100%)',
               boxShadow: '0 4px 20px rgba(184,134,11,0.3)',
@@ -367,9 +381,7 @@ function GateStep({ onPass }) {
           </button>
         </form>
 
-        <div className="mt-6" style={{ animation: 'fadeSlideUp 0.6s ease 0.5s forwards', opacity: 0 }}>
-          <PwaInstallButton />
-        </div>
+        <PwaInstallButton />
       </div>
 
       <style>{`
@@ -517,97 +529,64 @@ function UserSelectStep({ onLogout }) {
 
       <DarkBackground />
 
-      <div className="relative z-10 min-h-[100dvh] w-full flex flex-col lg:flex-row items-center justify-center px-3 sm:px-6 lg:px-8 xl:px-12 py-6 sm:py-8 gap-5 sm:gap-8 lg:gap-8 xl:gap-14 overflow-x-hidden overflow-y-auto">
+      <div className="login-stage">
 
         {/* ── LOGO + BRANDING ── */}
         <div
-          className="flex flex-col items-center gap-3 sm:gap-4 select-none lg:w-[220px] xl:w-[300px] shrink-0"
+          className="login-brand select-none"
           style={{ animation: 'logoReveal 0.8s ease forwards' }}
         >
-          <div className="relative flex items-center justify-center">
-            <div className="absolute rounded-full opacity-25 blur-3xl"
-              style={{ width: 'clamp(120px, 25vw, 280px)', height: 'clamp(120px, 25vw, 280px)', background: 'radial-gradient(circle, #B8860B 0%, transparent 70%)' }} />
+          <div className="login-brand-logo-wrap">
             <img
               src="/logo.png"
               alt="Construacero Carabobo"
               onClick={handleLogoTap}
-              className="relative z-10 w-auto object-contain select-none drop-shadow-2xl cursor-pointer"
+              className="login-brand-logo select-none drop-shadow-2xl cursor-pointer"
               style={{
-                height: 'clamp(80px, 14vw, 220px)',
-                filter: 'drop-shadow(0 0 40px rgba(184,134,11,0.35)) brightness(1.05)',
+                height: 'clamp(116px, 14vw, 188px)',
               }}
               draggable={false}
             />
           </div>
 
-          <div className="flex items-center justify-center gap-2 sm:gap-3 w-full">
-            <div className="h-px flex-1 max-w-[36px] sm:max-w-[48px] opacity-40" style={{ background: 'linear-gradient(to right, transparent, #B8860B)' }} />
-            <span className="text-[9px] sm:text-xs font-bold tracking-[0.25em] sm:tracking-[0.3em] uppercase whitespace-nowrap" style={{ color: '#B8860B' }}>
-              Nómina y Finanzas
-            </span>
-            <div className="h-px flex-1 max-w-[36px] sm:max-w-[48px] opacity-40" style={{ background: 'linear-gradient(to left, transparent, #B8860B)' }} />
-          </div>
+          <span className="login-brand-kicker">Nómina y Finanzas</span>
 
-          <p className="hidden lg:block text-sm leading-relaxed max-w-[280px] text-center" style={{ color: 'rgba(255,255,255,0.3)' }}>
+          <p className="login-brand-description">
             Gestión de nómina, asistencia y finanzas para Construacero Carabobo C.A.
           </p>
         </div>
 
         {/* ── PANEL PRINCIPAL ── */}
-        <div
-          className="w-full max-w-[calc(100vw-1.5rem)] sm:max-w-sm md:max-w-md lg:max-w-md xl:max-w-lg relative overflow-hidden rounded-2xl sm:rounded-3xl"
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            boxShadow: '0 25px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)',
-            animation: 'fadeSlideUp 0.6s ease 0.2s forwards',
-            opacity: 0,
-          }}
-        >
-          <div className="absolute top-0 left-[10%] right-[10%] h-px"
-            style={{ background: 'linear-gradient(to right, transparent, rgba(184,134,11,0.6), transparent)' }} />
-          <div className="absolute top-0 right-0 w-64 h-64 -mr-20 -mt-20 rounded-full opacity-10 pointer-events-none"
-            style={{ background: 'radial-gradient(circle, #1B365D 0%, transparent 70%)', filter: 'blur(30px)' }} />
-          <div className="absolute bottom-0 left-0 w-48 h-48 -ml-16 -mb-16 rounded-full pointer-events-none"
-            style={{ background: 'radial-gradient(circle, #B8860B 0%, transparent 70%)', filter: 'blur(30px)', opacity: 0.06 }} />
-
-          <div className="relative z-10 p-4 sm:p-6 lg:p-6 xl:p-8">
+        <div className={`login-panel ${visible ? 'login-panel-ready' : ''}`}>
+          <div className="login-panel-content">
 
             {/* Header */}
-            <div className="flex items-center justify-between mb-4 sm:mb-6 lg:mb-8">
+            <div className="login-panel-header">
               <div className="min-w-0">
-                <h1 className="text-base sm:text-lg md:text-xl font-black text-white tracking-tight">
-                  ¿Quién está operando?
-                </h1>
-                <p className="text-[11px] sm:text-xs md:text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
-                  Selecciona tu usuario e ingresa tu PIN
-                </p>
+                <span className="login-panel-eyebrow">Sesión activa</span>
+                <h1 className="login-panel-title">¿Quién está operando?</h1>
+                <p className="login-panel-subtitle">Selecciona tu usuario e ingresa tu PIN</p>
               </div>
-              <div className="flex items-center gap-2 shrink-0 ml-2">
+              <div className="login-action-group">
                 <button
-                  onClick={cargarUsuarios.bind(null, false)}
+                  onClick={() => cargarUsuarios(false)}
                   disabled={cargando}
-                  className="p-2 sm:p-2.5 rounded-xl transition-all disabled:opacity-40"
-                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                  title="Recargar usuarios"
+                  className="login-icon-button"
+                  title="Actualizar operadores"
+                  aria-label="Actualizar operadores"
                 >
-                  <RefreshCw size={14} className={cargando ? 'animate-spin' : ''} />
+                  <RefreshCw size={16} className={cargando ? 'animate-spin' : ''} />
                 </button>
                 <button
                   onClick={async () => {
                     await supabase.auth.signOut()
                     onLogout()
                   }}
-                  className="p-2 sm:p-2.5 rounded-xl transition-all"
-                  style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.7)' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)'; e.currentTarget.style.color = 'rgba(239,68,68,0.9)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.color = 'rgba(239,68,68,0.7)' }}
+                  className="login-icon-button danger"
                   title="Cerrar sesión"
+                  aria-label="Cerrar sesión"
                 >
-                  <LogOut size={14} />
+                  <LogOut size={16} />
                 </button>
               </div>
             </div>
@@ -626,16 +605,32 @@ function UserSelectStep({ onLogout }) {
                 ))}
               </div>
             ) : errorLista ? (
-              <div className="text-center py-8 sm:py-10">
-                <p className="text-sm mb-3" style={{ color: 'rgba(255,255,255,0.4)' }}>{errorLista}</p>
-                <button onClick={cargarUsuarios} className="text-sm font-bold text-sky-400 hover:text-sky-300 transition-colors">
+              <div className="login-empty" role="alert">
+                <div className="login-empty-icon" style={{ color: '#fca5a5', borderColor: 'rgba(248,113,113,0.32)', background: 'rgba(239,68,68,0.1)' }}>
+                  <CircleAlert size={25} />
+                </div>
+                <span className="login-empty-kicker" style={{ color: '#fca5a5' }}>No se pudo actualizar</span>
+                <h2 className="login-empty-title">No pudimos cargar los operadores</h2>
+                <p className="login-empty-copy">{errorLista}. Revisa la conexión e inténtalo de nuevo.</p>
+                <button onClick={() => cargarUsuarios(false)} className="login-empty-action" disabled={cargando}>
+                  <RefreshCw size={16} className={cargando ? 'animate-spin' : ''} />
                   Reintentar
                 </button>
               </div>
             ) : usuarios.length === 0 ? (
-              <div className="text-center py-8 sm:py-10">
-                <p className="text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>No hay usuarios activos en el sistema.</p>
-                <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.2)' }}>Contacta al supervisor.</p>
+              <div className="login-empty" role="status" aria-live="polite">
+                <div className="login-empty-icon"><UsersRound size={25} /></div>
+                <span className="login-empty-kicker">Configuración pendiente</span>
+                <h2 className="login-empty-title">Aún no hay operadores disponibles</h2>
+                <p className="login-empty-copy">Tu sesión está activa, pero todavía no hay usuarios habilitados para operar Nómina y Finanzas.</p>
+                <button onClick={() => cargarUsuarios(false)} className="login-empty-action" disabled={cargando}>
+                  <RefreshCw size={16} className={cargando ? 'animate-spin' : ''} />
+                  Actualizar operadores
+                </button>
+                <div className="login-session-note">
+                  <ShieldCheck size={15} />
+                  Sesión protegida · PIN requerido para continuar
+                </div>
               </div>
             ) : (
               <div className={`grid gap-2.5 sm:gap-4 ${

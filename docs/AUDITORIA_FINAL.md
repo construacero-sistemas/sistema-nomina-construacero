@@ -35,7 +35,10 @@ Se comparó el login, splash, navegación y componentes de nómina con `construa
 - La grilla semanal mantiene scroll horizontal controlado porque sus siete días requieren ancho mínimo; el nombre del empleado queda fijo al desplazarse.
 - Los modales conservan foco, cierre con Escape, scroll interno, límite de altura y `safe-area-inset-bottom`.
 - Tailwind ahora escanea `compat/`, activa modo oscuro por clase y genera `scrollbar-hide`, evitando estilos visuales faltantes en componentes puente.
-- Se agregaron etiquetas ARIA para navegación, tabs, loader, drawer, paneles y acciones móviles.
+- El login limita el contenido a una composición central de máximo 1120 px; el branding y el panel de acceso dejan de estirarse por toda la pantalla en monitores grandes.
+- El estado sin operadores muestra una tarjeta de configuración pendiente con CTA visible de actualización, explicación de la sesión y contraste suficiente; el error de carga tiene una acción de reintento equivalente.
+- El acceso por correo y contraseña usa campos identificados, altura táctil de 50 px, estados de foco visibles, botón de contraseña accesible, validación propia sin tooltip nativo del navegador y un botón de acceso legible incluso cuando está deshabilitado.
+- Se agregaron etiquetas ARIA para navegación, tabs, loader, drawer, paneles, estado vacío, campos y acciones móviles.
 
 Pendiente de validación manual en dispositivos físicos: Safari iOS, Chrome Android y una pantalla desktop de 1366 px. La suite automatizada valida el contrato estructural y el build, pero no sustituye una prueba visual con datos reales.
 

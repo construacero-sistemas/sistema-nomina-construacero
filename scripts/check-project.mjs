@@ -76,7 +76,7 @@ const supabaseConfig = await read('supabase/config.toml')
 
 for (const [name, source, markers] of [
   ['index.html', indexHtml, ['Nómina y Finanzas · Construacero Carabobo', 'Nómina y finanzas de Construacero Carabobo C.A.']],
-  ['compat/modules/auth/LoginPage.jsx', loginSource, ['¿Quién está operando?', 'Selecciona tu usuario e ingresa tu PIN', 'Nómina y Finanzas', 'LoginPinModal', 'switchOperator', 'listar_usuarios_login', '/logo.png']],
+  ['compat/modules/auth/LoginPage.jsx', loginSource, ['¿Quién está operando?', 'Selecciona tu usuario e ingresa tu PIN', 'Nómina y Finanzas', 'LoginPinModal', 'switchOperator', 'listar_usuarios_login', '/logo.png', 'login-stage', 'login-panel', 'login-empty', 'Actualizar operadores', 'login-field-control', 'login-submit', 'nomina-login-email', 'nomina-login-password', 'noValidate', 'Ingresa un correo válido.', 'login-form-error']],
   ['src/NominaApp.jsx', shellSource, ['Nómina y Finanzas', 'className="loader"', 'className="loader-square"', 'Array.from({ length: 7 }', 'md:hidden', 'translate-x-0', 'safe-area-inset-bottom']],
   ['tailwind.config.js', tailwindSource, ['./compat/**/*.{js,jsx}', "darkMode: 'class'", '.scrollbar-hide']],
 ]) {

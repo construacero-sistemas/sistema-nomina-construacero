@@ -13,7 +13,7 @@ npm run dev
 
 Vite sirve el frontend y Wrangler sirve el Worker en `http://localhost:8788`. No colocar la service role key en `.env`; debe vivir únicamente en `.dev.vars` local o en secretos del Worker.
 
-La UI sigue el patrón responsive de Construacero: drawer lateral en móvil, sidebar colapsable en desktop, navegación inferior táctil, modales con área segura y tablas anchas con scroll controlado. Validar manualmente en 360 px, 390 px, 768 px y 1366 px antes de activar cambios visuales en producción.
+La UI sigue el patrón responsive de Construacero: drawer lateral en móvil, sidebar colapsable en desktop, navegación inferior táctil, modales con área segura y tablas anchas con scroll controlado. El login mantiene una composición central acotada a 1120 px, separa branding y acceso en desktop y convierte el estado sin operadores en una acción clara de configuración/actualización. Validar manualmente en 360 px, 390 px, 768 px y 1366 px antes de activar cambios visuales en producción.
 
 ## Destinos entregados
 
