@@ -28,13 +28,13 @@ Entregar una aplicación independiente de nómina, visualmente coherente con Lis
 - [x] Frontend de nómina separado en un shell independiente con nombre **Nómina y Finanzas Construacero Carabobo**.
 - [x] Worker de nómina separado del Worker del POS.
 - [x] Migraciones de nómina separadas del directorio de migraciones del POS.
-- [x] Validación de tenant y permisos para administración, jefe, desarrollador y logística.
+- [x] Validación de tenant y permisos para el único rol administración.
 - [x] Cálculo de asistencia, extras, sábado, feriado, bonos, deducciones, cierre y pagos.
 - [x] PDFs de planilla y recibo.
 - [x] El paquete no contiene imports hacia `../src`, `../api` ni `../supabase`; el endpoint de empleados es interno y el contrato está documentado.
 - [x] Definir el contrato mínimo de empleados sincronizados desde Personal (`/api/nomina/empleados`).
 - [ ] Conectar proveedores BCV, Euro y USDT aprobados por el negocio.
-- [ ] Construir/activar las pantallas administrativas de conceptos, tasas y reglas legales si se requieren desde UI; los endpoints y tablas ya están aislados.
+- [x] Pantalla administrativa responsive de calendario, tasas, conceptos y reglas legales; las reglas nuevas quedan pendientes de aprobación.
 - [x] Agregar guardrails de CI, scanner de estructura/secretos y migración 220 de integridad por tenant.
 
 ## Fases para dejarlo listo para usar
@@ -51,7 +51,7 @@ Entregar una aplicación independiente de nómina, visualmente coherente con Lis
 ### Fase 2 — Supabase
 
 1. Crear un proyecto Supabase independiente.
-2. Ejecutar `001_nomina_base_contract.sql` y luego las migraciones `208` a `220` en orden dentro de ese proyecto, nunca en el Supabase del POS.
+2. Ejecutar `001_nomina_base_contract.sql` y luego las migraciones `208` a `222` en orden dentro de ese proyecto, nunca en el Supabase del POS.
 3. Crear la tabla/contrato de operadores y perfiles del nuevo sistema.
 4. Reemplazar la referencia histórica a `clientes` por una tabla o vista de empleados sincronizados:
    - `id_externo`
@@ -85,7 +85,7 @@ Entregar una aplicación independiente de nómina, visualmente coherente con Lis
 - Conversión con BCV, Euro, USDT y tasa manual congelada.
 - Pérdida de conexión en grilla de asistencia.
 - Aislamiento entre dos cuentas.
-- Ocultamiento de salarios para logística.
+- Rechazo de cualquier operador con rol heredado.
 - PDFs en móvil y escritorio.
 
 ## Datos que debe entregar el negocio antes del deploy
@@ -94,7 +94,7 @@ Entregar una aplicación independiente de nómina, visualmente coherente con Lis
 - Service role key como secreto del Worker, nunca en frontend.
 - Repositorio y rama destino.
 - Dominio del frontend y Worker.
-- Lista de operadores, roles y permisos.
+- Operador(es) con rol `administracion` y sus PINs generados de forma segura.
 - Fuente aprobada de BCV, Euro y USDT.
 - Reglas fiscales vigentes y su fuente legal.
 - Jornada estándar, política de sábado, feriados y redondeo.

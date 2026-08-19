@@ -7,7 +7,7 @@ import {
 
 export default function MarcajeLogisticaPanel() {
   const perfil = useAuthStore(state => state.perfil)
-  const esLogistica = perfil?.rol === 'logistica'
+  const esAdmin = perfil?.rol === 'administracion'
   const { data: empleados = [] } = useConfigEmpleados()
   const { data, isFetching, refetch } = useMarcajeHoy()
   const marcarEntrada = useMarcarEntrada()
@@ -18,7 +18,7 @@ export default function MarcajeLogisticaPanel() {
     () => new Map((data?.registros || []).map(r => [r.empleado_id, r])),
     [data?.registros],
   )
-  if (!esLogistica) return null
+  if (!esAdmin) return null
 
   const registro = empleadoId ? registros.get(empleadoId) : null
   const entradaMarcada = !!registro?.hora_entrada
@@ -30,7 +30,7 @@ export default function MarcajeLogisticaPanel() {
       <div className="flex items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-black text-slate-800">Marcaje operativo</h3>
-          <p className="text-xs text-slate-500">Logística registra por el empleado. La hora la fija el servidor.</p>
+          <p className="text-xs text-slate-500">Administración registra por el empleado. La hora la fija el servidor.</p>
         </div>
         <button onClick={() => refetch()} disabled={isFetching} title="Actualizar marcajes"
           className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-50">

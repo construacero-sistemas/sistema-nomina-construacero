@@ -4,7 +4,7 @@ Este directorio pertenece al proyecto independiente de Nómina. El destino infor
 
 ## Orden y alcance
 
-`supabase/config.toml` fija el ref. `wlxcclidnwketrghqaxs`; después de autenticar la CLI, `supabase db push` usará ese destino. Aplicar `001_nomina_base_contract.sql` y luego las migraciones `208` a `220` en orden, usando Supabase CLI o el pipeline aprobado. El lote crea:
+`supabase/config.toml` fija el ref. `wlxcclidnwketrghqaxs`; después de autenticar la CLI, `supabase db push` usará ese destino. Aplicar `001_nomina_base_contract.sql` y luego las migraciones `208` a `223` en orden, usando Supabase CLI o el pipeline aprobado. El lote crea:
 
 - configuración y snapshots del empleado;
 - asistencia y marcaje operativo idempotente;
@@ -12,7 +12,8 @@ Este directorio pertenece al proyecto independiente de Nómina. El destino infor
 - calendarios de feriados y horarios rotativos;
 - conceptos, reglas legales versionadas y snapshots de tasas;
 - bandera `nomina_v2_enabled` apagada por defecto;
-- guardrails SQL de integridad cross-tenant (migración `220_nomina_integrity_guardrails.sql`).
+- guardrails SQL de integridad cross-tenant (migración `220_nomina_integrity_guardrails.sql`);
+- Finanzas, resumen agregado filtrable, anulación auditada y guard de rol único (migraciones `221` a `223`).
 
 El Worker usa service role para operaciones de negocio, por lo que cada handler debe conservar el filtro explícito `cuenta_id` y el guard de tenant. RLS no es un sustituto de ese filtro.
 
@@ -54,10 +55,10 @@ No activar el flag en producción hasta comprobar:
 
 1. proyecto Supabase nuevo y URL/anon key correctos;
 2. service role almacenado únicamente como secreto del Worker;
-3. migraciones aplicadas y verificadas en un entorno de staging;
+3. migraciones aplicadas y verificadas directamente en el proyecto destino;
 4. contrato de operadores y empleados sincronizados instalado;
 5. dos tenants de prueba sin lecturas cruzadas;
-6. roles probados: administración, jefe, desarrollador y logística;
+6. único rol probado y permitido: `administracion`;
 7. respaldo y restauración verificados;
 8. reglas legales con fuente, versión, vigencia y aprobación;
 9. tasas con fuente, fecha, valor y aprobación;
@@ -86,7 +87,7 @@ No se incluyen credenciales ni proveedores implícitos para BCV, Euro o USDT. An
 
 ## Estado de la instancia entregada
 
-El proyecto `wlxcclidnwketrghqaxs` quedó enlazado y `supabase db push` confirmó que el remoto está al día. `supabase migration list` mostró coincidencia local/remota para `001` y `208`–`220`. Esto valida la aplicación del esquema, no sustituye la prueba funcional de RLS con dos tenants.
+El proyecto `wlxcclidnwketrghqaxs` quedó enlazado y la CLI confirma coincidencia local/remota para `001` y `208`–`223`. Las migraciones `221`–`223` se aplicaron directamente y una consulta de contrato confirmó tablas con RLS, la función `finanzas_resumen` y el trigger de rol único; esto no sustituye la prueba funcional de RLS con dos cuentas.
 
 Para cambios futuros en el repositorio destino:
 

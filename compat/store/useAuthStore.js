@@ -7,12 +7,10 @@ import supabase from '../services/supabase/client'
 import { apiUrl, isLocalApi } from '../services/apiBase'
 import queryClient from '../lib/queryClient'
 import { indexedDbPersister } from '../lib/queryPersister'
-
 const AUTH_DEBUG = import.meta.env.DEV && import.meta.env.VITE_AUTH_DEBUG === 'true'
 const authLog = (...args) => {
   if (AUTH_DEBUG) console.debug(...args)
 }
-
 // ─── Mapear mensajes de error de Supabase a español ───────────────────────────
 function traducirError(mensaje) {
   if (!mensaje) return 'Ocurrió un error inesperado'
@@ -26,13 +24,11 @@ function traducirError(mensaje) {
     return 'Error de conexión. Verifica tu internet e intenta de nuevo'
   return 'Error al iniciar sesión. Intenta de nuevo'
 }
-
 // ─── Helper: obtener token de sesión actual (con refresh si está expirado) ────
 async function getAccessToken() {
   const { data } = await supabase.auth.getSession()
   const token = data?.session?.access_token
   if (!token) return null
-
   // Verificar si el token está próximo a expirar (menos de 60s de vida)
   const exp = data.session.expires_at // epoch en segundos
   if (exp && exp - Math.floor(Date.now() / 1000) < 60) {
@@ -45,7 +41,6 @@ async function getAccessToken() {
   }
   return token
 }
-
 // ─── Cache por usuario en localStorage ────────────────────────────────────────
 function getStorageKeys(userId) {
   const suffix = userId ? `-${userId}` : ''
@@ -54,10 +49,8 @@ function getStorageKeys(userId) {
     operatorsKey: `listo_operators_cache${suffix}`
   }
 }
-
 const CACHE_MAX_AGE_PERFIL = 1000 * 60 * 60 * 24 // 24h
 const CACHE_MAX_AGE_OPERATORS = 1000 * 60 * 60 * 24 * 7 // 7 días
-
 function guardarPerfilCache(perfil, userId) {
   try {
     const { perfilKey } = getStorageKeys(userId)
@@ -68,7 +61,6 @@ function guardarPerfilCache(perfil, userId) {
     }
   } catch { /* ignorar */ }
 }
-
 function leerPerfilCache(userId) {
   try {
     const { perfilKey } = getStorageKeys(userId)
@@ -83,7 +75,6 @@ function leerPerfilCache(userId) {
     return cached
   } catch { return null }
 }
-
 function guardarOperadoresCache(operators, userId) {
   try {
     const { operatorsKey } = getStorageKeys(userId)
@@ -92,7 +83,6 @@ function guardarOperadoresCache(operators, userId) {
     }
   } catch { /* ignorar */ }
 }
-
 function leerOperadoresCache(userId) {
   try {
     const { operatorsKey } = getStorageKeys(userId)
@@ -106,10 +96,8 @@ function leerOperadoresCache(userId) {
     return cached.operators ?? null
   } catch { return null }
 }
-
 // Los PIN permanecen en el Worker. El navegador solo recibe datos de presentación
 // y nunca valida credenciales localmente ni persiste hashes en localStorage.
-
 // ─── Descargar y cachear operadores en background ────────────────────────────
 async function fetchAndCacheOperators(token, userId) {
   try {
@@ -124,7 +112,6 @@ async function fetchAndCacheOperators(token, userId) {
     }
   } catch { /* ignorar — no crítico */ }
 }
-
 // ─── Store ────────────────────────────────────────────────────────────────────
 const useAuthStore = create((set, get) => ({
   // Estado
@@ -137,7 +124,6 @@ const useAuthStore = create((set, get) => ({
   _cargandoPerfil: false,
   _logoutManual: false,
   _refreshingToken: false, // guard para evitar múltiples refreshSession concurrentes
-
   // ─── Inicializar: suscribirse a cambios de auth ────────────────────────────
   initialize: () => {
     authLog('[AUTH] initialize() llamado')
@@ -149,7 +135,6 @@ const useAuthStore = create((set, get) => ({
       if (sbKey && localStorage.getItem(sbKey)) haySession = true
     } catch { /* ignorar */ }
     authLog('[AUTH] haySession:', haySession)
-
     // ── Offline awareness ──
     // Obtener userId de la sesión (si existe) para leer cache correcto
     let currentUserId = null
@@ -161,18 +146,15 @@ const useAuthStore = create((set, get) => ({
         currentUserId = sbData?.user?.id
       }
     } catch { /* ignorar */ }
-
     const estaOffline = !navigator.onLine
     const perfilCacheado = leerPerfilCache(currentUserId)
     set({ offline: estaOffline })
-
     if (estaOffline && perfilCacheado) {
       authLog('[AUTH] offline detectado con perfil cacheado — modo sin conexión activado')
       // No limpiar el cache — se restaurará en INITIAL_SESSION
     }
     // El cache NO se borra online: persiste hasta logout/switchOut explícito.
     // Esto permite el fallback en switchOperator cuando la red falla.
-
     // Listeners de conectividad
     // Debounce: en redes inestables el evento 'online' se dispara en ráfagas;
     // solo invalidar una vez que la conexión se estabilice (3s sin cortes)
@@ -194,7 +176,6 @@ const useAuthStore = create((set, get) => ({
     }
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
-
     const timeoutId = setTimeout(() => {
       const state = get()
       authLog('[AUTH] timeout principal disparado — initialized:', state.initialized, 'user:', !!state.user, 'perfil:', !!state.perfil)
@@ -203,7 +184,6 @@ const useAuthStore = create((set, get) => ({
         set({ initialized: true })
       }
     }, haySession ? 3000 : 1500)
-
     // Segundo timeout: si hay user pero no perfil después de 12s, limpiar para evitar loop
     const safetyTimeoutId = setTimeout(() => {
       const { user, perfil, initialized } = get()
@@ -213,7 +193,6 @@ const useAuthStore = create((set, get) => ({
         set({ initialized: true, perfil: null })
       }
     }, 6000)
-
     authLog('[AUTH] registrando onAuthStateChange...')
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -223,7 +202,6 @@ const useAuthStore = create((set, get) => ({
         if (session?.access_token) {
           try { supabase.realtime.setAuth(session.access_token) } catch { /* noop */ }
         }
-
         if (event === 'INITIAL_SESSION') {
           try {
             if (session?.user) {
@@ -243,7 +221,6 @@ const useAuthStore = create((set, get) => ({
             set({ initialized: true, _cargandoPerfil: false })
           }
         }
-
         if (event === 'SIGNED_IN' && session?.user) {
           // Solo actualizar user si cambió (evitar re-renders innecesarios)
           const currentUser = get().user
@@ -253,7 +230,6 @@ const useAuthStore = create((set, get) => ({
           // SEGURIDAD: NO cargar perfil automáticamente desde metadata.
           // El perfil solo se establece a través de switchOperator() (PIN).
         }
-
         if (event === 'SIGNED_OUT') {
           // Si estamos offline y no fue un logout manual, ignorar el SIGNED_OUT.
           // Supabase puede disparar este evento cuando falla el refresco del token por red,
@@ -270,7 +246,6 @@ const useAuthStore = create((set, get) => ({
               return
             }
           }
-
           // Si es manual, o si no hay perfil de operador activo (limpieza real)
           const wasLoggedIn = get().user !== null && !esManual
           const userId = get().user?.id
@@ -280,7 +255,6 @@ const useAuthStore = create((set, get) => ({
             set({ error: 'Tu sesión ha expirado. Inicia sesión nuevamente para no perder tu trabajo.' })
           }
         }
-
         if (event === 'TOKEN_REFRESHED' && session?.user) {
           // Solo actualizar user si realmente cambió (evitar re-renders innecesarios)
           const currentUser = get().user
@@ -292,7 +266,6 @@ const useAuthStore = create((set, get) => ({
         }
       }
     )
-
     return () => {
       clearTimeout(timeoutId)
       clearTimeout(safetyTimeoutId)
@@ -302,7 +275,6 @@ const useAuthStore = create((set, get) => ({
       subscription.unsubscribe()
     }
   },
-
   // ─── Cargar perfil del operador desde public.usuarios ──────────────────────
   // Lee operator_id de app_metadata. Si no hay → perfil queda null (requiere selección).
   _cargarPerfil: async (authUser) => {
@@ -312,36 +284,23 @@ const useAuthStore = create((set, get) => ({
       set({ user: authUser, perfil: null, error: null })
       return
     }
-
-    // Desarrollador — no existe en tabla usuarios, perfil sintético
+    // El acceso virtual/developer no existe en este producto: solo se admite
+    // un operador persistido con rol administración y PIN validado por Worker.
     if (operatorId === '00000000-0000-0000-0000-000000000000') {
-      const perfilDev = {
-        id: operatorId,
-        nombre: 'Desarrollador',
-        email: authUser.email,
-        rol: 'desarrollador',
-        activo: true,
-        color: '#8b5cf6',
-        _isSuperAdmin: true,
-      }
-      guardarPerfilCache(perfilDev, authUser.id)
-      set({ user: authUser, perfil: perfilDev, error: null })
+      guardarPerfilCache(null, authUser.id)
+      set({ user: authUser, perfil: null, error: 'Este sistema solo admite el rol administración.' })
       return
     }
-
     const queryPromise = supabase
       .from('usuarios')
       .select('id, nombre, rol, activo, color, markup_pct, comision_pct, comision_pct_cabilla, es_externo')
       .eq('id', operatorId)
       .single()
-
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('timeout_perfil')), 5000)
     )
-
     const { data, error } = await Promise.race([queryPromise, timeoutPromise])
       .catch(err => ({ data: null, error: err }))
-
     if (error || !data) {
       guardarPerfilCache(null, authUser.id)
       set({
@@ -351,7 +310,11 @@ const useAuthStore = create((set, get) => ({
       })
       return
     }
-
+    if (data.rol !== 'administracion') {
+      guardarPerfilCache(null, authUser.id)
+      set({ user: authUser, perfil: null, error: 'Este sistema solo admite el rol administración.' })
+      return
+    }
     if (!data.activo) {
       // Operador desactivado — limpiar metadata y volver a selección
       try {
@@ -371,7 +334,6 @@ const useAuthStore = create((set, get) => ({
       })
       return
     }
-
     const perfilNuevo = {
       id: data.id,
       nombre: data.nombre,
@@ -401,23 +363,18 @@ const useAuthStore = create((set, get) => ({
     guardarPerfilCache(perfilNuevo, authUser.id)
     set({ user: authUser, perfil: perfilNuevo, error: null })
   },
-
   // ─── Login del negocio (email + contraseña) ───────────────────────────────
   login: async (email, password) => {
     if (get().loading) return { ok: false }
-
     set({ loading: true, error: null, _cargandoPerfil: true })
-
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
     })
-
     if (error) {
       set({ loading: false, error: traducirError(error.message), _cargandoPerfil: false })
       return { ok: false }
     }
-
     // Si entra una cuenta de negocio distinta, purgar el cache persistido para
     // no arrastrar datos de la cuenta anterior (inventario/config son por cuenta)
     const prevUserId = get().user?.id
@@ -425,22 +382,16 @@ const useAuthStore = create((set, get) => ({
       queryClient.clear()
       indexedDbPersister.removeClient().catch(() => {})
     }
-
     // Setear user — el perfil SOLO se establece al seleccionar operador con PIN
     set({ user: data.user, loading: false, _cargandoPerfil: false, error: null })
-
     // La pantalla de selección ya carga la lista desde su caché/RPC; no repetir
     // una segunda lectura a Supabase en cada login solo para precargar operadores.
-
     return { ok: true }
   },
-
   // ─── Seleccionar operador con PIN ─────────────────────────────────────────
   switchOperator: async (operatorId, pin) => {
     if (get().loading) return { ok: false }
-
     set({ loading: true, error: null })
-
     // Helper para hacer la llamada al worker
     const callWorker = async (token) => {
       return fetch(apiUrl('/api/auth/switch-operator'), {
@@ -452,7 +403,6 @@ const useAuthStore = create((set, get) => ({
         body: JSON.stringify({ operator_id: operatorId, pin }),
       })
     }
-
     // Vite/Wrangler puede devolver una respuesta 500 vacía cuando el Worker
     // local no está levantado; no asumir que toda respuesta es JSON.
     const readResponseJson = async (response) => {
@@ -460,17 +410,14 @@ const useAuthStore = create((set, get) => ({
       if (!text) return {}
       try { return JSON.parse(text) } catch { return {} }
     }
-
     try {
       let token = await getAccessToken()
       if (!token) {
         set({ loading: false, error: 'No hay sesión activa. Inicia sesión primero.' })
         return { ok: false }
       }
-
       let res = await callWorker(token)
       let result = await readResponseJson(res)
-
       // Un 401 puede venir de un JWT expirado o de un Worker local sin
       // `.dev.vars`. Solo reintentar una vez y nunca validar el PIN en el navegador.
       if (!res.ok && res.status === 401 && result.error?.includes('autenticado') && !isLocalApi) {
@@ -491,7 +438,6 @@ const useAuthStore = create((set, get) => ({
           throw new Error(e.message || 'refresh_failed_offline_fallback')
         }
       }
-
       if (!res.ok) {
         // Si el worker está caído (500) → intentar validación offline con cache
         // Esto evita falsos "PIN incorrecto" cuando wrangler no corre localmente
@@ -516,7 +462,6 @@ const useAuthStore = create((set, get) => ({
         set({ loading: false, error: result.error || 'PIN incorrecto' })
         return { ok: false }
       }
-
       // Setear perfil inmediatamente con datos del worker (sin esperar refresh)
       const op = result.operator
       if (op) {
@@ -527,7 +472,6 @@ const useAuthStore = create((set, get) => ({
         queryClient.invalidateQueries({ queryKey: ['dashboard_metricas'] })
         queryClient.invalidateQueries({ queryKey: ['dashboard_metrics'] })
         queryClient.invalidateQueries({ queryKey: ['cuentas_por_cobrar'] })
-
         const perfilOp = {
           id: op.id,
           nombre: op.nombre,
@@ -543,7 +487,6 @@ const useAuthStore = create((set, get) => ({
         guardarPerfilCache(perfilOp, get().user?.id)
         set({ perfil: perfilOp, loading: false, error: null })
       }
-
       // Refrescar JWT en background — no bloquear al usuario
       // Guard: solo un refresh concurrente a la vez para evitar bucle de eventos
       if (!get()._refreshingToken) {
@@ -553,7 +496,6 @@ const useAuthStore = create((set, get) => ({
           .catch(() => { /* ignorar — perfil ya está seteado */ })
           .finally(() => set({ _refreshingToken: false }))
       }
-
       return { ok: true }
     } catch (err) {
       authLog('[AUTH] Error en switchOperator, intentando fallback offline:', err.message);
@@ -567,11 +509,9 @@ const useAuthStore = create((set, get) => ({
       return { ok: false }
     }
   },
-
   // ─── Cambiar de operador (volver a selección) ─────────────────────────────
   switchOut: async () => {
     set({ loading: true, error: null })
-
     try {
       const token = await getAccessToken()
       if (token) {
@@ -580,10 +520,8 @@ const useAuthStore = create((set, get) => ({
           headers: { Authorization: `Bearer ${token}` },
         })
       }
-
       // Refrescar para limpiar app_metadata del JWT
       await supabase.auth.refreshSession()
-
       // Limpiar cache de datos del operador anterior (memoria + persistido)
       queryClient.clear()
       indexedDbPersister.removeClient().catch(() => {})
@@ -595,7 +533,6 @@ const useAuthStore = create((set, get) => ({
       set({ perfil: null, loading: false })
     }
   },
-
   // ─── Reset de contraseña (email) ───────────────────────────────────────────
   resetPassword: async (email) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
@@ -603,7 +540,6 @@ const useAuthStore = create((set, get) => ({
     })
     return { ok: !error, error: error?.message }
   },
-
   // ─── Logout completo ─────────────────────────────────────────────────────
   logout: async () => {
     // Limpiar operador antes de cerrar sesión. El endpoint puede rechazar un
@@ -617,7 +553,6 @@ const useAuthStore = create((set, get) => ({
         })
       }
     } catch { /* ignorar: la limpieza local no depende del Worker */ }
-
     set({ _logoutManual: true })
     const userId = get().user?.id
     try {
@@ -638,9 +573,7 @@ const useAuthStore = create((set, get) => ({
     }
     return { ok: true }
   },
-
   // ─── Limpiar error manualmente ─────────────────────────────────────────────
   limpiarError: () => set({ error: null }),
 }))
-
 export default useAuthStore

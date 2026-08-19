@@ -2,22 +2,24 @@
 
 Aplicación independiente para gestionar nómina, asistencia, pagos y finanzas de Construacero Carabobo C.A. El paquete no monta cotizaciones, inventario, clientes, despachos ni la ficha de Personal del POS.
 
-**Entrega actual:** frontend y API publicados en `https://nomina-construacero.vercel.app` (Nómina y Finanzas Construacero Carabobo); esquema Supabase `wlxcclidnwketrghqaxs` aplicado y verificado local=remoto.
+**Estado de entrega:** frontend/API base publicados en `https://nomina-construacero.vercel.app`; esta revisión añade Finanzas y el guard de rol único. Las migraciones 221–223 fueron aplicadas directamente en el proyecto Supabase indicado y verificadas con la CLI y una consulta de contrato.
 
 ## Alcance entregado
 
 - Empleados personales sincronizados por cuenta, sin duplicar el módulo Personal.
 - Configuración de salario diario, cargo, jornada y horarios.
 - Asistencia manual y masiva con bloqueo de períodos cerrados.
-- Marcaje de entrada/salida para logística con hora del servidor e idempotencia.
+- Marcaje de entrada/salida administrativo con hora del servidor e idempotencia.
 - Feriados y horarios selectivos/rotativos por cuenta.
 - Períodos semanales, quincenales y mensuales.
 - Cálculo de horas normales, extras, sábados, feriados, bonos y deducciones.
 - Cierre, reapertura controlada, pago parcial/total y reversión auditada.
 - Recibos y planilla PDF.
-- Conceptos, reglas legales versionadas y snapshots de tasas.
+- Configuración administrativa de feriados, horarios rotativos, conceptos, reglas legales versionadas y snapshots de tasas.
 - RLS, guardrails de tenant, límites de body, CORS explícito y headers de seguridad.
 - UI responsive alineada con Construacero: login premium, drawer móvil, sidebar desktop, navegación táctil y tarjetas móviles para historial.
+- Un único rol operativo `administracion`, con acceso integral a Nómina, marcaje y Finanzas; roles heredados quedan bloqueados server-side.
+- Libro financiero con ingresos, egresos, categorías, tasas congeladas, resumen por rango, CSV de la página actual y anulación auditada sin borrado.
 
 ## Inicio local
 
@@ -54,7 +56,6 @@ No uses `npm run dev:vite` para probar el flujo completo: ese comando solo levan
 - `NOMINA_TIMEZONE` — por defecto `America/Caracas`
 - `NOMINA_ALLOWED_ORIGINS` — lista exacta separada por comas
 - `ENABLE_DEV_MASTER_PIN=false`
-- `ENABLE_DEVELOPER_ACCESS=false`
 
 Las plantillas no contienen credenciales. El guardrail `npm run check:project` comprueba que no haya secretos conocidos, imports fuera del paquete ni migraciones ausentes.
 
@@ -80,8 +81,11 @@ Este paquete debe instalarse en un proyecto Supabase independiente del POS. Apli
 1. `001_nomina_base_contract.sql`
 2. `208` a `219` en orden numérico
 3. `220_nomina_integrity_guardrails.sql`
+4. `221_finanzas_movimientos.sql`
+5. `222_finanzas_admin_role_guard.sql`
+6. `223_finanzas_resumen_filtros.sql`
 
-El lote crea operadores, configuración de cuenta, empleados sincronizados, nómina, asistencia, calendarios, conceptos, reglas legales, tasas, auditoría y RLS. La bandera `nomina_v2_enabled` permanece apagada por defecto.
+El lote crea operadores, configuración de cuenta, empleados sincronizados, nómina, asistencia, calendarios, conceptos, reglas legales, tasas, auditoría, Finanzas y RLS. La migración 222 bloquea altas/cambios de roles distintos de `administracion`; la bandera `nomina_v2_enabled` permanece apagada por defecto.
 
 ### Contrato de empleados
 
@@ -98,7 +102,7 @@ Nómina no debe editar ni borrar la ficha de Personal. El endpoint `/api/nomina/
 
 ### Seguridad de tenant
 
-El Worker usa service role para operaciones de negocio, pero cada handler exige un operador activo, resuelve `cuenta_id`, filtra todas las consultas y registra auditoría. La migración 220 agrega FKs y triggers que rechazan enlaces entre cuentas. RLS es una segunda barrera, no un reemplazo del filtro del Worker.
+El Worker usa service role para operaciones de negocio, pero cada handler exige un operador activo `administracion`, resuelve `cuenta_id`, filtra todas las consultas y registra auditoría. Las migraciones 220–223 agregan FKs, triggers, RLS financiera, el guard de rol único y filtros de resumen financiero. RLS es una segunda barrera, no un reemplazo del filtro del Worker.
 
 ## CI y definición de listo
 
@@ -120,4 +124,4 @@ El paquete está **listo para conectar** cuando se entreguen únicamente:
 5. fuente aprobada de BCV/Euro/USDT y reglas legales vigentes;
 6. repositorio destino y secretos de despliegue.
 
-El flag `nomina_v2_enabled` permanece apagado hasta completar las pruebas funcionales de staging, la validación de RLS y la aprobación contable. Para operación, rollback y rotación de secretos, ver `docs/OPERACIONES.md`, `docs/PLAN_MAESTRO.md` y `docs/AUDITORIA_FINAL.md`.
+El flag `nomina_v2_enabled` permanece apagado hasta completar las pruebas funcionales directas contra el proyecto enlazado, la validación de RLS y la aprobación contable. Para operación, rollback y rotación de secretos, ver `docs/OPERACIONES.md`, `docs/PLAN_MAESTRO.md` y `docs/AUDITORIA_FINAL.md`.

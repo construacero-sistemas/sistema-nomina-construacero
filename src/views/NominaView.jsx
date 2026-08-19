@@ -1,24 +1,26 @@
 // src/views/NominaView.jsx
 // Módulo de nómina: empleados, asistencia, períodos e historial.
 import { useState } from 'react'
-import { Wallet, Users, CalendarClock, ClipboardList, Archive } from 'lucide-react'
+import { Wallet, Users, CalendarClock, ClipboardList, Archive, Settings2 } from 'lucide-react'
 import useAuthStore from '../../compat/store/useAuthStore.js'
 import PageHeader from '../../compat/components/ui/PageHeader.jsx'
 import TabEmpleados from '../components/nomina/TabEmpleados.jsx'
 import TabAsistencia from '../components/nomina/TabAsistencia.jsx'
 import TabPeriodos from '../components/nomina/TabPeriodos.jsx'
 import TabHistorial from '../components/nomina/TabHistorial.jsx'
+import TabConfiguracion from '../components/nomina/TabConfiguracion.jsx'
 
 const TABS = [
   { id: 'empleados', label: 'Empleados', short: 'Emple.', icon: Users },
   { id: 'asistencia', label: 'Asistencia', short: 'Asist.', icon: CalendarClock },
   { id: 'periodos', label: 'Períodos', short: 'Períod.', icon: ClipboardList, soloNomina: true },
   { id: 'historial', label: 'Historial', short: 'Hist.', icon: Archive, soloNomina: true },
+  { id: 'configuracion', label: 'Configuración', short: 'Config.', icon: Settings2, soloNomina: true },
 ]
 
 export default function NominaView() {
   const perfil = useAuthStore(s => s.perfil)
-  const esAdmin = ['administracion', 'jefe', 'desarrollador'].includes(perfil?.rol)
+  const esAdmin = perfil?.rol === 'administracion'
   const tabsVisibles = TABS.filter(t => !t.soloNomina || esAdmin)
   const [tab, setTab] = useState(esAdmin ? 'empleados' : 'asistencia')
   const tabActivo = tabsVisibles.some(t => t.id === tab) ? tab : tabsVisibles[0].id
@@ -28,7 +30,7 @@ export default function NominaView() {
       <PageHeader
         icon={Wallet}
         title="Nómina"
-        subtitle={esAdmin ? 'Gestión de salarios, asistencia y liquidaciones' : 'Registro de asistencia (solo lectura en nómina)'}
+        subtitle="Gestión integral de salarios, asistencia y liquidaciones"
       />
 
       <div className="flex gap-1 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-hide" role="tablist" aria-label="Secciones de nómina">
@@ -51,6 +53,7 @@ export default function NominaView() {
         {tabActivo === 'asistencia' && <TabAsistencia esAdmin={esAdmin} />}
         {tabActivo === 'periodos' && esAdmin && <TabPeriodos esAdmin={esAdmin} />}
         {tabActivo === 'historial' && esAdmin && <TabHistorial />}
+        {tabActivo === 'configuracion' && esAdmin && <TabConfiguracion />}
       </div>
     </div>
   )

@@ -11,13 +11,15 @@ async function readProjectFile(path) {
 
 describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
   it('conserva la interfaz y el flujo de login del sistema de referencia', async () => {
-    const [indexHtml, loginSource, pinModalSource, shellSource, authStoreSource, employeeModalSource] = await Promise.all([
+    const [indexHtml, loginSource, pinModalSource, shellSource, authStoreSource, employeeModalSource, userCardSource, pwaSource] = await Promise.all([
       readProjectFile('index.html'),
       readProjectFile('compat/modules/auth/LoginPage.jsx'),
       readProjectFile('compat/components/auth/LoginPinModal.jsx'),
       readProjectFile('src/NominaApp.jsx'),
       readProjectFile('compat/store/useAuthStore.js'),
       readProjectFile('src/components/nomina/EmpleadoConfigModal.jsx'),
+      readProjectFile('compat/modules/auth/UserCard.jsx'),
+      readProjectFile('compat/modules/auth/PwaInstallButton.jsx'),
     ])
 
     expect(indexHtml).toContain('<title>Nómina y Finanzas · Construacero Carabobo</title>')
@@ -44,10 +46,12 @@ describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
     expect(loginSource).toContain('Ingresa un correo válido.')
     expect(loginSource).toContain('login-form-error')
     expect(loginSource).toContain('operator-grid')
-    expect(loginSource).toContain('operator-card')
-    expect(loginSource).toContain('operator-card-avatar-wrap')
     expect(loginSource).toContain('operator-list-summary')
     expect(loginSource).toContain('await logout()')
+    expect(userCardSource).toContain('operator-card')
+    expect(userCardSource).toContain('operator-card-avatar-wrap')
+    expect(userCardSource).toContain('operator-card-role')
+    expect(pwaSource).toContain('beforeinstallprompt')
     expect(loginSource).not.toContain('supabase.auth.signOut')
     expect(loginSource).not.toContain('Completa este campo')
     expect(loginSource).not.toContain('Gestión de cotizaciones, inventario y clientes')

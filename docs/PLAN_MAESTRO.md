@@ -14,9 +14,9 @@
 | QA automatizado | Suite de handlers y motores de cálculo sin red real | ✅ Ejecutada |
 | Handoff | README, operación, CI, variables de entorno y contrato de integración | ✅ Ejecutada |
 | Egress Free | Caché acotado, proyecciones explícitas, límites, persistencia local y presupuesto operativo | ✅ Ejecutada |
-| Supabase real | Proyecto enlazado; migraciones 001 y 208–220 aplicadas y verificadas local=remoto | ✅ Ejecutada; falta la validación funcional con usuarios reales |
+| Supabase real | Proyecto enlazado; migraciones 001 y 208–223 aplicadas y verificadas directamente | ✅ Esquema aplicado; falta conciliación funcional con datos de negocio |
 | Legal/proveedores | Aprobar reglas fiscales y fuentes BCV/Euro/USDT | ⏳ Requiere decisión del negocio |
-| Deploy | Frontend y función API publicados en Vercel producción | ✅ Ejecutada; el push a GitHub sigue bloqueado por permisos |
+| Deploy | Frontend y función API publicados en Vercel producción | ⏳ Publicar esta revisión en GitHub/Vercel cuando corresponda |
 
 ## Arquitectura objetivo
 
@@ -46,7 +46,7 @@ Supabase independiente
 
 - Un operador sin `cuenta_id` es rechazado antes de consultar datos.
 - Un operador no puede leer ni mutar otra cuenta aunque conozca un UUID.
-- Logística puede marcar y consultar asistencia, pero nunca recibe salario, líneas ni períodos salariales.
+- El único rol operativo es `administracion`; puede marcar y consultar asistencia, nómina y Finanzas sin que existan rutas para roles heredados.
 - `pin_hash`, `pin_salt` y service role nunca aparecen en respuestas del frontend.
 - CORS solo admite orígenes exactos configurados.
 - Bodies mayores de 256 KiB son rechazados aun sin `Content-Length`.
@@ -73,15 +73,15 @@ Supabase independiente
 
 ## Handoff Supabase
 
-**Destino informado por el propietario:** `https://wlxcclidnwketrghqaxs.supabase.co` (ref. `wlxcclidnwketrghqaxs`). Las migraciones `001` y `208`–`220` ya fueron aplicadas; `supabase migration list` confirmó que todas las versiones locales coinciden con remoto. Las claves no se escriben en el repositorio.
+**Destino informado por el propietario:** `https://wlxcclidnwketrghqaxs.supabase.co` (ref. `wlxcclidnwketrghqaxs`). Las migraciones `001` y `208`–`220` fueron aplicadas en el ciclo anterior; las nuevas `221`, `222` y `223` fueron aplicadas directamente y verificadas con la CLI y consultas de contrato. Las claves no se escriben en el repositorio.
 
 1. Mantener Auth según la política del negocio.
-2. Para cambios futuros, aplicar nuevas migraciones con Supabase CLI en staging.
+2. Para cambios futuros, aplicar nuevas migraciones con Supabase CLI directamente al proyecto enlazado, después de revisar el SQL y respaldar datos operativos.
 3. Crear una cuenta de negocio en `auth.users`.
 4. Crear al menos dos operadores de prueba por cuenta con PIN PBKDF2 generado por un procedimiento controlado; no insertar PIN en claro.
 5. Sincronizar empleados mínimos desde Personal.
 6. Probar con dos cuentas: lecturas cruzadas deben devolver vacío/404/403.
-7. Verificar RLS con roles administración, jefe, desarrollador y logística.
+7. Verificar RLS con el único rol `administracion` y confirmar que cualquier rol heredado recibe 403.
 8. Ejecutar un período completo de prueba, conciliación contable y respaldo/restauración.
 9. Solo entonces habilitar `nomina_v2_enabled` para esa cuenta.
 
@@ -89,7 +89,7 @@ Supabase independiente
 
 **Repositorio destino informado:** `https://github.com/construacero-sistemas/sistema-nomina-construacero`.
 
-El commit local base `25e1876` quedó preparado y el remoto destino está configurado, pero GitHub rechazó el push con HTTP 403 para `luiggiberaldi`. El despliegue de producción sí quedó publicado en `https://nomina-construacero.vercel.app`; para cerrar el handoff del repositorio aún hace falta autenticar una cuenta con permiso de escritura y publicar los cambios posteriores de la extracción.
+El remoto destino está configurado, pero la publicación de esta auditoría requiere una cuenta con permiso de escritura; no se deben incluir secretos ni forzar cambios ajenos. El despliegue histórico de producción quedó publicado en `https://nomina-construacero.vercel.app`; las migraciones 221–223 deben validarse antes de activar Finanzas en producción.
 
 ## Fuera del alcance local
 

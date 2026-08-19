@@ -1,13 +1,15 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
-import { ArrowRightLeft, Menu, PanelLeftClose, PanelLeftOpen, Wallet, X } from 'lucide-react'
+import { ArrowRightLeft, Landmark, Menu, PanelLeftClose, PanelLeftOpen, Wallet, X } from 'lucide-react'
 import { Navigate, Outlet, Route, Routes, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../compat/store/useAuthStore.js'
 import LoginAvatar from '../compat/components/auth/LoginAvatar.jsx'
 import LoginPage from '../compat/modules/auth/LoginPage.jsx'
 import NominaView from './views/NominaView.jsx'
+import FinanzasView from './components/finanzas/FinanzasView.jsx'
 
 const NAV = [
   { to: '/nomina', label: 'Nómina', icon: Wallet },
+  { to: '/finanzas', label: 'Finanzas', icon: Landmark },
 ]
 
 function Loading() {
@@ -57,28 +59,10 @@ function Loading() {
 }
 
 function BadgeRol({ rol }) {
-  const estilos = {
-    administracion: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-    jefe: 'bg-amber-600/20 text-amber-400 border-amber-600/30',
-    desarrollador: 'bg-violet-500/20 text-violet-300 border-violet-500/30',
-    logistica: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-    supervisor: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
-    vendedor: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
-    vendedor_sin_comision: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
-  }
-  const textos = {
-    administracion: 'Administración',
-    jefe: 'Jefe',
-    desarrollador: 'Desarrollador',
-    logistica: 'Logística',
-    supervisor: 'Supervisor',
-    vendedor: 'Vendedor',
-    vendedor_sin_comision: 'Vendedor',
-  }
-
+  const autorizado = rol === 'administracion'
   return (
-    <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full border ${estilos[rol] ?? 'bg-white/10 text-white/50 border-white/10'}`}>
-      {textos[rol] ?? rol ?? 'Usuario'}
+    <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full border ${autorizado ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-white/10 text-white/50 border-white/10'}`}>
+      {autorizado ? 'Administración' : 'Sin acceso'}
     </span>
   )
 }
@@ -113,7 +97,7 @@ function Protected() {
   const user = useAuthStore(useCallback(state => state.user, []))
   const loadingProfile = useAuthStore(useCallback(state => state._cargandoPerfil, []))
   if (!initialized || (user && !perfil && loadingProfile)) return <Loading />
-  if (!perfil) return <Navigate to="/login" replace />
+  if (!perfil || perfil.rol !== 'administracion') return <Navigate to="/login" replace />
   return <Outlet />
 }
 
@@ -330,20 +314,24 @@ function Shell() {
         }}
       >
         <div className="flex items-center justify-around px-2 h-16">
-          <NavLink
-            to="/nomina"
-            className={({ isActive }) => `flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl transition-colors min-w-[64px] ${isActive ? 'text-amber-400' : 'text-white/50 active:text-white/80'}`}
-            style={{ touchAction: 'manipulation' }}
-          >
-            {({ isActive }) => (
-              <>
-                <div className={`p-1.5 rounded-lg transition-all ${isActive ? 'bg-amber-400/15' : ''}`}>
-                  <Wallet size={20} strokeWidth={isActive ? 2.5 : 2} />
-                </div>
-                <span className={`text-[10px] font-bold ${isActive ? 'text-amber-400' : ''}`}>Nómina</span>
-              </>
-            )}
-          </NavLink>
+          {NAV.map(item => {
+            const Icon = item.icon
+            return <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => `flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl transition-colors min-w-[64px] ${isActive ? 'text-amber-400' : 'text-white/50 active:text-white/80'}`}
+              style={{ touchAction: 'manipulation' }}
+            >
+              {({ isActive }) => (
+                <>
+                  <div className={`p-1.5 rounded-lg transition-all ${isActive ? 'bg-amber-400/15' : ''}`}>
+                    <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+                  </div>
+                  <span className={`text-[10px] font-bold ${isActive ? 'text-amber-400' : ''}`}>{item.label}</span>
+                </>
+              )}
+            </NavLink>
+          })}
           <button
             onClick={cambiarUsuario}
             className="flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl transition-colors min-w-[64px] text-white/50 active:text-white/80"
@@ -366,7 +354,7 @@ export default function NominaApp() {
   return (
     <Routes>
       <Route element={<Public />}><Route path="/login" element={<LoginPage />} /></Route>
-      <Route element={<Protected />}><Route element={<Shell />}><Route path="/nomina" element={<NominaView />} /></Route></Route>
+      <Route element={<Protected />}><Route element={<Shell />}><Route path="/nomina" element={<NominaView />} /><Route path="/finanzas" element={<FinanzasView />} /></Route></Route>
       <Route path="*" element={<Navigate to="/nomina" replace />} />
     </Routes>
   )

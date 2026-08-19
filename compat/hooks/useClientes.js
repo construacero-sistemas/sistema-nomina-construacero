@@ -264,8 +264,8 @@ export function useVendedores() {
         .order('nombre', { ascending: true })
 
       if (error) throw error
-      // Ocultar cuenta "Super Admin" y usuarios "desarrollador" del sistema
-      return (data ?? []).filter(u => u.nombre !== 'Super Admin' && u.rol?.toLowerCase() !== 'desarrollador' && u.nombre?.toLowerCase() !== 'desarrollador')
+      // Este paquete solo opera con perfiles de administración.
+      return (data ?? []).filter(u => u.rol?.toLowerCase() === 'administracion')
     },
     staleTime: 1000 * 60 * 10,
     gcTime: 1000 * 60 * 30,

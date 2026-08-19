@@ -1,9 +1,6 @@
 // api/lib/auth.js
 import { jsonError, isValidUuid } from './utils.js'
 
-// UUID especial para Super Admin virtual (easter egg del logo)
-export const SUPER_ADMIN_UUID = '00000000-0000-0000-0000-000000000000'
-
 // ─── Caché en memoria del isolate para verificación de auth ────────────────────
 // Cada petición API pagaba 2-3 round-trips a Supabase solo para validar el token
 // y el operador. Con TTL corto (60s) las ráfagas de peticiones reutilizan la
@@ -121,12 +118,11 @@ export async function verifyAuth(request, env) {
   return user;
 }
 
-// Obtiene el rol del operador (supervisor | vendedor | administracion | desarrollador | null)
+// Obtiene el único rol operativo permitido; los roles heredados se tratan como null.
 export async function getOperatorRole(operatorId, env, accountId) {
   // El rol nunca se resuelve por UUID aislado: el mismo Worker atiende varios
   // tenants y una consulta sin cuenta_id puede cruzar contexto entre cuentas.
-  if (!operatorId || !isValidUuid(accountId)) return null;
-  if (operatorId === SUPER_ADMIN_UUID) return 'desarrollador';
+  if (!operatorId || !isValidUuid(accountId)) return null;;
   const operatorCacheKey = `${accountId}:${operatorId}`;
   const cached = cacheGet(_operatorCache, operatorCacheKey);
   if (cached) return cached.rol ?? null;
@@ -141,19 +137,18 @@ export async function getOperatorRole(operatorId, env, accountId) {
   );
   if (!res.ok) return null;
   const rows = await res.json();
-  return rows.length === 1 ? rows[0].rol : null;
+  const role = rows.length === 1 ? rows[0].rol : null;
+  return role === 'administracion' ? role : null;
 }
 
-// Verifica que el operador sea supervisor consultando la tabla usuarios.
+// Este paquete tiene un único rol operativo. Se conservan ambos nombres de
+// compatibilidad para consumidores antiguos, pero nunca amplían autorización.
 export async function verifySupervisor(operatorId, env, accountId) {
-  const rol = await getOperatorRole(operatorId, env, accountId);
-  return rol === 'supervisor' || rol === 'jefe' || rol === 'administracion' || rol === 'desarrollador';
+  return (await getOperatorRole(operatorId, env, accountId)) === 'administracion';
 }
 
-// Verifica supervisor O administracion O jefe (para endpoints compartidos como reportes).
 export async function verifyPrivileged(operatorId, env, accountId) {
-  const rol = await getOperatorRole(operatorId, env, accountId);
-  return rol === 'supervisor' || rol === 'jefe' || rol === 'administracion' || rol === 'desarrollador';
+  return (await getOperatorRole(operatorId, env, accountId)) === 'administracion';
 }
 
 // Valida auth + operator_id, devuelve { user, operador, ip } o Response de error
@@ -169,24 +164,8 @@ export async function validateOperator(request, env, { requireSupervisor = false
     return { error: jsonError('El operador seleccionado no coincide con la sesión. Vuelve a seleccionar operador.', 401, request) };
   }
 
-  // Desarrollador virtual — no existe en tabla usuarios
-  if (user.operator_id === SUPER_ADMIN_UUID) {
-    // El operador virtual debe conservar la cuenta autenticada para que las
-    // operaciones multi-tenant del desarrollador no queden sin contexto.
-    const operador = {
-      id: SUPER_ADMIN_UUID,
-      nombre: 'Desarrollador',
-      rol: 'desarrollador',
-      color: '#8b5cf6',
-      cuenta_id: user.id,
-      markup_pct: null,
-      es_externo: false,
-    };
-    return { user, operador, headers: supaServiceHeaders(env), ip };
-  }
-
   const h = supaServiceHeaders(env);
-  const ROLES_PRIVILEGIADOS = ['supervisor', 'jefe', 'logistica', 'administracion', 'desarrollador'];
+  const ADMIN_ROLE = 'administracion';
   try {
     // Caché 60s por operador — evita re-consultar usuarios en cada petición.
     // El filtro de rol se aplica en código para poder compartir la entrada
@@ -213,8 +192,11 @@ export async function validateOperator(request, env, { requireSupervisor = false
     if (!operador) {
       return { error: jsonError('Operador no encontrado o inactivo', 403, request) };
     }
-    if (requireSupervisor && !ROLES_PRIVILEGIADOS.includes(operador.rol)) {
-      return { error: jsonError('Solo supervisores, logistica o administracion pueden realizar esta acción', 403, request) };
+    if (operador.rol !== ADMIN_ROLE) {
+      return { error: jsonError('Este sistema solo admite el rol administración', 403, request) };
+    }
+    if (requireSupervisor && operador.rol !== ADMIN_ROLE) {
+      return { error: jsonError('Se requiere el rol administración', 403, request) };
     }
 
     return { user, operador, headers: h, ip };

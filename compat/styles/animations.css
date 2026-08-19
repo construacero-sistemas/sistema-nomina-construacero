@@ -1,0 +1,19 @@
+@keyframes pinModalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pinModalIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes pinModalShake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+@keyframes loginPanelIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeSlideUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes logoReveal { from { opacity: 0; transform: scale(.85) translateY(-20px); filter: blur(8px); } to { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); } }
+@keyframes square-animation { 0%,10.5% { left: 0; top: 0; } 12.5%,23% { left: 11px; top: 0; } 25%,35.5% { left: 22px; top: 0; } 37.5%,48% { left: 22px; top: 11px; } 50%,60.5% { left: 11px; top: 11px; } 62.5%,73% { left: 11px; top: 22px; } 75%,85.5% { left: 0; top: 22px; } 87.5%,98% { left: 0; top: 11px; } 100% { left: 0; top: 0; } }
+.loader { position: relative; width: 34px; height: 34px; transform: rotate(45deg); }
+.loader-square { position: absolute; top: 0; left: 0; width: 10px; height: 10px; margin: 1px; border-radius: 0; background: #fff; animation: square-animation 10s ease-in-out infinite both; }
+.loader-square:nth-of-type(1) { animation-delay: -1.4285714286s; }
+.loader-square:nth-of-type(2) { animation-delay: -2.8571428571s; }
+.loader-square:nth-of-type(3) { animation-delay: -4.2857142857s; }
+.loader-square:nth-of-type(4) { animation-delay: -5.7142857143s; }
+.loader-square:nth-of-type(5) { animation-delay: -7.1428571429s; }
+.loader-square:nth-of-type(6) { animation-delay: -8.5714285714s; }
+.loader-square:nth-of-type(7) { animation-delay: -10s; }
+@keyframes envelope-vibrate { 0%,100% { transform: scale(1) rotate(0); } 5%,15% { transform: scale(1.1) rotate(-3deg); } 10%,20% { transform: scale(1.1) rotate(3deg); } 25%,75% { transform: scale(1); } 50% { transform: scale(1.15); filter: drop-shadow(0 0 4px rgba(244,63,94,.4)); } }
+.animate-envelope-vibrate { display: inline-block; animation: envelope-vibrate 2.5s infinite ease-in-out; }

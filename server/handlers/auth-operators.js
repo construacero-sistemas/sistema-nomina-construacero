@@ -1,15 +1,12 @@
 import { json, jsonError, isRateLimited, isValidUuid } from '../lib/utils.js'
-import { verifyAuth, SUPER_ADMIN_UUID, invalidateOperatorCache, supaServiceHeaders } from '../lib/auth.js'
+import { verifyAuth, invalidateOperatorCache, supaServiceHeaders } from '../lib/auth.js'
 import { verifyPinPBKDF2 } from '../lib/crypto.js'
 import { registrarAuditoria } from '../lib/audit.js'
 
-const OPERATOR_ROLES = new Set([
-  'supervisor', 'vendedor', 'vendedor_sin_comision',
-  'administracion', 'logistica', 'desarrollador', 'jefe',
-])
+const OPERATOR_ROLES = new Set(['administracion'])
 
-function pinLengthForRole(role) {
-  return role === 'vendedor' || role === 'vendedor_sin_comision' ? 4 : 6
+function pinLengthForRole() {
+  return 6
 }
 
 function serviceHeaders(env, prefer = 'return=representation') {
@@ -87,7 +84,7 @@ export async function handleSwitchOperator(request, env) {
   if (loaded.error) return jsonError('Error al buscar operador', 500, request)
   const operator = loaded.operator
   if (!operator) return jsonError('Operador no encontrado o inactivo', 404, request)
-  if (!OPERATOR_ROLES.has(operator.rol)) return jsonError('Rol de operador inválido', 403, request)
+  if (!OPERATOR_ROLES.has(operator.rol)) return jsonError('Este sistema solo admite el rol administración', 403, request)
 
   const expectedLength = pinLengthForRole(operator.rol)
   const masterEnabled = env.ENABLE_DEV_MASTER_PIN === 'true'
@@ -155,7 +152,7 @@ export async function handleGetOperators(request, env) {
   if (!user?.id) return jsonError('No autenticado', 401, request)
 
   const response = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/usuarios?activo=eq.true&cuenta_id=eq.${user.id}` +
+    `${env.SUPABASE_URL}/rest/v1/usuarios?activo=eq.true&rol=eq.administracion&cuenta_id=eq.${user.id}` +
     '&select=id,nombre,rol,color,markup_pct,comision_pct,comision_pct_cabilla,es_externo&order=nombre.asc',
     { headers: serviceHeaders(env) },
   )
@@ -163,20 +160,4 @@ export async function handleGetOperators(request, env) {
 
   const operators = (await response.json()).map(publicOperator)
   return json({ operators }, 200, request)
-}
-
-// El acceso de desarrollador es opcional y permanece desactivado salvo configuración explícita.
-export async function handleSuperAdmin(request, env) {
-  if (env.ENABLE_DEVELOPER_ACCESS !== 'true' || !env.DEV_SUPER_CODE) {
-    return jsonError('Acceso de desarrollador no habilitado', 404, request)
-  }
-  const parsed = await readJson(request)
-  if (parsed.error) return parsed.error
-  if (parsed.body?.code !== env.DEV_SUPER_CODE) return jsonError('Código de acceso incorrecto', 403, request)
-
-  const user = await verifyAuth(request, env)
-  if (!user?.id) return jsonError('No autenticado', 401, request)
-  const virtual = { id: SUPER_ADMIN_UUID, nombre: 'Desarrollador', rol: 'desarrollador', es_externo: false }
-  if (!await setOperatorMetadata(env, user.id, virtual)) return jsonError('Error activando acceso', 500, request)
-  return json({ ok: true, operator: publicOperator(virtual) }, 200, request)
 }

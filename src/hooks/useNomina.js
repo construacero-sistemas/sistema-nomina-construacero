@@ -13,8 +13,9 @@ const KEY_MARCAJE    = ['nomina', 'marcaje-hoy']
 const KEY_PERIODOS   = ['nomina', 'periodos']
 const KEY_LINEAS     = ['nomina', 'lineas']
 
-const ROLES_VER   = ['administracion', 'jefe', 'desarrollador', 'logistica']
-const ROLES_ADMIN = ['administracion', 'jefe', 'desarrollador']
+const ADMIN_ROLE = 'administracion'
+const ROLES_VER = [ADMIN_ROLE]
+const ROLES_ADMIN = [ADMIN_ROLE]
 
 export function usePuedeVerNomina() {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
@@ -146,7 +147,7 @@ export function useMarcajeHoy() {
   return useQuery({
     queryKey: KEY_MARCAJE,
     queryFn: () => apiGet('/api/nomina/marcaje/hoy'),
-    enabled: perfil?.rol === 'logistica',
+    enabled: perfil?.rol === ADMIN_ROLE,
     staleTime: 1000 * 30,
   })
 }
@@ -329,5 +330,109 @@ export function useRevertirPagoLinea() {
       qc.invalidateQueries({ queryKey: KEY_PERIODOS })
     },
     onError: (e) => showToast.error(e.message || 'Error al revertir el pago'),
+  })
+}
+
+// ─── Configuración laboral, tasas y conceptos ───────────────────────────────
+export function useHorarios(empleadoId = '') {
+  const perfil = useAuthStore(useCallback(s => s.perfil, []))
+  const puede = ROLES_ADMIN.includes(perfil?.rol)
+  const query = empleadoId ? `?empleadoId=${empleadoId}` : ''
+  return useQuery({
+    queryKey: ['nomina', 'horarios', empleadoId],
+    queryFn: () => apiGet(`/api/nomina/calendario/horarios${query}`),
+    enabled: !!perfil && puede,
+    staleTime: 1000 * 60 * 10,
+  })
+}
+
+export function useCrearHorario() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: campos => apiPost('/api/nomina/calendario/horarios/crear', campos),
+    onSuccess: () => {
+      showToast.success('Horario guardado')
+      qc.invalidateQueries({ queryKey: ['nomina', 'horarios'] })
+    },
+    onError: e => showToast.error(e.message || 'Error al guardar horario'),
+  })
+}
+
+export function useCrearFeriado() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: campos => apiPost('/api/nomina/calendario/feriados/crear', campos),
+    onSuccess: () => {
+      showToast.success('Feriado guardado')
+      qc.invalidateQueries({ queryKey: ['nomina', 'feriados'] })
+    },
+    onError: e => showToast.error(e.message || 'Error al guardar feriado'),
+  })
+}
+
+export function useTasasSnapshots(desde, hasta) {
+  const perfil = useAuthStore(useCallback(s => s.perfil, []))
+  const puede = ROLES_ADMIN.includes(perfil?.rol)
+  return useQuery({
+    queryKey: ['nomina', 'tasas', desde, hasta],
+    queryFn: () => apiGet(`/api/nomina/tasas-snapshots?desde=${desde}&hasta=${hasta}`),
+    enabled: !!perfil && puede && !!desde && !!hasta,
+    staleTime: 1000 * 60 * 10,
+  })
+}
+
+export function useCrearTasaSnapshot() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: campos => apiPost('/api/nomina/tasas-snapshots/crear', campos),
+    onSuccess: () => {
+      showToast.success('Tasa guardada como snapshot')
+      qc.invalidateQueries({ queryKey: ['nomina', 'tasas'] })
+    },
+    onError: e => showToast.error(e.message || 'Error al guardar tasa'),
+  })
+}
+
+export function useNominaConceptos() {
+  const perfil = useAuthStore(useCallback(s => s.perfil, []))
+  return useQuery({
+    queryKey: ['nomina', 'conceptos'],
+    queryFn: () => apiGet('/api/nomina/conceptos'),
+    enabled: perfil?.rol === ADMIN_ROLE,
+    staleTime: 1000 * 60 * 10,
+  })
+}
+
+export function useCrearConcepto() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: campos => apiPost('/api/nomina/conceptos/crear', campos),
+    onSuccess: () => {
+      showToast.success('Concepto guardado')
+      qc.invalidateQueries({ queryKey: ['nomina', 'conceptos'] })
+    },
+    onError: e => showToast.error(e.message || 'Error al guardar concepto'),
+  })
+}
+
+export function useReglasLegales() {
+  const perfil = useAuthStore(useCallback(s => s.perfil, []))
+  return useQuery({
+    queryKey: ['nomina', 'reglas-legales'],
+    queryFn: () => apiGet('/api/nomina/reglas-legales'),
+    enabled: perfil?.rol === ADMIN_ROLE,
+    staleTime: 1000 * 60 * 10,
+  })
+}
+
+export function useCrearReglaLegal() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: campos => apiPost('/api/nomina/reglas-legales/crear', campos),
+    onSuccess: () => {
+      showToast.success('Regla guardada pendiente de aprobación')
+      qc.invalidateQueries({ queryKey: ['nomina', 'reglas-legales'] })
+    },
+    onError: e => showToast.error(e.message || 'Error al guardar regla'),
   })
 }

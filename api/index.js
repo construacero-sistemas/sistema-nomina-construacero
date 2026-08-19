@@ -9,8 +9,6 @@ const ENV_KEYS = [
   'ENABLE_DEV_MASTER_PIN',
   'DEV_MASTER_PIN_4',
   'DEV_MASTER_PIN_6',
-  'ENABLE_DEVELOPER_ACCESS',
-  'DEV_SUPER_CODE',
 ]
 
 function runtimeEnv() {

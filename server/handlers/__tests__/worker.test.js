@@ -39,4 +39,10 @@ describe('worker HTTP guardrails', () => {
     expect(response.status).toBe(413)
     expect((await response.json()).error).toMatch(/demasiado grande/i)
   })
+
+  it('protege las rutas financieras sin sesión en el Worker', async () => {
+    const response = await worker.fetch(new Request('https://worker.test/api/finanzas/reportes/resumen?desde=2026-08-01&hasta=2026-08-31'), ENV)
+    expect(response.status).toBe(401)
+    expect((await response.json()).error).toMatch(/autenticado/i)
+  })
 })

@@ -10,9 +10,17 @@ import {
   handleGetLineas, handleAjustarLinea, handlePagarLineas, handleRevertirPagoLinea,
 } from './server/handlers/nomina.js'
 import {
-  handleSwitchOperator, handleClearOperator, handleGetOperators, handleSuperAdmin,
+  handleSwitchOperator, handleClearOperator, handleGetOperators,
 } from './server/handlers/auth-operators.js'
 import { handleGetConfig, handlePing } from './server/handlers/config.js'
+import {
+  handleGetFinanzasMovimientos,
+  handleCrearFinanzasMovimiento,
+  handleAnularFinanzasMovimiento,
+  handleGetFinanzasResumen,
+  handleGetFinanzasCategorias,
+  handleCrearFinanzasCategoria,
+} from './server/handlers/finanzas.js'
 import {
   cacheResponse,
   clearEgressCache,
@@ -28,7 +36,12 @@ const routes = new Map([
   ['GET /api/auth/operators', handleGetOperators],
   ['POST /api/auth/switch-operator', handleSwitchOperator],
   ['POST /api/auth/clear-operator', handleClearOperator],
-  ['POST /api/auth/super-admin', handleSuperAdmin],
+  ['GET /api/finanzas/movimientos', handleGetFinanzasMovimientos],
+  ['POST /api/finanzas/movimientos/crear', handleCrearFinanzasMovimiento],
+  ['POST /api/finanzas/movimientos/anular', handleAnularFinanzasMovimiento],
+  ['GET /api/finanzas/reportes/resumen', handleGetFinanzasResumen],
+  ['GET /api/finanzas/categorias', handleGetFinanzasCategorias],
+  ['POST /api/finanzas/categorias/crear', handleCrearFinanzasCategoria],
   ['GET /api/nomina/empleados', handleGetEmpleados],
   ['GET /api/nomina/config-empleados', handleGetConfigEmpleados],
   ['POST /api/nomina/config-empleado/crear', handleCrearConfigEmpleado],
@@ -76,6 +89,9 @@ function egressCacheTtl(pathname) {
   if (pathname === '/api/nomina/tasas-snapshots') return 10 * 60 * 1000
   if (pathname === '/api/nomina/periodos') return 30 * 1000
   if (pathname === '/api/nomina/lineas') return 30 * 1000
+  if (pathname === '/api/finanzas/movimientos') return 15 * 1000
+  if (pathname === '/api/finanzas/reportes/resumen') return 30 * 1000
+  if (pathname === '/api/finanzas/categorias') return 10 * 60 * 1000
   return 0
 }
 

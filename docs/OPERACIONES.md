@@ -22,13 +22,15 @@ La UI sigue el patrón responsive de Construacero: drawer lateral en móvil, sid
 - Ref. Supabase: `wlxcclidnwketrghqaxs`
 - Vercel producción: `https://nomina-construacero.vercel.app`
 
-Supabase quedó enlazado y las migraciones `001` y `208`–`220` coinciden entre local y remoto. El repositorio destino sigue pendiente de push porque la cuenta autenticada recibió HTTP 403; no reintentar con una cuenta sin permiso.
+Supabase quedó enlazado; las migraciones base `001` y `208`–`220` fueron verificadas en el ciclo anterior y las nuevas `221`–`223` fueron aplicadas directamente al proyecto indicado mediante la conexión PostgreSQL y verificadas con `migration list` y consultas de contrato. La aplicación usa exclusivamente el rol `administracion`; cualquier operador heredado recibe 403. Este commit contiene la revisión que se publicará en el repositorio destino.
 
 ## Presupuesto Supabase Free: egress primero
 
 La referencia vigente del plan Free indica 5 GB de egress y 5 GB de cached egress. El objetivo interno es no superar 100 MB diarios ni 3 GB mensuales, dejando margen para picos y cambios de cuota. Revisar el panel Usage diariamente; tomar acción al superar 3 GB y detener exportaciones masivas al acercarse a 4 GB.
 
 El paquete reduce egress con:
+
+- Finanzas pagina movimientos a 100 filas como máximo, calcula el resumen con RPC server-side y exporta únicamente la página ya descargada; no realiza exportaciones masivas automáticas.
 
 - Proyecciones explícitas de columnas y topes de 500 filas en lecturas de nómina; no usar `select=*` ni subir límites sin revisar Usage.
 - Caché de respuestas en memoria del Worker/Vercel: 2 MB totales, 512 KB por respuesta y TTL de 5–600 segundos según el recurso. El caché está aislado por fingerprint de sesión/operador/origen y los POST lo limpian.
@@ -38,9 +40,9 @@ El paquete reduce egress con:
 
 Si el consumo sube: reducir rangos de asistencia, evitar recargas manuales repetidas, no abrir planillas completas innecesariamente, revisar endpoints con mayor transferencia y aplicar paginación antes de aumentar cualquier límite. La cuota puede cambiar; confirmar siempre en [Supabase Pricing](https://supabase.com/pricing).
 
-## Supabase staging y cambios futuros
+## Supabase directo y cambios futuros
 
-La primera aplicación ya fue ejecutada contra `wlxcclidnwketrghqaxs`. Para cambios futuros, desde el repositorio destino:
+La aplicación inicial ya fue ejecutada contra `wlxcclidnwketrghqaxs`; el lote financiero 221–223 ya está aplicado directamente. Para cambios futuros, desde el repositorio destino:
 
 ```bash
 supabase login
@@ -51,9 +53,9 @@ supabase db push
 Antes de `db push`:
 
 - verificar que el proyecto no sea el Supabase del POS;
-- respaldar staging;
+- respaldar el proyecto destino cuando existan datos operativos;
 - revisar el diff SQL;
-- probar dos cuentas y cuatro roles;
+- probar dos cuentas y el único rol `administracion`;
 - confirmar que `nomina_v2_enabled` siga en `false`.
 
 Después de migrar, comprobar también el panel Usage y establecer una línea base de egress antes de habilitar usuarios reales:
@@ -63,7 +65,7 @@ Verificar:
 - `auth.users` contiene las cuentas de negocio;
 - `usuarios.cuenta_id` coincide con la cuenta y ningún PIN está en claro;
 - empleados tienen identidad mínima y `tipo_cliente = 'personal'`;
-- RLS y triggers de la migración 220 están activos;
+- RLS y triggers de las migraciones 220–223 están activos;
 - Realtime solo publica las tablas aprobadas por el negocio.
 
 ## Secretos del Worker
@@ -78,7 +80,7 @@ NOMINA_ALLOWED_ORIGINS
 NOMINA_TIMEZONE
 ```
 
-Mantener `ENABLE_DEV_MASTER_PIN=false` y `ENABLE_DEVELOPER_ACCESS=false` en producción. Rotar la service role key ante cualquier exposición.
+Mantener `ENABLE_DEV_MASTER_PIN=false` en producción. No existe un bypass de desarrollador; rotar la service role key ante cualquier exposición.
 
 ## Deploy Vercel
 

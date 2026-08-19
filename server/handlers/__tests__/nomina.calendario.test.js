@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ENV, IDS, OPERADORES, authOk, installFetchMock, makeRequest, readResponse } from './_harness'
 
-let operadorActual = OPERADORES.logistica
+let operadorActual = OPERADORES.administracion
 vi.mock('../../lib/auth.js', () => ({
   validateOperator: vi.fn(async () => authOk(operadorActual)),
 }))
@@ -13,7 +13,7 @@ const H = await import('../nomina.js')
 let mock
 afterEach(() => {
   mock?.restore()
-  operadorActual = OPERADORES.logistica
+  operadorActual = OPERADORES.administracion
   vi.clearAllMocks()
 })
 
@@ -27,7 +27,7 @@ describe('calendario laboral de nómina', () => {
     const { status, body } = await readResponse(res)
     expect(status).toBe(200)
     expect(body).toHaveLength(1)
-    expect(mock.calls[0].url).toContain(`cuenta_id=eq.${OPERADORES.logistica.cuenta_id}`)
+    expect(mock.calls[0].url).toContain(`cuenta_id=eq.${OPERADORES.administracion.cuenta_id}`)
   })
 
   it('rechaza un rango de calendario mayor a 31 días', async () => {

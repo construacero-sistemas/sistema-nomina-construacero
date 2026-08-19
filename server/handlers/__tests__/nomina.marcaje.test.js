@@ -3,7 +3,7 @@ import {
   ENV, IDS, OPERADORES, authOk, installFetchMock, makeRequest, readResponse,
 } from './_harness'
 
-let operadorActual = OPERADORES.logistica
+let operadorActual = OPERADORES.administracion
 
 vi.mock('../../lib/auth.js', () => ({
   validateOperator: vi.fn(async () => authOk(operadorActual)),
@@ -18,7 +18,7 @@ let mock
 afterEach(() => {
   mock?.restore()
   delete ENV.NOMINA_NOW
-  operadorActual = OPERADORES.logistica
+  operadorActual = OPERADORES.administracion
   vi.clearAllMocks()
 })
 
@@ -35,7 +35,7 @@ function routesFor({ asistencia = [], post = [], feriados = [] } = {}) {
   ]
 }
 
-describe('marcaje operativo de logística', () => {
+describe('marcaje operativo de administración', () => {
   it('registra entrada con fecha/hora del servidor y no con datos del empleado', async () => {
     ENV.NOMINA_NOW = NOW
     mock = installFetchMock(routesFor({
@@ -52,8 +52,8 @@ describe('marcaje operativo de logística', () => {
     const post = mock.calls.find(c => c.method === 'POST')
     expect(post.body.hora_entrada).toBe('08:00')
     expect(post.body.fecha).toBe('2026-08-08')
-    expect(post.body.registrado_por).toBe(OPERADORES.logistica.id)
-    expect(post.body.cuenta_id).toBe(OPERADORES.logistica.cuenta_id)
+    expect(post.body.registrado_por).toBe(OPERADORES.administracion.id)
+    expect(post.body.cuenta_id).toBe(OPERADORES.administracion.cuenta_id)
   })
 
   it('congela el feriado del calendario en la entrada operativa', async () => {
@@ -122,8 +122,8 @@ describe('marcaje operativo de logística', () => {
     expect(mock.calls.some(c => c.method === 'POST')).toBe(false)
   })
 
-  it('no permite que administración use el endpoint operativo de logística', async () => {
-    operadorActual = OPERADORES.administracion
+  it('rechaza roles heredados en el endpoint operativo', async () => {
+    operadorActual = OPERADORES.logistica
     mock = installFetchMock([])
 
     const res = await H.handleMarcarEntrada(makeRequest({

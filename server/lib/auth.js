@@ -1,5 +1,4 @@
 export {
-  SUPER_ADMIN_UUID,
   invalidateOperatorCache,
   supaServiceHeaders,
   verifyAuth,
