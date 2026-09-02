@@ -56,7 +56,7 @@ export default function LiquidacionModal({ linea, onClose }) {
   return (
     <Modal
       isOpen onClose={onClose}
-      title={`Liquidación: ${linea.empleado?.nombre ?? 'empleado'}`}
+      title={`Ajustar pago: ${linea.empleado?.nombre ?? 'empleado'}`}
       className="max-w-md">
       <div className="space-y-4">
         {error && (
@@ -68,7 +68,7 @@ export default function LiquidacionModal({ linea, onClose }) {
         {/* Desglose calculado (solo lectura) */}
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1.5">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-            Calculado desde asistencia
+Calculado con la asistencia
           </div>
           {[
             { label: `Días trabajados (${Number(linea.dias_trabajados)})`, value: linea.monto_normal_usd },
@@ -143,7 +143,7 @@ export default function LiquidacionModal({ linea, onClose }) {
         </button>
         <button onClick={guardar} disabled={cargando}
           className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-sm font-bold">
-          {cargando ? 'Guardando...' : 'Guardar ajustes'}
+          {cargando ? 'Guardando...' : 'Guardar cambios'}
         </button>
       </div>
     </Modal>

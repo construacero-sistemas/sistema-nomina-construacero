@@ -5,6 +5,8 @@ import { Archive, Eye, Calendar, DollarSign, Users } from 'lucide-react'
 import { useNominaPeriodos } from '../../hooks/useNomina'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
+import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
+import HorizontalScroll from '../../../compat/components/ui/HorizontalScroll.jsx'
 import PeriodoDetalleModal from './PeriodoDetalleModal'
 
 function fmt(n) {
@@ -76,7 +78,7 @@ export default function TabHistorial() {
         <Skeleton className="h-48 rounded-2xl" />
       ) : isError ? (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
-          Error al cargar el historial. <button onClick={() => refetch()} className="underline font-bold">Reintentar</button>
+          No se pudo cargar el historial. <button onClick={() => refetch()} className="underline font-bold">Volver a intentar</button>
         </div>
       ) : filtrados.length === 0 ? (
         <EmptyState
@@ -87,7 +89,7 @@ export default function TabHistorial() {
       ) : (
         <>
           {/* Escritorio/tablet: tabla completa con scroll seguro */}
-          <div className="hidden sm:block overflow-x-auto bg-white border border-slate-200 rounded-2xl">
+          <HorizontalScroll className="hidden sm:block" contentClassName="bg-white border border-slate-200 rounded-2xl">
             <table className="w-full min-w-[720px] text-xs" aria-label="Historial de períodos pagados">
               <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase tracking-wide">
                 <tr>
@@ -114,9 +116,9 @@ export default function TabHistorial() {
                     <td className="text-right px-3 py-2.5 text-slate-600">${fmt(p.total_bruto_usd)}</td>
                     <td className="text-right px-3 py-2.5 font-black text-green-600">${fmt(p.total_neto_usd)}</td>
                     <td className="px-3 py-2.5 text-right">
-                      <button onClick={() => setDetalle(p)} title="Ver recibos"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-colors">
-                        <Eye size={14} />
+                      <button onClick={() => setDetalle(p)} aria-label="Ver recibos del período"
+                        className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-sky-600 hover:bg-sky-50 transition-colors">
+                        <Eye size={14} aria-hidden="true" /> Ver recibos
                       </button>
                     </td>
                   </tr>
@@ -130,7 +132,7 @@ export default function TabHistorial() {
                 </tr>
               </tbody>
             </table>
-          </div>
+          </HorizontalScroll>
 
           {/* Móvil: tarjetas sin columnas comprimidas ni scroll horizontal */}
           <div className="sm:hidden space-y-3" aria-label="Historial de períodos pagados">
@@ -145,7 +147,7 @@ export default function TabHistorial() {
                     Pagado
                   </span>
                 </div>
-                <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-slate-100">
+                <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-slate-100 min-w-0">
                   <MobileMetric label="Empleados" value={p.total_empleados ?? 0} />
                   <MobileMetric label="Bruto" value={`$${fmt(p.total_bruto_usd)}`} />
                   <MobileMetric label="Neto" value={`$${fmt(p.total_neto_usd)}`} accent />
@@ -181,25 +183,6 @@ function MobileMetric({ label, value, accent = false }) {
     <div className="text-center min-w-0">
       <div className="text-[10px] text-slate-400 font-medium truncate">{label}</div>
       <div className={`text-sm font-black mt-0.5 truncate ${accent ? 'text-green-600' : 'text-slate-700'}`}>{value}</div>
-    </div>
-  )
-}
-
-function KpiCard({ icon: Icon, label, value, color }) {
-  const colors = {
-    slate:  'bg-slate-50 text-slate-700',
-    indigo: 'bg-indigo-50 text-indigo-700',
-    green:  'bg-green-50 text-green-700',
-  }
-  return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-3">
-      <div className="flex items-center gap-2 mb-1">
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${colors[color]}`}>
-          <Icon size={16} />
-        </div>
-        <span className="text-xs text-slate-500 font-medium">{label}</span>
-      </div>
-      <div className="text-lg font-black text-slate-800">{value}</div>
     </div>
   )
 }

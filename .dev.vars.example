@@ -1,4 +1,5 @@
 # Copia este archivo a .dev.vars para wrangler dev; nunca lo comitees.
+# .dev.vars tiene prioridad sobre .env cuando ambos existen.
 SUPABASE_URL=https://wlxcclidnwketrghqaxs.supabase.co
 SUPABASE_ANON_KEY=tu-anon-key
 SUPABASE_SERVICE_KEY=tu-service-role-key
@@ -8,3 +9,9 @@ NOMINA_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:4173
 # ENABLE_DEV_MASTER_PIN=false
 # DEV_MASTER_PIN_4=
 # DEV_MASTER_PIN_6=
+# Sincronización de ventas con POS (listo-pos-cotizaciones):
+# POS_API_URL=http://localhost:5174
+# FINANZAS_SYNC_SECRET=construacero-sync-secret-2026
+# Fallback directo a la BD del POS (opcional; sin esto solo funciona el endpoint del POS):
+# POS_SUPABASE_URL=https://TU-PROYECTO-POS.supabase.co
+# POS_SUPABASE_SERVICE_KEY=tu-service-role-key

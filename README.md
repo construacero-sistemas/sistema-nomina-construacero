@@ -4,6 +4,8 @@ Aplicación independiente para gestionar nómina, asistencia, pagos y finanzas d
 
 **Estado de entrega:** frontend/API base publicados en `https://nomina-construacero.vercel.app`; esta revisión añade Finanzas y el guard de rol único. Las migraciones 221–223 fueron aplicadas directamente en el proyecto Supabase indicado y verificadas con la CLI y una consulta de contrato.
 
+**Revisión 01/09/2026 (auditoría integral):** se aplicó el plan completo `docs/PLAN_FIX_AUDIT_2026-09-01.md` — UI sin diálogos nativos ni glifos, touch targets ≥ 44 px, sincronización contable trazable en auditoría, vistas y PDF cargados bajo demanda (chunk inicial 559 kB → 348 kB), harness de pruebas frontend (jsdom + testing-library) y e2e de lógica crítica (anulación idempotente, ciclo nómina↔finanzas, guardas de períodos). `npm run verify` valida todo: lint · 414 tests · scanner responsive · presupuesto de bundle · build.
+
 ## Alcance entregado
 
 - Empleados personales sincronizados por cuenta, sin duplicar el módulo Personal.
@@ -17,13 +19,13 @@ Aplicación independiente para gestionar nómina, asistencia, pagos y finanzas d
 - Recibos y planilla PDF.
 - Configuración administrativa de feriados, horarios rotativos, conceptos, reglas legales versionadas y snapshots de tasas.
 - RLS, guardrails de tenant, límites de body, CORS explícito y headers de seguridad.
-- UI responsive alineada con Construacero: login premium, drawer móvil, sidebar desktop, navegación táctil y tarjetas móviles para historial.
+- UI responsive alineada con Construacero: acceso inicial de un paso, sesión persistente, drawer móvil, sidebar desktop, navegación táctil y tarjetas móviles para historial.
 - Un único rol operativo `administracion`, con acceso integral a Nómina, marcaje y Finanzas; roles heredados quedan bloqueados server-side.
 - Libro financiero con ingresos, egresos, categorías, tasas congeladas, resumen por rango, CSV de la página actual y anulación auditada sin borrado.
 
 ## Inicio local
 
-Requisitos: Node.js 22+, un proyecto Supabase de pruebas y Wrangler si se desea ejecutar el Worker local.
+Requisitos: Node.js 22+ y un proyecto Supabase de pruebas. La ruta recomendada de despliegue es Vercel Functions; Wrangler queda solo como compatibilidad durante la migración descrita en `docs/PLAN_MIGRACION_VERCEL_FUNCTIONS.md`.
 
 ```bash
 npm ci
@@ -36,9 +38,9 @@ npm run build
 npm run dev
 ```
 
-`npm run dev` levanta Vite y el Worker local. La aplicación usa `/api/*` same-origin; `VITE_WORKER_ORIGIN` solo es necesario cuando el Worker vive en otro dominio. Para Vercel, `vercel.json` compila `dist` y reescribe todas las rutas anidadas `/api/*` hacia `api/index.js`, que adapta las mismas rutas del Worker a una función serverless.
+`npm run dev` todavía levanta Vite y el Worker local durante la transición. La aplicación usa `/api/*` same-origin; `VITE_WORKER_ORIGIN` solo es necesario cuando la API vive en otro dominio. Para producción, `vercel.json` compila `dist` y reescribe todas las rutas anidadas `/api/*` hacia `api/index.js`, que adapta las mismas rutas a una Vercel Function. La migración para retirar Wrangler está en `docs/PLAN_MIGRACION_VERCEL_FUNCTIONS.md`.
 
-No uses `npm run dev:vite` para probar el flujo completo: ese comando solo levanta la interfaz y el proxy espera un Worker en `localhost:8788`. Si `/api/auth/switch-operator` responde 401 en local, copia `.dev.vars.example` a `.dev.vars`, configura las claves del proyecto Supabase y ejecuta `npm run dev`; ese 401 significa que el Worker no pudo validar la sesión, no que el PIN sea incorrecto. El modal bloquea los envíos duplicados mientras verifica el PIN. El logout del navegador usa alcance local y limpia el cache aunque Supabase no pueda revocar un refresh token vencido. Para activar trazas de autenticación únicamente durante diagnóstico local, define `VITE_AUTH_DEBUG=true`; permanece desactivado por defecto.
+No uses `npm run dev:vite` para probar el flujo completo: ese comando solo levanta la interfaz y el proxy espera un Worker en `localhost:8788`. Coloca `SUPABASE_SERVICE_KEY` sin prefijo `VITE_` en `.env` o, preferiblemente, copia `.dev.vars.example` a `.dev.vars` y completa las claves del mismo proyecto Supabase. La anon key con prefijo `VITE_` solo sirve para el navegador y no reemplaza la service key del Worker. El acceso operativo usa un único usuario administrativo: correo y contraseña se solicitan una vez por dispositivo, la sesión se conserva y se renueva automáticamente. El logout del navegador usa alcance local y limpia el cache aunque Supabase no pueda revocar un refresh token vencido. Para activar trazas de autenticación únicamente durante diagnóstico local, define `VITE_AUTH_DEBUG=true`; permanece desactivado por defecto.
 
 ## Variables y secretos
 
@@ -48,11 +50,11 @@ No uses `npm run dev:vite` para probar el flujo completo: ese comando solo levan
 - `VITE_SUPABASE_ANON_KEY`
 - `VITE_WORKER_ORIGIN` opcional
 
-### Worker (`.dev.vars` o secretos del proveedor)
+### API (`.dev.vars` local o variables de Vercel)
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_KEY` — **solo Worker; nunca frontend, repositorio ni logs**
+- `SUPABASE_SERVICE_KEY` — **solo API/Vercel Function; nunca frontend, repositorio ni logs**
 - `NOMINA_TIMEZONE` — por defecto `America/Caracas`
 - `NOMINA_ALLOWED_ORIGINS` — lista exacta separada por comas
 - `ENABLE_DEV_MASTER_PIN=false`
@@ -67,7 +69,7 @@ Guardrails aplicados:
 
 - El frontend no consulta tablas de nómina directamente; el Worker concentra las lecturas y mantiene el tenant.
 - Las respuestas de lectura usan `select` explícito; el guardrail rechaza `select=*` y límites de 1000 filas.
-- El Worker/Vercel mantiene un caché de respuestas acotado a 2 MB, con entradas máximas de 512 KB y TTL corto por ruta; cualquier POST lo invalida.
+- La API mantiene un caché de respuestas acotado a 2 MB, con entradas máximas de 512 KB y TTL corto por ruta; cualquier POST lo invalida. En Vercel este caché es efímero.
 - React Query persiste datos en IndexedDB, no revalida al cambiar de ventana y no reintenta automáticamente las lecturas fallidas.
 - No existe polling automático de marcaje; la actualización es manual o al abrir la vista.
 - Los PDFs se generan en el navegador y no se almacenan en Supabase Storage.
@@ -118,10 +120,10 @@ npm run build
 El paquete está **listo para conectar** cuando se entreguen únicamente:
 
 1. URL, anon key y service role del Supabase nuevo;
-2. operadores y PINs creados mediante el procedimiento seguro del entorno;
+2. operadores creados mediante el procedimiento seguro del entorno; el PIN queda pendiente de reactivación o sustitución antes de usar dispositivos compartidos;
 3. contrato de sincronización de Personal;
 4. dominios finales para CORS y assets;
 5. fuente aprobada de BCV/Euro/USDT y reglas legales vigentes;
 6. repositorio destino y secretos de despliegue.
 
-El flag `nomina_v2_enabled` permanece apagado hasta completar las pruebas funcionales directas contra el proyecto enlazado, la validación de RLS y la aprobación contable. Para operación, rollback y rotación de secretos, ver `docs/OPERACIONES.md`, `docs/PLAN_MAESTRO.md` y `docs/AUDITORIA_FINAL.md`.
+El flag `nomina_v2_enabled` permanece apagado hasta completar las pruebas funcionales directas contra el proyecto enlazado, la validación de RLS y la aprobación contable. La interfaz es mobile-first y está auditada para iPhone; ver `docs/AUDITORIA_MOBILE_IPHONE.md`. Para operación, rollback y rotación de secretos, ver `docs/OPERACIONES.md`, `docs/PLAN_MAESTRO.md`, `docs/AUDITORIA_FINAL.md` y `docs/AUDITORIA_AISLAMIENTO_POS.md`. La auditoría confirma que Nómina y el POS usan proyectos Supabase, puertos y Workers separados; no mezclar sus variables ni migraciones.

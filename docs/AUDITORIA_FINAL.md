@@ -1,6 +1,6 @@
 # Auditoría final — Nómina y Finanzas Construacero Carabobo
 
-**Corte:** 2026-08-18
+**Corte:** 2026-08-24
 
 **Alcance:** auditoría E2E determinista de frontend React/Vite, Worker, API/Vercel, autenticación, tenant/RLS, motores de cálculo, Finanzas, migraciones Supabase, PDFs, configuración y pruebas.
 
@@ -36,12 +36,12 @@
 
 Se comparó el login, splash, navegación y componentes de nómina con `construacero-staging`.
 
-- El login conserva la composición dark premium, logo, tarjetas por operador, flujo email/contraseña → operador → PIN y modal numérico táctil.
+- El login conserva la composición dark premium, logo y tarjetas por usuario; el flujo actual es email/contraseña → selección directa de usuario, sin PIN temporalmente.
 - El splash usa el logo corporativo y el loader cuadrado animado del proyecto de referencia.
 - El shell incorpora barra superior, logo móvil, drawer lateral móvil, sidebar desktop colapsable, perfil administrativo, navegación inferior táctil y acceso a Finanzas solo para administración.
 - El historial pagado usa tabla completa en escritorio y tarjetas accionables en móvil para evitar columnas comprimidas.
 - La grilla semanal mantiene scroll horizontal controlado porque sus siete días requieren ancho mínimo; el nombre del empleado queda fijo al desplazarse.
-- El modal PIN usa una única tarjeta autocontenida, overlay real, teclado numérico centrado, input físico invisible, cierre con Escape, foco accesible, scroll vertical interno sin scroll horizontal y límite de altura; ya no puede descomponerse en elementos sueltos de pantalla completa.
+- El flujo de selección directa usa una confirmación clara, estado de carga, bloqueo de doble clic y mensaje de error visible. El componente de PIN anterior queda sin uso en la interfaz y puede reactivarse cuando se apruebe la decisión de seguridad.
 - Tailwind ahora escanea `compat/`, activa modo oscuro por clase y genera `scrollbar-hide`, evitando estilos visuales faltantes en componentes puente.
 - El login limita el contenido a una composición central de máximo 1120 px; el branding y el panel de acceso dejan de estirarse por toda la pantalla en monitores grandes.
 - El estado sin operadores muestra una tarjeta de configuración pendiente con CTA visible de actualización, explicación de la sesión y contraste suficiente; el error de carga tiene una acción de reintento equivalente.
@@ -52,7 +52,7 @@ Se comparó el login, splash, navegación y componentes de nómina con `construa
 - El cliente identifica un Worker local sin `.dev.vars` y muestra una instrucción accionable en vez de tratarlo como PIN incorrecto.
 - Finanzas usa formulario responsive, estados de carga/vacío/error, filtros por rango/tipo/categoría/moneda, KPI de ingresos-egresos-balance, anulación confirmada y exportación CSV limitada a la página ya consultada.
 - Nómina incorpora Configuración administrativa para feriados laborables/no laborables, horarios selectivos/rotativos, snapshots manuales de USD/EUR/USDT y alta controlada de conceptos/reglas legales pendientes de aprobación.
-- El modal PIN bloquea de forma síncrona el autoenvío mientras la petición está en curso, evitando POST duplicados aun bajo re-render/StrictMode.
+- La selección directa bloquea de forma síncrona nuevas selecciones mientras la petición está en curso, evitando doble clic y estados ambiguos.
 - Se agregaron etiquetas ARIA para navegación, tabs, loader, drawer, paneles, estado vacío, campos y acciones móviles.
 
 Pendiente de validación manual en dispositivos físicos: Safari iOS, Chrome Android y una pantalla desktop de 1366 px. La suite automatizada valida el contrato estructural y el build, pero no sustituye una prueba visual con datos reales.
@@ -63,7 +63,7 @@ Pendiente de validación manual en dispositivos físicos: Safari iOS, Chrome And
 - `.github/workflows/ci.yml`: guardrail, lint, suite y build en push/PR.
 - CORS por allowlist exacta y `Vary: Origin`.
 - `X-Content-Type-Options`, `X-Frame-Options`, CSP, Referrer-Policy, Permissions-Policy y HSTS en HTTPS.
-- Auth de operador con PIN PBKDF2 en Worker; hashes y salts no se envían al navegador.
+- Auth de cuenta con contraseña; la selección de usuario se valida en el Worker. Los hashes y salts del PIN anterior no se envían al navegador.
 - Rol único `administracion` en selección, UI, Worker, RLS y trigger SQL; roles heredados se desactivan y reciben 403. La restricción SQL se instala `NOT VALID` para no fallar por históricos, pero bloquea nuevas altas/cambios no administrativos.
 - Caché de egress acotado por fingerprint de sesión/operador/origen, con expiración y limpieza global tras mutaciones.
 - Proyecciones SQL explícitas, límites de 500 filas y prohibición automatizada de `select=*`/límite 1000.
@@ -76,7 +76,7 @@ Pendiente de validación manual en dispositivos físicos: Safari iOS, Chrome And
 ```text
 npm run check:project  -> OK (17 migraciones; 143 archivos inspeccionados)
 npm run lint           -> OK
-npm test               -> 24 archivos, 340 tests deterministas aprobados
+npm test               -> 24 archivos, 361 tests deterministas aprobados
 npm run build          -> OK (solo warning informativo de chunks PDF grandes)
 git diff --check       -> OK
 Supabase               -> `db push` directo aplicado; `migration list` coincide en 001, 208–223 y consulta de contrato confirma tablas con RLS, RPC y trigger
@@ -94,6 +94,44 @@ El build mantiene un warning informativo de chunks PDF grandes; no es un fallo f
 5. Vercel contiene el deployment histórico; esta revisión local aún requiere publicación autorizada en GitHub/Vercel.
 6. Las credenciales usadas para el despliegue viven fuera del repositorio y deben rotarse si fueron compartidas fuera del gestor seguro.
 7. El plan Free tiene una cuota de egress finita: Usage debe revisarse diariamente y el objetivo interno es 100 MB/día y 3 GB/mes; el caché en memoria no persiste entre reinicios o escalado.
+
+## Revisión UX/UI y cambio temporal aplicado — 2026-08-24
+
+### PIN de usuarios
+
+- **Estado:** deshabilitado temporalmente en el flujo de entrada.
+- La contraseña de la cuenta sigue siendo obligatoria.
+- La selección del usuario se verifica en el Worker, dentro de la cuenta correcta, y queda registrada en auditoría como `LOGIN_SIN_PIN`.
+- El flujo antiguo con PIN permanece disponible solo si el cliente vuelve a enviar un PIN; no se usa desde la interfaz actual.
+- **Riesgo:** mientras el PIN esté deshabilitado, cualquier persona con acceso a la cuenta de negocio y al dispositivo puede elegir un usuario de administración. Reactivar antes de uso compartido o añadir una alternativa simple (código corto, confirmación del dispositivo o SSO).
+
+### Resultado de la auditoría E2E funcional
+
+| Flujo | Resultado | Observación para el plan maestro |
+|---|---|---|
+| Acceso por correo y contraseña | ✅ | Mensajes claros, validación visible y estados de carga |
+| Selección de usuario | ✅ | Ahora es directa, sin modal de PIN; error y reintento visibles |
+| Protección de sesión y cuenta | ✅ | Worker valida sesión, cuenta, usuario activo y rol administración |
+| Navegación Nómina/Finanzas | ✅ | Shell responsive con navegación desktop y móvil |
+| Empleados → asistencia → período → cálculo → pago | ✅ automatizado | Requiere validación manual con datos reales antes de operar |
+| Finanzas: crear → listar → resumir → anular | ✅ automatizado | Requiere conciliación contable de negocio |
+| Roles y cuentas cruzadas | ✅ automatizado | Roles heredados reciben rechazo; tenant se filtra server-side |
+| Estados vacíos, errores y reintentos | ✅ revisado | Hay acciones visibles, pero falta prueba con usuarios reales |
+| Accesibilidad básica | ⚠️ parcial | Hay etiquetas ARIA y foco; falta prueba con lector de pantalla y teclado completo |
+| Responsive físico | ⚠️ pendiente | Falta validar Safari iOS, Chrome Android y escritorio 1366 px |
+
+### Hallazgos UX/UI priorizados
+
+1. **Alto:** resuelto localmente en los recorridos principales: las acciones críticas muestran texto visible; quedan por validar legibilidad y tamaños en dispositivos reales.
+2. **Alto:** las tablas de asistencia, recibos y movimientos necesitan una prueba real de lectura móvil; el scroll horizontal es válido, pero debe acompañarse de una pista visible.
+3. **Medio:** configuración concentra calendario, tasas, conceptos y reglas en una pantalla larga; debe convertirse en pasos simples con títulos que expliquen qué se hace y qué resultado produce.
+4. **Medio:** resuelto en la interfaz visible: se usa “tasa de cambio” y “tasa guardada”; los detalles técnicos permanecen únicamente en contratos internos y documentación.
+5. **Medio:** hay componentes visualmente consistentes, pero no existe todavía una guía única de botones, campos, alertas, estados y confirmaciones.
+6. **Bajo:** el build mantiene un warning informativo por chunks grandes de PDF; no bloquea el uso, pero conviene cargar aún más bajo demanda.
+
+### Recomendación de experiencia
+
+Usar una regla sencilla: **cada pantalla debe responder “qué puedo hacer aquí”, “qué necesito llenar” y “qué pasará al guardar” sin leer documentación**. Los mensajes deben hablar de personas, fechas, montos y decisiones; nunca de rutas, endpoints, tokens, tenants, snapshots o idempotencia.
 
 ## Decisión de salida
 

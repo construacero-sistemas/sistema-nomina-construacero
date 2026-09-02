@@ -99,6 +99,31 @@ describe('marcaje operativo de administración', () => {
     expect(patch.body.horas_trabajadas).toBe(1)
   })
 
+  it('registra salida correctamente cuando la entrada viene con segundos (Postgres TIME: HH:MM:SS)', async () => {
+    ENV.NOMINA_NOW = NOW
+    mock = installFetchMock(routesFor({
+      asistencia: [{
+        id: IDS.registro,
+        empleado_id: IDS.empleado,
+        fecha: '2026-08-08',
+        hora_entrada: '00:05:00',
+        hora_salida: null,
+        nota: null,
+      }],
+      post: [{ id: IDS.registro, estado_marcaje: 'completo' }],
+    }))
+
+    const res = await H.handleMarcarSalida(makeRequest({
+      empleadoId: IDS.empleado,
+      idempotencyKey: 'salida-2026-08-08-seconds',
+    }), ENV)
+    const { status } = await readResponse(res)
+
+    expect(status).toBe(200)
+    const patch = mock.calls.find(c => c.method === 'PATCH')
+    expect(patch.body.hora_salida).toBe('08:00')
+  })
+
   it('repite una entrada de forma idempotente sin hacer POST', async () => {
     ENV.NOMINA_NOW = NOW
     mock = installFetchMock(routesFor({

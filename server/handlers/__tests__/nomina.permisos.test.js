@@ -49,6 +49,7 @@ const ROUTES = [
   ['handleCalcularPeriodo', { periodoId: IDS.periodo }],
   ['handleCerrarPeriodo', { periodoId: IDS.periodo }],
   ['handleReabrirPeriodo', { periodoId: IDS.periodo }],
+  ['handleEliminarPeriodo', { periodoId: IDS.periodo }],
   ['handleGetLineas', undefined],
   ['handleAjustarLinea', { lineaId: IDS.linea, bonosUsd: 10 }],
   ['handlePagarLineas', { lineaIds: [IDS.linea] }],

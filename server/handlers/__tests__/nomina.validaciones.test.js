@@ -26,7 +26,7 @@ describe('body inválido', () => {
     'handleCrearConfigEmpleado', 'handleActualizarConfigEmpleado',
     'handleRegistrarAsistencia', 'handleRegistrarAsistenciaMasivo',
     'handleEliminarAsistencia', 'handleCrearPeriodo', 'handleCalcularPeriodo',
-    'handleCerrarPeriodo', 'handleReabrirPeriodo', 'handleAjustarLinea',
+    'handleCerrarPeriodo', 'handleReabrirPeriodo', 'handleEliminarPeriodo', 'handleAjustarLinea',
     'handlePagarLineas', 'handleRevertirPagoLinea',
   ]
 
@@ -52,6 +52,7 @@ describe('validación de UUID', () => {
     { fn: 'handleCalcularPeriodo',          body: { periodoId: IDS.invalido },                     campo: /periodoId/i },
     { fn: 'handleCerrarPeriodo',            body: { periodoId: IDS.invalido },                     campo: /periodoId/i },
     { fn: 'handleReabrirPeriodo',           body: { periodoId: IDS.invalido },                     campo: /periodoId/i },
+    { fn: 'handleEliminarPeriodo',          body: { periodoId: IDS.invalido },                     campo: /periodoId/i },
     { fn: 'handleAjustarLinea',             body: { lineaId: IDS.invalido },                       campo: /lineaId/i },
     { fn: 'handleRevertirPagoLinea',        body: { lineaId: IDS.invalido },                       campo: /lineaId/i },
   ]
@@ -166,16 +167,16 @@ describe('config de empleado', () => {
     expect(String(body.error)).toMatch(/negativo/i)
   })
 
-  it('rechaza empleados que no son tipo_cliente = personal', async () => {
+  it('permite registrar empleados directamente desde nómina', async () => {
     mock = installFetchMock([
-      { match: '/clientes', respond: [{ id: IDS.empleado, tipo_cliente: 'juridico' }] },
+      { match: '/clientes', respond: [{ id: IDS.empleado, tipo_cliente: 'personal' }] },
+      { match: '/nomina_config_empleado', method: 'POST', respond: [{ id: IDS.config }] },
     ])
     const res = await H.handleCrearConfigEmpleado(
-      makeRequest({ empleadoId: IDS.empleado, salarioDiaUsd: 30 }), ENV
+      makeRequest({ nombre: 'Empleado nuevo', salarioDiaUsd: 30 }), ENV
     )
-    const { status, body } = await readResponse(res)
-    expect(status).toBe(400)
-    expect(String(body.error)).toMatch(/personal/i)
+    const { status } = await readResponse(res)
+    expect(status).toBe(201)
   })
 
   it('devuelve 404 si el empleado no existe', async () => {

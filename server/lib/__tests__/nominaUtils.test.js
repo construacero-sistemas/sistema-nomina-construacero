@@ -68,9 +68,10 @@ describe('calcularCamposAsistencia — flags de día', () => {
     expect(r.es_domingo).toBe(false)
   })
 
-  it('marca es_domingo en domingo', () => {
+  it('marca es_domingo y es_feriado en domingo', () => {
     const r = calcularCamposAsistencia(DOMINGO, '08:00', '16:00', 8)
     expect(r.es_domingo).toBe(true)
+    expect(r.es_feriado).toBe(true)
     expect(r.es_sabado).toBe(false)
   })
 
@@ -209,6 +210,78 @@ describe('calcularLineaNomina — recargos de sábado y feriado', () => {
     )
     expect(r.monto_sabado_usd).toBe(0)
     expect(r.total_bruto_usd).toBe(30)
+  })
+})
+
+describe('calcularLineaNomina — montos fijos USD (migración 225)', () => {
+  const CONFIG_FIJO = {
+    ...CONFIG_FACTORES,
+    nomina_monto_hora_extra_usd: 4,
+    nomina_monto_sabado_usd: 35,
+  }
+
+  it('cada hora extra paga el monto fijo, sin tarifa ni factor', () => {
+    const r = calcularLineaNomina(
+      Array.from({ length: 5 }, () => asis({ horas_extra: 2 })),
+      EMPLEADO, CONFIG_FIJO
+    )
+    expect(r.horas_extra).toBe(10)
+    expect(r.monto_extra_usd).toBe(40) // 10 × $4
+  })
+
+  it('el sábado fijo sustituye el pago del día completo', () => {
+    const r = calcularLineaNomina(
+      [asis(), asis(), asis(), asis(), asis({ es_sabado: true })],
+      EMPLEADO, CONFIG_FIJO
+    )
+    expect(r.dias_trabajados).toBe(5)
+    expect(r.dias_sabado).toBe(1)
+    expect(r.monto_normal_usd).toBe(120)  // 4 días × $30; el sábado sale del normal
+    expect(r.monto_sabado_usd).toBe(35)   // monto fijo completo del día
+    expect(r.total_bruto_usd).toBe(155)
+  })
+
+  it('sin monto definido conserva el cálculo por factor (respaldo)', () => {
+    const r = calcularLineaNomina(
+      [asis({ es_sabado: true, horas_extra: 2 })],
+      EMPLEADO,
+      { ...CONFIG_FACTORES, nomina_monto_hora_extra_usd: null, nomina_monto_sabado_usd: null }
+    )
+    expect(r.monto_extra_usd).toBe(11.25) // 2 × 3.75 × 1.5
+    expect(r.monto_sabado_usd).toBe(7.5)  // 30 × 0.25
+  })
+
+  it('un sábado que también es feriado lo maneja el feriado, no el sábado fijo', () => {
+    const r = calcularLineaNomina(
+      [asis({ es_sabado: true, es_feriado: true })],
+      EMPLEADO, CONFIG_FIJO
+    )
+    expect(r.dias_sabado).toBe(1)
+    expect(r.monto_sabado_usd).toBe(0)
+    expect(r.monto_normal_usd).toBe(30)
+    expect(r.monto_feriado_usd).toBe(30) // recargo factor 2 → +100%
+  })
+
+  it('feriado en modo monto fijo sustituye el pago del día', () => {
+    const r = calcularLineaNomina(
+      [asis(), asis({ es_feriado: true })],
+      EMPLEADO,
+      { ...CONFIG_FACTORES, nomina_feriado_modo: 'monto_fijo', nomina_monto_feriado_usd: 25 }
+    )
+    expect(r.dias_feriado).toBe(1)
+    expect(r.monto_normal_usd).toBe(30)  // solo el día normal; el feriado sale del normal
+    expect(r.monto_feriado_usd).toBe(25)
+    expect(r.total_bruto_usd).toBe(55)
+  })
+
+  it('feriado en modo monto fijo sin monto definido cae al factor', () => {
+    const r = calcularLineaNomina(
+      [asis({ es_feriado: true })],
+      EMPLEADO,
+      { ...CONFIG_FACTORES, nomina_feriado_modo: 'monto_fijo', nomina_monto_feriado_usd: null }
+    )
+    expect(r.monto_normal_usd).toBe(30)
+    expect(r.monto_feriado_usd).toBe(30) // factor 2 → +100% de respaldo
   })
 })
 

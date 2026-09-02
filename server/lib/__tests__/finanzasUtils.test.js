@@ -30,8 +30,40 @@ describe('finanzasUtils — validación determinista', () => {
     expect(result.idempotency_key).toBe(validMovement.idempotencyKey)
   })
 
+  it('congela la tasa USD para movimientos en USD y respeta la provista en otras monedas', () => {
+    const usd = normalizeMovement(validMovement)
+    expect(usd.tasa_usd_ves).toBe(120.456789)
+    expect(normalizeMovement({ ...validMovement, tasaUsdVes: '999' }).tasa_usd_ves).toBe(120.456789)
+
+    const eur = normalizeMovement({ ...validMovement, moneda: 'EUR', fuenteTasa: 'EURO', tasaUsdVes: '121.5' })
+    expect(eur.tasa_usd_ves).toBe(121.5)
+  })
+
+  it('trata VES como moneda base: tasa fija 1:1 y sin fuente externa', () => {
+    const ves = normalizeMovement({ ...validMovement, moneda: 'VES', tasaVes: '999', fuenteTasa: 'BCV', tasaUsdVes: '120' })
+    expect(ves.tasa_ves).toBe(1)
+    expect(ves.fuente_tasa).toBe('FIJA')
+    expect(ves.tasa_usd_ves).toBe(120)
+  })
+
+  it('permite tasa USD ausente (queda pendiente) pero rechaza una inválida', () => {
+    const sinTasa = normalizeMovement({ ...validMovement, moneda: 'EUR', fuenteTasa: 'EURO' })
+    expect(sinTasa.tasa_usd_ves).toBeNull()
+    expect(() => normalizeMovement({ ...validMovement, moneda: 'EUR', fuenteTasa: 'EURO', tasaUsdVes: '-1' })).toThrow(/USD/i)
+  })
+
   it('exige observación para tasas manuales', () => {
     expect(() => normalizeMovement({ ...validMovement, observacionTasa: '' })).toThrow(/tasa manual/i)
+  })
+
+  it('exige un motivo (concepto) descriptivo en todo movimiento', () => {
+    // Sin motivo no se puede saber al final de mes de dónde provienen los ingresos/egresos.
+    expect(() => normalizeMovement({ ...validMovement, concepto: '' })).toThrow(/concepto/i)
+    expect(() => normalizeMovement({ ...validMovement, concepto: '  ' })).toThrow(/concepto/i)
+    expect(() => normalizeMovement({ ...validMovement, concepto: 'ab' })).toThrow(/concepto/i)
+    const ok = normalizeMovement({ ...validMovement, concepto: '  Pago de flete a proveedor  ' })
+    expect(ok.concepto).toBe('Pago de flete a proveedor')
+    expect(() => normalizeMovement({ ...validMovement, concepto: 'x'.repeat(181) })).toThrow(/concepto/i)
   })
 
   it('rechaza tipos, monedas, montos y claves inválidas', () => {
@@ -59,18 +91,49 @@ describe('finanzasUtils — validación determinista', () => {
     expect(normalizeCategory({ nombre: '  Nómina ', tipo: 'egreso' })).toEqual({ nombre: 'Nómina', tipo: 'egreso' })
     expect(() => normalizeCategory({ nombre: ' ', tipo: 'egreso' })).toThrow(/categoría/i)
   })
+
+  it('normaliza método de pago y cuenta de origen (migración 226)', () => {
+    const result = normalizeMovement({
+      ...validMovement,
+      metodoPago: 'Banco en Bolívares',
+      cuentaOrigen: 'Banesco',
+    })
+    expect(result.metodo_pago).toBe('Banco en Bolívares')
+    expect(result.cuenta_origen).toBe('Banesco')
+    expect(result.partes).toBeNull()
+  })
+
+  it('normaliza tramos (partes) que suman el total, y rechaza sumas distintas', () => {
+    const result = normalizeMovement({ ...validMovement, monto: '300000', metodoPago: 'Banco en Bolívares', cuentaOrigen: 'Banesco', partes: [
+      { monto: 100000, referencia: 'OP-001' },
+      { monto: 200000, referencia: 'OP-002' },
+    ] })
+    expect(result.partes).toHaveLength(2)
+    expect(result.partes[1].monto).toBe(200000)
+    expect(result.partes[0].referencia).toBe('OP-001')
+
+    // Suma distinta al monto total → rechaza
+    expect(() => normalizeMovement({ ...validMovement, monto: '300000', partes: [
+      { monto: 100000 }, { monto: 100000 },
+    ] })).toThrow(/tramos/i)
+    // Tramo sin monto positivo → rechaza
+    expect(() => normalizeMovement({ ...validMovement, monto: '300000', partes: [{ monto: 0 }] })).toThrow(/tramo/i)
+  })
 })
 
 describe('finanzasUtils — agregación y exposición', () => {
-  it('calcula ingresos, egresos, balance y categorías', () => {
+  it('calcula ingresos, egresos, balance y categorías en VES y USD', () => {
     const result = summarizeRows([
-      { tipo: 'ingreso', categoria: 'Ventas', total_ves: 500, movimientos: 2 },
-      { tipo: 'egreso', categoria: 'Proveedores', total_ves: 120, movimientos: 1 },
-      { tipo: 'egreso', categoria: 'Proveedores', total_ves: 30, movimientos: 1 },
+      { tipo: 'ingreso', categoria: 'Ventas', total_ves: 500, total_usd: 40, movimientos: 2, movimientos_sin_usd: 1 },
+      { tipo: 'egreso', categoria: 'Proveedores', total_ves: 120, total_usd: 10, movimientos: 1, movimientos_sin_usd: 0 },
+      { tipo: 'egreso', categoria: 'Proveedores', total_ves: 30, total_usd: 2.5, movimientos: 1, movimientos_sin_usd: 0 },
     ])
-    expect(result).toMatchObject({ ingresos_ves: 500, egresos_ves: 150, balance_ves: 350, movimientos: 4 })
+    expect(result).toMatchObject({
+      ingresos_ves: 500, egresos_ves: 150, balance_ves: 350, movimientos: 4,
+      ingresos_usd: 40, egresos_usd: 12.5, balance_usd: 27.5, movimientos_sin_usd: 1,
+    })
     expect(result.categorias).toEqual(expect.arrayContaining([
-      { tipo: 'egreso', categoria: 'Proveedores', total_ves: 150, movimientos: 2 },
+      { tipo: 'egreso', categoria: 'Proveedores', total_ves: 150, total_usd: 12.5, movimientos: 2 },
     ]))
   })
 

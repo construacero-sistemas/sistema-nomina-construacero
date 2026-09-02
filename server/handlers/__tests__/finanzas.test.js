@@ -111,18 +111,22 @@ describe('finanzas — flujo crear, reportar y anular', () => {
     expect(mock.calls.some(call => call.method === 'DELETE')).toBe(false)
   })
 
-  it('lista movimientos con rango, tenant y límite acotado', async () => {
+  it('lista movimientos con rango, tenant, tipo, categoria, moneda y mostrarAnulados', async () => {
     mock = installFetchMock([
       { match: '/finanzas_movimientos', method: 'GET', respond: [movement] },
     ])
     const request = makeRequest(undefined, {
-      url: 'http://worker.test/api/finanzas/movimientos?desde=2026-08-01&hasta=2026-08-31&tipo=egreso&limit=50',
+      url: 'http://worker.test/api/finanzas/movimientos?desde=2026-08-01&hasta=2026-08-31&tipo=egreso&categoria=Proveedores&moneda=USD&mostrarAnulados=true&limit=50',
     })
     const response = await H.handleGetFinanzasMovimientos(request, ENV)
     const result = await readResponse(response)
     expect(result.status).toBe(200)
     expect(result.body.movimientos).toHaveLength(1)
     expect(mock.calls[0].url).toContain(`cuenta_id=eq.${OPERADORES.administracion.cuenta_id}`)
+    expect(mock.calls[0].url).toContain('tipo=eq.egreso')
+    expect(mock.calls[0].url).toContain('categoria=eq.Proveedores')
+    expect(mock.calls[0].url).toContain('moneda=eq.USD')
+    expect(mock.calls[0].url).not.toContain('estado=eq.activo') // when mostrarAnulados is true
     expect(mock.calls[0].url).toContain('limit=50')
     expect(mock.calls[0].url).not.toContain('select=*')
   })

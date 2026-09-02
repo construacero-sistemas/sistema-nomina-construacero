@@ -41,8 +41,8 @@ export function useActualizarConfig() {
   return useMutation({
     mutationFn: async (campos) => {
       const headers = await getAuthHeaders()
-      const res = await fetch(apiUrl('/api/admin/config'), {
-        method: 'PUT',
+      const res = await fetch(apiUrl('/api/config'), {
+        method: 'POST',
         headers,
         body: JSON.stringify(campos),
       })

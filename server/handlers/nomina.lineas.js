@@ -168,6 +168,63 @@ export async function handlePagarLineas(request, env) {
   }
 
   const total = r4(lines.reduce((sum, line) => sum + Number(line.total_neto_usd || 0), 0))
+
+  // ── Sincronización Contable Automática: Registrar Egreso en Finanzas ──
+  if (total > 0) {
+    try {
+      const periodNames = periods.map(p => p.nombre).join(', ')
+      const concepto = `Pago de Nómina: ${periodNames} (${ids.length} recibos)`.slice(0, 180)
+      const idempotencyKey = `nomina_pago_${ids.slice().sort().join('_').slice(0, 70)}_${now.slice(0, 10)}`.replace(/[^A-Za-z0-9._:-]/g, '_').slice(0, 128)
+      const tasaNum = Number(body?.tasaBcv) > 0 ? Number(body.tasaBcv) : 1
+      const fuenteTasa = ['BCV', 'EURO', 'USDT', 'MANUAL'].includes(body?.fuenteTasa) ? body.fuenteTasa : 'BCV'
+
+      // Asegurar categoría "Nómina" en finanzas_categorias
+      await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_categorias`, {
+        method: 'POST',
+        headers: svcHeaders(env, 'resolution=ignore-duplicates'),
+        body: JSON.stringify({
+          cuenta_id: operador.cuenta_id,
+          nombre: 'Nómina',
+          tipo: 'egreso',
+          activo: true,
+          creado_por: operador.id,
+        }),
+      })
+
+      // Insertar movimiento de egreso en finanzas_movimientos
+      await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos`, {
+        method: 'POST',
+        headers: svcHeaders(env, 'return=representation'),
+        body: JSON.stringify({
+          cuenta_id: operador.cuenta_id,
+          fecha: now.slice(0, 10),
+          tipo: 'egreso',
+          categoria: 'Nómina',
+          concepto,
+          monto: total,
+          moneda: 'USD',
+          tasa_ves: tasaNum,
+          fuente_tasa: fuenteTasa,
+          observacion_tasa: fuenteTasa === 'MANUAL' ? 'Tasa manual fijada en pago de nómina' : null,
+          referencia: referencia || null,
+          observaciones: `Liquidación de ${ids.length} recibo(s) de nómina autorizada por ${operador.nombre}`,
+          idempotency_key: idempotencyKey,
+          estado: 'activo',
+          creado_por: operador.id,
+        }),
+      })
+    } catch (syncError) {
+      // Falla no bloqueante en asiento de finanzas, pero debe ser trazable:
+      // sin esto, un descuadre nómina↔finanzas sería invisible.
+      registrarAuditoria(env, svcHeaders(env, 'return=minimal'), {
+        usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol,
+        cuentaId: operador.cuenta_id, categoria: 'FINANZAS', accion: 'SYNC_NOMINA_FALLIDA',
+        entidadTipo: 'nomina_linea', entidadId: ids[0],
+        meta: { recibos: ids.length, total_usd: total, periodIds, error: String(syncError) }, ip,
+      }).catch(() => {})
+    }
+  }
+
   registrarAuditoria(env, svcHeaders(env, 'return=minimal'), {
     usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol,
     cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'PAGAR_NOMINA',
@@ -215,6 +272,38 @@ export async function handleRevertirPagoLinea(request, env) {
     { method: 'PATCH', headers: svcHeaders(env, 'return=minimal'), body: JSON.stringify({ estado: 'cerrado' }) },
   )
   if (!periodUpdate.ok) return jsonError('El pago se revirtió, pero no se pudo actualizar el período', 500, request)
+
+  // ── Sincronización Contable: Anular egreso financiero vinculado ──
+  try {
+    const finRes = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?cuenta_id=eq.${operador.cuenta_id}` +
+        `&idempotency_key=like.nomina_pago_${lineaId}*&estado=eq.activo&select=id`,
+      { headers: svcHeaders(env) },
+    )
+    if (finRes.ok) {
+      const rows = await finRes.json()
+      for (const r of rows) {
+        await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?id=eq.${r.id}`, {
+          method: 'PATCH',
+          headers: svcHeaders(env, 'return=minimal'),
+          body: JSON.stringify({
+            estado: 'anulado',
+            anulado_en: new Date().toISOString(),
+            anulado_por: operador.id,
+            motivo_anulacion: 'Reversión de pago de nómina',
+          }),
+        })
+      }
+    }
+  } catch (syncError) {
+    // Falla no bloqueante, pero trazable (ver handlePagarLineas).
+    registrarAuditoria(env, svcHeaders(env, 'return=minimal'), {
+      usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol,
+      cuentaId: operador.cuenta_id, categoria: 'FINANZAS', accion: 'SYNC_NOMINA_FALLIDA',
+      entidadTipo: 'nomina_linea', entidadId: lineaId,
+      meta: { fase: 'revertir_pago', error: String(syncError) }, ip,
+    }).catch(() => {})
+  }
 
   registrarAuditoria(env, svcHeaders(env, 'return=minimal'), {
     usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol,

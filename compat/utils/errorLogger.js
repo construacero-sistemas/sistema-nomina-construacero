@@ -19,18 +19,16 @@ async function flush() {
   const token = await getToken()
   if (!token) return // no logueado, descartar
 
-  for (const entry of batch) {
-    try {
-      await fetch(apiUrl('/api/logs'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(entry),
-      })
-    } catch { /* silencioso */ }
-  }
+  try {
+    await fetch(apiUrl('/api/logs'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ entries: batch }),
+    })
+  } catch { /* silencioso: el logging nunca debe romper la app */ }
 }
 
 function scheduleFlush() {

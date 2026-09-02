@@ -1,0 +1,15 @@
+{
+  "name": "Construacero Nómina y Finanzas",
+  "short_name": "Construacero",
+  "description": "Nómina y finanzas de Construacero Carabobo C.A.",
+  "start_url": "/nomina",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#0a1628",
+  "lang": "es",
+  "icons": [
+    { "src": "/favicon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

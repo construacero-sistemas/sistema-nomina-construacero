@@ -1,9 +1,13 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { X } from 'lucide-react';
 
 export const Modal = ({ isOpen, onClose, title, children, className = '' }) => {
   const modalRef = useRef(null);
   const previousFocusRef = useRef(null);
+
+  // Estado del gesto de arrastre para cerrar (bottom sheet móvil)
+  const [dragY, setDragY] = useState(0);
+  const dragRef = useRef({ startY: 0, active: false });
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Escape') {
@@ -59,12 +63,30 @@ export const Modal = ({ isOpen, onClose, title, children, className = '' }) => {
     };
   }, [isOpen]); // Quitar handleKeyDown de dependencias para evitar re-foco constante
 
+  // ─── GESTO DE ARRASTRE PARA CERRAR (BOTTOM SHEET MÓVIL) ───────────────────
+  const onDragStart = useCallback((e) => {
+    dragRef.current = { startY: e.touches[0].clientY, active: true };
+  }, []);
+
+  const onDragMove = useCallback((e) => {
+    if (!dragRef.current.active) return;
+    const dy = e.touches[0].clientY - dragRef.current.startY;
+    setDragY(Math.max(0, dy));
+  }, []);
+
+  const onDragEnd = useCallback(() => {
+    if (!dragRef.current.active) return;
+    dragRef.current.active = false;
+    if (dragY > 120) onClose();
+    setDragY(0);
+  }, [dragY, onClose]);
+
   if (!isOpen) return null;
 
   return (
     // z-[100] asegura que esté por encima de la barra de navegación (z-30)
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -80,8 +102,24 @@ export const Modal = ({ isOpen, onClose, title, children, className = '' }) => {
       {/* Contenido del Modal */}
       <div
         ref={modalRef}
-        className={`relative bg-white dark:bg-slate-900 w-full max-w-[calc(100vw-1.5rem)] ${className.includes('max-w-') ? '' : 'sm:max-w-sm'} rounded-2xl sm:rounded-[2rem] max-h-[calc(100dvh-2rem)] sm:max-h-[90vh] shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 transition-all pb-[env(safe-area-inset-bottom)] ${className}`}
+        className={`relative bg-white dark:bg-slate-900 w-full max-w-[calc(100vw-1.5rem)] ${className.includes('max-w-') ? '' : 'sm:max-w-sm'} rounded-t-3xl sm:rounded-[2rem] max-h-[calc(100dvh-2rem)] sm:max-h-[90vh] shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 transition-all pb-[env(safe-area-inset-bottom)] ${className}`}
+        style={{
+          transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
+          transition: dragY > 0 ? 'none' : '',
+        }}
       >
+
+        {/* Tirador (grabber) para cerrar con arrastre — solo móvil */}
+        <div
+          className="sm:hidden flex justify-center pt-2 pb-1 touch-none select-none cursor-grab"
+          onTouchStart={onDragStart}
+          onTouchMove={onDragMove}
+          onTouchEnd={onDragEnd}
+          onTouchCancel={onDragEnd}
+          aria-hidden="true"
+        >
+          <div className="h-1.5 w-10 rounded-full bg-slate-300/90 dark:bg-slate-600" />
+        </div>
 
         {/* Cabecera */}
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50 shrink-0">

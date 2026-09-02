@@ -1,6 +1,6 @@
 // src/components/ui/CustomSelect.jsx
-// Selector personalizado con búsqueda — reemplaza el <select> nativo
-import { useState, useEffect, useRef, useMemo } from 'react'
+// Selector personalizado con búsqueda — reemplaza el control nativo
+import { useState, useEffect, useRef, useMemo, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { Search, ChevronDown, X, Check, Plus } from 'lucide-react'
 
@@ -80,6 +80,9 @@ export default function CustomSelect({
   const ref = useRef(null)
   const dropdownRef = useRef(null)
   const searchRef = useRef(null)
+  // Navegación por teclado: flechas mueven la opción activa, Enter elige, Escape cierra.
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const listboxId = useId().replace(/:/g, '')
 
   const showSearch = searchable ?? (creatable || options.length > 5)
 
@@ -134,22 +137,26 @@ export default function CustomSelect({
   const seleccionada = options.find(o => o.value === value)
   
   // Persistencia de etiqueta para evitar "parpadeo" durante refetchs en entornos lentos.
-  const [lastLabel, setLastLabel] = useState(null)
-  useEffect(() => {
-    if (seleccionada) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLastLabel(seleccionada.selectedLabel || seleccionada.label)
-    } else if (!value) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLastLabel(null)
+  // Patrón "adjust state during render" (documentado por React): se ajusta el estado
+  // durante el propio render cuando cambian las entradas, sin useEffect ni refs en render.
+  const [lastLabel, setLastLabel] = useState(null) // { value, label } | null
+  if (seleccionada) {
+    const label = seleccionada.selectedLabel || seleccionada.label
+    if (!lastLabel || lastLabel.value !== value || lastLabel.label !== label) {
+      setLastLabel({ value, label })
     }
-    // Si hay value pero no hay seleccionada → refetch en curso, NO limpiar.
-  }, [seleccionada, value])
+  } else if (!value && lastLabel) {
+    // Sin value y sin opción seleccionada → limpiar. Si hay value pero no hay
+    // seleccionada → refetch en curso, NO limpiar.
+    setLastLabel(null)
+  }
+  // Etiqueta conocida solo si corresponde al value actual (evita mostrar labels de otro value).
+  const lastKnownLabel = lastLabel && lastLabel.value === value ? lastLabel.label : null
 
   // Si el valor actual no está en options (refetch en curso), usar el último label conocido.
   const seleccionadaLabel = seleccionada
     ? (seleccionada.selectedLabel || seleccionada.label)
-    : (value && lastLabel ? lastLabel : (creatable && value ? value : null))
+    : (value && lastKnownLabel ? lastKnownLabel : (creatable && value ? value : null))
   const filtradas = useMemo(() => {
     if (!busqueda.trim()) return options
     const q = busqueda.trim()
@@ -158,6 +165,18 @@ export default function CustomSelect({
       .filter(o => o._score > 0)
       .sort((a, b) => b._score - a._score)
   }, [options, busqueda])
+
+  // Índice efectivo de la opción activa: lo fija el teclado/ratón (activeIndex);
+  // si aún nadie navegó, parte de la opción seleccionada (o de la primera).
+  const opcionActiva = activeIndex >= 0
+    ? Math.min(activeIndex, filtradas.length)
+    : (abierto ? Math.max(filtradas.findIndex(o => o.value === value), filtradas.length > 0 ? 0 : -1) : -1)
+
+  // Mantener la opción activa visible mientras se navega con flechas.
+  useEffect(() => {
+    if (!abierto || opcionActiva < 0 || isMobile) return
+    document.getElementById(`${listboxId}-opt-${opcionActiva}`)?.scrollIntoView({ block: 'nearest' })
+  }, [opcionActiva, abierto, isMobile, listboxId])
 
   // Mostrar opción "Crear" cuando hay texto que no coincide exactamente
   const puedeCrear = creatable && busqueda.trim() &&
@@ -169,6 +188,7 @@ export default function CustomSelect({
     setBusqueda('')
     setShowInlineCreate(false)
     setNewValueText('')
+    setActiveIndex(-1)
     setAbierto(false)
   }
 
@@ -178,11 +198,13 @@ export default function CustomSelect({
     setBusqueda('')
     setShowInlineCreate(false)
     setNewValueText('')
+    setActiveIndex(-1)
   }
 
   function toggle() {
     if (disabled) return
     setAbierto(!abierto)
+    setActiveIndex(-1)
     if (abierto) {
       setBusqueda('')
       setShowInlineCreate(false)
@@ -190,14 +212,53 @@ export default function CustomSelect({
     }
   }
 
+  function navegarTeclado(e) {
+    if (!abierto) {
+      // Enter/ArrowDown abren; Space lo maneja el click nativo del botón.
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
+        e.preventDefault()
+        toggle()
+      }
+      return
+    }
+    const total = filtradas.length + (puedeCrear ? 1 : 0)
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setActiveIndex(total === 0 ? -1 : Math.min((opcionActiva < 0 ? -1 : opcionActiva) + 1, total - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActiveIndex(Math.max((opcionActiva < 0 ? 0 : opcionActiva) - 1, 0))
+    } else if (e.key === 'Enter') {
+      if (opcionActiva < 0) return
+      e.preventDefault()
+      if (opcionActiva >= filtradas.length && puedeCrear) elegir(busqueda.trim())
+      else if (filtradas[opcionActiva]) elegir(filtradas[opcionActiva].value)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setAbierto(false)
+      setBusqueda('')
+      setShowInlineCreate(false)
+      setNewValueText('')
+      setActiveIndex(-1)
+      ref.current?.querySelector('button')?.focus()
+    }
+  }
+
   return (
     <div ref={ref} className="relative">
       {/* Trigger */}
+      <div className="flex items-center gap-1">
       <button
         type="button"
         onClick={toggle}
+        onKeyDown={navegarTeclado}
         disabled={disabled}
-        className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border text-left transition-all text-sm ${
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={abierto}
+        aria-controls={abierto ? listboxId : undefined}
+        aria-activedescendant={abierto && opcionActiva >= 0 ? `${listboxId}-opt-${opcionActiva}` : undefined}
+        className={`${clearable && seleccionadaLabel && !disabled ? 'flex-1' : 'w-full'} flex items-center gap-2.5 px-3.5 py-2.5 min-h-11 rounded-xl border text-left transition-all text-sm ${
           disabled ? 'opacity-50 cursor-not-allowed bg-slate-100 border-slate-200' :
           abierto
             ? 'border-primary ring-1 ring-primary/30 bg-white'
@@ -206,23 +267,28 @@ export default function CustomSelect({
               : 'border-slate-200 bg-slate-50 hover:border-slate-300'
         }`}
       >
-        {TriggerIcon && (
-          <TriggerIcon size={15} className={seleccionadaLabel ? 'text-primary shrink-0' : 'text-slate-400 shrink-0'} />
-        )}
+        {(() => {
+          const IconComp = TriggerIcon || seleccionada?.icon
+          return IconComp ? (
+            <IconComp size={16} className={seleccionadaLabel ? 'text-primary shrink-0' : 'text-slate-400 shrink-0'} />
+          ) : null
+        })()}
         <span className={`flex-1 truncate ${seleccionadaLabel ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>
           {seleccionadaLabel || placeholder}
         </span>
         {showSubInTrigger && seleccionada?.sub && (
           <span className="text-xs text-slate-400 truncate max-w-[120px] hidden sm:inline">{seleccionada.sub}</span>
         )}
-        {clearable && seleccionadaLabel && !disabled && (
-          <div role="button" tabIndex={0} onClick={limpiar}
-            className="p-0.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors shrink-0">
-            <X size={13} />
-          </div>
-        )}
         <ChevronDown size={15} className={`text-slate-400 transition-transform shrink-0 ${abierto ? 'rotate-180' : ''}`} />
       </button>
+      {clearable && seleccionadaLabel && !disabled && (
+        <button type="button" onClick={limpiar}
+          aria-label="Limpiar selección"
+          className="shrink-0 rounded-xl border border-slate-200 bg-white p-2.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors">
+          <X size={15} aria-hidden="true" />
+        </button>
+      )}
+      </div>
 
       {/* Dropdown / Bottom Sheet */}
       {abierto && (
@@ -231,8 +297,8 @@ export default function CustomSelect({
             {/* Header del modal */}
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
               <span className="font-semibold text-slate-800 text-lg">{placeholder}</span>
-              <button type="button" onClick={() => setAbierto(false)} className="p-2 -mr-2 bg-slate-50 hover:bg-slate-100 text-slate-500 rounded-full transition-colors">
-                <X size={20} />
+              <button type="button" onClick={() => setAbierto(false)} className="inline-flex items-center gap-1.5 px-3 py-2 -mr-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-bold transition-colors" aria-label="Cerrar opciones">
+                <X size={20} aria-hidden="true" /> Cerrar
               </button>
             </div>
             
@@ -250,8 +316,12 @@ export default function CustomSelect({
                       autoCorrect="off"
                       autoCapitalize="off"
                       spellCheck={false}
+                      role="combobox"
+                      aria-controls={listboxId}
+                      aria-activedescendant={opcionActiva >= 0 ? `${listboxId}-opt-${opcionActiva}` : undefined}
+                      onKeyDown={navegarTeclado}
                       value={busqueda}
-                      onChange={e => setBusqueda(e.target.value)}
+                      onChange={e => { setBusqueda(e.target.value); setActiveIndex(-1) }}
                       maxLength={createMaxLength || undefined}
                       placeholder="Buscar..."
                       className="w-full pl-11 pr-4 py-3.5 text-[16px] border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-slate-400 transition-shadow"
@@ -261,20 +331,23 @@ export default function CustomSelect({
               )}
               
               {/* Lista amigable con scroll */}
-              <div className="overflow-y-auto p-3 pb-8 overscroll-contain flex-1">
+              <div id={listboxId} className="overflow-y-auto p-3 pb-8 overscroll-contain flex-1" role="listbox" aria-label={placeholder}>
                   {filtradas.length === 0 && !puedeCrear ? (
                     <p className="text-base text-slate-400 text-center py-8">
                       {busqueda ? 'Sin resultados' : 'Sin opciones'}
                     </p>
                   ) : (
                     <div className="space-y-1">
-                      {filtradas.map(opt => {
+                      {filtradas.map((opt, index) => {
                         const isSelected = opt.value === value
                         const OptIcon = opt.icon
                         return (
                           <button
                             key={opt.value}
+                            id={`${listboxId}-opt-${index}`}
                             type="button"
+                            role="option"
+                            aria-selected={isSelected}
                             onClick={() => elegir(opt.value)}
                             className={`w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-xl transition-colors ${
                               isSelected
@@ -355,7 +428,11 @@ export default function CustomSelect({
         ) : createPortal(
           <div
             ref={dropdownRef}
-            className="bg-white rounded-xl border border-slate-200 shadow-xl shadow-slate-200/50 overflow-hidden"
+            id={listboxId}
+            role="listbox"
+            aria-label={placeholder}
+            onKeyDown={navegarTeclado}
+            className="bg-white rounded-2xl border border-slate-200/90 shadow-2xl shadow-slate-900/10 overflow-hidden p-1.5"
             style={{
               position: 'fixed',
               zIndex: 9999,
@@ -368,7 +445,7 @@ export default function CustomSelect({
           >
             {/* Buscador Desktop */}
             {showSearch && (
-              <div className="p-2 border-b border-slate-100">
+              <div className="p-1.5 border-b border-slate-100 mb-1">
                 <div className="relative">
                   <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   <input
@@ -379,36 +456,46 @@ export default function CustomSelect({
                     autoCorrect="off"
                     autoCapitalize="off"
                     spellCheck={false}
+                    role="combobox"
+                    aria-controls={listboxId}
+                    aria-activedescendant={opcionActiva >= 0 ? `${listboxId}-opt-${opcionActiva}` : undefined}
+                    onKeyDown={navegarTeclado}
                     value={busqueda}
-                    onChange={e => setBusqueda(e.target.value)}
+                    onChange={e => { setBusqueda(e.target.value); setActiveIndex(-1) }}
                     maxLength={createMaxLength || undefined}
                     placeholder="Buscar..."
-                    className="w-full pl-7 pr-3 py-1.5 text-sm border border-slate-100 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-primary-focus focus:border-primary placeholder:text-slate-400"
+                    className="w-full pl-7 pr-3 py-1.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-slate-400"
                   />
                 </div>
               </div>
             )}
 
             {/* Lista Desktop */}
-            <div className="max-h-52 overflow-y-auto py-1 overscroll-contain">
+            <div className="max-h-56 overflow-y-auto p-0.5 space-y-0.5 overscroll-contain">
               {filtradas.length === 0 && !puedeCrear ? (
                 <p className="text-sm text-slate-400 text-center py-4">
                   {busqueda ? 'Sin resultados' : 'Sin opciones'}
                 </p>
               ) : (
                 <>
-                  {filtradas.map(opt => {
+                  {filtradas.map((opt, index) => {
                     const isSelected = opt.value === value
                     const OptIcon = opt.icon
                     return (
                       <button
                         key={opt.value}
+                        id={`${listboxId}-opt-${index}`}
                         type="button"
+                        role="option"
+                        aria-selected={isSelected}
                         onClick={() => elegir(opt.value)}
-                        className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm transition-colors ${
+                        onMouseEnter={() => setActiveIndex(index)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-all rounded-xl ${
                           isSelected
-                            ? 'bg-primary-light/40 text-primary font-medium'
-                            : 'hover:bg-slate-50 text-slate-700'
+                            ? 'bg-primary/10 text-primary font-bold'
+                            : index === opcionActiva
+                              ? 'bg-slate-100 text-slate-900 font-semibold'
+                              : 'hover:bg-slate-50 text-slate-700 font-medium'
                         }`}
                       >
                         {OptIcon && <OptIcon size={14} className={isSelected ? 'text-primary shrink-0' : 'text-slate-400 shrink-0'} />}
@@ -421,8 +508,12 @@ export default function CustomSelect({
                   {puedeCrear && (
                     <button
                       type="button"
+                      id={`${listboxId}-opt-${filtradas.length}`}
                       onClick={() => elegir(busqueda.trim())}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm transition-colors hover:bg-emerald-50 text-emerald-700 border-t border-slate-100"
+                      onMouseEnter={() => setActiveIndex(filtradas.length)}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-all rounded-xl mt-1 border border-emerald-100/60 ${
+                        opcionActiva === filtradas.length ? 'bg-emerald-100 text-emerald-800' : 'hover:bg-emerald-50 text-emerald-700 font-semibold'
+                      }`}
                     >
                       <Plus size={14} className="text-emerald-500 shrink-0" />
                       <span className="flex-1 truncate">{createLabel} "<span className="font-bold">{busqueda.trim()}</span>"</span>

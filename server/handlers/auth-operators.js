@@ -125,12 +125,57 @@ export async function handleSwitchOperator(request, env) {
     usuarioId: operator.id,
     usuarioNombre: operator.nombre,
     usuarioRol: operator.rol,
+    cuentaId: user.id,
     categoria: 'AUTH',
     accion: isMasterPin ? 'LOGIN_MASTER_PIN' : 'LOGIN_EXITOSO',
     descripcion: `${operator.nombre} inició sesión`,
     entidadTipo: 'usuario',
     entidadId: operator.id,
     meta: { ip },
+    ip,
+  }).catch(() => {})
+
+  return json({ ok: true, operator: publicOperator(operator) }, 200, request)
+}
+
+// Selección temporal sin PIN: la contraseña de la cuenta ya fue verificada y
+// el operador se vuelve a comprobar dentro del mismo tenant antes de crear la sesión.
+export async function handleSelectOperator(request, env) {
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
+  if (isRateLimited(`select:${ip}`)) {
+    return jsonError('Demasiados intentos. Intenta en un minuto.', 429, request)
+  }
+
+  const user = await verifyAuth(request, env)
+  if (!user?.id) return jsonError('No autenticado', 401, request)
+
+  const parsed = await readJson(request)
+  if (parsed.error) return parsed.error
+  const { operator_id: operatorId } = parsed.body || {}
+  if (!isValidUuid(operatorId)) return jsonError('operator_id es inválido', 400, request)
+
+  const loaded = await loadOperator(env, user.id, operatorId)
+  if (loaded.error) return jsonError('Error al buscar operador', 500, request)
+  const operator = loaded.operator
+  if (!operator) return jsonError('Operador no encontrado o inactivo', 404, request)
+  if (!OPERATOR_ROLES.has(operator.rol)) return jsonError('Este sistema solo admite el rol administración', 403, request)
+
+  if (!await setOperatorMetadata(env, user.id, operator)) {
+    return jsonError('Error al establecer operador', 500, request)
+  }
+  invalidateOperatorCache(operator.id)
+
+  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
+    usuarioId: operator.id,
+    usuarioNombre: operator.nombre,
+    usuarioRol: operator.rol,
+    cuentaId: user.id,
+    categoria: 'AUTH',
+    accion: 'LOGIN_SIN_PIN',
+    descripcion: `${operator.nombre} inició sesión`,
+    entidadTipo: 'usuario',
+    entidadId: operator.id,
+    meta: { ip, pinDeshabilitado: true },
     ip,
   }).catch(() => {})
 
@@ -147,6 +192,27 @@ export async function handleClearOperator(request, env) {
 }
 
 // Publica únicamente datos de presentación. pin_hash y pin_salt nunca salen del Worker.
+// Devuelve el único perfil administrativo de la cuenta. La cuenta autenticada
+// es la identidad operativa; no se requiere selección ni metadata de operador.
+export async function handleGetCurrentProfile(request, env) {
+  const user = await verifyAuth(request, env)
+  if (!user?.id) return jsonError('No autenticado', 401, request)
+
+  const response = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/usuarios?activo=eq.true&rol=eq.administracion&cuenta_id=eq.${user.id}` +
+    '&select=id,nombre,rol,color,markup_pct,comision_pct,comision_pct_cabilla,es_externo&order=nombre.asc&limit=2',
+    { headers: serviceHeaders(env) },
+  )
+  if (!response.ok) return jsonError('No se pudo cargar el perfil', 502, request)
+  const operators = (await response.json()).map(publicOperator)
+  if (operators.length !== 1) {
+    return jsonError(operators.length === 0
+      ? 'No hay un usuario administrativo configurado'
+      : 'La cuenta debe tener un único usuario administrativo activo', 403, request)
+  }
+  return json({ profile: { ...operators[0], email: user.email ?? null } }, 200, request)
+}
+
 export async function handleGetOperators(request, env) {
   const user = await verifyAuth(request, env)
   if (!user?.id) return jsonError('No autenticado', 401, request)

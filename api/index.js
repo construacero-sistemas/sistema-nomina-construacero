@@ -1,6 +1,7 @@
 import worker from '../worker.js'
 
 const ENV_KEYS = [
+  'BCV_GOOGLE_SCRIPT_URL',
   'SUPABASE_URL',
   'SUPABASE_ANON_KEY',
   'SUPABASE_SERVICE_KEY',

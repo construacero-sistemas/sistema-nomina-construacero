@@ -2,25 +2,42 @@ import {
   handleGetEmpleados, handleGetConfigEmpleados, handleCrearConfigEmpleado, handleActualizarConfigEmpleado,
   handleGetAsistencia, handleRegistrarAsistencia, handleRegistrarAsistenciaMasivo, handleEliminarAsistencia,
   handleGetMarcajeHoy, handleMarcarEntrada, handleMarcarSalida,
-  handleGetFeriados, handleCrearFeriado, handleGetHorarios, handleCrearHorario,
+  handleGetFeriados, handleCrearFeriado, handleEliminarFeriado, handleGetHorarios, handleCrearHorario,
   handleGetConceptos, handleCrearConcepto,
   handleGetReglasLegales, handleCrearReglaLegal,
   handleGetTasasSnapshots, handleCrearTasaSnapshot,
-  handleGetPeriodos, handleCrearPeriodo, handleCalcularPeriodo, handleCerrarPeriodo, handleReabrirPeriodo,
+  handleGetPeriodos, handleCrearPeriodo, handleCalcularPeriodo, handleCerrarPeriodo, handleReabrirPeriodo, handleEliminarPeriodo,
   handleGetLineas, handleAjustarLinea, handlePagarLineas, handleRevertirPagoLinea,
 } from './server/handlers/nomina.js'
 import {
-  handleSwitchOperator, handleClearOperator, handleGetOperators,
+  handleSwitchOperator, handleSelectOperator, handleClearOperator, handleGetOperators, handleGetCurrentProfile,
 } from './server/handlers/auth-operators.js'
-import { handleGetConfig, handlePing } from './server/handlers/config.js'
+import { handleGetConfig, handleUpdateConfig, handlePing } from './server/handlers/config.js'
 import {
   handleGetFinanzasMovimientos,
   handleCrearFinanzasMovimiento,
   handleAnularFinanzasMovimiento,
+  handleReasignarCuentaMovimientos,
   handleGetFinanzasResumen,
   handleGetFinanzasCategorias,
   handleCrearFinanzasCategoria,
 } from './server/handlers/finanzas.js'
+import { handleSyncVentasPos } from './server/handlers/finanzas.sync.js'
+import {
+  handleGetCuentasCustodia,
+  handleCrearCuentaCustodia,
+  handleActualizarCuentaCustodia,
+  handleEliminarCuentaCustodia,
+  handleRestaurarCuentasCustodia,
+} from './server/handlers/cuentasCustodia.js'
+import { handleGetRates } from './server/handlers/rates.js'
+import { handleCrearLogs } from './server/handlers/logs.js'
+import { supaServiceHeaders } from './server/lib/auth.js'
+import {
+  handleGetRetencion,
+  handlePurgarRetencion,
+  handleConfigurarRetencion,
+} from './server/handlers/retencion.js'
 import {
   cacheResponse,
   clearEgressCache,
@@ -33,15 +50,30 @@ import {
 const routes = new Map([
   ['GET /api/ping', handlePing],
   ['GET /api/config', handleGetConfig],
+  ['POST /api/config', handleUpdateConfig],
+  ['GET /api/rates', handleGetRates],
+  ['POST /api/logs', handleCrearLogs],
+  ['GET /api/auth/me', handleGetCurrentProfile],
   ['GET /api/auth/operators', handleGetOperators],
   ['POST /api/auth/switch-operator', handleSwitchOperator],
+  ['POST /api/auth/select-operator', handleSelectOperator],
   ['POST /api/auth/clear-operator', handleClearOperator],
   ['GET /api/finanzas/movimientos', handleGetFinanzasMovimientos],
   ['POST /api/finanzas/movimientos/crear', handleCrearFinanzasMovimiento],
   ['POST /api/finanzas/movimientos/anular', handleAnularFinanzasMovimiento],
+  ['POST /api/finanzas/movimientos/reasignar-cuenta', handleReasignarCuentaMovimientos],
+  ['POST /api/finanzas/sync-pos', handleSyncVentasPos],
   ['GET /api/finanzas/reportes/resumen', handleGetFinanzasResumen],
   ['GET /api/finanzas/categorias', handleGetFinanzasCategorias],
   ['POST /api/finanzas/categorias/crear', handleCrearFinanzasCategoria],
+  ['GET /api/finanzas/cuentas-custodia', handleGetCuentasCustodia],
+  ['POST /api/finanzas/cuentas-custodia/crear', handleCrearCuentaCustodia],
+  ['POST /api/finanzas/cuentas-custodia/actualizar', handleActualizarCuentaCustodia],
+  ['POST /api/finanzas/cuentas-custodia/eliminar', handleEliminarCuentaCustodia],
+  ['POST /api/finanzas/cuentas-custodia/restaurar', handleRestaurarCuentasCustodia],
+  ['GET /api/retencion', handleGetRetencion],
+  ['POST /api/retencion/purgar', handlePurgarRetencion],
+  ['POST /api/retencion/configurar', handleConfigurarRetencion],
   ['GET /api/nomina/empleados', handleGetEmpleados],
   ['GET /api/nomina/config-empleados', handleGetConfigEmpleados],
   ['POST /api/nomina/config-empleado/crear', handleCrearConfigEmpleado],
@@ -55,6 +87,7 @@ const routes = new Map([
   ['POST /api/nomina/marcaje/salida', handleMarcarSalida],
   ['GET /api/nomina/calendario/feriados', handleGetFeriados],
   ['POST /api/nomina/calendario/feriados/crear', handleCrearFeriado],
+  ['POST /api/nomina/calendario/feriados/eliminar', handleEliminarFeriado],
   ['GET /api/nomina/calendario/horarios', handleGetHorarios],
   ['POST /api/nomina/calendario/horarios/crear', handleCrearHorario],
   ['GET /api/nomina/conceptos', handleGetConceptos],
@@ -68,6 +101,7 @@ const routes = new Map([
   ['POST /api/nomina/periodos/calcular', handleCalcularPeriodo],
   ['POST /api/nomina/periodos/cerrar', handleCerrarPeriodo],
   ['POST /api/nomina/periodos/reabrir', handleReabrirPeriodo],
+  ['POST /api/nomina/periodos/eliminar', handleEliminarPeriodo],
   ['GET /api/nomina/lineas', handleGetLineas],
   ['POST /api/nomina/lineas/ajustar', handleAjustarLinea],
   ['POST /api/nomina/lineas/pagar', handlePagarLineas],
@@ -77,8 +111,10 @@ const routes = new Map([
 const MAX_BODY_BYTES = 256 * 1024
 
 function egressCacheTtl(pathname) {
+  if (pathname === '/api/auth/me') return 5 * 60 * 1000
   if (pathname === '/api/auth/operators') return 5 * 60 * 1000
   if (pathname === '/api/config') return 5 * 60 * 1000
+  if (pathname === '/api/rates') return 10 * 60 * 1000
   if (pathname === '/api/nomina/empleados') return 5 * 60 * 1000
   if (pathname === '/api/nomina/config-empleados') return 30 * 1000
   if (pathname === '/api/nomina/asistencia') return 15 * 1000
@@ -92,6 +128,8 @@ function egressCacheTtl(pathname) {
   if (pathname === '/api/finanzas/movimientos') return 15 * 1000
   if (pathname === '/api/finanzas/reportes/resumen') return 30 * 1000
   if (pathname === '/api/finanzas/categorias') return 10 * 60 * 1000
+  if (pathname === '/api/finanzas/cuentas-custodia') return 10 * 60 * 1000
+  if (pathname === '/api/retencion') return 10 * 60 * 1000
   return 0
 }
 
@@ -218,5 +256,18 @@ export default {
       }
     }
     return withHeaders(new Response('Not found', { status: 404 }), request, env)
+  },
+
+  // Cron: purga global en modo real (dry-run = false) una vez al mes.
+  // Solo corre si hay SUPABASE_SERVICE_KEY configurada (evita fallos en local).
+  async scheduled(_controller, env) {
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) return new Response('ok', { status: 200 })
+    const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/retencion_purga_todos`, {
+      method: 'POST',
+      headers: { ...supaServiceHeaders(env), Prefer: 'return=minimal' },
+      body: JSON.stringify({ p_dry_run: false, p_disparador: 'cron' }),
+    })
+    if (!response.ok) console.error('[nomina-worker] cron purge failed', response.status, await response.text())
+    return new Response('ok', { status: 200 })
   },
 }

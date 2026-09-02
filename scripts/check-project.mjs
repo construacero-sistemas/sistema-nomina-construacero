@@ -56,9 +56,14 @@ const requiredFiles = [
   'compat/modules/auth/UserCard.jsx',
   'compat/modules/auth/PwaInstallButton.jsx',
   'src/NominaApp.jsx',
+  'src/views/SistemaView.jsx',
   'tailwind.config.js',
   'public/logo.png',
   'public/favicon.png',
+  'public/manifest.webmanifest',
+  'public/sw.js',
+  'AGENT.md',
+  'docs/BITACORA_PROYECTO.md',
   'supabase/migrations/001_nomina_base_contract.sql',
   'supabase/migrations/208_nomina_config_empleado.sql',
   'supabase/migrations/219_nomina_rollout_flag.sql',
@@ -71,6 +76,20 @@ const requiredFiles = [
   'server/handlers/finanzas.js',
   'src/components/finanzas/FinanzasView.jsx',
   'src/components/nomina/TabConfiguracion.jsx',
+  'server/handlers/rates.js',
+  'docs/ACEPTACION_MANUAL_E2E.md',
+  'scripts/check-local-dev.mjs',
+  'scripts/test-responsiveness-deterministic.mjs',
+  'src/components/nomina/ComisionPagoModal.jsx',
+  'src/services/pdf/comisionReciboPDF.js',
+  'compat/components/ui/DatePicker.jsx',
+  'src/components/finanzas/SyncPosModal.jsx',
+  'server/handlers/finanzas.sync.js',
+  'src/constants/formasPago.js',
+  'src/utils/carterasHelper.js',
+  'server/lib/carterasHelper.js',
+  'src/components/finanzas/CarterasHeader.jsx',
+  'src/components/finanzas/TransferenciaCarterasModal.jsx',
 ]
 for (const path of requiredFiles) {
   if (!await exists(path)) fail(`Falta archivo requerido: ${path}`)
@@ -84,14 +103,16 @@ const userCardSource = await read('compat/modules/auth/UserCard.jsx')
 const pwaSource = await read('compat/modules/auth/PwaInstallButton.jsx')
 const authStoreSource = await read('compat/store/useAuthStore.js')
 const authServerSource = await read('compat/api/lib/auth.js')
-const pinModalSource = await read('compat/components/auth/LoginPinModal.jsx')
+const workerAuthSource = await read('server/handlers/auth-operators.js')
 const employeeModalSource = await read('src/components/nomina/EmpleadoConfigModal.jsx')
 const cssSource = await read('compat/index.css')
 const vercelApiSource = await read('api/index.js')
 const vercelConfig = await read('vercel.json')
 const shellSource = await read('src/NominaApp.jsx')
+const ratesHookSource = await read('src/hooks/useTasaCambioNomina.js')
 const payrollHookSource = await read('src/hooks/useNomina.js')
 const payrollViewSource = await read('src/views/NominaView.jsx')
+const systemViewSource = await read('src/views/SistemaView.jsx')
 const marcajeSource = await read('src/components/nomina/MarcajeLogisticaPanel.jsx')
 const financeHandlerSource = await read('server/handlers/finanzas.js')
 const financeViewSource = await read('src/components/finanzas/FinanzasView.jsx')
@@ -101,30 +122,42 @@ const nominaSharedSource = await read('server/handlers/nomina.shared.js')
 const authOperatorsSource = await read('server/handlers/auth-operators.js')
 const tailwindSource = await read('tailwind.config.js')
 const supabaseConfig = await read('supabase/config.toml')
+const acceptanceSource = await read('docs/ACEPTACION_MANUAL_E2E.md')
+const serviceWorkerSource = await read('public/sw.js')
+const agentSource = await read('AGENT.md')
+const bitacoraSource = await read('docs/BITACORA_PROYECTO.md')
+const toastSource = await read('compat/components/ui/Toast.jsx')
 
 for (const [name, source, markers] of [
   ['index.html', indexHtml, ['Nómina y Finanzas · Construacero Carabobo', 'Nómina y finanzas de Construacero Carabobo C.A.']],
-  ['compat/modules/auth/LoginPage.jsx', loginSource, ['¿Quién está operando?', 'Selecciona tu usuario e ingresa tu PIN', 'Nómina y Finanzas', 'LoginPinModal', 'switchOperator', 'listar_usuarios_login', "u.rol === 'administracion'", '/logo.png', 'login-stage', 'login-panel', 'login-empty', 'Actualizar operadores', 'login-field-control', 'login-field-icon', 'login-field-password-control', 'login-submit', 'submitReady', 'nomina-login-email', 'nomina-login-password', 'noValidate', 'Ingresa un correo válido.', 'login-form-error', 'operator-grid', 'operator-list-summary', 'await logout()']],
+  ['compat/modules/auth/LoginPage.jsx', loginSource, ['Bienvenido', 'Acceso a la cuenta', 'El acceso quedará guardado en este dispositivo', '/logo.png', 'login-stage', 'login-panel', 'login-field-control', 'login-field-icon', 'login-field-password-control', 'login-submit', 'submitReady', 'nomina-login-email', 'nomina-login-password', 'noValidate', 'Ingresa un correo válido.', 'login-form-error']],
   ['server/handlers/nomina.shared.js', nominaSharedSource, ['ADMIN_ROLE', "ROLES_VER = [ADMIN_ROLE]", "ROLES_NOMINA = [ADMIN_ROLE]", "ROLES_ADMIN = [ADMIN_ROLE]"]],
   ['server/handlers/auth-operators.js', authOperatorsSource, ['const OPERATOR_ROLES = new Set([\'administracion\'])', 'rol=eq.administracion']],
   ['compat/modules/auth/UserCard.jsx', userCardSource, ['operator-card', 'operator-card-avatar-wrap', 'operator-card-role']],
   ['compat/modules/auth/PwaInstallButton.jsx', pwaSource, ['beforeinstallprompt', 'Instalar App']],
-  ['src/components/nomina/EmpleadoConfigModal.jsx', employeeModalSource, ['tipo_cliente === \'personal\'', 'no crea fichas nuevas', 'Actualizar lista']],
-  ['compat/store/useAuthStore.js', authStoreSource, ["signOut({ scope: 'local' })", 'finally {', 'isLocalApi', 'localSessionRejected', 'VITE_AUTH_DEBUG', 'Este sistema solo admite el rol administración.']],
-  ['compat/components/auth/LoginPinModal.jsx', pinModalSource, ['pin-modal-backdrop', 'pin-modal-card', 'pin-modal-pad', 'pin-modal-input', 'aria-modal="true"', 'submitLockRef', 'if (pin.length !== PIN_LEN || working || submitLockRef.current) return']],
-  ['compat/index.css', cssSource, ['.pin-modal-card', 'overflow-x: hidden', 'overflow-y: auto', 'overscroll-behavior: contain', '.operator-card-avatar-wrap', '.operator-card-role', 'text-wrap: balance']],
+  ['src/components/nomina/EmpleadoConfigModal.jsx', employeeModalSource, ['tipo_cliente === \'personal\'', 'Registra aquí al empleado', 'Nombre completo', 'O selecciona una persona ya registrada']],
+  ['src/hooks/useTasaCambioNomina.js', ratesHookSource, ['api/rates', 'no-store', 'usdt']],
+  ['compat/store/useAuthStore.js', authStoreSource, ["signOut({ scope: 'local' })", 'finally {', '/api/auth/me', 'VITE_AUTH_DEBUG']],
+  ['server/handlers/auth-operators.js', workerAuthSource, ['handleGetCurrentProfile', 'administracion', 'pin_hash']],
+  ['compat/index.css', cssSource, ['.operator-card-avatar-wrap', '.operator-card-role', 'text-wrap: balance']],
   ['api/index.js', vercelApiSource, ['__route__', 'new URL(req.url']],
   ['vercel.json', vercelConfig, ['"/api/:path*"', '"/api?__route__=:path*"', '"api/index.js"']],
   ['src/NominaApp.jsx', shellSource, ['Nómina y Finanzas', 'className="loader"', 'className="loader-square"', 'Array.from({ length: 7 }', 'md:hidden', 'translate-x-0', 'safe-area-inset-bottom', "perfil.rol !== 'administracion'"]],
   ['src/hooks/useNomina.js', payrollHookSource, ["const ADMIN_ROLE = 'administracion'", "enabled: perfil?.rol === ADMIN_ROLE"]],
-  ['src/views/NominaView.jsx', payrollViewSource, ["perfil?.rol === 'administracion'", 'TabConfiguracion', 'configuracion']],
-  ['src/components/nomina/MarcajeLogisticaPanel.jsx', marcajeSource, ["perfil?.rol === 'administracion'", 'Administración registra']],
+  ['src/views/NominaView.jsx', payrollViewSource, ["perfil?.rol === 'administracion'", 'TabEmpleados', 'TabHistorial']],
+  ['src/views/SistemaView.jsx', systemViewSource, ['Sistema', 'TabConfiguracion', 'Gestión de Personal Centralizada', '/nomina']],
+  ['src/components/nomina/MarcajeLogisticaPanel.jsx', marcajeSource, ["perfil?.rol === 'administracion'", 'La hora se toma automáticamente']],
+  ['docs/ACEPTACION_MANUAL_E2E.md', acceptanceSource, ['Tareas de aceptación', 'Criterios de liberación', 'operación compartida']],
   ['server/handlers/finanzas.js', financeHandlerSource, ['handleGetFinanzasMovimientos', 'handleCrearFinanzasMovimiento', 'handleAnularFinanzasMovimiento', 'handleGetFinanzasResumen', 'requireAdmin', 'idempotency_key']],
   ['server/handlers/nomina.js', await read('server/handlers/nomina.js'), ['./nomina.empleados.js', './nomina.asistencia.js', './nomina.lineas.js']],
   ['src/components/finanzas/FinanzasView.jsx', financeViewSource, ['useFinanzasMovimientos', 'useFinanzasResumen', 'Nuevo movimiento', 'Mostrar movimientos anulados']],
   ['supabase/migrations/221_finanzas_movimientos.sql', financeMigrationSource, ['finanzas_movimientos', 'finanzas_resumen', 'ENABLE ROW LEVEL SECURITY', 'monto_ves']],
   ['supabase/migrations/222_finanzas_admin_role_guard.sql', financeRoleMigrationSource, ['nomina_single_role_guard', 'usuarios_rol_administracion_check', 'UPDATE public.usuarios', 'rol = \'administracion\'', 'anulacion_idempotency_key']],
   ['tailwind.config.js', tailwindSource, ['./compat/**/*.{js,jsx}', "darkMode: 'class'", '.scrollbar-hide']],
+  ['public/sw.js', serviceWorkerSource, ['APP_SHELL', 'startsWith(\'/api/\')', 'skipWaiting']],
+  ['AGENT.md', agentSource, ['100% responsivo', 'Después de **cada cambio**', 'docs/BITACORA_PROYECTO.md', 'Registro obligatorio de reglas']],
+  ['docs/BITACORA_PROYECTO.md', bitacoraSource, ['Bitácora completa del proyecto', 'PWA, carga y egress', 'Formato obligatorio', 'Regla para documentar nuevas reglas', 'Moneda primaria del sistema en USD']],
+  ['compat/components/ui/Toast.jsx', toastSource, ['autoDismissMs', 'setTimeout']],
 ]) {
   for (const marker of markers) {
     if (!source.includes(marker)) fail(`${name} perdió el contrato de identidad/login: ${marker}`)
@@ -141,6 +174,12 @@ if (authOperatorsSource.includes('handleSuperAdmin') || authOperatorsSource.incl
 }
 if (loginSource.includes('super-admin') || loginSource.includes('Acceso Desarrollador') || loginSource.includes('_isSuperAdmin')) {
   fail('El login no debe contener accesos secretos ni perfiles virtuales')
+}
+if (workerAuthSource.includes("const { operator_id: operatorId, pin } = parsed.body || {}") === false) {
+  fail('La ruta de PIN anterior debe conservar su validación al reactivarse')
+}
+if (!workerAuthSource.includes('handleSelectOperator') || !workerAuthSource.includes("accion: 'LOGIN_SIN_PIN'")) {
+  fail('La selección temporal sin PIN debe validarse y auditarse en el Worker')
 }
 if (!financeHandlerSource.includes("const denied = requireAdmin")) {
   fail('Finanzas debe exigir administración antes de tocar Supabase')
@@ -215,7 +254,7 @@ for (const path of sourceFiles) {
     fail(`Import fuera del repositorio detectado en ${path}`)
   }
   if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text) ||
-      /(?:sk_live_|sk_test_|eyJhbGciOiJIUzI1Ni[A-Za-z0-9_-]{20,})/.test(text)) {
+      /(?:sk_live_|sk_test_|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/.test(text)) {
     fail(`Posible secreto incrustado en ${path}`)
   }
   if (path === 'server/handlers/nomina.js' && /select=\*/.test(text)) {
@@ -223,6 +262,9 @@ for (const path of sourceFiles) {
   }
   if (path.startsWith('server/') && /limit=1000/.test(text)) {
     fail(`Límite de egress demasiado alto detectado en ${path}`)
+  }
+  if (path.endsWith('.jsx') && /<select\b/i.test(text)) {
+    fail(`Selector nativo cuadrado detectado en ${path}; usa el selector visual compartido`)
   }
 }
 if (boundedSourceFiles.length === 0) fail('No se encontraron fuentes acotadas para el guardrail de tamaño')
@@ -233,6 +275,9 @@ for (const line of ['.env', '.dev.vars', 'node_modules/', 'dist/']) {
 }
 
 const workerSource = await read('worker.js')
+for (const marker of ["GET /api/rates", 'handleGetRates']) {
+  if (!workerSource.includes(marker)) fail(`worker.js no expone tasas: ${marker}`)
+}
 const egressCacheSource = await read('server/lib/egressCache.js')
 for (const marker of ['egressCacheTtl', 'clearEgressCache', 'cacheResponse']) {
   if (!workerSource.includes(marker)) fail(`worker.js no aplica guardrail de egress: ${marker}`)
@@ -242,7 +287,7 @@ for (const marker of ['MAX_ENTRY_BYTES', 'MAX_TOTAL_BYTES', 'egressRequestKey'])
 }
 
 const packageJson = JSON.parse(await read('package.json'))
-for (const script of ['lint', 'test', 'build', 'check:project']) {
+for (const script of ['lint', 'test', 'build', 'check:project', 'check:local']) {
   if (!packageJson.scripts?.[script]) fail(`Falta script npm: ${script}`)
 }
 

@@ -151,7 +151,7 @@ export async function handleMarcarSalida(request, env) {
   if (!existing.row?.hora_entrada) return jsonError('No existe una entrada marcada hoy', 409, request)
   if (existing.row.salida_idempotency_key === idempotencyKey.trim()) return json({ ok: true, idempotente: true, registro: existing.row }, 200, request)
   if (existing.row.hora_salida) return jsonError('El empleado ya tiene salida marcada hoy', 409, request)
-  if (existing.row.hora_entrada === mark.hora) return jsonError('La salida no puede ser igual a la entrada', 400, request)
+  if (String(existing.row.hora_entrada).slice(0, 5) === mark.hora.slice(0, 5)) return jsonError('La salida no puede ser igual a la entrada', 400, request)
   let calculation
   try { calculation = calcularCamposAsistencia(mark.fecha, existing.row.hora_entrada, mark.hora, Number(config.horas_jornada) || 8, !!(existing.row.es_feriado || holiday.row), false) } catch (error) { return jsonError(error.message || 'Horas inválidas', 400, request) }
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?id=eq.${existing.row.id}${nominaTenantFilter(operador.cuenta_id)}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_feriado,es_ausencia,estado_marcaje,nota`, { method: 'PATCH', headers: { ...svcHeaders(env), Prefer: 'return=representation' }, body: JSON.stringify({ ...calculation, hora_salida: mark.hora, estado_marcaje: 'completo', salida_marcada_en: mark.marcadoEn, salida_por: operador.id, salida_idempotency_key: idempotencyKey.trim(), registrado_por: operador.id, nota: nota || existing.row.nota || null }) })
@@ -198,6 +198,26 @@ export async function handleCrearFeriado(request, env) {
   const [holiday] = await response.json()
   registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CREAR_FERIADO', entidadTipo: 'nomina_feriado', entidadId: holiday?.id || null, meta: { fecha, nombre: nombre.trim() }, ip }).catch(() => {})
   return json({ ok: true, feriado: holiday }, 201, request)
+}
+
+export async function handleEliminarFeriado(request, env) {
+  const v = await validateOperator(request, env)
+  if (v.error) return v.error
+  const { operador, ip } = v
+  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const tenantError = tenantGuard(operador, request)
+  if (tenantError) return tenantError
+  let body
+  try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
+  const { id } = body || {}
+  if (!id || !isValidUuid(id)) return jsonError('id inválido', 400, request)
+  const recordResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_feriados?id=eq.${id}${nominaTenantFilter(operador.cuenta_id)}&select=id,fecha,nombre&limit=1`, { headers: svcHeaders(env) })
+  const [record] = recordResponse.ok ? await recordResponse.json() : []
+  if (!record) return jsonError('Feriado no encontrado', 404, request)
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_feriados?id=eq.${id}${nominaTenantFilter(operador.cuenta_id)}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') })
+  if (!response.ok) return jsonError('Error al eliminar feriado', 500, request)
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'ELIMINAR_FERIADO', entidadTipo: 'nomina_feriado', entidadId: id, meta: { fecha: record.fecha, nombre: record.nombre }, ip }).catch(() => {})
+  return json({ ok: true }, 200, request)
 }
 
 export async function handleGetHorarios(request, env) {

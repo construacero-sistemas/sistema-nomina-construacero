@@ -10,6 +10,10 @@ import { indexedDbPersister, CACHE_BUSTER } from '../compat/lib/queryPersister.j
 import NominaApp from './NominaApp.jsx'
 import '../compat/index.css'
 
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => undefined), { once: true })
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary>

@@ -14,3 +14,7 @@ coverage/
 supabase/.temp/
 *.log
 .DS_Store
+
+# Archivos locales que no pertenecen al repo
+Reporte_Ventas_*.pdf
+skills-lock.json

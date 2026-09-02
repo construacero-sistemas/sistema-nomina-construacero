@@ -31,6 +31,9 @@ const COLORS = {
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
   const timersRef = useRef(new Map())
+  // Último toast emitido — permite dedup síncrono sin depender del updater
+  // asíncrono de React (leer state dentro del callback llega tarde).
+  const lastToastRef = useRef(null)
 
   const removeToast = useCallback((id) => {
     setToasts(prev => prev.filter(t => t.id !== id))
@@ -42,29 +45,27 @@ export function ToastProvider({ children }) {
   }, [])
 
   const addToast = useCallback((message, type = 'info', duration = 3500) => {
+    // Las notificaciones son temporales por regla del producto. Incluso si
+    // algún emisor envía 0 o undefined, nunca quedan fijadas en pantalla.
+    const autoDismissMs = Number.isFinite(duration) && duration > 0 ? duration : 3500
     const now = Date.now()
-    let isDuplicate = false
 
-    setToasts(prev => {
-      const last = prev[prev.length - 1]
-      if (last && last.message === message && last.type === type && (now - (last.timestamp || 0)) < 500) {
-        isDuplicate = true
-        return prev
-      }
-      const id = now + Math.random()
-      return [...prev.slice(-4), { id, message, type, timestamp: now }]
-    })
+    // Dedup: mismo mensaje y tipo dentro de una ventana corta se ignora.
+    const last = lastToastRef.current
+    if (last && last.message === message && last.type === type && (now - last.timestamp) < 500) return
 
-    if (isDuplicate) return
+    // Un único id para el toast y su timer de auto-dismiss: si se calculara
+    // dentro de setToasts, React ejecuta el updater después y el timer quedaría
+    // con un id distinto, impidiendo que el aviso desaparezca solo.
+    const id = `${now}-${Math.random().toString(36).slice(2)}`
+    lastToastRef.current = { message, type, timestamp: now }
+    setToasts(prev => [...prev.slice(-4), { id, message, type, timestamp: now }])
 
-    const id = now + Math.random()
-    if (duration > 0) {
-      const timer = setTimeout(() => {
-        setToasts(prev => prev.filter(t => t.id !== id))
-        timersRef.current.delete(id)
-      }, duration)
-      timersRef.current.set(id, timer)
-    }
+    const timer = setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id))
+      timersRef.current.delete(id)
+    }, autoDismissMs)
+    timersRef.current.set(id, timer)
   }, [])
 
   useEffect(() => setToastListener(addToast), [addToast])

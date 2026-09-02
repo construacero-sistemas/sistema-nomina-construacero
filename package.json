@@ -4,14 +4,18 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n VITE,API -c cyan,yellow \"vite --config vite.config.js\" \"wrangler dev --config wrangler.toml --port 8788 --local\"",
+    "dev": "npm run check:local && concurrently -n VITE,API -c cyan,yellow \"vite --config vite.config.js\" \"wrangler dev --config wrangler.toml --port 8788 --local\"",
+    "check:local": "node scripts/check-local-dev.mjs",
     "dev:vite": "vite --config vite.config.js",
-    "dev:api": "wrangler dev --config wrangler.toml --port 8788 --local",
+    "dev:api": "npm run check:local && wrangler dev --config wrangler.toml --port 8788 --local",
     "build": "vite build --config vite.config.js",
     "test": "vitest run --config vitest.config.js",
     "lint": "eslint src api compat server --quiet",
     "check:project": "node scripts/check-project.mjs",
-    "verify": "npm run check:project && npm run lint && npm test && npm run build"
+    "test:deterministic": "node scripts/test-nomina-deterministic.mjs",
+    "test:responsive": "node scripts/test-responsiveness-deterministic.mjs",
+    "test:bundle-size": "node scripts/test-bundle-size.mjs",
+    "verify": "npm run check:project && npm run test:responsive && npm run test:bundle-size && npm run lint && npm test && npm run build && npm run test:bundle-size"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
@@ -28,6 +32,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.6",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.24",
     "concurrently": "^9.2.1",
@@ -35,6 +43,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "jsdom": "^25.0.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "vite": "^7.2.4",

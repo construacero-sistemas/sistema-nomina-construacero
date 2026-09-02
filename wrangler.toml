@@ -3,13 +3,21 @@ main = "./worker.js"
 compatibility_date = "2024-12-01"
 workers_dev = true
 
+# Purga inteligente: corre el 1º de cada mes a las 03:20 (America/Caracas).
+# La función scheduled() de worker.js ejecuta la purga global en modo real.
+[triggers]
+crons = ["20 3 1 * *"]
+
 [assets]
 directory = "./dist/"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
 [vars]
+# La URL no es secreta y coincide con la URL pública del frontend; .dev.vars
+# puede sobrescribirla para una cuenta de pruebas distinta.
+SUPABASE_URL = "https://wlxcclidnwketrghqaxs.supabase.co"
 NOMINA_TIMEZONE = "America/Caracas"
-# Lista separada por comas. En local usa .dev.vars; en producción define solo
-# los dominios HTTPS definitivos como secreto/variable del entorno.
-NOMINA_ALLOWED_ORIGINS = ""
+# Lista separada por comas. En local se permiten los puertos de Vite; en
+# producción define únicamente los dominios HTTPS definitivos.
+NOMINA_ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:4173"

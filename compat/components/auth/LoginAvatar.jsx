@@ -32,18 +32,19 @@ function hexVariants(hex) {
 }
 
 export default function LoginAvatar({ user, size = 'lg', className = '' }) {
-  const inicial = (user?.nombre || 'U').charAt(0).toUpperCase()
+  const nombreFuente = user?.nombre || user?.email || user?.usuario || 'Administración'
+  const inicial = nombreFuente.trim().charAt(0).toUpperCase() || 'A'
 
-  const esPlateado = ['administracion', 'logistica'].includes(user?.rol)
+  const esPlateado = true
   const esDorado = user?.rol === 'jefe'
   const esVendedorExterno = ['vendedor', 'vendedor_sin_comision'].includes(user?.rol) && (!!user?.es_externo || Number(user?.markup_pct) > 0)
 
   const v = esPlateado 
     ? {
-        background: 'linear-gradient(135deg, #E8ECF1 0%, #C0C7D0 25%, #A8B2BE 45%, #D6DCE3 60%, #8A95A3 80%, #6B7785 100%)',
-        border: 'rgba(192,199,208,0.8)',
-        shadow: '#4a5568',
-        shadowGlow: 'rgba(160,174,192,0.45)',
+        background: 'linear-gradient(135deg, #FFFFFF 0%, #E2E8F0 25%, #CBD5E1 50%, #94A3B8 75%, #64748B 100%)',
+        border: 'rgba(226,232,240,0.85)',
+        shadow: '#334155',
+        shadowGlow: 'rgba(203,213,225,0.45)',
         accent: '#CBD5E1',
         darkText: true,
       }
@@ -67,21 +68,27 @@ export default function LoginAvatar({ user, size = 'lg', className = '' }) {
 
   const dim = size === 'lg'
     ? 'w-20 h-20 sm:w-[88px] sm:h-[88px] text-3xl sm:text-4xl'
-    : 'w-10 h-10 text-base'
+    : 'w-10 h-10 text-sm font-black'
 
   return (
     <div
-      className={`${dim} rounded-2xl flex items-center justify-center text-white font-black select-none transition-all relative overflow-hidden ${className}`}
+      className={`${dim} rounded-2xl flex items-center justify-center font-black select-none transition-all relative overflow-hidden shrink-0 ${className}`}
       style={{
         background: v.background || `linear-gradient(145deg, ${v.from}, ${v.to})`,
         border: `1px solid ${v.border}`,
-        boxShadow: `0 4px 0 ${v.shadow}, 0 8px 32px ${v.shadowGlow}, inset 0 1px 0 rgba(255,255,255,0.1)`,
+        boxShadow: `0 3px 0 ${v.shadow}, 0 6px 20px ${v.shadowGlow}, inset 0 1px 1px rgba(255,255,255,0.4)`,
       }}
     >
       {/* Brillo interno sutil */}
       <div className="absolute inset-0 rounded-2xl pointer-events-none"
-        style={{ background: 'linear-gradient(145deg, rgba(255,255,255,0.08) 0%, transparent 60%)' }} />
-      <span className="relative z-10 tracking-tight" style={{ textShadow: v.darkText ? 'none' : '0 2px 8px rgba(0,0,0,0.4)', color: v.darkText ? '#1e293b' : '#ffffff' }}>
+        style={{ background: 'linear-gradient(145deg, rgba(255,255,255,0.25) 0%, transparent 60%)' }} />
+      <span
+        className={`relative z-10 select-none ${v.darkText ? 'text-slate-800' : 'text-white'}`}
+        style={{
+          textShadow: v.darkText ? '0 1px 0 rgba(255,255,255,0.7)' : '0 1px 3px rgba(0,0,0,0.6)',
+          letterSpacing: '-0.02em',
+        }}
+      >
         {inicial}
       </span>
     </div>

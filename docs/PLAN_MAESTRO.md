@@ -1,6 +1,6 @@
 # Plan maestro — Nómina y Finanzas Construacero Carabobo
 
-**Fecha de corte:** 2026-08-17  
+**Fecha de corte:** 2026-08-24
 **Objetivo:** dejar el módulo de nómina autocontenido y verificable, pendiente únicamente de conectar el Supabase nuevo, los secretos y el repositorio de destino.
 
 ## Fases y estado
@@ -9,7 +9,7 @@
 |---|---|---|
 | Auditoría | Revisión de frontend, Worker, API, migraciones, auth, RLS, PDFs y pruebas | ✅ Ejecutada |
 | Extracción | Shell de nómina, rutas API y migraciones separadas del POS | ✅ Ejecutada |
-| Seguridad | Tenant explícito, roles, ocultamiento salarial, PIN server-side, CORS, CSP, límites y guardrails SQL | ✅ Ejecutada |
+| Seguridad | Cuenta/rol/tenant server-side, ocultamiento salarial, PIN temporalmente deshabilitado, CORS, CSP, límites y guardrails SQL | ⚠️ PIN pendiente de decisión |
 | Dominio | Asistencia, extras, feriados, rotaciones, períodos, cálculo, ajustes, pagos y reversión | ✅ Ejecutada |
 | QA automatizado | Suite de handlers y motores de cálculo sin red real | ✅ Ejecutada |
 | Handoff | README, operación, CI, variables de entorno y contrato de integración | ✅ Ejecutada |
@@ -17,6 +17,15 @@
 | Supabase real | Proyecto enlazado; migraciones 001 y 208–223 aplicadas y verificadas directamente | ✅ Esquema aplicado; falta conciliación funcional con datos de negocio |
 | Legal/proveedores | Aprobar reglas fiscales y fuentes BCV/Euro/USDT | ⏳ Requiere decisión del negocio |
 | Deploy | Frontend y función API publicados en Vercel producción | ⏳ Publicar esta revisión en GitHub/Vercel cuando corresponda |
+
+## Prioridad inmediata: operación simple y entendible
+
+1. Mantener el acceso por correo y contraseña como única barrera activa.
+2. Permitir elegir el usuario directamente, con confirmación visual y registro de auditoría.
+3. Mantener toda autorización en el Worker; nunca confiar en la caché del navegador.
+4. Reintroducir una barrera adicional antes de usar dispositivos compartidos o habilitar usuarios reales.
+5. Sustituir términos técnicos en la interfaz: “tasa guardada” en lugar de “snapshot”, “volver a intentar” en lugar de “reintentar”, y acciones con texto visible en vez de iconos aislados.
+6. Validar físicamente en 360 px, 390 px, 768 px y 1366 px; probar teclado, lector de pantalla, error de red y doble clic.
 
 ## Arquitectura objetivo
 
@@ -26,7 +35,7 @@ Frontend React/Vite
         ▼
 Worker Nómina
   ├─ autentica JWT Supabase
-  ├─ valida operador/PIN y rol
+  ├─ valida operador y rol (PIN temporalmente deshabilitado)
   ├─ exige cuenta_id en cada handler
   ├─ consulta REST con service role
   └─ registra auditoría
@@ -47,6 +56,7 @@ Supabase independiente
 - Un operador sin `cuenta_id` es rechazado antes de consultar datos.
 - Un operador no puede leer ni mutar otra cuenta aunque conozca un UUID.
 - El único rol operativo es `administracion`; puede marcar y consultar asistencia, nómina y Finanzas sin que existan rutas para roles heredados.
+- El PIN queda deshabilitado temporalmente; la cuenta por correo y contraseña sigue siendo obligatoria y la selección del usuario se valida server-side.
 - `pin_hash`, `pin_salt` y service role nunca aparecen en respuestas del frontend.
 - CORS solo admite orígenes exactos configurados.
 - Bodies mayores de 256 KiB son rechazados aun sin `Content-Length`.
@@ -78,7 +88,7 @@ Supabase independiente
 1. Mantener Auth según la política del negocio.
 2. Para cambios futuros, aplicar nuevas migraciones con Supabase CLI directamente al proyecto enlazado, después de revisar el SQL y respaldar datos operativos.
 3. Crear una cuenta de negocio en `auth.users`.
-4. Crear al menos dos operadores de prueba por cuenta con PIN PBKDF2 generado por un procedimiento controlado; no insertar PIN en claro.
+4. Crear al menos dos operadores de prueba por cuenta. Mientras el PIN esté deshabilitado, registrar quién puede seleccionar cada usuario; antes de producción compartida, reactivar el PIN o aprobar una alternativa de seguridad.
 5. Sincronizar empleados mínimos desde Personal.
 6. Probar con dos cuentas: lecturas cruzadas deben devolver vacío/404/403.
 7. Verificar RLS con el único rol `administracion` y confirmar que cualquier rol heredado recibe 403.
@@ -90,6 +100,35 @@ Supabase independiente
 **Repositorio destino informado:** `https://github.com/construacero-sistemas/sistema-nomina-construacero`.
 
 El remoto destino está configurado, pero la publicación de esta auditoría requiere una cuenta con permiso de escritura; no se deben incluir secretos ni forzar cambios ajenos. El despliegue histórico de producción quedó publicado en `https://nomina-construacero.vercel.app`; las migraciones 221–223 deben validarse antes de activar Finanzas en producción.
+
+## Plan maestro UX/UI — siguiente ciclo
+
+### Semana 1 — Claridad
+
+- ✅ Aplicado localmente: guía visible, lenguaje cotidiano y acciones críticas con texto.
+- Revisar todos los textos de botones, formularios, errores y confirmaciones con personal no técnico.
+- Renombrar términos internos y eliminar lenguaje de desarrollo de la interfaz.
+- Añadir texto visible a acciones importantes; los iconos quedan como apoyo, nunca como única explicación.
+
+### Semana 2 — Flujos principales
+
+- ✅ Aplicado localmente: cada módulo muestra un inicio y el siguiente paso.
+- Validar cinco recorridos: entrar, seleccionar usuario, registrar asistencia, cerrar nómina y registrar/anular movimiento.
+- Añadir una guía corta dentro de cada pantalla: “Comienza aquí”, “Siguiente paso” y “Listo”.
+- Confirmar que cada acción destructiva o contable explique consecuencias antes de ejecutarse.
+
+### Semana 3 — Diseño consistente
+
+- ✅ Aplicado localmente: Configuración está agrupada por objetivos y las acciones importantes muestran texto.
+- Crear una guía visual única para botones, campos, tarjetas, tablas, alertas, diálogos y estados vacíos.
+- Sustituir listas largas de configuración por secciones progresivas y agrupadas por objetivo.
+- Revisar tamaños táctiles, contraste, foco de teclado, lector de pantalla y zoom del navegador.
+
+### Semana 4 — Validación con usuarios
+
+- ⏳ Pendiente externo: seguir `docs/ACEPTACION_MANUAL_E2E.md` con 3–5 personas del equipo sin explicarles cómo usar la app.
+- Medir tiempo hasta completar cada tarea, errores y preguntas realizadas.
+- Corregir primero lo que cause abandono, confusión o errores contables.
 
 ## Fuera del alcance local
 

@@ -70,8 +70,9 @@ export async function handleCrearConfigEmpleado(request, env) {
   if (tenantError) return tenantError
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
-  const { empleadoId, cargo, fechaIngreso, salarioDiaUsd, horasJornada, horaInicio, horaFin } = body || {}
-  if (!empleadoId || !isValidUuid(empleadoId)) return jsonError('empleadoId inválido', 400, request)
+  const { empleadoId, nombre, documento, cargo, fechaIngreso, salarioDiaUsd, horasJornada, horaInicio, horaFin } = body || {}
+  if (empleadoId && !isValidUuid(empleadoId)) return jsonError('empleadoId inválido', 400, request)
+  if (!empleadoId && !textoNominaValido(nombre, 160)) return jsonError('nombre inválido', 400, request)
   if (Number.isFinite(Number(salarioDiaUsd)) && Number(salarioDiaUsd) < 0) return jsonError('Salario no puede ser negativo', 400, request)
   if (!montoNominaValido(salarioDiaUsd)) return jsonError('Salario inválido', 400, request)
   if (fechaIngreso && !fechaNominaValida(fechaIngreso)) return jsonError('fechaIngreso inválida', 400, request)
@@ -80,19 +81,26 @@ export async function handleCrearConfigEmpleado(request, env) {
   if (horaFin !== undefined && !horaNominaValida(horaFin)) return jsonError('horaFin inválida', 400, request)
   if (!textoNominaValido(cargo, 160)) return jsonError('cargo inválido', 400, request)
 
-  const employeeResponse = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/clientes?id=eq.${empleadoId}${nominaTenantFilter(operador.cuenta_id)}&select=id,tipo_cliente&limit=1`,
-    { headers },
-  )
-  if (!employeeResponse.ok) return jsonError('No se pudo verificar el empleado', 500, request)
-  const [employee] = await employeeResponse.json()
-  if (!employee) return jsonError('Empleado no encontrado', 404, request)
-  if (employee.tipo_cliente !== 'personal') return jsonError('Solo se puede configurar nómina para empleados (tipo_cliente = personal)', 400, request)
+  let resolvedEmployeeId = empleadoId
+  if (!resolvedEmployeeId) {
+    const employeeResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/clientes`, {
+      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify({ cuenta_id: operador.cuenta_id, nombre: nombre.trim(), documento: documento?.trim() || null, tipo_cliente: 'personal', activo: true }),
+    })
+    if (!employeeResponse.ok) return jsonError('No se pudo registrar el empleado', 500, request)
+    const [employee] = await employeeResponse.json()
+    resolvedEmployeeId = employee?.id
+  } else {
+    const employeeResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/clientes?id=eq.${resolvedEmployeeId}${nominaTenantFilter(operador.cuenta_id)}&select=id&limit=1`, { headers })
+    if (!employeeResponse.ok) return jsonError('No se pudo verificar el empleado', 500, request)
+    const [employee] = await employeeResponse.json()
+    if (!employee) return jsonError('Empleado no encontrado', 404, request)
+  }
 
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_config_empleado`, {
     method: 'POST',
     headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-    body: JSON.stringify({ empleado_id: empleadoId, cargo: cargo || null, fecha_ingreso: fechaIngreso || null, salario_dia_usd: Number(salarioDiaUsd) || 0, horas_jornada: Number(horasJornada) || 8, hora_inicio: horaInicio || '08:00', hora_fin: horaFin || '17:00', cuenta_id: operador.cuenta_id, activo: true }),
+    body: JSON.stringify({ empleado_id: resolvedEmployeeId, cargo: cargo || null, fecha_ingreso: fechaIngreso || null, salario_dia_usd: Number(salarioDiaUsd) || 0, horas_jornada: Number(horasJornada) || 8, hora_inicio: horaInicio || '08:00', hora_fin: horaFin || '17:00', cuenta_id: operador.cuenta_id, activo: true }),
   })
   if (!response.ok) {
     const detail = (await response.text()).toLowerCase()

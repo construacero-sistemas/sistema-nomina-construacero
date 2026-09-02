@@ -31,6 +31,20 @@ describe('autenticación server-side', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('usa la service key como respaldo si falta la anon key en el Worker', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ id: ACCOUNT_ID }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = new Request('https://worker.test/api/auth/select-operator', {
+      headers: { Authorization: 'Bearer auth-test-token-without-exp' },
+    })
+
+    await expect(verifyAuth(request, { ...ENV, SUPABASE_ANON_KEY: '' })).resolves.toMatchObject({ id: ACCOUNT_ID })
+    expect(fetchMock.mock.calls[0][1].headers.apikey).toBe(ENV.SUPABASE_SERVICE_KEY)
+  })
+
   it('limita la consulta de rol al tenant explícito', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,

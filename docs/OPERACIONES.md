@@ -11,7 +11,7 @@ npm run verify
 npm run dev
 ```
 
-Vite sirve el frontend y Wrangler sirve el Worker en `http://localhost:8788`. No colocar la service role key en `.env`; debe vivir únicamente en `.dev.vars` local o en secretos del Worker.
+Vite sirve el frontend y, durante la transición, Wrangler sirve la API local en `http://localhost:8788`. El objetivo es usar una API Node/Vercel Function sin Wrangler; ver `docs/PLAN_MIGRACION_VERCEL_FUNCTIONS.md`. No colocar la service role key en el frontend ni en Git: debe vivir en variables protegidas de Vercel (y temporalmente en `.dev.vars` local).
 
 La UI sigue el patrón responsive de Construacero: drawer lateral en móvil, sidebar colapsable en desktop, navegación inferior táctil, modales con área segura y tablas anchas con scroll controlado. El login mantiene una composición central acotada a 1120 px, separa branding y acceso en desktop y convierte el estado sin operadores en una acción clara de configuración/actualización. Validar manualmente en 360 px, 390 px, 768 px y 1366 px antes de activar cambios visuales en producción.
 
@@ -68,9 +68,9 @@ Verificar:
 - RLS y triggers de las migraciones 220–223 están activos;
 - Realtime solo publica las tablas aprobadas por el negocio.
 
-## Secretos del Worker
+## Secretos de la API/Vercel Function
 
-Configurar en el proveedor, nunca en Git:
+Configurar en Vercel, nunca en Git:
 
 ```text
 SUPABASE_URL
@@ -102,15 +102,9 @@ vercel --prod
 
 Nunca subir `.env`, `SUPABASE_SERVICE_KEY`, `SUPABASE_ACCESS_TOKEN`, contraseñas de base de datos ni tokens de Vercel al repositorio. Si una credencial se comparte fuera del gestor seguro, revocarla y rotarla antes de cualquier nuevo push.
 
-## Deploy Cloudflare Worker
+## Cloudflare durante la transición
 
-```bash
-npm run build
-wrangler secret put SUPABASE_URL
-wrangler secret put SUPABASE_ANON_KEY
-wrangler secret put SUPABASE_SERVICE_KEY
-wrangler deploy --config wrangler.toml
-```
+Cloudflare no es el destino recomendado. Mantener este procedimiento únicamente como rollback temporal mientras se valida Vercel. El procedimiento principal está en `## Deploy Vercel` y en `docs/PLAN_MIGRACION_VERCEL_FUNCTIONS.md`.
 
 El deploy requiere aprobación y credenciales del propietario. Validar después:
 

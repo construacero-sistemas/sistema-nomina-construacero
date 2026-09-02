@@ -170,3 +170,28 @@ export async function handleReabrirPeriodo(request, env) {
   registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'REABRIR_PERIODO', entidadTipo: 'nomina_periodo', entidadId: periodoId, meta: { periodo: period.nombre }, ip }).catch(() => {})
   return json({ ok: true }, 200, request)
 }
+
+export async function handleEliminarPeriodo(request, env) {
+  const v = await validateOperator(request, env)
+  if (v.error) return v.error
+  const { operador, headers, ip } = v
+  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const tenantError = tenantGuard(operador, request)
+  if (tenantError) return tenantError
+  let body
+  try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
+  const { periodoId } = body || {}
+  if (!periodoId || !isValidUuid(periodoId)) return jsonError('periodoId inválido', 400, request)
+  const account = nominaTenantFilter(operador.cuenta_id)
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_periodos?id=eq.${periodoId}${account}&select=id,nombre,estado&limit=1`, { headers })
+  const [period] = response.ok ? await response.json() : []
+  if (!period) return jsonError('Período no encontrado', 404, request)
+  if (period.estado === 'pagado') return jsonError('No se puede eliminar un período ya pagado', 400, request)
+  const paidResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&pagado=eq.true&select=id&limit=1`, { headers })
+  if ((paidResponse.ok ? await paidResponse.json() : []).length) return jsonError('Hay recibos ya pagados en este período. Revierte los pagos antes de eliminar.', 400, request)
+  await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') })
+  const deletePeriod = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_periodos?id=eq.${periodoId}${account}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') })
+  if (!deletePeriod.ok) return jsonError('Error al eliminar período', 500, request)
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'ELIMINAR_PERIODO', entidadTipo: 'nomina_periodo', entidadId: periodoId, meta: { periodo: period.nombre }, ip }).catch(() => {})
+  return json({ ok: true }, 200, request)
+}

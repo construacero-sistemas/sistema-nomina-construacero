@@ -17,7 +17,7 @@ const MOVEMENT_SELECT = [
   'id', 'fecha', 'tipo', 'categoria', 'concepto', 'monto', 'moneda',
   'tasa_ves', 'monto_ves', 'fuente_tasa', 'observacion_tasa',
   'referencia', 'observaciones', 'estado', 'creado_en', 'anulado_en',
-  'motivo_anulacion',
+  'motivo_anulacion', 'metodo_pago', 'cuenta_origen', 'partes',
 ].join(',')
 
 function adminContext(request, env) {
@@ -133,35 +133,63 @@ export async function handleCrearFinanzasMovimiento(request, env) {
     return json({ ok: true, idempotente: true, movimiento: movementResponse(existing.row) }, 200, request)
   }
 
+  const fuenteTasaDb = movement.fuente_tasa === 'FIJA' ? 'BCV' : (movement.fuente_tasa || 'BCV')
+  const payload = {
+    cuenta_id: context.operador.cuenta_id,
+    fecha: movement.fecha,
+    tipo: movement.tipo,
+    categoria: movement.categoria,
+    concepto: movement.concepto,
+    monto: movement.monto,
+    moneda: movement.moneda,
+    tasa_ves: movement.tasa_ves,
+    // tasa_usd_ves se inserta solo cuando la columna existe (migración 224)
+    ...(movement.tasa_usd_ves != null ? { tasa_usd_ves: movement.tasa_usd_ves } : {}),
+    fuente_tasa: fuenteTasaDb,
+    observacion_tasa: movement.observacion_tasa,
+    referencia: movement.referencia,
+    observaciones: movement.observaciones,
+    idempotency_key: movement.idempotency_key,
+    creado_por: context.operador.id,
+    // Método de pago, cuenta de origen y tramos — solo si vienen definidos (columnas migración 226).
+    ...(movement.metodo_pago ? { metodo_pago: movement.metodo_pago } : {}),
+    ...(movement.cuenta_origen ? { cuenta_origen: movement.cuenta_origen } : {}),
+    ...(movement.partes ? { partes: movement.partes } : {}),
+  }
+
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos`, {
     method: 'POST',
     headers: serviceHeaders(env),
-    body: JSON.stringify({
-      cuenta_id: context.operador.cuenta_id,
-      fecha: movement.fecha,
-      tipo: movement.tipo,
-      categoria: movement.categoria,
-      concepto: movement.concepto,
-      monto: movement.monto,
-      moneda: movement.moneda,
-      tasa_ves: movement.tasa_ves,
-      fuente_tasa: movement.fuente_tasa,
-      observacion_tasa: movement.observacion_tasa,
-      referencia: movement.referencia,
-      observaciones: movement.observaciones,
-      idempotency_key: movement.idempotency_key,
-      creado_por: context.operador.id,
-    }),
+    body: JSON.stringify(payload),
   })
 
   if (!response.ok) {
-    const detail = (await response.text()).toLowerCase()
-    if (detail.includes('idempot') || detail.includes('unique')) {
+    const detail = await response.text()
+    const detailLower = detail.toLowerCase()
+    if (detailLower.includes('idempot') || detailLower.includes('unique')) {
       const retry = await readExistingByKey(env, context.operador.cuenta_id, movement.idempotency_key)
       if (retry.row) return json({ ok: true, idempotente: true, movimiento: movementResponse(retry.row) }, 200, request)
       return jsonError('Movimiento duplicado', 409, request)
     }
-    return jsonError('No se pudo registrar el movimiento', 500, request)
+
+    // Fallback retry sin columnas aún no aplicadas (tasa_usd_ves migración 224 y
+    // metodo_pago / cuenta_origen / partes migración 226) si la base no las tiene.
+    const FALLBACK_KEYS = ['tasa_usd_ves', 'metodo_pago', 'cuenta_origen', 'partes']
+    if (FALLBACK_KEYS.some(key => payload[key] != null)) {
+      const fallbackPayload = { ...payload }
+      FALLBACK_KEYS.forEach(key => delete fallbackPayload[key])
+      const fallbackRes = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos`, {
+        method: 'POST',
+        headers: serviceHeaders(env),
+        body: JSON.stringify(fallbackPayload),
+      })
+      if (fallbackRes.ok) {
+        const [fbRow] = await fallbackRes.json()
+        return json({ ok: true, idempotente: false, movimiento: movementResponse(fbRow) }, 201, request)
+      }
+    }
+
+    return jsonError(detail || 'No se pudo registrar el movimiento', 500, request)
   }
 
   const [row] = await response.json()
@@ -321,4 +349,54 @@ export async function handleCrearFinanzasCategoria(request, env) {
     ip: context.ip,
   }).catch(() => {})
   return json({ ok: true, categoria: row }, 201, request)
+}
+
+// Re-asignación masiva: fija cuenta_origen (cuenta de custodia) en movimientos
+// activos. La UI lo usa para clasificar los movimientos "sin cuenta asignada".
+// Nunca toca movimientos anulados ni de otra cuenta_id.
+export async function handleReasignarCuentaMovimientos(request, env) {
+  const context = await adminContext(request, env)
+  if (context.error) return context.error
+  const parsed = await readBody(request)
+  if (parsed.error) return parsed.error
+
+  const ids = Array.isArray(parsed.body?.ids) ? parsed.body.ids.map(v => String(v).trim()).filter(Boolean) : []
+  const cuentaOrigen = String(parsed.body?.cuenta_origen || '').trim()
+
+  if (ids.length === 0) return jsonError('Debes indicar al menos un movimiento', 400, request)
+  if (ids.length > 100) return jsonError('Máximo 100 movimientos por lote', 400, request)
+  if (!ids.every(isValidUuid)) return jsonError('Hay ids de movimiento inválidos', 400, request)
+  if (!cuentaOrigen) return jsonError('cuenta_origen es obligatorio', 400, request)
+  if (cuentaOrigen.length > 120) return jsonError('cuenta_origen demasiado largo', 400, request)
+
+  const inList = `id=in.(${ids.map(queryValue).join(',')})`
+  const response = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?${inList}` +
+      `&${accountFilter(context.operador.cuenta_id)}&estado=eq.activo`,
+    {
+      method: 'PATCH',
+      headers: serviceHeaders(env),
+      body: JSON.stringify({ cuenta_origen: cuentaOrigen }),
+    },
+  )
+  if (!response.ok) return jsonError('No se pudo reasignar los movimientos', 500, request)
+  const updated = await response.json().catch(() => [])
+
+  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
+    usuarioId: context.operador.id,
+    usuarioNombre: context.operador.nombre,
+    usuarioRol: context.operador.rol,
+    cuentaId: context.operador.cuenta_id,
+    categoria: 'FINANZAS',
+    accion: 'MOVIMIENTOS_REASIGNADOS',
+    entidadTipo: 'finanzas_movimientos',
+    entidadId: null,
+    meta: { total: ids.length, actualizados: Array.isArray(updated) ? updated.length : 0, cuenta_origen: cuentaOrigen },
+    ip: context.ip,
+  }).catch(() => {})
+
+  return json({
+    ok: true,
+    actualizados: Array.isArray(updated) ? updated.length : 0,
+  }, 200, request)
 }

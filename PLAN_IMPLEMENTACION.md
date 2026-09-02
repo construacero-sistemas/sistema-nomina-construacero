@@ -94,7 +94,7 @@ Entregar una aplicación independiente de nómina, visualmente coherente con Lis
 - Service role key como secreto del Worker, nunca en frontend.
 - Repositorio y rama destino.
 - Dominio del frontend y Worker.
-- Operador(es) con rol `administracion` y sus PINs generados de forma segura.
+- Operador(es) con rol `administracion`; el PIN está deshabilitado temporalmente y debe reactivarse o sustituirse antes de usar dispositivos compartidos.
 - Fuente aprobada de BCV, Euro y USDT.
 - Reglas fiscales vigentes y su fuente legal.
 - Jornada estándar, política de sábado, feriados y redondeo.

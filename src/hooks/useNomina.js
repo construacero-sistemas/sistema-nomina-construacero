@@ -3,7 +3,7 @@
 import { useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import useAuthStore from '../../compat/store/useAuthStore.js'
-import { apiUrl, getAuthHeaders } from '../../compat/services/apiBase.js'
+import { authFetch } from '../../compat/services/authFetch.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
 
 const KEY_EMPLEADOS  = ['nomina', 'empleados']
@@ -28,26 +28,23 @@ export function usePuedeAdminNomina() {
 }
 
 // ── Helper de fetch con manejo de error uniforme ───────────────────────────────
+// authFetch refresca la sesión y reintenta automáticamente en 401.
 async function apiGet(path) {
-  const headers = await getAuthHeaders()
-  const res = await fetch(apiUrl(path), { headers })
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({}))
-    throw new Error(e.error || `Error ${res.status}`)
-  }
-  return res.json()
+  const res = await authFetch(path)
+  const payload = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(payload.error || `Error ${res.status}`)
+  return payload
 }
 
 async function apiPost(path, body) {
-  const headers = await getAuthHeaders()
-  const res = await fetch(apiUrl(path), {
-    method: 'POST', headers, body: JSON.stringify(body),
+  const res = await authFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({}))
-    throw new Error(e.error || `Error ${res.status}`)
-  }
-  return res.json()
+  const payload = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(payload.error || `Error ${res.status}`)
+  return payload
 }
 
 // ─── Empleados y configuración ─────────────────────────────────────────────────
@@ -280,6 +277,19 @@ export function useReabrirPeriodo() {
   })
 }
 
+export function useEliminarPeriodo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (periodoId) => apiPost('/api/nomina/periodos/eliminar', { periodoId }),
+    onSuccess: () => {
+      showToast.success('Período eliminado')
+      qc.invalidateQueries({ queryKey: KEY_PERIODOS })
+      qc.invalidateQueries({ queryKey: KEY_LINEAS })
+    },
+    onError: (e) => showToast.error(e.message || 'Error al eliminar período'),
+  })
+}
+
 // ─── Líneas ────────────────────────────────────────────────────────────────────
 
 export function useNominaLineas(periodoId) {
@@ -334,6 +344,28 @@ export function useRevertirPagoLinea() {
 }
 
 // ─── Configuración laboral, tasas y conceptos ───────────────────────────────
+export function useConfigNomina() {
+  const perfil = useAuthStore(useCallback(s => s.perfil, []))
+  return useQuery({
+    queryKey: ['nomina', 'configuracion'],
+    queryFn: () => apiGet('/api/config'),
+    enabled: perfil?.rol === ADMIN_ROLE,
+    staleTime: 1000 * 60 * 10,
+  })
+}
+
+export function useGuardarConfigNomina() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: campos => apiPost('/api/config', campos),
+    onSuccess: () => {
+      showToast.success('Recargos guardados')
+      qc.invalidateQueries({ queryKey: ['nomina', 'configuracion'] })
+    },
+    onError: e => showToast.error(e.message || 'Error al guardar recargos'),
+  })
+}
+
 export function useHorarios(empleadoId = '') {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
   const puede = ROLES_ADMIN.includes(perfil?.rol)
@@ -370,6 +402,18 @@ export function useCrearFeriado() {
   })
 }
 
+export function useEliminarFeriado() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id }) => apiPost('/api/nomina/calendario/feriados/eliminar', { id }),
+    onSuccess: () => {
+      showToast.success('Feriado eliminado')
+      qc.invalidateQueries({ queryKey: ['nomina', 'feriados'] })
+    },
+    onError: e => showToast.error(e.message || 'Error al eliminar feriado'),
+  })
+}
+
 export function useTasasSnapshots(desde, hasta) {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
   const puede = ROLES_ADMIN.includes(perfil?.rol)
@@ -386,7 +430,7 @@ export function useCrearTasaSnapshot() {
   return useMutation({
     mutationFn: campos => apiPost('/api/nomina/tasas-snapshots/crear', campos),
     onSuccess: () => {
-      showToast.success('Tasa guardada como snapshot')
+      showToast.success('Tasa de cambio guardada')
       qc.invalidateQueries({ queryKey: ['nomina', 'tasas'] })
     },
     onError: e => showToast.error(e.message || 'Error al guardar tasa'),

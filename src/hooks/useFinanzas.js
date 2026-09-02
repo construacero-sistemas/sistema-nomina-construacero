@@ -1,9 +1,9 @@
 // src/hooks/useFinanzas.js
 // Acceso del frontend al libro financiero; todas las lecturas son acotadas.
 import { useCallback } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import useAuthStore from '../../compat/store/useAuthStore.js'
-import { apiUrl, getAuthHeaders } from '../../compat/services/apiBase.js'
+import { authFetch } from '../../compat/services/authFetch.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
 
 const BASE_KEY = ['finanzas']
@@ -13,19 +13,18 @@ function puedeFinanzas(perfil) {
   return perfil?.rol === ADMIN_ROLE
 }
 
+// authFetch refresca la sesión y reintenta automáticamente en 401.
 async function apiGet(path) {
-  const headers = await getAuthHeaders()
-  const response = await fetch(apiUrl(path), { headers })
+  const response = await authFetch(path)
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.error || `Error ${response.status}`)
   return payload
 }
 
 async function apiPost(path, body) {
-  const headers = await getAuthHeaders()
-  const response = await fetch(apiUrl(path), {
+  const response = await authFetch(path, {
     method: 'POST',
-    headers,
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   const payload = await response.json().catch(() => ({}))
@@ -57,14 +56,23 @@ export function useFinanzasCategorias() {
 
 export function useFinanzasMovimientos({ desde, hasta, tipo = '', categoria = '', moneda = '', mostrarAnulados = false } = {}) {
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
-  const params = new URLSearchParams({ desde, hasta, limit: '50', offset: '0' })
-  if (tipo) params.set('tipo', tipo)
-  if (categoria) params.set('categoria', categoria)
-  if (moneda) params.set('moneda', moneda)
-  if (mostrarAnulados) params.set('mostrarAnulados', 'true')
-  return useQuery({
+  const pageSize = 50
+  const buildUrl = offset => {
+    const params = new URLSearchParams({ desde, hasta, limit: String(pageSize), offset: String(offset) })
+    if (tipo) params.set('tipo', tipo)
+    if (categoria) params.set('categoria', categoria)
+    if (moneda) params.set('moneda', moneda)
+    if (mostrarAnulados) params.set('mostrarAnulados', 'true')
+    return `/api/finanzas/movimientos?${params}`
+  }
+  return useInfiniteQuery({
     queryKey: [...BASE_KEY, 'movimientos', desde, hasta, tipo, categoria, moneda, mostrarAnulados],
-    queryFn: () => apiGet(`/api/finanzas/movimientos?${params}`),
+    queryFn: ({ pageParam = 0 }) => apiGet(buildUrl(pageParam)),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const recibidos = lastPage?.paginacion?.recibidos ?? 0
+      return recibidos === pageSize ? allPages.length * pageSize : undefined
+    },
     enabled: puedeFinanzas(perfil) && Boolean(desde && hasta && desde <= hasta),
     staleTime: 1000 * 15,
   })
@@ -115,6 +123,20 @@ export function useAnularMovimiento() {
   })
 }
 
+export function useReasignarCuenta() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ ids, cuentaOrigen }) =>
+      apiPost('/api/finanzas/movimientos/reasignar-cuenta', { ids, cuenta_origen: cuentaOrigen }),
+    onSuccess: data => {
+      showToast.success(`Cuenta asignada a ${data?.actualizados ?? 0} movimiento(s)`)
+      client.invalidateQueries({ queryKey: BASE_KEY })
+      client.invalidateQueries({ queryKey: ['finanzas', 'cuentas-custodia'] })
+    },
+    onError: error => showToast.error(error.message || 'No se pudo asignar la cuenta'),
+  })
+}
+
 export function useCrearCategoria() {
   const client = useQueryClient()
   return useMutation({
@@ -126,3 +148,27 @@ export function useCrearCategoria() {
     onError: error => showToast.error(error.message || 'No se pudo crear la categoría'),
   })
 }
+
+export function usePreviewSyncPos() {
+  return useMutation({
+    mutationFn: ({ fecha, desde, hasta, posUrl } = {}) =>
+      apiPost('/api/finanzas/sync-pos', { fecha, desde, hasta, posUrl, confirm: false }),
+  })
+}
+
+export function useEjecutarSyncPos() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ fecha, desde, hasta, posUrl } = {}) =>
+      apiPost('/api/finanzas/sync-pos', { fecha, desde, hasta, posUrl, confirm: true }),
+    onSuccess: async data => {
+      const monto = Number(data?.total_ingresos_usd || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      const periodoTexto = data?.desde === data?.hasta ? (data?.desde || data?.fecha) : `${data?.desde} a ${data?.hasta}`
+      showToast.success(`Ventas de ${periodoTexto} sincronizadas con éxito (+$${monto} USD)`)
+      await client.invalidateQueries({ queryKey: BASE_KEY })
+      client.refetchQueries({ queryKey: BASE_KEY })
+    },
+    onError: error => showToast.error(error.message || 'No se pudo sincronizar con el POS'),
+  })
+}
+

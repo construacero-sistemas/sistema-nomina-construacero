@@ -62,6 +62,42 @@ describe('Worker E2E determinista', () => {
     expect(upstream).not.toHaveBeenCalled()
   })
 
+  it.each([
+    'GET /api/nomina/empleados',
+    'GET /api/nomina/config-empleados',
+    'GET /api/nomina/asistencia?desde=2026-08-01&hasta=2026-08-07',
+    'GET /api/nomina/marcaje/hoy',
+    'GET /api/nomina/calendario/feriados?desde=2026-08-01&hasta=2026-08-31',
+    'GET /api/nomina/calendario/horarios',
+    'GET /api/nomina/conceptos',
+    'GET /api/nomina/reglas-legales',
+    'GET /api/nomina/tasas-snapshots?desde=2026-08-01&hasta=2026-08-31',
+    'GET /api/nomina/lineas?periodoId=10000000-0000-4000-8000-000000000001',
+    'POST /api/nomina/asistencia/registrar',
+    'POST /api/nomina/asistencia/registrar-masivo',
+    'POST /api/nomina/marcaje/entrada',
+    'POST /api/nomina/marcaje/salida',
+    'POST /api/nomina/periodos/crear',
+    'POST /api/nomina/periodos/calcular',
+    'POST /api/nomina/periodos/cerrar',
+    'POST /api/nomina/periodos/eliminar',
+    'POST /api/nomina/lineas/pagar',
+    'POST /api/nomina/lineas/revertir-pago',
+  ])('protege el recorrido de nómina %s sin sesión y no alcanza Supabase', async path => {
+    const upstream = vi.fn()
+    vi.stubGlobal('fetch', upstream)
+    const [method, url] = path.split(' ')
+    const response = await worker.fetch(request(url, {
+      method,
+      headers: method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
+      body: method === 'POST' ? '{}' : undefined,
+    }), ENV)
+
+    expect(response.status).toBe(401)
+    expect((await response.json()).error).toMatch(/autenticado/i)
+    expect(upstream).not.toHaveBeenCalled()
+  })
+
   it('orquesta crear → listar → resumir → anular con tenant y rol únicos', async () => {
     const upstream = vi.fn(async (url, init = {}) => {
       const target = String(url)

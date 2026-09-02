@@ -1,0 +1,191 @@
+// server/handlers/__tests__/cuentasCustodia.test.js
+// Tests del CRUD de cuentas de custodia persistidas en Supabase — sin red ni secretos reales.
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ENV, OPERADORES, authOk, installFetchMock, makeRequest, readResponse } from './_harness'
+import {
+  handleGetCuentasCustodia,
+  handleCrearCuentaCustodia,
+  handleActualizarCuentaCustodia,
+  handleEliminarCuentaCustodia,
+  handleRestaurarCuentasCustodia,
+} from '../cuentasCustodia.js'
+
+let operadorActual = OPERADORES.administracion
+let mock
+
+vi.mock('../../lib/auth.js', () => ({
+  validateOperator: vi.fn(async () => authOk(operadorActual)),
+  supaServiceHeaders: vi.fn(() => ({ apikey: 'test', Authorization: 'Bearer test', 'Content-Type': 'application/json' })),
+}))
+
+afterEach(() => {
+  mock?.restore()
+  operadorActual = OPERADORES.administracion
+})
+
+function urlBase() {
+  return `${ENV.SUPABASE_URL}/rest/v1`
+}
+
+const CUENTA_FILA = {
+  id: 'c1111111-1111-4111-8111-111111111111',
+  codigo: 'banco-bnc-ves',
+  nombre: 'Banco BNC (Principal)',
+  tipo: 'banco_ves',
+  cartera: 'VES',
+  moneda: 'VES',
+  banco: 'BNC (Banco Nacional de Crédito)',
+  numero_cuenta: '0191-0001-23-4567890123',
+  titular: 'Construacero C.A.',
+  identificacion: 'J-12345678-9',
+  subcuenta_id: 'Banco en Bolívares',
+  predeterminada: true,
+  activo: true,
+  creado_en: '2026-09-02T10:00:00Z',
+}
+
+describe('cuentas de custodia', () => {
+  it('GET siembra las cuentas por defecto cuando el tenant aún no tiene filas', async () => {
+    const fetched = { primera: true }
+    mock = installFetchMock([
+      // 1º GET (activas): vacío · 2º GET (select=id): vacío (nunca hubo filas) · 3º GET: con seed
+      { match: '/cuentas_custodia?cuenta_id', method: 'GET', respond: (url) => {
+        if (String(url).includes('select=id&limit=1')) return []
+        if (fetched.primera) { fetched.primera = false; return [] }
+        return [CUENTA_FILA]
+      } },
+      // POST de seed
+      { match: '/cuentas_custodia', method: 'POST', respond: [] },
+    ])
+    const res = await handleGetCuentasCustodia(makeRequest(undefined, { url: `${urlBase()}/finanzas/cuentas-custodia` }), ENV)
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    expect(body.cuentas).toHaveLength(1)
+    expect(body.cuentas[0].nombre).toBe('Banco BNC (Principal)')
+    // Se hizo el seed (al menos un POST)
+    const postCalls = mock.calls.filter(c => c.method === 'POST' && String(c.url).includes('/cuentas_custodia'))
+    expect(postCalls.length).toBeGreaterThan(0)
+    // El seed envió 6 cuentas semilla (el harness ya parsea el body a objeto)
+    expect(postCalls[0].body).toHaveLength(6)
+  })
+
+  it('GET NO re-sembrar cuando el tenant ELIMINÓ todas sus cuentas (hay filas inactivas)', async () => {
+    mock = installFetchMock([
+      // 1º GET (activas): vacío · 2º GET (select=id): HAY una fila (inactiva) → no seed
+      { match: '/cuentas_custodia?cuenta_id', method: 'GET', respond: (url) => {
+        if (String(url).includes('select=id&limit=1')) return [{ id: CUENTA_FILA.id }]
+        return []
+      } },
+    ])
+    const res = await handleGetCuentasCustodia(makeRequest(undefined, { url: `${urlBase()}/finanzas/cuentas-custodia` }), ENV)
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    // Lista vacía respetada: la decisión del tenant de no tener cuentas
+    expect(body.cuentas).toHaveLength(0)
+    // No hubo POST de seed
+    expect(mock.calls.some(c => c.method === 'POST' && String(c.url).includes('/cuentas_custodia'))).toBe(false)
+  })
+
+  it('GET devuelve solo las cuentas ACTIVAS sin re-sembrar si ya hay filas', async () => {
+    mock = installFetchMock([
+      { match: '/cuentas_custodia?cuenta_id', method: 'GET', respond: [CUENTA_FILA] },
+    ])
+    const res = await handleGetCuentasCustodia(makeRequest(undefined, { url: `${urlBase()}/finanzas/cuentas-custodia` }), ENV)
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    expect(body.cuentas).toHaveLength(1)
+    // No hubo POST de seed
+    expect(mock.calls.some(c => c.method === 'POST' && String(c.url).includes('/cuentas_custodia'))).toBe(false)
+  })
+
+  it('POST /crear crea una cuenta y la devuelve', async () => {
+    mock = installFetchMock([
+      { match: '/cuentas_custodia', method: 'POST', respond: [{ ...CUENTA_FILA, id: 'c2222222-2222-4222-8222-222222222222', codigo: null, nombre: 'Banesco', banco: 'Banesco', predeterminada: false }] },
+      { match: '/auditoria', method: 'POST', respond: [] },
+      { match: '/usuarios', respond: [] },
+    ])
+    const body = {
+      nombre: 'Banesco',
+      tipo: 'banco_ves',
+      moneda: 'VES',
+      cartera: 'VES',
+      banco: 'Banesco',
+      numeroCuenta: '0134-0001-23-4567890123',
+      subcuentaId: 'Banco en Bolívares',
+    }
+    const res = await handleCrearCuentaCustodia(makeRequest(body, { url: `${urlBase()}/finanzas/cuentas-custodia/crear` }), ENV)
+    const { status, body: resp } = await readResponse(res)
+    expect(status).toBe(201)
+    expect(resp.ok).toBe(true)
+    expect(resp.cuenta.nombre).toBe('Banesco')
+    expect(resp.cuenta.predeterminada).toBe(false)
+  })
+
+  it('POST /crear valida payload inválido', async () => {
+    mock = installFetchMock([])
+    const res = await handleCrearCuentaCustodia(
+      makeRequest({ nombre: '', tipo: 'banco_ves' }, { url: `${urlBase()}/finanzas/cuentas-custodia/crear` }),
+      ENV,
+    )
+    const { status } = await readResponse(res)
+    expect(status).toBe(400)
+  })
+
+  it('POST /actualizar actualiza una cuenta existente', async () => {
+    mock = installFetchMock([
+      { match: '/cuentas_custodia?', method: 'PATCH', respond: [{ ...CUENTA_FILA, nombre: 'Banco BNC (Actualizado)' }] },
+      { match: '/auditoria', method: 'POST', respond: [] },
+      { match: '/usuarios', respond: [] },
+    ])
+    const res = await handleActualizarCuentaCustodia(
+      makeRequest({ id: CUENTA_FILA.id, nombre: 'Banco BNC (Actualizado)', tipo: 'banco_ves', moneda: 'VES', cartera: 'VES', subcuentaId: 'Banco en Bolívares' }, { url: `${urlBase()}/finanzas/cuentas-custodia/actualizar` }),
+      ENV,
+    )
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    expect(body.cuenta.nombre).toBe('Banco BNC (Actualizado)')
+  })
+
+  it('POST /eliminar hace borrado lógico (PATCH activo=false) y no destruye datos', async () => {
+    mock = installFetchMock([
+      { match: '/cuentas_custodia?', method: 'PATCH', respond: (url, init) => {
+        expect(JSON.parse(init.body).activo).toBe(false)
+        return []
+      } },
+      { match: '/auditoria', method: 'POST', respond: [] },
+      { match: '/usuarios', respond: [] },
+    ])
+    const res = await handleEliminarCuentaCustodia(
+      makeRequest({ id: CUENTA_FILA.id }, { url: `${urlBase()}/finanzas/cuentas-custodia/eliminar` }),
+      ENV,
+    )
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    expect(body.ok).toBe(true)
+  })
+
+  it('POST /restaurar reactiva las cuentas semilla', async () => {
+    const patchBody = { activo: true, actualizado_en: expect.any(String) }
+    mock = installFetchMock([
+      { match: '/cuentas_custodia?cuenta_id', method: 'GET', respond: [CUENTA_FILA] },
+      { match: '/cuentas_custodia?cuenta_id&codigo', method: 'GET', respond: [{ id: CUENTA_FILA.id }] },
+      { match: '/cuentas_custodia?id=', method: 'PATCH', respond: () => { /* reactivar */ return [] } },
+      { match: '/cuentas_custodia', method: 'POST', respond: [] },
+      { match: '/auditoria', method: 'POST', respond: [] },
+      { match: '/usuarios', respond: [] },
+    ])
+    const res = await handleRestaurarCuentasCustodia(makeRequest({}, { url: `${urlBase()}/finanzas/cuentas-custodia/restaurar` }), ENV)
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.cuentas).toHaveLength(1)
+  })
+
+  it('deniega a un rol no administrador', async () => {
+    operadorActual = OPERADORES.supervisor
+    mock = installFetchMock([])
+    const res = await handleGetCuentasCustodia(makeRequest(undefined, { url: `${urlBase()}/finanzas/cuentas-custodia` }), ENV)
+    const { status } = await readResponse(res)
+    expect(status).toBe(403)
+  })
+})

@@ -15,6 +15,7 @@ export {
   handleMarcarSalida,
   handleGetFeriados,
   handleCrearFeriado,
+  handleEliminarFeriado,
   handleGetHorarios,
   handleCrearHorario,
   validarFeriadoSolicitado,
@@ -41,6 +42,7 @@ export {
   handleCalcularPeriodo,
   handleCerrarPeriodo,
   handleReabrirPeriodo,
+  handleEliminarPeriodo,
 } from './nomina.periodos.js'
 
 export {

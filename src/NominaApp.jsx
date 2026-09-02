@@ -1,26 +1,35 @@
-import { useEffect, useCallback, useRef, useState } from 'react'
-import { ArrowRightLeft, Landmark, Menu, PanelLeftClose, PanelLeftOpen, Wallet, X } from 'lucide-react'
+import { lazy, Suspense, useEffect, useCallback, useRef, useState } from 'react'
+import {
+  AlertTriangle, ChevronRight, Landmark, LogOut, Menu, PanelLeftClose,
+  PanelLeftOpen, Settings2, TrendingUp, User, Wallet, X
+} from 'lucide-react'
 import { Navigate, Outlet, Route, Routes, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../compat/store/useAuthStore.js'
-import LoginAvatar from '../compat/components/auth/LoginAvatar.jsx'
 import LoginPage from '../compat/modules/auth/LoginPage.jsx'
-import NominaView from './views/NominaView.jsx'
-import FinanzasView from './components/finanzas/FinanzasView.jsx'
+import SistemaView from './views/SistemaView.jsx'
+import useTasaCambioNomina from './hooks/useTasaCambioNomina.js'
+
+const NominaView = lazy(() => import('./views/NominaView.jsx'))
+const FinanzasView = lazy(() => import('./components/finanzas/FinanzasView.jsx'))
+import RateSelector from './components/nomina/RateSelector.jsx'
+import { formatFechaHora } from '../compat/utils/formatDateTime.js'
 
 const NAV = [
-  { to: '/nomina', label: 'Nómina', icon: Wallet },
-  { to: '/finanzas', label: 'Finanzas', icon: Landmark },
+  { to: '/nomina', label: 'Nómina', desc: 'Salarios, asistencia y recibos', icon: Wallet },
+  { to: '/finanzas', label: 'Finanzas', desc: 'Movimientos, bancos y balances', icon: Landmark },
+  { to: '/sistema', label: 'Sistema', desc: 'Personal y configuración general', icon: Settings2 },
 ]
 
 function Loading() {
   const [showRetry, setShowRetry] = useState(false)
 
   useEffect(() => {
-    const timer = setTimeout(() => setShowRetry(true), 6000)
+    const timer = setTimeout(() => setShowRetry(true), 3000)
     return () => clearTimeout(timer)
   }, [])
 
   function recargarAplicacion() {
+    useAuthStore.setState({ initialized: true, _cargandoPerfil: false, _initializing: false })
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(registrations => {
         registrations.forEach(registration => registration.unregister())
@@ -58,12 +67,69 @@ function Loading() {
   )
 }
 
-function BadgeRol({ rol }) {
-  const autorizado = rol === 'administracion'
+function LogoutConfirmModal({ isOpen, onClose, onConfirm }) {
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = e => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
+
+  if (!isOpen) return null
+
   return (
-    <span className={`inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full border ${autorizado ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-white/10 text-white/50 border-white/10'}`}>
-      {autorizado ? 'Administración' : 'Sin acceso'}
-    </span>
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="logout-modal-title"
+    >
+      <div
+        className="relative border border-white/10 w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center overflow-hidden animate-in zoom-in-95 duration-200"
+        style={{
+          background: 'linear-gradient(180deg, #0f1f38 0%, #0a1628 100%)',
+          boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(239,68,68,0.1)',
+        }}
+      >
+        <div
+          className="absolute -top-12 left-1/2 -translate-x-1/2 w-32 h-32 rounded-full pointer-events-none opacity-25"
+          style={{ background: 'radial-gradient(circle, #ef4444 0%, transparent 70%)', filter: 'blur(20px)' }}
+        />
+
+        <div className="relative z-10">
+          <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4 text-red-400">
+            <LogOut size={22} />
+          </div>
+
+          <h3 id="logout-modal-title" className="text-lg font-black text-white mb-2">
+            ¿Cerrar sesión?
+          </h3>
+          <p className="text-xs text-white/60 mb-6 leading-relaxed">
+            Tu sesión actual se cerrará de forma segura en este dispositivo.
+          </p>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white/80 hover:text-white text-xs font-bold transition-all active:scale-95"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-950/50 transition-all active:scale-95 flex items-center justify-center gap-1.5"
+            >
+              <LogOut size={14} />
+              <span>Cerrar sesión</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -91,6 +157,133 @@ function NavItem({ item, collapsed, onClick }) {
   )
 }
 
+function MobileDrawerContent({ onClose, onLogout }) {
+  const { usd, eur, usdt, loading } = useTasaCambioNomina()
+  const format = value => value > 0 ? `${value.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
+
+  return (
+    <div className="flex flex-col h-full justify-between min-h-0 text-white select-none">
+      {/* 1. Cabecera del drawer móvil */}
+      <div
+        className="px-4 py-3.5 flex items-center justify-between shrink-0"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+      >
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/logo.png"
+            alt="Construacero Carabobo C.A."
+            className="h-8 w-auto object-contain brightness-110"
+          />
+          <div>
+            <h4 className="text-xs font-black text-white tracking-wide">Construacero</h4>
+            <span className="text-[10px] font-bold text-amber-400/80 uppercase tracking-widest block">
+              Nómina & Finanzas
+            </span>
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white/80 hover:text-white transition-colors active:scale-95"
+          aria-label="Cerrar menú"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      {/* 2. Cuerpo desplazable con módulos y tasas */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3.5 custom-scrollbar">
+        {/* Módulos de Navegación */}
+        <div className="space-y-1.5">
+          <span className="px-2 text-[10px] font-bold tracking-widest uppercase text-white/40 block">
+            Módulos del Sistema
+          </span>
+          <nav className="space-y-1" aria-label="Navegación móvil">
+            {NAV.map(item => {
+              const Icon = item.icon
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end
+                  onClick={onClose}
+                  className={({ isActive }) =>
+                    `flex items-center justify-between p-3 rounded-2xl transition-all ${
+                      isActive
+                        ? 'bg-gradient-to-r from-amber-500/20 via-primary/30 to-amber-500/10 border border-amber-500/30 text-white shadow-lg shadow-amber-950/30'
+                        : 'bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] text-white/70 hover:text-white'
+                    }`
+                  }
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${isActive ? 'bg-amber-500 text-white shadow-md' : 'bg-white/10 text-white/70'}`}>
+                          <Icon size={18} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black leading-tight text-white">{item.label}</p>
+                          <p className="text-[10px] text-white/50 mt-0.5">{item.desc}</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={15} className={isActive ? 'text-amber-400' : 'text-white/30'} />
+                    </>
+                  )}
+                </NavLink>
+              )
+            })}
+          </nav>
+        </div>
+
+        {/* Widget de Tasas Referenciales en Móvil */}
+        <div className="p-3 rounded-2xl bg-gradient-to-br from-white/[0.05] to-white/[0.02] border border-white/[0.08] space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black text-amber-400 flex items-center gap-1.5">
+              <TrendingUp size={13} />
+              Tasas Referenciales
+            </span>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-white/10 text-white/70 uppercase">
+              Al día
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5 pt-0.5 text-center">
+            <div className="p-1.5 rounded-xl bg-white/[0.04] border border-white/[0.05]">
+              <span className="text-[9px] font-bold text-white/40 block">USD BCV</span>
+              <strong className="text-[11px] font-black text-white">{loading ? '...' : format(usd)}</strong>
+            </div>
+            <div className="p-1.5 rounded-xl bg-white/[0.04] border border-white/[0.05]">
+              <span className="text-[9px] font-bold text-white/40 block">EUR BCV</span>
+              <strong className="text-[11px] font-black text-white">{loading ? '...' : format(eur)}</strong>
+            </div>
+            <div className="p-1.5 rounded-xl bg-white/[0.04] border border-white/[0.05]">
+              <span className="text-[9px] font-bold text-white/40 block">USDT</span>
+              <strong className="text-[11px] font-black text-white">{loading ? '...' : format(usdt)}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Footer con Botón de Cerrar Sesión y Versión */}
+      <div
+        className="p-3.5 border-t border-white/[0.08] bg-black/20 shrink-0 space-y-2"
+        style={{ paddingBottom: 'calc(0.875rem + env(safe-area-inset-bottom))' }}
+      >
+        <button
+          onClick={onLogout}
+          className="w-full h-11 flex items-center justify-center gap-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-200 hover:text-white font-bold text-xs transition-all active:scale-[0.98] shadow-lg shadow-red-950/40"
+          style={{ touchAction: 'manipulation' }}
+        >
+          <LogOut size={16} />
+          <span>Cerrar sesión</span>
+        </button>
+        <p className="text-[10px] text-center text-white/30 font-medium">
+          Construacero Carabobo C.A. · v2.1
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function Protected() {
   const initialized = useAuthStore(useCallback(state => state.initialized, []))
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
@@ -109,38 +302,63 @@ function Public() {
   return <Outlet />
 }
 
+function RateHeader() {
+  const { usd, eur, usdt, lastUpdate, loading, stale, error, refresh } = useTasaCambioNomina()
+  const format = value => value > 0 ? `${value.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
+  const updated = formatFechaHora(lastUpdate)
+  return (
+    <div className="hidden lg:flex items-center gap-2 text-[11px]" aria-label="Tasas de cambio">
+      <span className="text-white/45 font-medium">Tasa Activa:</span>
+      <RateSelector />
+      <div className="flex items-center gap-1.5 ml-1 text-white/50 text-[10px]">
+        <span title="BCV Dólar">USD: {loading ? '...' : format(usd)}</span>
+        <span>·</span>
+        <span title="BCV Euro">EUR: {loading ? '...' : format(eur)}</span>
+        <span>·</span>
+        <span title="USDT">USDT: {loading ? '...' : format(usdt)}</span>
+      </div>
+      {stale && <AlertTriangle size={10} className="text-amber-300" aria-label="Se muestra el último valor disponible" />}
+      {error && <button type="button" onClick={refresh} className="text-red-300 underline text-[10px]">Reintentar</button>}
+      {!error && updated && <span className="text-white/35 text-[10px] hidden xl:inline">({updated})</span>}
+    </div>
+  )
+}
+
 function Shell() {
-  const perfil = useAuthStore(useCallback(state => state.perfil, []))
-  const switchOut = useAuthStore(state => state.switchOut)
+  const logout = useAuthStore(state => state.logout)
   const navigate = useNavigate()
   const location = useLocation()
   const mainRef = useRef(null)
   const current = NAV.find(item => location.pathname.startsWith(item.to)) || NAV[0]
   const CurrentIcon = current.icon
   const [menuOpen, setMenuOpen] = useState(false)
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => typeof window !== 'undefined' && window.innerWidth >= 768 && window.innerWidth < 1400,
   )
+  const collapsed = sidebarCollapsed && !menuOpen
 
   useEffect(() => {
     mainRef.current?.scrollTo(0, 0)
     window.scrollTo(0, 0)
   }, [location.pathname])
 
-  async function cambiarUsuario() {
+  async function ejecutarCerrarSesion() {
+    setConfirmLogoutOpen(false)
     setMenuOpen(false)
-    await switchOut()
+    await logout()
     navigate('/login', { replace: true })
   }
 
-  const collapsed = sidebarCollapsed && !menuOpen
-
   return (
     <div className="flex h-screen h-[100dvh] pt-12 md:pt-14 overflow-hidden" style={{ background: '#f1f5f9' }}>
-      {/* Barra superior: misma jerarquía visual del proyecto de referencia */}
       <header
-        className="fixed top-0 left-0 right-0 z-40 px-3 md:px-4 h-12 md:h-14 flex items-center justify-between gap-2 md:gap-4"
-        style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0d1f3c 100%)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+        className="fixed top-0 left-0 right-0 z-40 h-12 md:h-14 px-3 md:px-4 flex items-center gap-2.5 md:gap-3 text-white"
+        style={{
+          background: 'linear-gradient(135deg, #0a1628 0%, #0d1f3c 100%)',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.2)',
+        }}
       >
         <button
           onClick={() => setMenuOpen(true)}
@@ -166,18 +384,11 @@ function Shell() {
             <CurrentIcon size={16} className="text-white/80" />
           </div>
           <span className="text-sm font-black tracking-wide text-white/90">{current.label}</span>
+          <span className="sr-only">Nómina y Finanzas — Construacero Carabobo</span>
         </div>
 
         <div className="flex-1" />
-        <span className="hidden sm:inline text-xs text-white/60 truncate max-w-[180px]">{perfil?.nombre || 'Usuario'}</span>
-        <button
-          onClick={cambiarUsuario}
-          className="p-2.5 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-          title="Cambiar usuario"
-          aria-label="Cambiar usuario"
-        >
-          <ArrowRightLeft size={17} />
-        </button>
+        <RateHeader />
       </header>
 
       {menuOpen && (
@@ -200,7 +411,19 @@ function Shell() {
             boxShadow: '4px 0 24px rgba(0,0,0,0.3)',
           }}
         >
-          <div className="relative flex flex-col md:h-full min-h-0">
+          {/* Vista móvil del Drawer */}
+          <div className="md:hidden h-full flex flex-col min-h-0">
+            <MobileDrawerContent
+              onClose={() => setMenuOpen(false)}
+              onLogout={() => {
+                setMenuOpen(false)
+                setConfirmLogoutOpen(true)
+              }}
+            />
+          </div>
+
+          {/* Vista desktop de la Barra Lateral */}
+          <div className="hidden md:flex relative flex-col md:h-full min-h-0">
             <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-[0.03]">
               <svg width="100%" height="100%" aria-hidden="true">
                 <defs><pattern id="nomina-sidebar-dots" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="white" /></pattern></defs>
@@ -212,24 +435,8 @@ function Shell() {
               style={{ background: 'radial-gradient(circle, #B8860B 0%, transparent 70%)', filter: 'blur(30px)' }}
             />
 
-            {/* Perfil y cierre del drawer en móvil */}
-            <div className="md:hidden relative z-10 px-4 py-3 flex items-center gap-3 shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-              <LoginAvatar user={perfil} size="sm" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-white truncate leading-tight">{perfil?.nombre ?? 'Usuario'}</p>
-                <BadgeRol rol={perfil?.rol} />
-              </div>
-              <button
-                onClick={() => setMenuOpen(false)}
-                className="p-2 rounded-xl bg-white/10 border border-white/20 text-white hover:bg-white/20 transition-colors shrink-0"
-                aria-label="Cerrar menú"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
             {/* Logo en desktop */}
-            <div className="relative z-10 px-4 py-2 hidden md:flex flex-col items-center shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="relative z-10 px-4 py-2 flex flex-col items-center shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
               <img
                 src="/logo.png"
                 alt="Construacero Carabobo C.A."
@@ -241,43 +448,34 @@ function Shell() {
                 <div className="mt-1.5 md:mt-2 flex items-center gap-2 w-full justify-center">
                   <div className="h-px flex-1 opacity-20" style={{ background: 'linear-gradient(to right, transparent, #B8860B)' }} />
                   <span className="text-[9px] font-bold tracking-[0.25em] uppercase whitespace-nowrap" style={{ color: 'rgba(184,134,11,0.7)' }}>
-                    Nómina y Finanzas
+                    Gestión empresarial
                   </span>
                   <div className="h-px flex-1 opacity-20" style={{ background: 'linear-gradient(to left, transparent, #B8860B)' }} />
                 </div>
               )}
             </div>
 
-            <nav className="relative z-10 flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5" aria-label="Navegación principal">
+            <nav className="relative z-10 flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5 sidebar-scrollbar" aria-label="Navegación principal">
               {NAV.map(item => <NavItem key={item.to} item={item} collapsed={collapsed} onClick={() => setMenuOpen(false)} />)}
             </nav>
 
-            <div className="md:hidden relative z-10 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            {/* Zona de Cerrar sesión en Desktop Sidebar */}
+            <div className="relative z-10 p-2.5 pb-3 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
               <button
-                onClick={cambiarUsuario}
-                className="w-full flex items-center gap-3 px-4 py-3.5 text-white/50 hover:text-white/80 hover:bg-white/5 transition-colors active:scale-[0.98]"
+                type="button"
+                onClick={() => setConfirmLogoutOpen(true)}
+                className={`flex items-center ${collapsed ? 'justify-center p-2.5 mx-auto' : 'w-full gap-3 px-3.5 py-2.5'} rounded-xl text-white/70 hover:text-red-300 hover:bg-red-500/10 border border-white/[0.06] hover:border-red-500/25 transition-all duration-150 active:scale-[0.98] group`}
+                style={{
+                  background: 'rgba(255,255,255,0.03)',
+                }}
+                title="Cerrar sesión"
+                aria-label="Cerrar sesión"
               >
-                <ArrowRightLeft size={18} />
-                <span className="text-sm font-semibold">Cambiar usuario</span>
-              </button>
-            </div>
-
-            <div className="relative z-10 p-2 pb-2 shrink-0 hidden md:block" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-              <button
-                onClick={cambiarUsuario}
-                className={`flex items-center ${collapsed ? 'justify-center p-1.5 mx-auto' : 'w-full gap-3 p-3'} rounded-2xl transition-all active:scale-[0.98] group`}
-                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
-                title={collapsed ? 'Cambiar operador' : undefined}
-              >
-                <LoginAvatar user={perfil} size="sm" />
+                <LogOut size={17} className="text-white/45 group-hover:text-red-400 transition-colors shrink-0" />
                 {!collapsed && (
-                  <>
-                    <div className="flex-1 min-w-0 text-left">
-                      <p className="text-sm font-black text-white/90 truncate leading-tight">{perfil?.nombre ?? 'Usuario'}</p>
-                      <BadgeRol rol={perfil?.rol} />
-                    </div>
-                    <ArrowRightLeft size={14} className="shrink-0 text-white/25 group-hover:text-white/50 transition-colors" />
-                  </>
+                  <span className="text-xs font-bold text-white/80 group-hover:text-white transition-colors truncate">
+                    Cerrar sesión
+                  </span>
                 )}
               </button>
             </div>
@@ -295,14 +493,20 @@ function Shell() {
         </button>
       </div>
 
-      <main ref={mainRef} className="flex-1 min-w-0 overflow-y-auto flex flex-col pb-20 md:pb-0">
+      <main
+        ref={mainRef}
+        className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden flex flex-col pb-36 md:pb-8"
+        style={{ paddingBottom: 'calc(8.5rem + env(safe-area-inset-bottom, 0px))' }}
+      >
         <div className="w-full flex flex-col flex-1 min-h-0">
-          <Outlet />
-          <div className="h-4 shrink-0 md:hidden" aria-hidden="true" />
+          <Suspense fallback={<Loading />}>
+            <Outlet />
+          </Suspense>
+          <div className="h-16 shrink-0 md:hidden" aria-hidden="true" />
         </div>
       </main>
 
-      {/* Navegación inferior táctil: conserva una acción primaria y el cambio de usuario */}
+      {/* Navegación inferior táctil */}
       <nav
         className="fixed bottom-0 left-0 right-0 z-[97] md:hidden"
         aria-label="Navegación móvil"
@@ -313,13 +517,13 @@ function Shell() {
           boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
         }}
       >
-        <div className="flex items-center justify-around px-2 h-16">
+        <div className="flex items-center justify-around px-1 h-16 min-h-[4rem]">
           {NAV.map(item => {
             const Icon = item.icon
             return <NavLink
               key={item.to}
               to={item.to}
-              className={({ isActive }) => `flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl transition-colors min-w-[64px] ${isActive ? 'text-amber-400' : 'text-white/50 active:text-white/80'}`}
+              className={({ isActive }) => `flex flex-col items-center gap-0.5 py-1.5 px-2 rounded-xl transition-colors min-w-[58px] ${isActive ? 'text-amber-400' : 'text-white/50 active:text-white/80'}`}
               style={{ touchAction: 'manipulation' }}
             >
               {({ isActive }) => (
@@ -333,28 +537,37 @@ function Shell() {
             </NavLink>
           })}
           <button
-            onClick={cambiarUsuario}
-            className="flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl transition-colors min-w-[64px] text-white/50 active:text-white/80"
+            onClick={() => setConfirmLogoutOpen(true)}
+            className="flex flex-col items-center gap-0.5 py-1.5 px-2 rounded-xl transition-colors min-w-[58px] text-white/50 active:text-white/80"
             style={{ touchAction: 'manipulation' }}
-            aria-label="Cambiar usuario"
+            aria-label="Cerrar sesión"
           >
-            <div className="p-1.5 rounded-lg"><ArrowRightLeft size={20} /></div>
-            <span className="text-[10px] font-bold">Cambiar</span>
+            <div className="p-1.5 rounded-lg"><LogOut size={20} /></div>
+            <span className="text-[10px] font-bold">Salir</span>
           </button>
         </div>
       </nav>
+
+      {/* Modal profesional de confirmación de cierre de sesión */}
+      <LogoutConfirmModal
+        isOpen={confirmLogoutOpen}
+        onClose={() => setConfirmLogoutOpen(false)}
+        onConfirm={ejecutarCerrarSesion}
+      />
     </div>
   )
 }
 
 export default function NominaApp() {
   const initialize = useAuthStore(state => state.initialize)
-  useEffect(() => initialize(), [initialize])
+  useEffect(() => {
+    return initialize()
+  }, [initialize])
 
   return (
     <Routes>
       <Route element={<Public />}><Route path="/login" element={<LoginPage />} /></Route>
-      <Route element={<Protected />}><Route element={<Shell />}><Route path="/nomina" element={<NominaView />} /><Route path="/finanzas" element={<FinanzasView />} /></Route></Route>
+      <Route element={<Protected />}><Route element={<Shell />}><Route path="/nomina" element={<NominaView />} /><Route path="/finanzas" element={<FinanzasView />} /><Route path="/sistema" element={<SistemaView />} /></Route></Route>
       <Route path="*" element={<Navigate to="/nomina" replace />} />
     </Routes>
   )

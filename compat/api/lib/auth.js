@@ -73,15 +73,31 @@ export async function verifyAuth(request, env) {
   // Nunca extender la autorización más allá del `exp` del JWT.
   let rawUser = cacheGet(_userCache, token);
   if (!rawUser) {
-    if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null;
-    const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        apikey: env.SUPABASE_ANON_KEY,
-      },
-    });
-    if (!res.ok) return null;
-    rawUser = await res.json();
+    if (!env.SUPABASE_URL) return null;
+    // El anon key es la opción normal. En local es frecuente configurar solo
+    // la service key del Worker; intentamos ambas claves sin exponer ninguna
+    // al navegador. Un JWT válido sigue siendo obligatorio.
+    const authApiKeys = [...new Set([
+      env.SUPABASE_ANON_KEY,
+      env.SUPABASE_SERVICE_KEY,
+    ].map(value => String(value || '').trim()).filter(Boolean))]
+    if (authApiKeys.length === 0) return null
+    for (const apiKey of authApiKeys) {
+      const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: apiKey,
+        },
+      })
+      if (res.ok) {
+        rawUser = await res.json()
+        break
+      }
+      // Una clave vencida o de otro proyecto no debe impedir probar la otra
+      // clave configurada. Nunca se relaja la comprobación del Bearer token.
+      if (![401, 403].includes(res.status)) return null
+    }
+    if (!rawUser) return null
     const ttlMs = expiresAt === null
       ? AUTH_CACHE_TTL_MS
       : Math.max(0, Math.min(AUTH_CACHE_TTL_MS, expiresAt - Date.now()))
@@ -90,7 +106,10 @@ export async function verifyAuth(request, env) {
 
   // Clonar antes de mutar — el objeto cacheado se comparte entre peticiones
   const user = { ...rawUser };
-  // Attach operator context from app_metadata (set by switch-operator)
+  // Seleccionar operador no depende de la metadata recién escrita: el endpoint
+  // de selección solo necesita validar la cuenta autenticada. Las rutas de
+  // negocio sí requieren metadata (o la cabecera verificada) mediante
+  // validateOperator.
   user.operator_id = user.app_metadata?.operator_id || null;
   user.operator_rol = user.app_metadata?.operator_rol || null;
   user.operator_nombre = user.app_metadata?.operator_nombre || null;
@@ -122,7 +141,7 @@ export async function verifyAuth(request, env) {
 export async function getOperatorRole(operatorId, env, accountId) {
   // El rol nunca se resuelve por UUID aislado: el mismo Worker atiende varios
   // tenants y una consulta sin cuenta_id puede cruzar contexto entre cuentas.
-  if (!operatorId || !isValidUuid(accountId)) return null;;
+  if (!operatorId || !isValidUuid(accountId)) return null;
   const operatorCacheKey = `${accountId}:${operatorId}`;
   const cached = cacheGet(_operatorCache, operatorCacheKey);
   if (cached) return cached.rol ?? null;

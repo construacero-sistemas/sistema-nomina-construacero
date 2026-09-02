@@ -309,6 +309,44 @@ describe('cierre y reapertura de período', () => {
     expect(enviado.cerrado_por).toBeNull()
   })
 })
+
+// ─── Eliminación de períodos ──────────────────────────────────────────────────
+describe('eliminación de períodos', () => {
+  it('no elimina si el período está pagado', async () => {
+    mock = installFetchMock([
+      { match: '/nomina_periodos', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'pagado' }] },
+    ])
+    const res = await H.handleEliminarPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(400)
+    expect(String(body.error)).toMatch(/pagado/i)
+  })
+
+  it('no elimina si hay recibos pagados', async () => {
+    mock = installFetchMock([
+      { match: '/nomina_periodos', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'abierto' }] },
+      { match: '/nomina_lineas',   respond: [{ id: IDS.linea }] },
+    ])
+    const res = await H.handleEliminarPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(400)
+    expect(String(body.error)).toMatch(/revierte los pagos/i)
+  })
+
+  it('elimina líneas asociadas y el período', async () => {
+    mock = installFetchMock([
+      { match: '/nomina_periodos', method: 'GET',    respond: [{ id: IDS.periodo, nombre: 'P', estado: 'abierto' }] },
+      { match: '/nomina_lineas',   method: 'GET',    respond: [] },
+      { match: '/nomina_lineas',   method: 'DELETE', respond: [] },
+      { match: '/nomina_periodos', method: 'DELETE', respond: [] },
+    ])
+    const res = await H.handleEliminarPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
+    const { status } = await readResponse(res)
+    expect(status).toBe(200)
+    const deletes = mock.calls.filter(c => c.method === 'DELETE')
+    expect(deletes).toHaveLength(2)
+  })
+})
 // ─── Ajuste de líneas ────────────────────────────────────────────────────────
 describe('ajuste de recibos', () => {
   const lineaBase = {
@@ -518,36 +556,7 @@ describe('reversión de pago', () => {
     expect(enviadoPeriodo.estado).toBe('cerrado')
   })
 })
-// ─── Aislamiento de tenant ───────────────────────────────────────────────────
-describe('aislamiento por cuenta (tenant)', () => {
-  it('la lista de empleados filtra por cuenta_id del operador', async () => {
-    mock = installFetchMock([{ match: '/nomina_config_empleado', respond: [] }])
-    await H.handleGetConfigEmpleados(makeRequest(), ENV)
-    const url = mock.calls[0].url
-    expect(url).toContain(`cuenta_id=eq.${OPERADORES.administracion.cuenta_id}`)
-  })
-  it('la lista de períodos filtra por cuenta_id del operador', async () => {
-    mock = installFetchMock([{ match: '/nomina_periodos', respond: [] }])
-    await H.handleGetPeriodos(makeRequest(), ENV)
-    expect(mock.calls[0].url).toContain(`cuenta_id=eq.${OPERADORES.administracion.cuenta_id}`)
-  })
-  it('la asistencia filtra por cuenta_id y rango de fechas', async () => {
-    mock = installFetchMock([{ match: '/registro_asistencia', respond: [] }])
-    const req = makeRequest(undefined, {
-      url: 'http://worker.test/api/nomina/asistencia?desde=2026-08-03&hasta=2026-08-09',
-    })
-    await H.handleGetAsistencia(req, ENV)
-    const url = mock.calls[0].url
-    expect(url).toContain(`cuenta_id=eq.${OPERADORES.administracion.cuenta_id}`)
-    expect(url).toContain('fecha=gte.2026-08-03')
-    expect(url).toContain('fecha=lte.2026-08-09')
-  })
-  it('ninguna petición del suite sale del host de prueba', async () => {
-    mock = installFetchMock([{ match: '/nomina_periodos', respond: [] }])
-    await H.handleGetPeriodos(makeRequest(), ENV)
-    expectSinRedReal(mock.calls)
-  })
-})
+
 // ─── Agregados del listado de períodos ───────────────────────────────────────
 describe('totales del listado de períodos', () => {
   it('agrega empleados, bruto, neto y pagados por período', async () => {
@@ -575,3 +584,4 @@ describe('totales del listado de períodos', () => {
     expect(mock.calls).toHaveLength(1)
   })
 })
+

@@ -1,5 +1,6 @@
 // server/handlers/__tests__/auth-operators.test.js
-// El PIN y el rol se verifican dentro del Worker; nunca en el navegador.
+// La selección de usuario y el rol se verifican dentro del Worker; nunca en el navegador.
+// El PIN anterior permanece cubierto para una futura reactivación.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ENV, installFetchMock, readResponse } from './_harness'
 
@@ -33,7 +34,25 @@ function request(body, ip) {
   })
 }
 
-describe('auth operadores — rol único y PIN server-side', () => {
+describe('auth operadores — selección temporal sin PIN y rol único', () => {
+  it('selecciona administración sin PIN y nunca expone hashes', async () => {
+    mock = installFetchMock([
+      {
+        match: '/rest/v1/usuarios',
+        method: 'GET',
+        respond: [{ id: OPERATOR_ID, nombre: 'Administración', rol: 'administracion', cuenta_id: ACCOUNT_ID }],
+      },
+      { match: '/auth/v1/admin/users/', method: 'PUT', respond: {} },
+    ])
+    const response = await H.handleSelectOperator(request({ operator_id: OPERATOR_ID }, '10.0.0.20'), ENV)
+    const result = await readResponse(response)
+    expect(result.status).toBe(200)
+    expect(result.body.operator).toMatchObject({ id: OPERATOR_ID, rol: 'administracion' })
+    expect(result.body.operator).not.toHaveProperty('pin_hash')
+    expect(result.body.operator).not.toHaveProperty('pin_salt')
+    expect(cryptoMock.verifyPinPBKDF2).not.toHaveBeenCalled()
+  })
+
   it('lista únicamente administración y nunca expone hashes', async () => {
     mock = installFetchMock([{
       match: '/rest/v1/usuarios?activo=eq.true&rol=eq.administracion',

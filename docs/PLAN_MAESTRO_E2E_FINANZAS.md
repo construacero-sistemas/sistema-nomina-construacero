@@ -58,7 +58,7 @@
 | Nómina fiscal | Tablas, CRUD y pantalla de conceptos/reglas versionadas | Las fórmulas legales requieren aprobación antes de activarse |
 | Tasas | Snapshots, pantalla manual y fuentes etiquetadas | Los adaptadores automáticos BCV/Euro/USDT requieren proveedor aprobado |
 | Finanzas | Movimientos, categorías, resumen y anulación implementados | Esquema 221–223 aplicado directamente; falta validar conciliación con datos reales |
-| Auth | PIN PBKDF2 server-side | API, UI, RPC y migración aceptan únicamente `administracion` |
+| Auth | Acceso inicial por correo/contraseña y sesión persistente | API, UI, RPC y migración aceptan únicamente un usuario activo con rol `administracion`; no hay selección posterior |
 | Tenant/RLS | Filtros explícitos, RLS y triggers existentes | Finanzas debe repetir la misma barrera en API y SQL |
 | Egress | Caché, proyecciones y límites existentes | Finanzas usará paginación, agregados server-side y sin polling |
 | E2E | Suite Vitest de handlers y smoke del Worker sin navegador/red real | 340 pruebas deterministas cubren auth, rutas, Finanzas y ciclo de Nómina; la instancia Supabase ya tiene el esquema aplicado y requiere validación funcional |
@@ -68,7 +68,7 @@
 
 ```text
 React/Vite
-  ├─ Login único: operador administración
+  ├─ Login único: cuenta + usuario administración, sin selección posterior
   ├─ Nómina: empleados, asistencia, períodos, recibos, tasas/reglas
   └─ Finanzas: movimientos, filtros, resumen y reportes
           │ same-origin /api/*
@@ -143,7 +143,7 @@ Todos requieren sesión válida, operador activo `administracion` y tenant váli
 1. Mantener este documento como contrato verificable.
 2. Separar `server/handlers/nomina.js` por dominio sin cambiar rutas públicas.
 3. Separar `compat/index.css` por hojas importadas por dominio.
-4. Separar login y store de auth por responsabilidades.
+4. Simplificar login y store a una identidad administrativa única con sesión persistente.
 5. Separar suites grandes en archivos de escenarios.
 6. Añadir guardrail que rechace fuentes JavaScript/JSX/CSS/SQL mayores de 600 líneas; el lockfile generado queda fuera.
 
@@ -152,7 +152,7 @@ Todos requieren sesión válida, operador activo `administracion` y tenant váli
 1. Crear migraciones financieras numeradas posteriores a 220.
 2. Crear tablas, índices, checks, RLS restrictiva, policies de administración y auditoría.
 3. Crear RPC de resumen agregado por tenant con filtros de moneda, tipo y categoría.
-4. Crear migración de rol único: login/API/RLS solo aceptan `administracion`.
+4. Crear migración/guard de identidad única: login/API/RLS solo aceptan un usuario activo con rol `administracion`.
 5. Verificar idempotencia de alta/anulación y que no exista DELETE financiero; el rango/monto/tasa quedan acotados al contrato SQL.
 6. Mantener migraciones idempotentes y reversibles por operación; no borrar datos.
 
@@ -193,7 +193,7 @@ Todos requieren sesión válida, operador activo `administracion` y tenant váli
 - `npm run verify` en verde.
 - Suite de tests ampliada sin red real y smoke E2E documentado.
 - Ningún archivo fuente JavaScript, JSX, CSS o SQL supera 600 líneas; el lockfile generado no se considera fuente.
-- Un solo rol operativo: `administracion`.
+- Un único usuario operativo activo con rol `administracion`; la sesión se persiste por dispositivo.
 - Finanzas crea, lista, reporta por rango/tipo/categoría/moneda y anula movimientos sin pérdida de precisión.
 - Nómina cubre todos los puntos del PDF o marca explícitamente la decisión de negocio pendiente.
 - Tasas manuales funcionan; fuentes automáticas solo se activan con proveedor aprobado.
