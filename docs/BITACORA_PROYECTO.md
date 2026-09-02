@@ -2288,3 +2288,26 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 
 **Pendientes:**
 - Ninguno de este ítem.
+
+## 109. Cajas físicas permanentes e inicio limpio de Tesorería
+
+**Fecha:** 02/09/2026
+**Objetivo:** que las cajas físicas de efectivo (Bs y $) existan siempre — son el bucket universal del dinero que no está en un banco — y que un negocio nuevo arranque sin cuentas demo con datos falsos.
+
+**Decisiones (validadas con el usuario):**
+- Las 2 cajas semilla (`caja-efectivo-bs`, `caja-efectivo-usd`) son **permanentes**: no eliminables (sí editables). Cajas EXTRA del usuario sí se pueden borrar.
+- La semilla de tenants nuevos pasa de 6 cuentas demo a **solo las 2 cajas**; bancos/Zelle/billeteras los crea el usuario con sus datos reales.
+
+**Implementación:**
+- `cuentasCustodiaUtils.js`: `CAJAS_PERMANENTES` + `esCajaPermanente()` (por `codigo` semilla); `CUENTAS_DEFAULT` reducida a las 2 cajas (sin titular/RIF de relleno); `cuentaCustodiaResponse()` expone `permanente`.
+- Backend `cuentasCustodia.js`: `POST /eliminar` devuelve 403 si el objetivo es una caja permanente (lookup previo por id+cuenta).
+- Migración `230_cajas_permanentes.sql`: reactiva las cajas semilla eliminadas, las crea donde falten (por tenant) y añade trigger `trg_proteger_cajas_permanentes` (impide desactivar/borrar las semillas incluso por SQL directo). Aplicada al remoto y registrada.
+- UI `CuentasCustodiaGrid`: botón de borrar oculto en cajas permanentes (candado + badge "Permanente (no eliminable)"); estado vacío explica las cajas permanentes; botón "Restaurar cajas físicas".
+- Hook: fallbacks intactos (una lista vacía del servidor sigue siendo válida para bancos, pero las cajas vuelven vía migración/trigger).
+
+**Verificación:**
+- Tests: 11 de `cuentasCustodia` (3 nuevos: bloqueo 403, caja extra eliminable, seed=2 cajas), grid y hook actualizados a fixtures propios. `npm run verify` completo: 41 archivos, **479 tests**, lint 0, responsive OK, bundle 358.5 kB, build OK.
+- En BD remota: cajas `activo=true` por tenant, trigger instalado y probado (un UPDATE `activo=false` sobre la caja falla con excepción).
+
+**Pendientes:**
+- Ninguno de este ítem.

@@ -43,53 +43,79 @@ function wrapper({ children }) {
 }
 
 // Esperar a que el hook resuelva los datos del backend (fuente de verdad).
-async function renderCustodia(movimientos) {
+// OJO: con placeholderData, cargando es false de inmediato con las semillas;
+// opcionalmente se espera a que una cuenta del payload REAL esté presente.
+async function renderCustodia(movimientos, esperarNombre = null) {
   const utils = renderHook(() => useCuentasCustodia(movimientos), { wrapper })
-  await waitFor(() => expect(utils.result.current.cargando).toBe(false))
+  if (esperarNombre) {
+    await waitFor(() => expect(utils.result.current.cuentas.some(c => c.nombre === esperarNombre)).toBe(true), { timeout: 3000 })
+  } else {
+    await waitFor(() => expect(utils.result.current.cargando).toBe(false))
+  }
   return utils
 }
 
 describe('useCuentasCustodia — saldos por cuenta explícita', () => {
+  // Fixtures de bancos del tenant (las semillas ya son solo las 2 cajas físicas;
+  // los bancos los crea el usuario, así que estos tests los inyectan explícitos).
+  const BANCOS_FIXTURE = [
+    { id: 'banco-bnc-ves', codigo: 'banco-bnc-ves', nombre: 'Banco BNC (Principal)', tipo: 'banco_ves', cartera: 'VES', moneda: 'VES', banco: 'BNC', subcuentaId: 'Banco en Bolívares', permanente: false, activo: true },
+    { id: 'banco-mercantil-ves', codigo: 'banco-mercantil-ves', nombre: 'Banco Mercantil', tipo: 'banco_ves', cartera: 'VES', moneda: 'VES', banco: 'Mercantil', subcuentaId: 'Banco en Bolívares', permanente: false, activo: true },
+  ]
+
   it('no duplica el saldo cuando BNC y Mercantil comparten subcuentaId', async () => {
-    const movimientos = [
-      { id: 'm1', estado: 'activo', tipo: 'egreso', moneda: 'VES', monto: 1000, monto_ves: 1000, cuenta_origen: 'Banco BNC (Principal)' },
-    ]
+    globalThis.__mockCuentasPayload = BANCOS_FIXTURE
+    try {
+      const movimientos = [
+        { id: 'm1', estado: 'activo', tipo: 'egreso', moneda: 'VES', monto: 1000, monto_ves: 1000, cuenta_origen: 'Banco BNC (Principal)' },
+      ]
 
-    const { result } = await renderCustodia(movimientos)
+      const { result } = await renderCustodia(movimientos, 'Banco BNC (Principal)')
 
-    const bnc = result.current.cuentas.find(c => c.nombre === 'Banco BNC (Principal)')
-    const mercantil = result.current.cuentas.find(c => c.nombre === 'Banco Mercantil')
+      const bnc = result.current.cuentas.find(c => c.nombre === 'Banco BNC (Principal)')
+      const mercantil = result.current.cuentas.find(c => c.nombre === 'Banco Mercantil')
 
-    expect(bnc).toBeDefined()
-    expect(mercantil).toBeDefined()
-    expect(bnc.saldo).toBe(-1000)
-    expect(mercantil.saldo).toBe(0)
+      expect(bnc).toBeDefined()
+      expect(mercantil).toBeDefined()
+      expect(bnc.saldo).toBe(-1000)
+      expect(mercantil.saldo).toBe(0)
+    } finally {
+      delete globalThis.__mockCuentasPayload
+    }
   })
 
   it('agrega el ingreso a la cuenta explícita correcta', async () => {
-    const movimientos = [
-      { id: 'm1', estado: 'activo', tipo: 'ingreso', moneda: 'VES', monto: 500, monto_ves: 500, cuenta_origen: 'Banco Mercantil' },
-    ]
+    globalThis.__mockCuentasPayload = BANCOS_FIXTURE
+    try {
+      const movimientos = [
+        { id: 'm1', estado: 'activo', tipo: 'ingreso', moneda: 'VES', monto: 500, monto_ves: 500, cuenta_origen: 'Banco Mercantil' },
+      ]
 
-    const { result } = await renderCustodia(movimientos)
-    const mercantil = result.current.cuentas.find(c => c.nombre === 'Banco Mercantil')
+      const { result } = await renderCustodia(movimientos, 'Banco Mercantil')
+      const mercantil = result.current.cuentas.find(c => c.nombre === 'Banco Mercantil')
 
-    expect(mercantil.saldo).toBe(500)
+      expect(mercantil.saldo).toBe(500)
+    } finally {
+      delete globalThis.__mockCuentasPayload
+    }
   })
 
   it('no suma movimientos sin cuenta explícita a ninguna cuenta de custodia', async () => {
-    const movimientos = [
-      { id: 'm1', estado: 'activo', tipo: 'ingreso', moneda: 'VES', monto: 800, monto_ves: 800 },
-    ]
+    globalThis.__mockCuentasPayload = BANCOS_FIXTURE
+    try {
+      const movimientos = [
+        { id: 'm1', estado: 'activo', tipo: 'ingreso', moneda: 'VES', monto: 800, monto_ves: 800 },
+      ]
 
-    const { result } = await renderCustodia(movimientos)
-    const bnc = result.current.cuentas.find(c => c.nombre === 'Banco BNC (Principal)')
-    const mercantil = result.current.cuentas.find(c => c.nombre === 'Banco Mercantil')
-    const caja = result.current.cuentas.find(c => c.nombre === 'Caja Efectivo Bs')
+      const { result } = await renderCustodia(movimientos, 'Banco BNC (Principal)')
+      const bnc = result.current.cuentas.find(c => c.nombre === 'Banco BNC (Principal)')
+      const mercantil = result.current.cuentas.find(c => c.nombre === 'Banco Mercantil')
 
-    expect(bnc.saldo).toBe(0)
-    expect(mercantil.saldo).toBe(0)
-    expect(caja.saldo).toBe(0)
+      expect(bnc.saldo).toBe(0)
+      expect(mercantil.saldo).toBe(0)
+    } finally {
+      delete globalThis.__mockCuentasPayload
+    }
   })
 
   it('respeta una lista VACÍA del backend sin caer a las semillas', async () => {

@@ -9,6 +9,7 @@ import {
   handleEliminarCuentaCustodia,
   handleRestaurarCuentasCustodia,
 } from '../cuentasCustodia.js'
+import { CUENTAS_DEFAULT, CAJAS_PERMANENTES } from '../../lib/cuentasCustodiaUtils.js'
 
 let operadorActual = OPERADORES.administracion
 let mock
@@ -65,8 +66,9 @@ describe('cuentas de custodia', () => {
     // Se hizo el seed (al menos un POST)
     const postCalls = mock.calls.filter(c => c.method === 'POST' && String(c.url).includes('/cuentas_custodia'))
     expect(postCalls.length).toBeGreaterThan(0)
-    // El seed envió 6 cuentas semilla (el harness ya parsea el body a objeto)
-    expect(postCalls[0].body).toHaveLength(6)
+    // El seed envía SOLO las 2 cajas físicas (sin bancos demo con datos falsos)
+    expect(postCalls[0].body).toHaveLength(2)
+    expect(postCalls[0].body.map(c => c.codigo).sort()).toEqual([...CAJAS_PERMANENTES].sort())
   })
 
   it('GET NO re-sembrar cuando el tenant ELIMINÓ todas sus cuentas (hay filas inactivas)', async () => {
@@ -148,6 +150,8 @@ describe('cuentas de custodia', () => {
 
   it('POST /eliminar hace borrado lógico (PATCH activo=false) y no destruye datos', async () => {
     mock = installFetchMock([
+      // Lookup previo: cuenta no permanente
+      { match: '/cuentas_custodia?id=', method: 'GET', respond: [{ tipo: 'banco_ves', codigo: 'banco-bnc-ves' }] },
       { match: '/cuentas_custodia?', method: 'PATCH', respond: (url, init) => {
         expect(JSON.parse(init.body).activo).toBe(false)
         return []
@@ -164,8 +168,40 @@ describe('cuentas de custodia', () => {
     expect(body.ok).toBe(true)
   })
 
-  it('POST /restaurar reactiva las cuentas semilla', async () => {
-    const patchBody = { activo: true, actualizado_en: expect.any(String) }
+  it('POST /eliminar BLOQUEA las cajas físicas permanentes (Bs y $) con 403', async () => {
+    mock = installFetchMock([
+      // Lookup previo: es una de las cajas permanentes
+      { match: '/cuentas_custodia?id=', method: 'GET', respond: [{ tipo: 'efectivo_ves', codigo: 'caja-efectivo-bs' }] },
+    ])
+    const res = await handleEliminarCuentaCustodia(
+      makeRequest({ id: CUENTA_FILA.id }, { url: `${urlBase()}/finanzas/cuentas-custodia/eliminar` }),
+      ENV,
+    )
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(403)
+    expect(body.error).toMatch(/permanentes/i)
+    // Nunca llegó a hacer el PATCH de borrado
+    expect(mock.calls.some(c => c.method === 'PATCH')).toBe(false)
+  })
+
+  it('POST /eliminar PERMITE borrar una caja EXTRA del usuario (sin codigo semilla)', async () => {
+    mock = installFetchMock([
+      // Lookup previo: caja extra creada por el usuario (codigo null)
+      { match: '/cuentas_custodia?id=', method: 'GET', respond: [{ tipo: 'efectivo_usd', codigo: null }] },
+      { match: '/cuentas_custodia?', method: 'PATCH', respond: [] },
+      { match: '/auditoria', method: 'POST', respond: [] },
+      { match: '/usuarios', respond: [] },
+    ])
+    const res = await handleEliminarCuentaCustodia(
+      makeRequest({ id: CUENTA_FILA.id }, { url: `${urlBase()}/finanzas/cuentas-custodia/eliminar` }),
+      ENV,
+    )
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    expect(body.ok).toBe(true)
+  })
+
+  it('POST /restaurar reactiva las cajas físicas semilla', async () => {
     mock = installFetchMock([
       { match: '/cuentas_custodia?cuenta_id', method: 'GET', respond: [CUENTA_FILA] },
       { match: '/cuentas_custodia?cuenta_id&codigo', method: 'GET', respond: [{ id: CUENTA_FILA.id }] },

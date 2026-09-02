@@ -4,6 +4,17 @@
 
 export const TIPOS_CUENTA_VALIDOS = ['banco_ves', 'efectivo_ves', 'efectivo_usd', 'zelle', 'cripto_usdt']
 
+// Cajas físicas PERMANENTES: el dinero que no está en un banco está en la caja,
+// así que estas dos cuentas siempre deben existir (migración 230 las protege en
+// la BD: no se pueden desactivar ni borrar). Se identifican por su `codigo`
+// semilla, que sobrevive renombres y ediciones cosméticas.
+export const CAJAS_PERMANENTES = ['caja-efectivo-bs', 'caja-efectivo-usd']
+
+export function esCajaPermanente(cuenta) {
+  const codigo = typeof cuenta === 'string' ? cuenta : cuenta?.codigo
+  return Boolean(codigo && CAJAS_PERMANENTES.includes(codigo))
+}
+
 export const BANCOS_VENEZUELA = [
   'BNC (Banco Nacional de Crédito)',
   'Mercantil',
@@ -30,40 +41,11 @@ export const PLATAFORMAS_INTERNACIONALES = [
   'Otra Plataforma',
 ]
 
-// Cuentas semilla por defecto. Cada fila incluye un `codigo` (slug estable) para
-// identificar la semilla; el backend siembra estas cuentas en Supabase y el
-// frontend las usa como fallback offline hasta que cargue del servidor.
+// Cuentas semilla. Un negocio nuevo arranca SOLO con las dos cajas físicas
+// (universales y permanentes): bancos, Zelle, billeteras los crea el usuario
+// real con sus datos. Nada de datos de ejemplo falsos (números de cuenta, RIF).
+// El frontend usa esta lista como fallback offline hasta que cargue el servidor.
 export const CUENTAS_DEFAULT = [
-  {
-    id: 'banco-bnc-ves',
-    codigo: 'banco-bnc-ves',
-    nombre: 'Banco BNC (Principal)',
-    tipo: 'banco_ves',
-    cartera: 'VES',
-    moneda: 'VES',
-    banco: 'BNC (Banco Nacional de Crédito)',
-    numeroCuenta: '0191-0001-23-4567890123',
-    titular: 'Construacero C.A.',
-    identificacion: 'J-12345678-9',
-    subcuentaId: 'Banco en Bolívares',
-    predeterminada: true,
-    activo: true,
-  },
-  {
-    id: 'banco-mercantil-ves',
-    codigo: 'banco-mercantil-ves',
-    nombre: 'Banco Mercantil',
-    tipo: 'banco_ves',
-    cartera: 'VES',
-    moneda: 'VES',
-    banco: 'Mercantil',
-    numeroCuenta: '0105-0001-23-4567890123',
-    titular: 'Construacero C.A.',
-    identificacion: 'J-12345678-9',
-    subcuentaId: 'Banco en Bolívares',
-    predeterminada: true,
-    activo: true,
-  },
   {
     id: 'caja-efectivo-bs',
     codigo: 'caja-efectivo-bs',
@@ -72,9 +54,9 @@ export const CUENTAS_DEFAULT = [
     cartera: 'VES',
     moneda: 'VES',
     banco: 'Caja Física',
-    titular: 'Construacero C.A.',
     subcuentaId: 'Efectivo Bs',
     predeterminada: true,
+    permanente: true,
     activo: true,
   },
   {
@@ -85,37 +67,9 @@ export const CUENTAS_DEFAULT = [
     cartera: 'USD',
     moneda: 'USD',
     banco: 'Caja Fuerte',
-    titular: 'Construacero C.A.',
     subcuentaId: 'Efectivo $',
     predeterminada: true,
-    activo: true,
-  },
-  {
-    id: 'zelle-corp',
-    codigo: 'zelle-corp',
-    nombre: 'Zelle Corporativo',
-    tipo: 'zelle',
-    cartera: 'USD',
-    moneda: 'USD',
-    banco: 'Zelle',
-    numeroCuenta: 'pagos@construacero.com',
-    titular: 'Construacero C.A.',
-    subcuentaId: 'Zelle',
-    predeterminada: true,
-    activo: true,
-  },
-  {
-    id: 'binance-usdt',
-    codigo: 'binance-usdt',
-    nombre: 'Binance Pay (USDT)',
-    tipo: 'cripto_usdt',
-    cartera: 'USD',
-    moneda: 'USDT',
-    banco: 'Binance Pay (USDT)',
-    numeroCuenta: 'Pay ID: 897654321',
-    titular: 'Construacero C.A.',
-    subcuentaId: 'USDT',
-    predeterminada: true,
+    permanente: true,
     activo: true,
   },
 ]
@@ -199,6 +153,9 @@ export function cuentaCustodiaResponse(row) {
     identificacion: row.identificacion ?? null,
     subcuentaId: row.subcuenta_id,
     predeterminada: Boolean(row.predeterminada),
+    // La permanencia se deriva del codigo semilla (sin columna en la BD): las
+    // cajas físicas viajan con permanente=true para que la UI oculte el borrado.
+    permanente: esCajaPermanente(row),
     activo: row.activo !== false,
     creadoEn: row.creado_en ?? null,
   }

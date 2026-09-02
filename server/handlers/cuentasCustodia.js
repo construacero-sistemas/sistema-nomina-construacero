@@ -9,6 +9,7 @@ import { registrarAuditoria } from '../lib/audit.js'
 import { clearEgressCache } from '../lib/egressCache.js'
 import {
   CUENTAS_DEFAULT,
+  esCajaPermanente,
   normalizeCuentaCustodia,
   cuentaCustodiaResponse,
 } from '../lib/cuentasCustodiaUtils.js'
@@ -250,6 +251,23 @@ export async function handleEliminarCuentaCustodia(request, env) {
   const id = String(parsed.body?.id || '').trim()
   if (!isValidUuid(id)) return jsonError('id inválido', 400, request)
 
+  // Las cajas físicas semilla (Bs y $) son permanentes: el dinero que no está
+  // en un banco está en la caja. Se protegen por codigo semilla (no por tipo):
+  // una caja EXTRA creada por el usuario (ej. "Caja del POS") sí se puede
+  // borrar. Bloquear aquí en backend (la UI además oculta el botón) evita
+  // quedar sin bucket para movimientos en efectivo.
+  const lookup = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/cuentas_custodia?id=eq.${encodeURIComponent(id)}` +
+      `&${accountFilter(operador.cuenta_id)}&select=tipo,codigo&limit=1`,
+    { headers: svcHeaders(env, 'return=minimal') },
+  )
+  if (!lookup.ok) return jsonError('No se pudo validar la cuenta', 500, request)
+  const [cuentaObjetivo] = await lookup.json().catch(() => [])
+  if (!cuentaObjetivo) return jsonError('Cuenta no encontrada', 404, request)
+  if (esCajaPermanente(cuentaObjetivo)) {
+    return jsonError('Las cajas físicas (Bs y $) son permanentes y no se pueden eliminar', 403, request)
+  }
+
   const res = await fetch(
     `${env.SUPABASE_URL}/rest/v1/cuentas_custodia?id=eq.${encodeURIComponent(id)}` +
       `&${accountFilter(operador.cuenta_id)}&activo=eq.true`,
@@ -275,7 +293,9 @@ export async function handleEliminarCuentaCustodia(request, env) {
 }
 
 // POST /api/finanzas/cuentas-custodia/restaurar
-// Restaura las cuentas semilla por defecto (las desactivadas se reactivan por codigo).
+// Restaura las cuentas semilla (las 2 cajas físicas). Si el usuario eliminó un
+// banco/Zelle y quiere el ejemplo de vuelta, puede recrearlo desde el formulario
+// con sus datos reales — los ejemplos con datos falsos ya no se siembran.
 export async function handleRestaurarCuentasCustodia(request, env) {
   const context = await adminContext(request, env)
   if (context.error) return context.error

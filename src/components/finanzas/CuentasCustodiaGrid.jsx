@@ -15,6 +15,7 @@ import {
   ExternalLink,
   Eye,
   Globe,
+  Lock,
   Plus,
   RotateCcw,
   Trash2,
@@ -138,8 +139,8 @@ export default function CuentasCustodiaGrid({
             <div className="space-y-1">
               <p className="text-sm font-black text-slate-700">Sin cuentas de custodia</p>
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Crea tus cuentas reales (bancos, cajas, billeteras) para llevar el control de saldos,
-                o restaura las cuentas de ejemplo como punto de partida.
+                Crea tus cuentas reales (bancos, cajas, billeteras) para llevar el control de saldos.
+                Las dos cajas físicas (Bs y $) son permanentes y siempre están disponibles para el efectivo.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1">
@@ -160,7 +161,7 @@ export default function CuentasCustodiaGrid({
                   style={{ touchAction: 'manipulation' }}
                 >
                   <RotateCcw size={14} />
-                  <span>Restaurar cuentas de ejemplo</span>
+                  <span>Restaurar cajas físicas</span>
                 </button>
               )}
             </div>
@@ -216,6 +217,12 @@ export default function CuentasCustodiaGrid({
                       {cuenta.moneda}
                     </span>
                   </div>
+
+                  {cuenta.permanente && (
+                    <p className="mb-2 -mt-1 flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                      <Lock size={10} aria-hidden="true" /> Permanente (no eliminable)
+                    </p>
+                  )}
 
                   {/* Saldo de la Cuenta */}
                   <div className="py-2 px-3 rounded-xl bg-slate-50 border border-slate-100 mb-2.5">
@@ -290,18 +297,29 @@ export default function CuentasCustodiaGrid({
                       <Edit2 size={12} />
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={e => {
-                        e.stopPropagation()
-                        setCuentaAEliminar(cuenta)
-                      }}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                      title="Eliminar cuenta"
-                      aria-label={`Eliminar cuenta ${cuenta.nombre}`}
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                    {/* Las cajas físicas permanentes (Bs/$) no se eliminan: son
+                        el bucket universal del efectivo. Se pueden editar. */}
+                    {cuenta.permanente ? (
+                      <span
+                        className="p-1.5 text-slate-200 select-none"
+                        title="La caja física es permanente: garantiza dónde vive el efectivo"
+                      >
+                        <Lock size={12} aria-hidden="true" />
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation()
+                          setCuentaAEliminar(cuenta)
+                        }}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        title="Eliminar cuenta"
+                        aria-label={`Eliminar cuenta ${cuenta.nombre}`}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

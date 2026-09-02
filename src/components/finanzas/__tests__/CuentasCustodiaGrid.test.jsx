@@ -37,10 +37,19 @@ function renderGrid(cuentas, onEliminarCuenta = vi.fn(), extraProps = {}) {
 describe('CuentasCustodiaGrid — borrado seguro', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('muestra el botón eliminar en todas las cuentas (incluidas las predeterminadas)', () => {
+  it('muestra el botón eliminar en cuentas normales (aunque sean predeterminadas)', () => {
     const cuenta = mkCuenta({ predeterminada: true })
     renderGrid([cuenta])
     expect(screen.getAllByLabelText(/Eliminar cuenta/i)).toHaveLength(1)
+  })
+
+  it('OCULTA el botón eliminar en la caja física permanente y muestra su badge', () => {
+    renderGrid([mkCuenta({ nombre: 'Caja Efectivo Bs', permanente: true })])
+
+    expect(screen.queryByLabelText(/Eliminar cuenta Caja Efectivo Bs/i)).toBeNull()
+    expect(screen.getByText(/Permanente \(no eliminable\)/i)).toBeInTheDocument()
+    // Editar sigue disponible para la caja
+    expect(screen.getByTitle('Editar cuenta')).toBeInTheDocument()
   })
 
   it('bloquea la eliminación de una cuenta con saldo distinto de 0 y no llama al callback', () => {
@@ -79,20 +88,20 @@ describe('CuentasCustodiaGrid — borrado seguro', () => {
     renderGrid([], vi.fn(), { onNuevaCuenta: onNueva, onRestaurar })
 
     expect(screen.getByText(/Sin cuentas de custodia/i)).toBeInTheDocument()
-    // La descripción menciona las cuentas de ejemplo (1 match en párrafo + 1 en botón)
-    expect(screen.getAllByText(/cuentas de ejemplo/i).length).toBeGreaterThan(0)
+    // El estado vacío explica las cajas físicas permanentes
+    expect(screen.getByText(/cajas físicas \(Bs y \$\) son permanentes/i)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Crear primera cuenta/i }))
     expect(onNueva).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: /Restaurar cuentas de ejemplo/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Restaurar cajas físicas/i }))
     expect(onRestaurar).toHaveBeenCalledTimes(1)
   })
 
   it('oculta el botón restaurar en el estado vacío si no se pasa onRestaurar', () => {
     renderGrid([], vi.fn())
     expect(screen.getByText(/Sin cuentas de custodia/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Restaurar cuentas de ejemplo/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Restaurar cajas físicas/i })).toBeNull()
   })
 
   it('pide confirmación y elimina cuando la cuenta no tiene saldo', () => {
