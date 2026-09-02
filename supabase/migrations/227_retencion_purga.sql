@@ -158,6 +158,7 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.retencion_purga(UUID, INTEGER, BOOLEAN, TEXT, UUID, TEXT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.retencion_purga(UUID, INTEGER, BOOLEAN, TEXT, UUID, TEXT) FROM anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.retencion_purga(UUID, INTEGER, BOOLEAN, TEXT, UUID, TEXT) TO service_role;
 
 COMMENT ON FUNCTION public.retencion_purga(UUID, INTEGER, BOOLEAN, TEXT, UUID, TEXT) IS
@@ -196,6 +197,7 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.retencion_purga_todos(BOOLEAN, TEXT) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.retencion_purga_todos(BOOLEAN, TEXT) FROM anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.retencion_purga_todos(BOOLEAN, TEXT) TO service_role;
 
 COMMENT ON FUNCTION public.retencion_purga_todos(BOOLEAN, TEXT) IS

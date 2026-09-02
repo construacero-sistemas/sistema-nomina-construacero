@@ -1,7 +1,8 @@
 // src/components/nomina/RetencionCard.jsx
-// Almacenamiento y retención: ventana de meses + purga inteligente (simular/ejecutar).
+// Almacenamiento y retención: ventana de meses + purga inteligente (simular/ejecutar)
+// + medidor de uso de la base de datos (MB/filas por tabla, límite 500 MB).
 import { useState } from 'react'
-import { Database, Trash2, Play, RefreshCw, ShieldCheck, Clock } from 'lucide-react'
+import { Database, Trash2, Play, RefreshCw, ShieldCheck, Clock, HardDrive } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { getAuthHeaders, apiUrl } from '../../../compat/services/apiBase.js'
 
@@ -27,13 +28,39 @@ function formatoFecha(iso) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('es-VE')
 }
 
+function formatoMB(bytes) {
+  const mb = Number(bytes || 0) / (1024 * 1024)
+  if (mb < 0.01) return `${Number(bytes || 0).toLocaleString('es-VE')} B`
+  if (mb < 1) return `${(mb * 1024).toFixed(0)} kB`
+  return `${mb.toLocaleString('es-VE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`
+}
+
+function formatoFilas(n) {
+  return Number(n || 0).toLocaleString('es-VE')
+}
+
+const NOMBRES_TABLAS = {
+  finanzas_movimientos: 'Movimientos financieros',
+  finanzas_categorias: 'Categorías',
+  cuentas_custodia: 'Cuentas de custodia',
+  nomina_empleados: 'Empleados',
+  nomina_config_empleado: 'Config. de empleados',
+  registro_asistencia: 'Asistencia diaria',
+  nomina_periodos: 'Períodos de nómina',
+  nomina_lineas: 'Líneas de nómina',
+  nomina_linea_conceptos: 'Conceptos de nómina',
+  nomina_tasas_snapshot: 'Snapshots de tasa',
+  auditoria: 'Logs de auditoría',
+  purga_log: 'Historial de purgas',
+}
+
 function totalFromDetalle(detalle) {
   return (detalle || []).reduce((sum, row) => sum + Number(row.eliminadas || 0), 0)
 }
 
 export default function RetencionCard() {
   const queryClient = useQueryClient()
-  const [meses, setMeses] = useState(3)
+  const [mesesDraft, setMesesDraft] = useState(null)
   const [detalle, setDetalle] = useState(null)
   const [modo, setModo] = useState('simulacion') // 'simulacion' | 'real'
   const [errores, setErrores] = useState({})
@@ -43,6 +70,17 @@ export default function RetencionCard() {
     queryFn: () => apiGet('/api/retencion'),
     placeholderData: keepPreviousData,
   })
+
+  const usoQ = useQuery({
+    queryKey: ['retencion', 'uso'],
+    queryFn: () => apiGet('/api/retencion/uso'),
+    staleTime: 60 * 1000,
+    retry: 1,
+  })
+  const uso = usoQ.data
+  const pct = Math.min(Number(uso?.pct || 0), 100)
+  const nivelPct = pct >= 80 ? 'bg-red-500' : pct >= 50 ? 'bg-amber-500' : 'bg-emerald-500'
+  const nivelTexto = pct >= 80 ? 'text-red-600' : pct >= 50 ? 'text-amber-600' : 'text-emerald-600'
 
   const configurarM = useMutation({
     mutationFn: (m) => apiPost('/api/retencion/configurar', { meses: m }),
@@ -64,6 +102,11 @@ export default function RetencionCard() {
   })
 
   const data = estadoQ.data
+  // La ventana mostrada SIEMPRE refleja lo guardado en el servidor; el input
+  // es un borrador local para editar. Sin esto, tras recargar se vería el
+  // default (3) aunque el usuario haya guardado otro valor.
+  const mesesGuardados = Number(data?.retencion_meses) > 0 ? Number(data.retencion_meses) : 3
+  const meses = mesesDraft ?? mesesGuardados
   const detalleResumen = detalle?.detalle || []
   const confirmado = detalle && !detalle.dry_run
   const ejecutando = purgarM.isPending || configurarM.isPending
@@ -81,6 +124,76 @@ export default function RetencionCard() {
         </div>
       </div>
 
+      {/* Medidor de uso de la base de datos (límite 500 MB tier gratuito) */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3" data-testid="db-usage">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+            <HardDrive size={13} className="text-slate-400" /> Uso de la base de datos
+          </h3>
+          {uso && (
+            <span className={`text-xs font-black ${nivelTexto}`}>
+              {uso.pct?.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% de {uso.presupuesto_mb} MB
+            </span>
+          )}
+        </div>
+
+        {usoQ.isError ? (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            No se pudo medir el uso ({usoQ.error.message}). Aplica la migración 229 (db_usage) y reintenta.
+          </p>
+        ) : usoQ.isPending && !uso ? (
+          <div className="h-2.5 rounded-full bg-slate-200 animate-pulse" aria-label="Cargando uso" />
+        ) : (
+          <>
+            {/* Barra de progreso (gauge horizontal) */}
+            <div
+              role="progressbar"
+              aria-valuenow={Number(uso?.pct?.toFixed(2))}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Porcentaje de uso de la base de datos"
+              className="h-2.5 rounded-full bg-slate-200 overflow-hidden"
+            >
+              <div className={`h-full rounded-full transition-all ${nivelPct}`} style={{ width: `${Math.max(pct, uso?.total_bytes > 0 ? 1.5 : 0)}%` }} />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+              <span>
+                Usado: <b className="text-slate-700">{formatoMB(uso?.total_bytes)}</b>
+              </span>
+              <span>
+                Filas: <b className="text-slate-700">{formatoFilas(uso?.total_filas)}</b> en {uso?.n_tablas ?? 0} tabla(s)
+              </span>
+              {uso?.max_fila > 0 && (
+                <span>
+                  Mayor fila: <b className="text-slate-700">{formatoMB(uso.max_fila)}</b>
+                </span>
+              )}
+            </div>
+
+            {/* Desglose por tabla (solo las que tienen datos) */}
+            {uso?.tablas?.length > 0 && (
+              <ul className="divide-y divide-slate-100 rounded-lg border border-slate-100 bg-white overflow-hidden">
+                {uso.tablas.map(t => (
+                  <li key={t.tabla} className="flex items-center justify-between gap-2 px-3 py-2 text-xs min-w-0">
+                    <span className="min-w-0 truncate text-slate-600" title={t.tabla}>
+                      {NOMBRES_TABLAS[t.tabla] || t.tabla}
+                    </span>
+                    <span className="shrink-0 flex items-center gap-2.5">
+                      <span className="text-slate-400">{formatoFilas(t.total_filas)} filas</span>
+                      <b className="text-slate-700 tabular-nums">{formatoMB(t.total_bytes)}</b>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {uso?.n_tablas === 0 && (
+              <p className="text-xs text-slate-400">Aún no hay datos registrados en este negocio.</p>
+            )}
+          </>
+        )}
+      </div>
+
       {/* Ventana de retención */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1">
@@ -91,7 +204,7 @@ export default function RetencionCard() {
               min={1}
               max={36}
               value={meses}
-              onChange={(e) => setMeses(Number(e.target.value))}
+              onChange={(e) => setMesesDraft(Number(e.target.value))}
               className={inputClass}
               disabled={ejecutando}
               aria-label="Meses de retención"

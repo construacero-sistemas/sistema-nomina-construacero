@@ -126,6 +126,48 @@ export function handlePurgarRetencionCron(request, env) {
   return ejecutarPurga(request, env, 'cron')
 }
 
+// GET /api/retencion/uso -> medidor de uso de BD del tenant (bytes/filas por
+// tabla) contra el presupuesto de 500 MB del tier gratuito. La medición se
+// hace server-side vía RPC db_usage (egress ~ cero).
+export async function handleGetRetencionUso(request, env) {
+  const context = await adminContext(request, env)
+  if (context.error) return context.error
+  const { operador } = context
+
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/db_usage`, {
+    method: 'POST',
+    headers: svcHeaders(env),
+    body: JSON.stringify({ p_cuenta_id: operador.cuenta_id }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    return jsonError(`No se pudo medir el uso: ${err?.message || response.statusText}`, 500, request)
+  }
+
+  const rows = await response.json().catch(() => [])
+  const resumen = (rows || []).find(r => r.tabla === 'resumen')
+  const maxFila = (rows || []).find(r => r.tabla === 'max_fila')
+  if (!resumen) return jsonError('Medición incompleta', 500, request)
+
+  return json({
+    presupuesto_mb: 500,
+    total_bytes: Number(resumen.total_bytes || 0),
+    total_filas: Number(resumen.total_filas || 0),
+    pct: Number(resumen.pct || 0),
+    n_tablas: Number(resumen.n_tablas || 0),
+    max_fila: Number(maxFila?.max_fila || 0),
+    tablas: (rows || [])
+      .filter(r => r.tabla !== 'resumen' && r.tabla !== 'max_fila')
+      .map(r => ({
+        tabla: r.tabla,
+        total_bytes: Number(r.total_bytes || 0),
+        total_filas: Number(r.total_filas || 0),
+        max_fila: Number(r.max_fila || 0),
+      }))
+      .sort((a, b) => b.total_bytes - a.total_bytes),
+  }, 200, request)
+}
+
 // POST /api/retencion/configurar -> fija la ventana de retención. body: { meses }
 export async function handleConfigurarRetencion(request, env) {
   const context = await adminContext(request, env)
@@ -139,12 +181,19 @@ export async function handleConfigurarRetencion(request, env) {
     return jsonError(`meses debe estar entre ${MIN_MESES} y ${MAX_MESES}`, 400, request)
   }
 
-  const patch = await fetch(`${env.SUPABASE_URL}/rest/v1/configuracion_negocio?cuenta_id=eq.${encodeURIComponent(operador.cuenta_id)}`, {
-    method: 'PATCH',
-    headers: { ...svcHeaders(env), Prefer: 'return=minimal' },
-    body: JSON.stringify({ retencion_meses: meses, actualizado_en: new Date().toISOString() }),
+  // Upsert por cuenta_id (constraint único): crea la fila si el negocio nunca
+  // guardó configuración. Un PATCH puro no crearía nada y respondería ok
+  // igualmente, dejando la preferencia sin persistir (bug de pérdida silenciosa).
+  const upsert = await fetch(`${env.SUPABASE_URL}/rest/v1/configuracion_negocio?on_conflict=cuenta_id`, {
+    method: 'POST',
+    headers: { ...svcHeaders(env), Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({
+      cuenta_id: operador.cuenta_id,
+      retencion_meses: meses,
+      actualizado_en: new Date().toISOString(),
+    }),
   })
-  if (!patch.ok) return jsonError('No se pudo guardar la retención', 500, request)
+  if (!upsert.ok) return jsonError('No se pudo guardar la retención', 500, request)
   clearEgressCache()
   return json({ ok: true, retencion_meses: meses }, 200, request)
 }

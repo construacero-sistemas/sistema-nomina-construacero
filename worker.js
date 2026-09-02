@@ -35,6 +35,7 @@ import { handleCrearLogs } from './server/handlers/logs.js'
 import { supaServiceHeaders } from './server/lib/auth.js'
 import {
   handleGetRetencion,
+  handleGetRetencionUso,
   handlePurgarRetencion,
   handleConfigurarRetencion,
 } from './server/handlers/retencion.js'
@@ -72,6 +73,7 @@ const routes = new Map([
   ['POST /api/finanzas/cuentas-custodia/eliminar', handleEliminarCuentaCustodia],
   ['POST /api/finanzas/cuentas-custodia/restaurar', handleRestaurarCuentasCustodia],
   ['GET /api/retencion', handleGetRetencion],
+  ['GET /api/retencion/uso', handleGetRetencionUso],
   ['POST /api/retencion/purgar', handlePurgarRetencion],
   ['POST /api/retencion/configurar', handleConfigurarRetencion],
   ['GET /api/nomina/empleados', handleGetEmpleados],
@@ -129,7 +131,7 @@ function egressCacheTtl(pathname) {
   if (pathname === '/api/finanzas/reportes/resumen') return 30 * 1000
   if (pathname === '/api/finanzas/categorias') return 10 * 60 * 1000
   if (pathname === '/api/finanzas/cuentas-custodia') return 10 * 60 * 1000
-  if (pathname === '/api/retencion') return 10 * 60 * 1000
+  if (pathname === '/api/retencion' || pathname === '/api/retencion/uso') return 60 * 1000
   return 0
 }
 

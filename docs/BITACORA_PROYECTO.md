@@ -2253,3 +2253,38 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 
 **Pendientes:**
 - Ninguno de este ítem. Pendiente global: aplicar migraciones 227 (retención) y 228 (cuentas_custodia) con `supabase db push`.
+
+## 107. Aplicación de migraciones 224-228 a Supabase y verificación end-to-end
+
+**Fecha:** 02/09/2026
+**Objetivo:** aplicar las migraciones de retención/purga (227) y cuentas_custodia (228) a la base remota y verificar que la UI las detecta.
+
+**Hallazgos y acciones:**
+- La base remota estaba en la migración 223: se aplicó la cadena completa 224→228 en orden (conexión directa al pooler con la DB_PASSWORD local; el CLI de Supabase no está instalado y el access token del Management API vencía). Cada migración se aplicó en transacción y se registró en `supabase_migrations.schema_migrations` con la convención del CLI.
+- Seguridad: PostgREST concede EXECUTE de funciones a `anon`/`authenticated` por defecto, por lo que `retencion_purga` era invocable desde el navegador saltándose el handler. Se revocó en la BD remota y se corrigió la migración 227 (`REVOKE ... FROM anon, authenticated`) para entornos nuevos.
+- Bug de pérdida silenciosa en `handleConfigurarRetencion`: hacía PATCH sobre `configuracion_negocio`, que no crea fila si el negocio nunca guardó configuración (respondía ok sin persistir). Corregido a upsert (`on_conflict=cuenta_id`, constraint único existente). Test del handler actualizado.
+- Bug de UI en `RetencionCard`: la ventana mostrada era estado local (`useState(3)`) nunca sincronizado con el servidor; tras recargar siempre veía 3 y guardar podía sobrescribir la preferencia real. Ahora el valor mostrado deriva del servidor y el input es un borrador local.
+
+**Verificación E2E:** tenant temporal de QA creado vía Admin API (usuario auth + operador administracion), verificado con él y eliminado al final (cascadas dejaron 0 filas). Endpoints: `GET/POST cuentas-custodia` 200 con siembra correcta; `GET /api/retencion` 200; configurar→persiste (3→6→12 verificado en BD y UI); purgar dry-run 200 con registro en `purga_log`; desglose por cuenta visible en Tesorería con las 6 cuentas sembradas; consola sin errores. `npm run verify` verde.
+
+**Pendientes:**
+- Ninguno de este ítem. Recordatorio: configurar `POS_SUPABASE_URL`/`POS_SUPABASE_SERVICE_KEY` en producción si se quiere el fallback directo al POS (ver #104-#106 y commit e2bee7d).
+
+## 108. Medidor de uso de la base de datos en el panel de retención
+
+**Fecha:** 02/09/2026
+**Objetivo:** añadir al panel de retención un medidor de uso de la BD (MB usados y filas por tabla) para vigilar el límite de 500 MB del tier gratuito de Supabase.
+
+**Implementado:**
+- Migración `229_db_usage.sql`: RPC `db_usage(p_cuenta_id)` que por cada tabla del catálogo del tenant devuelve bytes en disco (`pg_total_relation_size`: heap+índices+TOAST), filas exactas del tenant y tamaño de la mayor fila (`pg_column_size`, tope 20k filas por tabla para acotar costo). Agrega en servidor (egress ~ cero). Grants solo `service_role` (REVOKE explícito de anon/authenticated, como en 227). Aplicada al remoto y registrada con la convención del CLI.
+- Backend: `GET /api/retencion/uso` (`handleGetRetencionUso`) — llama la RPC y devuelve `{ presupuesto_mb, total_bytes, total_filas, pct, n_tablas, max_fila, tablas[] }` ordenado por tamaño. TTL de caché de egress 60s.
+- UI (`RetencionCard`): gauge horizontal con % (verde <50%, ámbar 50-80%, rojo ≥80%), estado de carga, mensaje accionable si falta la migración 229, desglose por tabla con nombres legibles (filas + tamaño), y fila "Mayor fila" para diagnosticar crecimiento anómalo. Responsive y accesible (role=progressbar con aria-valuenow).
+
+**Nota de medición:** el tamaño físico de una tabla es compartido entre tenants, por lo que el reporte por tenant es una cota superior conservadora — apropiado para vigilar presupuesto, no contabilidad exacta.
+
+**Tests:** 3 nuevos de handler (resumen+desglose ordenado, RPC ausente→500 con mensaje accionable, no-admin→403) y 5 del componente (gauge+%, desglose, estado vacío, aviso de migración, sincronización del valor guardado). `npm run verify` verde.
+
+**Verificación E2E:** tenant QA temporal (creado vía Admin API, eliminado al final; cascadas 0 filas). API: 0 filas → `{"pct":0}`; tras crear 3 cuentas → `pct:0.01, 64 kB, 1 tabla`. UI: gauge `aria-valuenow=0.01`, "0,01% de 500 MB", desglose "Cuentas de custodia · 3 filas · 64 kB". `supabase_migrations` registra 229.
+
+**Pendientes:**
+- Ninguno de este ítem.
