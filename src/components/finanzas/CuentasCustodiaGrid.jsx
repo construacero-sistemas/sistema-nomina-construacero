@@ -1,9 +1,11 @@
 // src/components/finanzas/CuentasCustodiaGrid.jsx
-// Cuadrícula visual de tarjetas de cuentas bancarias, billeteras y cajas de custodia (oculta por defecto)
-import { useState } from 'react'
+// Cuadrícula visual unificada de cuentas bancarias, billeteras y cajas de custodia (con todas las funciones fusionadas)
+import { useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowDownRight,
   ArrowRightLeft,
+  ArrowUpRight,
   Banknote,
   Building2,
   Check,
@@ -18,6 +20,7 @@ import {
   Lock,
   Plus,
   RotateCcw,
+  Sparkles,
   Trash2,
   Wallet,
 } from 'lucide-react'
@@ -40,20 +43,30 @@ export default function CuentasCustodiaGrid({
   onVerDetalle,
   onTransferir,
   onRestaurar,
+  tasaBcv = 1,
 }) {
   // Ocultas / Colapsadas por defecto según directiva del usuario
   const [expandido, setExpandido] = useState(false)
+  const [filtroTipo, setFiltroTipo] = useState('todos') // 'todos' | 'VES' | 'USD' | 'USDT'
   const [copiadoId, setCopiadoId] = useState(null)
-  // Borrado confirmado con modal en la app (sin window.confirm nativo).
   const [cuentaAEliminar, setCuentaAEliminar] = useState(null)
 
+  const tasa = Number(tasaBcv) > 0 ? Number(tasaBcv) : 1
+
+  // Filtro por tipo/moneda de cuenta
+  const cuentasFiltradas = useMemo(() => {
+    if (filtroTipo === 'todos') return cuentas
+    if (filtroTipo === 'VES') return cuentas.filter(c => c.moneda === 'VES' || c.cartera === 'VES')
+    if (filtroTipo === 'USD') return cuentas.filter(c => c.moneda === 'USD' && c.tipo !== 'cripto_usdt')
+    if (filtroTipo === 'USDT') return cuentas.filter(c => c.moneda === 'USDT' || c.tipo === 'cripto_usdt')
+    return cuentas
+  }, [cuentas, filtroTipo])
+
   // Guarda de borrado seguro: no se puede eliminar una cuenta con fondos.
-  // Eliminar TODAS las cuentas es válido (el sistema arranca vacío para que
-  // cada negocio cree las suyas); solo se protege el dinero registrado.
   const motivoBloqueo = (cuenta) => {
     if (!cuenta) return ''
     if (Number(cuenta.saldo) !== 0) {
-      return `Esta cuenta tiene ${cuenta.moneda === 'VES' ? 'Bs. ' : '$'}${formatMoney(cuenta.saldo)} registrados. Para eliminarla, deja primero el saldo en 0 (mueve los fondos a otra cuenta).`
+      return `Esta cuenta tiene ${cuenta.moneda === 'VES' ? 'Bs. ' : '$'}{formatMoney(cuenta.saldo)} registrados. Para eliminarla, deja primero el saldo en 0 (mueve los fondos a otra cuenta).`
     }
     return ''
   }
@@ -87,7 +100,7 @@ export default function CuentasCustodiaGrid({
             </div>
             <p className="text-xs text-slate-400 truncate">
               {expandido
-                ? 'Detalle de bancos nacionales, billeteras Binance USDT, Zelle y efectivo.'
+                ? 'Detalle de bancos nacionales, billeteras Binance USDT, Zelle y efectivo con saldos y equivalencias.'
                 : 'Oculto por defecto. Pulsa el botón para ver todas las cuentas y billeteras.'}
             </p>
           </div>
@@ -98,7 +111,7 @@ export default function CuentasCustodiaGrid({
           <button
             type="button"
             onClick={() => setExpandido(prev => !prev)}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs active:scale-95 ${
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 min-h-11 rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs active:scale-95 ${
               expandido
                 ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
                 : 'bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20'
@@ -122,7 +135,7 @@ export default function CuentasCustodiaGrid({
           <button
             type="button"
             onClick={onNuevaCuenta}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-black hover:bg-primary-hover active:scale-95 transition-all shadow-md cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-11 rounded-xl bg-primary text-white text-xs font-black hover:bg-primary-hover active:scale-95 transition-all shadow-md cursor-pointer"
             style={{ touchAction: 'manipulation' }}
           >
             <Plus size={14} />
@@ -131,7 +144,34 @@ export default function CuentasCustodiaGrid({
         </div>
       </div>
 
-      {/* Grid de Tarjetas de Cuentas (Solo visible cuando expandido === true) */}
+      {/* Filtros rápidos por divisa (visibles cuando está expandido y hay cuentas) */}
+      {expandido && cuentas.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100">
+          <span className="text-[11px] font-bold text-slate-400 mr-1">Filtrar por:</span>
+          {[
+            { id: 'todos', label: `Todas (${cuentas.length})` },
+            { id: 'VES',   label: `Bolívares (${cuentas.filter(c => c.moneda === 'VES').length})` },
+            { id: 'USD',   label: `Dólares (${cuentas.filter(c => c.moneda === 'USD' && c.tipo !== 'cripto_usdt').length})` },
+            { id: 'USDT',  label: `Cripto USDT (${cuentas.filter(c => c.moneda === 'USDT' || c.tipo === 'cripto_usdt').length})` },
+          ].map(f => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setFiltroTipo(f.id)}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                filtroTipo === f.id
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+              style={{ touchAction: 'manipulation' }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Estado vacío cuando no hay cuentas registradas */}
       {expandido && cuentas.length === 0 && (
         <div className="pt-3 border-t border-slate-100 animate-in fade-in duration-200">
           <div className="p-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 text-center space-y-3">
@@ -170,6 +210,7 @@ export default function CuentasCustodiaGrid({
           </div>
         </div>
       )}
+
       {/* Papelera: cuentas eliminadas recuperables (borrado lógico) */}
       {expandido && cuentasEliminadas.length > 0 && (
         <div className="pt-3 border-t border-slate-100 animate-in fade-in duration-200">
@@ -194,12 +235,18 @@ export default function CuentasCustodiaGrid({
         </div>
       )}
 
-      {expandido && cuentas.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-slate-100 animate-in fade-in duration-200">
-          {cuentas.map(cuenta => {
+      {/* Grid de Tarjetas de Cuentas (Funciones fusionadas: saldos, equivalencias, entradas/salidas, copiar y acciones) */}
+      {expandido && cuentasFiltradas.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2 animate-in fade-in duration-200">
+          {cuentasFiltradas.map(cuenta => {
             const esVes = cuenta.moneda === 'VES' || cuenta.cartera === 'VES'
             const esCripto = cuenta.tipo === 'cripto_usdt'
             const esZelle = cuenta.tipo === 'zelle'
+
+            // Cálculo del contravalor equivalente en la otra divisa
+            const contravalor = esVes
+              ? (Number(cuenta.saldo || 0) / tasa)
+              : (Number(cuenta.saldo || 0) * tasa)
 
             return (
               <div
@@ -250,18 +297,33 @@ export default function CuentasCustodiaGrid({
                     </p>
                   )}
 
-                  {/* Saldo de la Cuenta */}
-                  <div className="py-2 px-3 rounded-xl bg-slate-50 border border-slate-100 mb-2.5">
+                  {/* Saldo de la Cuenta y Contravalor Equivalente */}
+                  <div className="py-2 px-3 rounded-xl bg-slate-50 border border-slate-100 mb-2">
                     <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
                       Saldo Disponible
                     </span>
-                    <span className="text-lg font-black text-slate-900 block truncate">
-                      {esVes ? 'Bs. ' : '$'}{formatMoney(cuenta.saldo)}{' '}
-                      <span className="text-[10px] font-bold text-slate-400">{cuenta.moneda}</span>
+                    <div className="flex items-baseline justify-between gap-1">
+                      <span className="text-lg font-black text-slate-900 block truncate">
+                        {esVes ? 'Bs. ' : '$'}{formatMoney(cuenta.saldo)}{' '}
+                        <span className="text-[10px] font-bold text-slate-400">{cuenta.moneda}</span>
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-semibold shrink-0" title={`Equivalente a tasa oficial de ${formatMoney(tasa)} Bs/$`}>
+                        ≈ {esVes ? `$${formatMoney(contravalor)} USD` : `Bs. ${formatMoney(contravalor)}`}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Flujo acumulado: Entradas y Salidas de esta cuenta específica */}
+                  <div className="flex items-center justify-between text-[10px] font-bold px-1 mb-2">
+                    <span className="text-emerald-700 flex items-center gap-0.5">
+                      <ArrowDownRight size={11} /> Entradas: {esVes ? 'Bs. ' : '$'}{formatMoney(cuenta.entradas)}
+                    </span>
+                    <span className="text-rose-700 flex items-center gap-0.5">
+                      <ArrowUpRight size={11} /> Salidas: {esVes ? 'Bs. ' : '$'}{formatMoney(cuenta.salidas)}
                     </span>
                   </div>
 
-                  {/* Datos de Cuenta / Billetera (si existen) */}
+                  {/* Datos de Cuenta / Billetera (si existen) con botón de copiado */}
                   {cuenta.numeroCuenta && (
                     <div className="flex items-center justify-between text-[11px] bg-slate-50/70 px-2.5 py-1.5 rounded-lg border border-slate-100 mb-2 text-slate-600">
                       <span className="truncate font-mono font-medium text-[10px]" title={cuenta.numeroCuenta}>
@@ -304,7 +366,7 @@ export default function CuentasCustodiaGrid({
                         e.stopPropagation()
                         onTransferir?.(cuenta)
                       }}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-700 transition-all cursor-pointer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 min-h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-700 transition-all cursor-pointer active:scale-95"
                       title="Mover fondos desde esta cuenta"
                     >
                       <ArrowRightLeft size={11} className="text-primary" />
@@ -317,14 +379,14 @@ export default function CuentasCustodiaGrid({
                         e.stopPropagation()
                         onEditarCuenta?.(cuenta)
                       }}
-                      className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                       title="Editar cuenta"
+                      aria-label={`Editar cuenta ${cuenta.nombre}`}
                     >
-                      <Edit2 size={12} />
+                      <Edit2 size={13} />
                     </button>
 
-                    {/* Las cajas físicas permanentes (Bs/$) no se eliminan: son
-                        el bucket universal del efectivo. Se pueden editar. */}
+                    {/* Las cajas físicas permanentes (Bs/$) no se eliminan */}
                     {cuenta.permanente ? (
                       <span
                         className="p-1.5 text-slate-200 select-none"
@@ -343,7 +405,7 @@ export default function CuentasCustodiaGrid({
                         title="Eliminar cuenta"
                         aria-label={`Eliminar cuenta ${cuenta.nombre}`}
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={13} />
                       </button>
                     )}
                   </div>

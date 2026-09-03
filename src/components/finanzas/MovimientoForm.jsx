@@ -15,23 +15,17 @@ import { BANCOS_VENEZUELA } from '../../hooks/useCuentasCustodia.js'
 import MovimientoResumen from './MovimientoResumen.jsx'
 import MovimientoPartes from './MovimientoPartes.jsx'
 import MovimientoConversion from './MovimientoConversion.jsx'
-import { CrearCategoriaPanel, EliminarCategoriaDialog } from './CategoriaAcciones.jsx'
+import { CrearCategoriaPanel, EliminarCategoriaDialog, Field } from './CategoriaAcciones.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
 import { FORMAS_PAGO_OPCIONES } from '../../constants/formasPago.js'
 import { formatNumber } from './formatos.js'
+import { isoToday as today } from './fechasRapidas.js'
+import { getCuentasCompatibles } from './cuentasCompatibles.js'
 
 const inputClass = 'w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
-
-function today() {
-  const date = new Date()
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
 
 // Flag temporal para ocultar el editor de "pago en varias partes" (por ahora).
 // Mientras esté en false no se renderiza; al volver a true se rehabilita.
@@ -47,7 +41,10 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
   const [tipo, setTipo] = useState('egreso')
   const [fecha, setFecha] = useState(today)
   const [metodoPago, setMetodoPago] = useState('Efectivo $')
-  const [cuentaOrigen, setCuentaOrigen] = useState('')
+  const [cuentaOrigen, setCuentaOrigen] = useState(() => {
+    const iniciales = getCuentasCompatibles('Efectivo $', cuentas)
+    return iniciales.length === 1 ? iniciales[0].id : ''
+  })
   const [categoria, setCategoria] = useState('')
   const [concepto, setConcepto] = useState('')
   const [monto, setMonto] = useState('')
@@ -96,23 +93,26 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
     [tipo],
   )
 
-  // Opciones de cuenta/banco de origen según el método.
-  // Si hay cuentas de custodia registradas, se muestran SOLO esas con su saldo actual;
-  // si no (p.ej. falta el hook), se cae en la lista estática de bancos.
+  // Cuentas de custodia compatibles con el método seleccionado (USDT/Binance, Zelle, Efectivo, Bancos)
+  const cuentasCompatibles = useMemo(() => {
+    return getCuentasCompatibles(metodoPago, cuentas)
+  }, [metodoPago, cuentas])
+
+  // Opciones de cuenta/banco según el método.
   const opcionesCuenta = useMemo(() => {
-    if (!esMetodoBanco) return []
-    if (Array.isArray(cuentas) && cuentas.length > 0) {
-      return cuentas
-        .filter(c => c.subcuentaId === 'Banco en Bolívares')
-        .map(c => ({
-          value: c.id,
-          label: c.nombre || c.banco || 'Cuenta sin nombre',
-          sub: `${c.moneda === 'VES' ? 'Bs.' : '$'} ${formatNumber(c.saldo)}`,
-          saldo: c.saldo,
-        }))
+    if (cuentasCompatibles.length > 0) {
+      return cuentasCompatibles.map(c => ({
+        value: c.id,
+        label: c.nombre ? (c.banco && !c.nombre.toLowerCase().includes(c.banco.toLowerCase()) ? `${c.nombre} · ${c.banco}` : c.nombre) : (c.banco || 'Cuenta sin nombre'),
+        sub: `Saldo: ${c.moneda === 'VES' ? 'Bs.' : '$'}${formatNumber(c.saldo)} ${c.moneda}`,
+        saldo: c.saldo,
+      }))
     }
-    return BANCOS_VENEZUELA.map(b => ({ value: b, label: b }))
-  }, [esMetodoBanco, cuentas])
+    if (esMetodoBanco) {
+      return BANCOS_VENEZUELA.map(b => ({ value: b, label: b }))
+    }
+    return []
+  }, [cuentasCompatibles, esMetodoBanco])
 
   // Nombre legible de la cuenta seleccionada (para el resumen y el payload)
   const cuentaOrigenNombre = opcionesCuenta.find(o => o.value === cuentaOrigen)?.label || ''
@@ -127,8 +127,14 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
     // Default inteligente: si el método no usa referencia, la limpiamos.
     const nuevaOpcion = FORMAS_PAGO_OPCIONES.find(op => op.value === nuevoMetodo)
     if (nuevaOpcion && !nuevaOpcion.requiereReferencia) setReferencia('')
-    // Si el nuevo método no es bancario, la cuenta de origen deja de tener sentido.
-    if (!METODOS_CON_CUENTA.includes(nuevoMetodo)) setCuentaOrigen('')
+
+    // Auto-selección inteligente si solo hay una cuenta compatible registrada (ej. Binance Pay en USDT)
+    const compatibles = getCuentasCompatibles(nuevoMetodo, cuentas)
+    if (compatibles.length === 1) {
+      setCuentaOrigen(compatibles[0].id)
+    } else if (!compatibles.some(c => c.id === cuentaOrigen)) {
+      setCuentaOrigen('')
+    }
   }
 
   // Default inteligente al cambiar Ingreso/Egreso: si la categoría elegida ya no
@@ -253,9 +259,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
     if (esMetodoBanco && !cuentaOrigen.trim()) return 'Selecciona la cuenta o banco de origen.'
     if (partes.length > 0) {
       const sumaPartes = partes.reduce((acc, p) => acc + (Number(p.monto) || 0), 0)
-      if (Math.abs(sumaPartes - montoNum) > 0.01) {
-        return 'La suma de las partes debe igualar el monto total.'
-      }
+      if (Math.abs(sumaPartes - montoNum) > 0.01) return 'La suma de las partes debe igualar el monto total.'
     }
     return ''
   }
@@ -272,7 +276,10 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
 
     const fuenteTasaFinal = modoTasa === 'manual'
       ? 'MANUAL'
-      : (modoTasa === 'usdt' ? 'USDT' : (modoTasa === 'eur' ? 'EURO' : 'BCV'))
+      : (modoTasa === 'usdt' ? 'USDT' : 'BCV')
+
+    const cuentaSeleccionada = Array.isArray(cuentas) ? cuentas.find(c => c.id === cuentaOrigen) : null
+    const cuentaOrigenFinal = cuentaSeleccionada ? cuentaSeleccionada.nombre : (cuentaOrigenNombre || cuentaOrigen || null)
 
     try {
       await crear.mutateAsync({
@@ -291,13 +298,15 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
         referencia: refFinal,
         observaciones: observaciones.trim() || null,
         metodoPago,
-        cuentaOrigen: esMetodoBanco ? (cuentaOrigenNombre || null) : null,
+        cuentaOrigen: cuentaOrigenFinal,
+        cuenta_id: cuentaSeleccionada?.id || null,
         partes: partes.length > 0 ? partes.map(p => ({
           monto: Number(p.monto),
           moneda,
           referencia: p.referencia?.trim() || null,
           metodoPago,
-          cuentaOrigen: esMetodoBanco ? (cuentaOrigenNombre || null) : null,
+          cuentaOrigen: cuentaOrigenFinal,
+          cuenta_id: cuentaSeleccionada?.id || null,
         })) : null,
       })
       onClose()
@@ -409,17 +418,17 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
           />
         </div>
 
-        {/* 2b. Cuenta de origen (dependiente del método de pago) */}
-        {esMetodoBanco && (
+        {/* 2b. Cuenta de custodia asociada (bancos, Binance USDT, Zelle, Cajas) */}
+        {opcionesCuenta.length > 0 && (
           <div className="space-y-1">
             <label className="block text-xs font-bold text-slate-700">
-              Cuenta / Banco de origen *
+              {tipo === 'ingreso' ? 'Cuenta / Billetera de destino *' : 'Cuenta / Billetera de origen *'}
             </label>
             <CustomSelect
               value={cuentaOrigen}
               onChange={setCuentaOrigen}
               options={opcionesCuenta}
-              placeholder="¿Desde qué cuenta?"
+              placeholder={tipo === 'ingreso' ? '¿A qué cuenta ingresa?' : '¿Desde qué cuenta?'}
               disabled={disabled}
               showSubInTrigger={false}
             />
@@ -543,7 +552,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
           metodoLabel={opcionSeleccionada.selectedLabel || metodoPago}
           concepto={concepto}
           referencia={referencia}
-          cuentaOrigen={esMetodoBanco ? (cuentaOrigenNombre || null) : null}
+          cuentaOrigen={cuentaOrigenNombre || null}
           numPartes={partes.length}
         />
 
@@ -585,14 +594,5 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
         />
       )}
     </Modal>
-  )
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block min-w-0">
-      <span className="block mb-1 text-xs font-bold text-slate-700">{label}</span>
-      {children}
-    </label>
   )
 }

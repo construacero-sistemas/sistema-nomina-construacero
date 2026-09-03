@@ -2311,3 +2311,38 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 
 **Pendientes:**
 - Ninguno de este ítem.
+
+## 110. Fusión de funciones en Cuentas Bancarias y Custodia y eliminación de redundancias
+
+**Fecha:** 03/09/2026
+**Objetivo:** eliminar la duplicidad entre las sub-cajitas/desglose de `CarterasHeader` y la sección `CuentasCustodiaGrid`, unificando todas las capacidades operativas en las tarjetas de cuentas reales y simplificando el panel superior a una vista macro ejecutiva.
+
+**Implementación:**
+- `CarterasHeader.jsx`: se eliminaron las mini-cajitas fijas repetidas y la sección interna redundante `desglosePorCuenta`. El componente ahora presenta un resumen macro ejecutivo con las dos carteras maestras (USD y VES), sus montos consolidados, equivalencias a tasa oficial y flujo histórico de entradas/salidas.
+- `CuentasCustodiaGrid.jsx`: se fusionaron todas las funciones en cada tarjeta de cuenta real: contravalor equivalente a tasa oficial (`≈ $... USD` o `≈ Bs. ...`), entradas y salidas acumuladas de la cuenta, selector de filtros por tipo/divisa (`Todas`, `Bolívares`, `Dólares`, `Cripto USDT`), datos bancarios con copiado rápido, botón de mover fondos, botón de detalle e historial, y gestión segura (editar/eliminar/papelera).
+- `FinanzasView.jsx`: actualización de props entre componentes (desacoplamiento de `desglosePorCuenta` en `CarterasHeader` e inyección de `tasaBcv` en `CuentasCustodiaGrid`).
+
+**Verificación:**
+- `npm run verify`: OK (lint 0 errores · 523/523 tests pasados · responsividad móvil 30/30 · bundle 363.1 kB ≤ 400 kB · build OK).
+
+**Pendientes:**
+- Ninguno de este ítem.
+
+## 111. Traspasos inteligentes estilo Binance, selección de cuentas por método y eliminación de EUR
+
+**Fecha:** 03/09/2026
+**Objetivo:** transformar la operativa financiera en un flujo inteligente estilo Binance: solo permitir traspasos desde cuentas registradas con saldo disponible (`saldo > 0`), con botón `[MÁX]` y límites dinámicos; conectar todos los métodos de pago en el registro de movimientos a sus cuentas correspondientes (ej. USDT vincula directamente con Binance Pay); y retirar el Euro (EUR) de los selectores para operar exclusivamente con Bs, USD y USDT.
+
+**Implementación:**
+- `TransferenciaCarterasModal.jsx`: reescrito integralmente como conversor/traspasador inteligente estilo Binance. El selector "Desde" lista únicamente cuentas de custodia activas que cuenten con fondos disponibles (`saldo > 0`). Añadido botón `[MÁX]` para auto-completar el 100% del saldo, tope de validación contra el saldo origen, cálculo de conversión en tiempo real con tasa BCV/USDT, y ejecución atómica de egreso e ingreso asociados a las cuentas seleccionadas.
+- `MovimientoForm.jsx` & `cuentasCompatibles.js`: creado extractor inteligente de cuentas compatibles según el método de pago seleccionado (`USDT` ➔ Binance Pay / Billeteras cripto; `Zelle` ➔ Cuentas Zelle; `Efectivo $` / `Efectivo Bs` ➔ Cajas físicas; Bancos ➔ Cuentas bancarias en Bs). Si existe una sola cuenta registrada para el método, se preselecciona automáticamente. Se registran `cuentaOrigen` y `cuenta_id` tanto en el movimiento principal como en las partes.
+- `FinanzasView.jsx`: conectado `onTransferir` de `CuentasCustodiaGrid` con `TransferenciaCarterasModal` para precargar la cuenta seleccionada. Eliminado `EUR` del filtro de divisas.
+- `TabConfiguracion.jsx`: retirado `EUR` de la configuración de conceptos por defecto.
+- Modularización y guardrail de 600 líneas: extracción de subcomponentes auxiliares a `cuentasCompatibles.js` y `FinanzasFiltrosUI.jsx`, manteniendo todos los archivos bajo el umbral de 600 líneas (`check:project` superado).
+- Pruebas unitarias: creada suite `TransferenciaCarterasModal.test.jsx` (6 tests deterministas) y añadido test en `MovimientoForm.test.jsx` para la selección de Binance en USDT. Total: 531 tests unitarios superados al 100%.
+
+**Verificación:**
+- `npm run verify`: OK (check:project OK · test:responsive 30/30 · lint 0 errores · 531/531 tests pasados · build 32.75s · bundle size 363.1 kB ≤ 400 kB).
+
+**Pendientes:**
+- Formato de recibo de pago de nómina en PDF según reporte de ventas (`C:\Users\luigg\Desktop\CONSTRAUCERO COTIZACIONES\listo-pos-cotizaciones`).

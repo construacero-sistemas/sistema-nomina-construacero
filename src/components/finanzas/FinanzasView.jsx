@@ -12,7 +12,9 @@ import {
   ReceiptText,
   RefreshCw,
   Wallet,
+  Lock,
 } from 'lucide-react'
+import { SYNC_POS_BLOQUEADO } from '../../config/modulos.js'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import PageHeader from '../../../compat/components/ui/PageHeader.jsx'
@@ -46,6 +48,7 @@ import CuentasCustodiaGrid from './CuentasCustodiaGrid.jsx'
 import CuentaFormModal from './CuentaFormModal.jsx'
 import CategoriasModal from './CategoriasModal.jsx'
 import AnularDialog from './AnularDialog.jsx'
+import { FilterField, Choice, InlineError } from './FinanzasFiltrosUI.jsx'
 import { exportarCsv } from './exportarMovimientosCsv.js'
 import { isoToday, monthStart, RANGOS_RAPIDOS, rangoRapidoActivo, aplicarRangoRapido as resolverRango } from './fechasRapidas.js'
 import { fechaCorta, formatNumber, formatUsd } from './formatos.js'
@@ -81,6 +84,7 @@ export default function FinanzasView() {
   const [reasignarOpen, setReasignarOpen] = useState(false)
   const [exportandoPdf, setExportandoPdf] = useState(false)
   const [categoriasOpen, setCategoriasOpen] = useState(false)
+  const [cuentaTransferir, setCuentaTransferir] = useState(null)
 
   const categorias = useFinanzasCategorias()
   const movimientos = useFinanzasMovimientos({ desde, hasta, tipo, categoria, moneda, mostrarAnulados })
@@ -213,10 +217,13 @@ export default function FinanzasView() {
             </button>
             <button
               type="button"
-              onClick={() => setSyncPosOpen(true)}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 rounded-xl border border-primary/20 bg-primary/10 text-xs font-black text-primary hover:bg-primary/20 active:scale-95 transition-all shadow-xs cursor-pointer whitespace-nowrap"
+              onClick={SYNC_POS_BLOQUEADO ? undefined : () => setSyncPosOpen(true)}
+              aria-disabled={SYNC_POS_BLOQUEADO}
+              title={SYNC_POS_BLOQUEADO ? 'Disponible próximamente' : undefined}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 rounded-xl border border-primary/20 bg-primary/10 text-xs font-black text-primary hover:bg-primary/20 active:scale-95 transition-all shadow-xs cursor-pointer whitespace-nowrap opacity-60 disabled:cursor-not-allowed"
               style={{ touchAction: 'manipulation' }}
             >
+              {SYNC_POS_BLOQUEADO && <Lock size={14} className="text-primary/60" aria-hidden="true" />}
               <ArrowDownToLine size={14} /> Sincronizar POS
             </button>
             {MOSTRAR_CSV && (
@@ -365,7 +372,7 @@ export default function FinanzasView() {
                   </button>
                 </div>
               </FilterField>
-              <FilterField label="Moneda"><Choice value={moneda} onChange={setMoneda} placeholder="Todas" options={['USD', 'VES', 'EUR', 'USDT'].map(value => ({ value, label: value }))} /></FilterField>
+              <FilterField label="Moneda"><Choice value={moneda} onChange={setMoneda} placeholder="Todas" options={['USD', 'VES', 'USDT'].map(value => ({ value, label: value }))} /></FilterField>
               <div className="flex items-end gap-2">
                 <button type="button" onClick={resetFiltros} className="flex-1 h-11 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">Limpiar</button>
                 <button type="button" onClick={() => { movimientos.refetch(); resumen.refetch() }} className="h-11 w-11 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center cursor-pointer" aria-label="Actualizar reportes"><RefreshCw size={15} /></button>
@@ -443,19 +450,20 @@ export default function FinanzasView() {
          ========================================================= */}
       {activeTab === 'tesoreria' && (
         <div className="space-y-5">
-          {/* 1. Panel de Carteras Maestras en Vivo (Fichas Resumidas) */}
+          {/* 1. Panel de Carteras Maestras en Vivo (Fichas Resumidas Macro) */}
           <CarterasHeader
             saldos={saldosCarteras}
             filtroCartera={filtroCartera}
             sinCuenta={sinCuentaInfo}
-            desglosePorCuenta={cuentas}
             onReasignarSinCuenta={() => setReasignarOpen(true)}
             onSelectCartera={setFiltroCartera}
-            onOpenTransferencia={() => setTransferenciaOpen(true)}
-            onSelectSubcuenta={cuenta => setCuentaDetalle(cuenta)}
+            onOpenTransferencia={() => {
+              setCuentaTransferir(null)
+              setTransferenciaOpen(true)
+            }}
           />
 
-          {/* 2. Zona de Cuentas Bancarias, Binance, Zelle y Cajas de Custodia */}
+          {/* 2. Zona Unificada de Cuentas Bancarias, Binance, Zelle y Cajas de Custodia */}
           <CuentasCustodiaGrid
             cuentas={cuentas}
             cuentasEliminadas={cuentasEliminadas}
@@ -470,8 +478,12 @@ export default function FinanzasView() {
             }}
             onEliminarCuenta={eliminarCuenta}
             onVerDetalle={cuenta => setCuentaDetalle(cuenta)}
-            onTransferir={() => setTransferenciaOpen(true)}
+            onTransferir={cuenta => {
+              setCuentaTransferir(cuenta)
+              setTransferenciaOpen(true)
+            }}
             onRestaurar={restaurarPredeterminadas}
+            tasaBcv={tasaActiva}
           />
 
           {/* 3. Tabla de Movimientos de Tesorería */}
@@ -517,8 +529,19 @@ export default function FinanzasView() {
       )}
 
       {formOpen && <MovimientoForm categorias={categoriasVisibles} cuentas={cuentas} onClose={() => setFormOpen(false)} />}
-      {syncPosOpen && <SyncPosModal open={syncPosOpen} onClose={() => setSyncPosOpen(false)} />}
-      {transferenciaOpen && <TransferenciaCarterasModal open={transferenciaOpen} onClose={() => setTransferenciaOpen(false)} saldos={saldosCarteras} />}
+      {transferenciaOpen && (
+        <TransferenciaCarterasModal
+          key={cuentaTransferir?.id || 'transferencia-default'}
+          open={transferenciaOpen}
+          onClose={() => {
+            setTransferenciaOpen(false)
+            setCuentaTransferir(null)
+          }}
+          saldos={saldosCarteras}
+          cuentas={cuentas}
+          cuentaInicial={cuentaTransferir}
+        />
+      )}
       {cuentaFormOpen && (
         <CuentaFormModal
           key={cuentaEditar?.id || 'nueva'}
@@ -566,23 +589,4 @@ export default function FinanzasView() {
       />
     </div>
   )
-}
-
-function FilterField({ label, children }) {
-  return (
-    <label className="space-y-1 min-w-0">
-      <span className="block text-[11px] font-bold text-slate-500">{label}</span>
-      <span className="block [&>input]:w-full [&>input]:h-11 [&>input]:rounded-xl [&>input]:border [&>input]:border-slate-200 [&>input]:bg-slate-50 [&>input]:px-2.5 [&>input]:text-xs [&>input]:text-slate-700 [&>select]:w-full [&>select]:h-11 [&>select]:rounded-xl [&>select]:border [&>select]:border-slate-200 [&>select]:bg-slate-50 [&>select]:px-2.5 [&>select]:text-xs [&>select]:text-slate-700">
-        {children}
-      </span>
-    </label>
-  )
-}
-
-function Choice({ value, onChange, placeholder, options }) {
-  return <CustomSelect value={value} onChange={onChange} placeholder={placeholder} options={options} clearable />
-}
-
-function InlineError({ message, onRetry }) {
-  return <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700" role="alert">{message} <button type="button" onClick={onRetry} className="underline font-black">Volver a intentar</button></div>
 }

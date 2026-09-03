@@ -105,3 +105,13 @@ export function EliminarCategoriaDialog({ nombre, pending, onClose, onConfirm })
     </div>
   )
 }
+
+export function Field({ label, children }) {
+  return (
+    <label className="block min-w-0">
+      <span className="block mb-1 text-xs font-bold text-slate-700">{label}</span>
+      {children}
+    </label>
+  )
+}
+

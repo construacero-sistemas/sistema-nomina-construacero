@@ -35,12 +35,12 @@ const CATEGORIAS = [
   { id: 'c3', nombre: 'General', tipo: 'ambos' },
 ]
 
-function renderForm() {
+function renderForm(cuentas = []) {
   const onClose = vi.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <MovimientoForm categorias={CATEGORIAS} onClose={onClose} />
+      <MovimientoForm categorias={CATEGORIAS} cuentas={cuentas} onClose={onClose} />
     </QueryClientProvider>,
   )
   return { onClose }
@@ -191,5 +191,32 @@ describe('MovimientoForm', () => {
     expect(payload.cuentaOrigen).toBe('Banesco')
     expect(payload.partes).toBeNull()
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+  })
+
+  it('al seleccionar método USDT, muestra y preselecciona la cuenta de Binance Pay registrada', async () => {
+    const user = userEvent.setup()
+    const cuentasConBinance = [
+      { id: 'c-bin', nombre: 'Binance Pay (USDT)', banco: 'Binance', tipo: 'cripto_usdt', moneda: 'USDT', saldo: 100, activo: true },
+    ]
+    renderForm(cuentasConBinance)
+    await fillValidForm(user)
+    await pickCategory(user, 'General')
+
+    // Cambiar a USDT (Cripto)
+    const metodoTrigger = screen.getAllByRole('combobox').find(c => /efectivo \$/i.test(c.textContent))
+    await user.click(metodoTrigger)
+    const opUsdt = await screen.findByRole('option', { name: /usdt/i })
+    await user.click(opUsdt)
+
+    // Aparece el selector de cuenta y se preselecciona Binance Pay
+    expect(screen.getAllByText(/Binance Pay \(USDT\)/i).length).toBeGreaterThanOrEqual(1)
+
+    const form = screen.getByRole('dialog').querySelector('form')
+    if (form) fireEvent.submit(form)
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1))
+    const payload = mutateAsync.mock.calls[0][0]
+    expect(payload.metodoPago).toBe('USDT')
+    expect(payload.cuentaOrigen).toBe('Binance Pay (USDT)')
+    expect(payload.cuenta_id).toBe('c-bin')
   })
 })
