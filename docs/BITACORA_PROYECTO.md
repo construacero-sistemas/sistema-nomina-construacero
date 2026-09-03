@@ -2638,5 +2638,23 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `src/components/finanzas/__tests__/CuentasCustodiaGrid.test.jsx`: 11/11 tests PASSED.
 - `npm run verify`: PASS completo (30/30 tests responsivos, 562/562 vitest, eslint 0 errores, build 367.2 kB ≤ 400 kB).
 
+---
+
+### Entrada #124 - 2026-09-03
+**Contexto:** El usuario solicitó registrar formalmente en `AGENT.md` la regla obligatoria de paginación en todos los modales donde se almacenen o listen múltiples filas o muchas columnas de información (*"añade una regla al agent.md que en todos modal donde se guarden muchas columnas debe tener paginacion"*).
+
+**Acciones realizadas:**
+- En `AGENT.md`:
+  - Se incorporó la sección **«Regla obligatoria: paginación en modales con listados o tablas de muchas columnas»**.
+  - Se definieron los 3 lineamientos rectores:
+    1. Paginación obligatoria con controles ergonómicos («Anterior» / «Siguiente», página actual y total).
+    2. Límite acotado de registros por vista (5 a 15 filas) para prevenir desbordes de scroll vertical.
+    3. Altura táctil mínima de 44 px (`h-11`) en botones de paginación y adaptabilidad móvil.
+
+**Verificación:**
+- `AGENT.md` y `docs/BITACORA_PROYECTO.md` sincronizados y actualizados en el mismo cambio.
+- `npm run check:project`: OK.
+- `npm run lint`: 0 errores.
+
 
 

@@ -97,3 +97,12 @@ Todo movimiento financiero (ingreso o egreso) debe registrarse **con su motivo/c
 El chunk `index-*.js` tras `vite build` no debe superar **400 kB**. Nuevas vistas pesadas deben cargarse con `React.lazy()`; las librerías grandes (jspdf, html2canvas) solo mediante `await import()` dinámico dentro de la función que las usa.
 
 **Guardrail:** `npm run test:bundle-size` (parte de `npm run verify`) falla si se supera el presupuesto.
+
+## Regla obligatoria: paginación en modales con listados o tablas de muchas columnas
+
+En todo modal, diálogo o ventana emergente donde se listen, guarden, editen o consulten múltiples registros, filas o conjuntos de datos con muchas columnas de información (como detalles de recibos, asignaciones, historial de movimientos, comprobantes, etc.):
+
+1. **Paginación obligatoria**: Debe implementarse un control de paginación claro y ergonómico (número de página, botones «Anterior» / «Siguiente», indicador de total de páginas o selector de tamaño de página) para evitar desbordar verticalmente el modal y proteger el rendimiento en dispositivos móviles.
+2. **Límite de registros por vista**: Las filas deben presentarse en bloques acotados y manejables (generalmente entre 5 y 15 filas por página según la densidad de las columnas), evitando listas infinitas que fuercen scroll desmedido dentro del modal.
+3. **Ergonomía táctil y diseño responsivo**: Los botones de cambio de página deben respetar el touch target de al menos 44 px de altura (`h-11`), mostrar el estado activo/deshabilitado con nitidez y adaptarse sin desbordes horizontales tanto en pantallas móviles (iPhone / Android) como en escritorio.
+
