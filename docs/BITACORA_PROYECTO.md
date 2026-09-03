@@ -2513,5 +2513,23 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 562/562 tests PASSED (53 suites de prueba).
 - `npm run build`: Build exitoso en 35.37s, bundle `376.01 kB` ≤ 400 kB.
 
+---
+
+### Entrada #118 - 2026-09-03
+**Contexto:** El usuario reportó que en dispositivos móviles los botones de la cabecera de cuentas (`[Ocultar cuentas a detalle]` y `[+ Nueva Cuenta]`) se distorsionaban rompiendo el texto en múltiples líneas verticales estrechas (*"corrigue estos botones en movil cuando le doy ver cuentas a detalle"*).
+
+**Acciones realizadas:**
+- En `src/components/finanzas/CuentasCustodiaGrid.jsx`:
+  - Se rediseñó el contenedor de los botones a `flex flex-col sm:flex-row` y el grupo de botones a `flex items-center gap-2 w-full sm:w-auto`.
+  - Ambos botones ahora utilizan `flex-1 sm:flex-initial`, `justify-center` y `whitespace-nowrap`, ocupando el 50% simétrico en pantallas móviles táctiles (`min-h-11`).
+  - Se optimizó el texto responsivo: en móviles muestra `Ocultar detalle` / `Ver detalle` para un ajuste holgado y limpio en una sola línea, mientras que en pantallas más anchas conserva `Ocultar cuentas a detalle` / `Ver cuentas a detalle`.
+  - Se fijó `shrink-0` en los iconos `<ChevronUp>`, `<ChevronDown>` y `<Plus>` para evitar compresión.
+
+**Verificación:**
+- `npm run check:project`: OK (0 archivos > 600 líneas; `CuentasCustodiaGrid.jsx`: 515 líneas).
+- `npm run lint`: 0 errores.
+- `npm test`: 562/562 tests PASSED (53 suites de prueba).
+- `npm run build`: Build exitoso en 33.39s, bundle `376.01 kB` ≤ 400 kB.
+
 
 

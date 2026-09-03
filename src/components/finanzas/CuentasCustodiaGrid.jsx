@@ -88,7 +88,7 @@ export default function CuentasCustodiaGrid({
   return (
     <div className="space-y-3 bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 transition-all">
       {/* Barra de Encabezado y Toggle de Detalle */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center font-black shrink-0">
             <Building2 size={16} />
@@ -110,12 +110,13 @@ export default function CuentasCustodiaGrid({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           {/* Botón para desplegar / ocultar el detalle de cuentas */}
           <button
             type="button"
             onClick={() => setExpandido(prev => !prev)}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 min-h-11 rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs active:scale-95 ${
+            aria-label={expandido ? 'Ocultar cuentas a detalle' : 'Ver cuentas a detalle'}
+            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-2 min-h-11 rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs active:scale-95 whitespace-nowrap ${
               expandido
                 ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
                 : 'bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20'
@@ -124,13 +125,15 @@ export default function CuentasCustodiaGrid({
           >
             {expandido ? (
               <>
-                <ChevronUp size={14} />
-                <span>Ocultar cuentas a detalle</span>
+                <ChevronUp size={14} className="shrink-0" />
+                <span className="hidden sm:inline">Ocultar cuentas a detalle</span>
+                <span className="sm:hidden">Ocultar detalle</span>
               </>
             ) : (
               <>
-                <ChevronDown size={14} />
-                <span>Ver cuentas a detalle</span>
+                <ChevronDown size={14} className="shrink-0" />
+                <span className="hidden sm:inline">Ver cuentas a detalle</span>
+                <span className="sm:hidden">Ver detalle</span>
               </>
             )}
           </button>
@@ -139,10 +142,10 @@ export default function CuentasCustodiaGrid({
           <button
             type="button"
             onClick={onNuevaCuenta}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-11 rounded-xl bg-primary text-white text-xs font-black hover:bg-primary-hover active:scale-95 transition-all shadow-md cursor-pointer"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-2 min-h-11 rounded-xl bg-primary text-white text-xs font-black hover:bg-primary-hover active:scale-95 transition-all shadow-md cursor-pointer whitespace-nowrap"
             style={{ touchAction: 'manipulation' }}
           >
-            <Plus size={14} />
+            <Plus size={14} className="shrink-0" />
             <span>Nueva Cuenta</span>
           </button>
         </div>
