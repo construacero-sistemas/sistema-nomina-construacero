@@ -54,6 +54,7 @@ export default function CuentasCustodiaGrid({
   const [filtroTipo, setFiltroTipo] = useState('todos') // 'todos' | 'VES' | 'USD' | 'USDT'
   const [copiadoId, setCopiadoId] = useState(null)
   const [cuentaAEliminar, setCuentaAEliminar] = useState(null)
+  const [descartePendiente, setDescartePendiente] = useState(null)
 
   const tasa = Number(tasaBcv) > 0 ? Number(tasaBcv) : 1
 
@@ -229,11 +230,7 @@ export default function CuentasCustodiaGrid({
             {onVaciarPapelera && (
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm('¿Deseas descartar todas las cuentas de la papelera definitivamente? No se volverán a mostrar.')) {
-                    onVaciarPapelera()
-                  }
-                }}
+                onClick={() => setDescartePendiente({ todos: true })}
                 className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                 title="Descartar todas las cuentas para que no se muestren más"
               >
@@ -257,11 +254,7 @@ export default function CuentasCustodiaGrid({
                 {onDescartarEliminada && (
                   <button
                     type="button"
-                    onClick={() => {
-                      if (window.confirm(`¿Descartar definitivamente ${cuenta.nombre}? No se volverá a mostrar.`)) {
-                        onDescartarEliminada(cuenta.id)
-                      }
-                    }}
+                    onClick={() => setDescartePendiente({ id: cuenta.id, nombre: cuenta.nombre })}
                     className="p-1 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                     title={`Descartar ${cuenta.nombre} definitivamente`}
                     aria-label={`Descartar ${cuenta.nombre}`}
@@ -509,6 +502,58 @@ export default function CuentasCustodiaGrid({
               <span>Eliminar cuenta</span>
             </button>
           )}
+        </div>
+      </Modal>
+
+      {/* Modal de confirmación profesional para descartar de papelera */}
+      <Modal
+        isOpen={Boolean(descartePendiente)}
+        onClose={() => setDescartePendiente(null)}
+        title={descartePendiente?.todos ? '¿Vaciar papelera de cuentas?' : '¿Descartar cuenta definitivamente?'}
+        className="sm:max-w-md"
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+            <Trash2 size={18} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm text-slate-700">
+              {descartePendiente?.todos ? (
+                '¿Deseas descartar todas las cuentas de la papelera definitivamente? Ya no se volverán a mostrar en esta lista.'
+              ) : (
+                <>
+                  ¿Deseas descartar definitivamente la cuenta <strong className="break-words">{capitalizarPalabras(descartePendiente?.nombre || '')}</strong>?
+                </>
+              )}
+            </p>
+            <p className="mt-1.5 text-xs text-slate-500">
+              Los movimientos e historial contable previo registrados con esta cuenta permanecerán intactos y protegidos.
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setDescartePendiente(null)}
+            className="h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (descartePendiente?.todos) {
+                onVaciarPapelera?.()
+              } else if (descartePendiente?.id) {
+                onDescartarEliminada?.(descartePendiente.id)
+              }
+              setDescartePendiente(null)
+            }}
+            className="h-11 px-4 rounded-xl bg-rose-600 text-sm font-black text-white hover:bg-rose-500 active:scale-95 transition-all shadow-md inline-flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Trash2 size={14} />
+            <span>Descartar definitivamente</span>
+          </button>
         </div>
       </Modal>
     </div>

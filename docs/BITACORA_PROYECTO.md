@@ -2571,5 +2571,25 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 562/562 tests PASSED (53 suites de prueba).
 - `npm run build`: Build exitoso en 35.05s, bundle `376.01 kB` ≤ 400 kB.
 
+---
+
+### Entrada #121 - 2026-09-03
+**Contexto:** El usuario consultó si en `AGENT.md` existe una regla sobre hacer profesionales los mensajes de confirmación tras observar un pop-up nativo del navegador (`localhost:5173 dice: ¿Descartar definitivamente Banco Mercantil?...`).
+
+**Acciones realizadas:**
+- Se verificó `AGENT.md`, confirmando la existencia de la regla estricta: **«Regla obligatoria: cero diálogos nativos del navegador»** (líneas 67-72), que prohíbe taxativamente `window.confirm()`, `window.alert()` y `window.prompt()`.
+- En `src/components/finanzas/CuentasCustodiaGrid.jsx`:
+  - Se eliminaron los dos únicos llamados a `window.confirm()` que quedaban en el proyecto (al vaciar la papelera y al descartar una cuenta eliminada individual con la `✕`).
+  - Se integró el modal estilizado del proyecto (`Modal` de diseño unificado) con el estado `descartePendiente`, icono temático de papelera (`<Trash2>`), texto explicativo claro que tranquiliza al usuario indicando que el historial contable se conserva, y botones ergonómicos de 44px (`[ Cancelar ]` y `[ Descartar definitivamente ]`).
+- En `src/components/finanzas/__tests__/CuentasCustodiaGrid.test.jsx`:
+  - Se actualizaron las pruebas unitarias para interactuar directamente con el modal profesional, eliminando los spies de `window.confirm`.
+
+**Verificación:**
+- `npm run test:responsive`: 30/30 checks PASSED (incluyendo Sección 9: 0 diálogos nativos en 79 componentes JSX).
+- `npm run check:project`: OK (0 archivos > 600 líneas; `CuentasCustodiaGrid.jsx`: 561 líneas).
+- `npm run lint`: 0 errores.
+- `npm test`: 562/562 tests PASSED (53 suites de prueba).
+- `npm run build`: Build exitoso en 23.86s, bundle `376.01 kB` ≤ 400 kB.
+
 
 
