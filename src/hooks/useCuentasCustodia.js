@@ -145,6 +145,15 @@ export function useCuentasCustodia(movimientos = []) {
     onError: error => showToast.error(error.message || 'No se pudo restaurar la cuenta'),
   })
 
+  const descartarMutation = useMutation({
+    mutationFn: ({ id, todos = false }) => apiPost('/api/finanzas/cuentas-custodia/descartar', { id, todos }),
+    onSuccess: (_, { todos }) => {
+      showToast.success(todos ? 'Papelera vaciada definitivamente' : 'Cuenta descartada')
+      queryClient.invalidateQueries({ queryKey: [...BASE_KEY, cuentaId] })
+    },
+    onError: error => showToast.error(error.message || 'No se pudo descartar de la papelera'),
+  })
+
   // Callbacks de uso en la UI: aplican optimista en localStorage y luego llaman al backend.
   const agregarCuenta = useCallback((nueva) => {
     const id = `cuenta-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -168,6 +177,14 @@ export function useCuentasCustodia(movimientos = []) {
   const restaurarCuentaEliminada = useCallback((id) => {
     return restaurarUnaMutation.mutateAsync(id)
   }, [restaurarUnaMutation])
+
+  const descartarCuentaEliminada = useCallback((id) => {
+    return descartarMutation.mutateAsync({ id, todos: false })
+  }, [descartarMutation])
+
+  const vaciarPapelera = useCallback(() => {
+    return descartarMutation.mutateAsync({ todos: true })
+  }, [descartarMutation])
 
   const restaurarPredeterminadas = useCallback(() => {
     writeLocalCache(cuentaId, CUENTAS_DEFAULT)
@@ -215,6 +232,8 @@ export function useCuentasCustodia(movimientos = []) {
     editarCuenta,
     eliminarCuenta,
     restaurarCuentaEliminada,
+    descartarCuentaEliminada,
+    vaciarPapelera,
     restaurarPredeterminadas,
   }
 }

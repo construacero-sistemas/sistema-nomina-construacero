@@ -33,6 +33,7 @@ import {
   handleEliminarCuentaCustodia,
   handleRestaurarCuentasCustodia,
   handleRestaurarUnaCuentaCustodia,
+  handleDescartarCuentaCustodia,
 } from './server/handlers/cuentasCustodia.js'
 import { handleGetRates } from './server/handlers/rates.js'
 import { handleCrearLogs } from './server/handlers/logs.js'
@@ -80,6 +81,7 @@ const routes = new Map([
   ['POST /api/finanzas/cuentas-custodia/eliminar', handleEliminarCuentaCustodia],
   ['POST /api/finanzas/cuentas-custodia/restaurar', handleRestaurarCuentasCustodia],
   ['POST /api/finanzas/cuentas-custodia/restaurar-una', handleRestaurarUnaCuentaCustodia],
+  ['POST /api/finanzas/cuentas-custodia/descartar', handleDescartarCuentaCustodia],
   ['GET /api/retencion', handleGetRetencion],
   ['GET /api/retencion/uso', handleGetRetencionUso],
   ['POST /api/retencion/purgar', handlePurgarRetencion],

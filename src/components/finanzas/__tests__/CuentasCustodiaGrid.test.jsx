@@ -138,4 +138,34 @@ describe('CuentasCustodiaGrid — papelera reversible', () => {
     renderGrid([mkCuenta()])
     expect(screen.queryByText(/Eliminadas recientemente/i)).toBeNull()
   })
+
+  it('ofrece botón para vaciar la papelera (descartar y no mostrar más)', () => {
+    const onVaciarPapelera = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const eliminada = { id: 'c-del', nombre: 'Zelle viejo', moneda: 'USD', saldo: 0, permanente: false }
+    renderGrid([mkCuenta()], vi.fn(), {
+      cuentasEliminadas: [eliminada],
+      onVaciarPapelera,
+    })
+
+    const btnVaciar = screen.getByRole('button', { name: /Descartar y no mostrar más/i })
+    expect(btnVaciar).toBeInTheDocument()
+    fireEvent.click(btnVaciar)
+    expect(onVaciarPapelera).toHaveBeenCalledTimes(1)
+  })
+
+  it('permite descartar definitivamente una cuenta individual con la X', () => {
+    const onDescartarEliminada = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const eliminada = { id: 'c-del', nombre: 'Zelle viejo', moneda: 'USD', saldo: 0, permanente: false }
+    renderGrid([mkCuenta()], vi.fn(), {
+      cuentasEliminadas: [eliminada],
+      onDescartarEliminada,
+    })
+
+    const btnX = screen.getByRole('button', { name: /Descartar Zelle viejo/i })
+    expect(btnX).toBeInTheDocument()
+    fireEvent.click(btnX)
+    expect(onDescartarEliminada).toHaveBeenCalledWith('c-del')
+  })
 })

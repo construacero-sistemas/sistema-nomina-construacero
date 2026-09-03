@@ -130,4 +130,12 @@ describe('useCuentasCustodia — saldos por cuenta explícita', () => {
       delete globalThis.__mockCuentasPayload
     }
   })
+
+  it('expone descartarCuentaEliminada y vaciarPapelera', async () => {
+    const { result } = renderHook(() => useCuentasCustodia([]), { wrapper })
+    expect(typeof result.current.descartarCuentaEliminada).toBe('function')
+    expect(typeof result.current.vaciarPapelera).toBe('function')
+    await expect(result.current.descartarCuentaEliminada('c-1')).resolves.toEqual({ ok: true })
+    await expect(result.current.vaciarPapelera()).resolves.toEqual({ ok: true })
+  })
 })

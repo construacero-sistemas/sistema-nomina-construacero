@@ -132,6 +132,8 @@ export default function FinanzasView() {
     editarCuenta,
     eliminarCuenta,
     restaurarCuentaEliminada,
+    descartarCuentaEliminada,
+    vaciarPapelera,
     restaurarPredeterminadas,
   } = useCuentasCustodia(movimientosList)
 
@@ -467,6 +469,8 @@ export default function FinanzasView() {
             cuentas={cuentas}
             cuentasEliminadas={cuentasEliminadas}
             onRestaurarEliminada={restaurarCuentaEliminada}
+            onDescartarEliminada={descartarCuentaEliminada}
+            onVaciarPapelera={vaciarPapelera}
             onNuevaCuenta={() => {
               setCuentaEditar(null)
               setCuentaFormOpen(true)

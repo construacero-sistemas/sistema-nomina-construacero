@@ -9,6 +9,7 @@ import {
   handleEliminarCuentaCustodia,
   handleRestaurarCuentasCustodia,
   handleRestaurarUnaCuentaCustodia,
+  handleDescartarCuentaCustodia,
 } from '../cuentasCustodia.js'
 import { CUENTAS_DEFAULT, CAJAS_PERMANENTES } from '../../lib/cuentasCustodiaUtils.js'
 
@@ -268,5 +269,34 @@ describe('cuentas de custodia', () => {
     )
     const { status: s2 } = await readResponse(res404)
     expect(s2).toBe(404)
+  })
+
+  it('POST /descartar elimina físicamente cuentas inactivas (papelera vaciada)', async () => {
+    mock = installFetchMock([
+      { match: '/cuentas_custodia?', method: 'DELETE', respond: [] },
+      { match: '/auditoria', method: 'POST', respond: [] },
+    ])
+    const res = await handleDescartarCuentaCustodia(
+      makeRequest({ todos: true }, { url: `${urlBase()}/finanzas/cuentas-custodia/descartar` }),
+      ENV,
+    )
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.descartadas).toBe(true)
+  })
+
+  it('POST /descartar con id específico elimina solo esa cuenta', async () => {
+    mock = installFetchMock([
+      { match: '/cuentas_custodia?id=', method: 'DELETE', respond: [] },
+      { match: '/auditoria', method: 'POST', respond: [] },
+    ])
+    const res = await handleDescartarCuentaCustodia(
+      makeRequest({ id: CUENTA_FILA.id }, { url: `${urlBase()}/finanzas/cuentas-custodia/descartar` }),
+      ENV,
+    )
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    expect(body.ok).toBe(true)
   })
 })

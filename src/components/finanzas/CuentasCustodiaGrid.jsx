@@ -23,6 +23,7 @@ import {
   Sparkles,
   Trash2,
   Wallet,
+  X,
 } from 'lucide-react'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
@@ -38,6 +39,8 @@ export default function CuentasCustodiaGrid({
   cuentas = [],
   cuentasEliminadas = [],
   onRestaurarEliminada,
+  onDescartarEliminada,
+  onVaciarPapelera,
   onNuevaCuenta,
   onEditarCuenta,
   onEliminarCuenta,
@@ -215,13 +218,30 @@ export default function CuentasCustodiaGrid({
       {/* Papelera: cuentas eliminadas recuperables (borrado lógico) */}
       {expandido && cuentasEliminadas.length > 0 && (
         <div className="pt-3 border-t border-slate-100 animate-in fade-in duration-200">
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-2">
-            Eliminadas recientemente ({cuentasEliminadas.length}) — recuperables
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
+              Eliminadas recientemente ({cuentasEliminadas.length}) — recuperables
+            </p>
+            {onVaciarPapelera && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('¿Deseas descartar todas las cuentas de la papelera definitivamente? No se volverán a mostrar.')) {
+                    onVaciarPapelera()
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                title="Descartar todas las cuentas para que no se muestren más"
+              >
+                <Trash2 size={12} />
+                <span>Descartar y no mostrar más</span>
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
             {cuentasEliminadas.map(cuenta => (
-              <span key={cuenta.id} className="inline-flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-xs text-slate-500">
-                <span className="max-w-[180px] truncate font-semibold text-slate-600">{cuenta.nombre}</span>
+              <span key={cuenta.id} className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                <span className="max-w-[180px] truncate font-semibold text-slate-600">{capitalizarPalabras(cuenta.nombre)}</span>
                 <button
                   type="button"
                   onClick={() => onRestaurarEliminada?.(cuenta.id)}
@@ -230,6 +250,21 @@ export default function CuentasCustodiaGrid({
                 >
                   <RotateCcw size={12} /> Restaurar
                 </button>
+                {onDescartarEliminada && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(`¿Descartar definitivamente ${cuenta.nombre}? No se volverá a mostrar.`)) {
+                        onDescartarEliminada(cuenta.id)
+                      }
+                    }}
+                    className="p-1 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                    title={`Descartar ${cuenta.nombre} definitivamente`}
+                    aria-label={`Descartar ${cuenta.nombre}`}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
               </span>
             ))}
           </div>

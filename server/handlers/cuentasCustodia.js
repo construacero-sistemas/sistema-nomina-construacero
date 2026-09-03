@@ -348,6 +348,53 @@ export async function handleRestaurarUnaCuentaCustodia(request, env) {
   return json({ ok: true, cuenta: cuentaCustodiaResponse(row) }, 200, request)
 }
 
+// POST /api/finanzas/cuentas-custodia/descartar
+// Borrado FÍSICO definitivo de cuentas en papelera (activo=false).
+// Permite vaciar la papelera o descartar una cuenta para que no vuelva a aparecer.
+// Las cajas físicas permanentes están protegidas contra borrado.
+export async function handleDescartarCuentaCustodia(request, env) {
+  const context = await adminContext(request, env)
+  if (context.error) return context.error
+  const { operador } = context
+  const parsed = await readBody(request)
+  if (parsed.error) return parsed.error
+
+  const id = parsed.body?.id ? String(parsed.body.id).trim() : null
+  const todos = Boolean(parsed.body?.todos || !id)
+
+  if (id && !isValidUuid(id)) return jsonError('id inválido', 400, request)
+
+  let queryUrl
+  if (todos) {
+    queryUrl = `${env.SUPABASE_URL}/rest/v1/cuentas_custodia?${accountFilter(operador.cuenta_id)}&activo=eq.false`
+  } else {
+    queryUrl = `${env.SUPABASE_URL}/rest/v1/cuentas_custodia?id=eq.${encodeURIComponent(id)}&${accountFilter(operador.cuenta_id)}&activo=eq.false`
+  }
+
+  const res = await fetch(queryUrl, {
+    method: 'DELETE',
+    headers: svcHeaders(env, 'return=minimal'),
+  })
+
+  if (!res.ok) return jsonError('No se pudieron descartar las cuentas de la papelera', 500, request)
+
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), {
+    usuarioId: operador.id,
+    usuarioNombre: operador.nombre,
+    usuarioRol: operador.rol,
+    cuentaId: operador.cuenta_id,
+    categoria: 'FINANZAS',
+    accion: 'CUENTAS_PAPELERA_DESCARTADAS',
+    entidadTipo: 'cuentas_custodia',
+    entidadId: id || null,
+    meta: { todos },
+    ip: context.ip,
+  }).catch(() => {})
+  clearEgressCache()
+
+  return json({ ok: true, descartadas: true }, 200, request)
+}
+
 // POST /api/finanzas/cuentas-custodia/restaurar
 // Restaura las cuentas semilla (las 2 cajas físicas). Si el usuario eliminó un
 // banco/Zelle y quiere el ejemplo de vuelta, puede recrearlo desde el formulario

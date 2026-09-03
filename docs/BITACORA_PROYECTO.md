@@ -2491,5 +2491,27 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 557/557 tests PASSED (53 suites de prueba).
 - `npm run build`: Build exitoso en 31.34s, bundle `376.01 kB` ≤ 400 kB.
 
+---
+
+### Entrada #117 - 2026-09-03
+**Contexto:** El usuario solicitó un botón para quitar el aviso de cuentas eliminadas recientemente en la papelera si no se van a restaurar, para que no vuelva a salir (*"añade un boton para que se quite ese mensaje si no se va a restaurar y que no salga mas"*).
+
+**Acciones realizadas:**
+1. **Limpieza inmediata en Supabase:**
+   - Se eliminaron definitivamente de Supabase las dos cuentas inactivas en papelera (`Banco Mercantil` y `Binance Pay (USDT)`). El mensaje desaparece de inmediato.
+2. **Endpoints en Backend:**
+   - En `server/handlers/cuentasCustodia.js`: Se creó `handleDescartarCuentaCustodia` (`POST /api/finanzas/cuentas-custodia/descartar`), que permite purgar físicamente cuentas inactivas (`activo=false`) de forma individual (`id`) o total (`todos: true`). Las cajas permanentes están protegidas.
+   - En `worker.js`: Se registró la ruta `POST /api/finanzas/cuentas-custodia/descartar`.
+3. **Hook y Componentes:**
+   - En `useCuentasCustodia.js`: Se agregaron las mutaciones `descartarCuentaEliminada` y `vaciarPapelera`.
+   - En `CuentasCustodiaGrid.jsx`: Se añadió el botón en la cabecera *"Descartar y no mostrar más"* (`Trash2`) con confirmación, y un botón de cierre individual `✕` en cada chip de cuenta eliminada.
+   - En `FinanzasView.jsx`: Se enlazaron las props `onDescartarEliminada` y `onVaciarPapelera`.
+
+**Verificación:**
+- `npm run check:project`: OK (0 archivos > 600 líneas; `FinanzasView.jsx`: 597 líneas, `CuentasCustodiaGrid.jsx`: 512 líneas, `cuentasCustodia.js`: 472 líneas).
+- `npm run lint`: 0 errores.
+- `npm test`: 562/562 tests PASSED (53 suites de prueba).
+- `npm run build`: Build exitoso en 35.37s, bundle `376.01 kB` ≤ 400 kB.
+
 
 
