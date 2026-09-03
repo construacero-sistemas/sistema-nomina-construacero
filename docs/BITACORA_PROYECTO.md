@@ -2731,6 +2731,24 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 54/54 suites aprobadas (565 tests pasando).
 - `npm run build`: Vite build exitoso (0 errores).
 
+---
+
+### Entrada #128 - 2026-09-03
+**Contexto:** Al recargar la página en producción en Vercel (`sistema-nomina-construacero.vercel.app`) desde rutas internas como `/finanzas` o `/nomina`, la plataforma arrojaba el error `404: NOT_FOUND` con código de error Vercel.
+
+**Causa raíz:**
+- Al tratarse de una Single Page Application (SPA) con React Router, la navegación interna utiliza la API de Historial del navegador (`pushState`). Al hacer refresh o recargar la página, el navegador solicita la ruta directamente al servidor web de Vercel.
+- En `vercel.json` solo existía la regla de reescritura para `/api/:path*`. No existía una regla fallback para redirigir las rutas del cliente a `/index.html`. Por ende, Vercel intentaba buscar un archivo estático correspondiente a la ruta y al no encontrarlo respondía con `404: NOT_FOUND`.
+
+**Acciones realizadas:**
+- En `vercel.json`:
+  - Se agregó la regla de reescritura SPA: `{ "source": "/((?!api/).*)", "destination": "/index.html" }`.
+  - Esta regla excluye expresamente los llamados hacia `/api/...` (que siguen yendo a la Serverless Function) y redirige cualquier otra ruta de interfaz a `/index.html` para que React Router resuelva la vista correctamente tras recargar.
+
+**Verificación:**
+- `npm run check:project`: OK (0 violaciones de contrato ni de arquitectura).
+
+
 
 
 
