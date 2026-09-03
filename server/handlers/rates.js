@@ -76,6 +76,7 @@ async function dolarApi(currency) {
       const rows = Array.isArray(data) ? data : [data]
       const official = rows.find(row => row?.fuente === 'oficial' || row?.nombre === 'Oficial') || rows[0]
       const price = number(official?.promedio || official?.precio)
+      if (price > 0) return price
     } catch (err) {
       console.warn(`[RATES] DolarAPI error en ${url}: ${err.message}`)
     }

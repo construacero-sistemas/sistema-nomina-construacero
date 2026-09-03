@@ -14,6 +14,7 @@ import { rutaPorDefecto } from './config/modulos.js'
 import SistemaView from './views/SistemaView.jsx'
 import useTasaCambioNomina from './hooks/useTasaCambioNomina.js'
 import RateHeader from './components/layout/RateHeader.jsx'
+import HeaderDate from './components/layout/HeaderDate.jsx'
 
 const NominaView = lazy(() => import('./views/NominaView.jsx'))
 const FinanzasView = lazy(() => import('./components/finanzas/FinanzasView.jsx'))
@@ -359,6 +360,7 @@ function Shell() {
           </div>
           <span className="text-sm font-black tracking-wide text-white/90">{current.label}</span>
           <span className="sr-only">Nómina y Finanzas — Construacero Carabobo</span>
+          <HeaderDate />
         </div>
 
         <div className="flex-1" />

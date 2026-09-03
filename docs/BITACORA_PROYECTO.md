@@ -2748,6 +2748,30 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 **Verificación:**
 - `npm run check:project`: OK (0 violaciones de contrato ni de arquitectura).
 
+---
+
+### Entrada #129 - 2026-09-03
+**Contexto:** El usuario solicitó mover la fecha al lado izquierdo de la cabecera en pantallas de PC / escritorio (*"en pc coloca la fecha a la izquierda del header"*), descongestionando el bloque de tasas del extremo derecho.
+
+**Acciones realizadas:**
+- En `src/components/layout/HeaderDate.jsx`:
+  - Se creó el componente `HeaderDate` para escritorio (`hidden md:flex`) con diseño sobrio y profesional: icono de calendario (`Calendar` de lucide-react), divisor sutil `border-l border-white/10`, formato canónico de fecha/hora oficial de Caracas y atributos de accesibilidad (`aria-label`, `title`).
+- En `src/NominaApp.jsx`:
+  - Se incorporó `<HeaderDate />` dentro del bloque izquierdo del encabezado de escritorio, inmediatamente al lado del indicador del módulo activo (`current.label`).
+  - La longitud de `src/NominaApp.jsx` quedó en 579 líneas (cumpliendo el límite estricto $\le 600$ líneas).
+- En `src/components/layout/RateHeader.jsx`:
+  - Se removió la fecha del extremo derecho del selector de tasas para mantener la barra limpia, legible y sin sobrecarga de información.
+- En `src/components/layout/__tests__/HeaderDate.test.jsx`:
+  - Se crearon pruebas unitarias verificando la renderización de la fecha, atributos accesibles y formato.
+
+**Verificación:**
+- `npx vitest run src/components/layout/__tests__/`: 2 suites / 4 tests PASSED.
+- `npm run test:responsive`: 30/30 verificaciones de responsividad y mobile iPhone aprobadas (0 fallos).
+- `npm run check:project`: OK (254 archivos inspeccionados, 0 violaciones).
+- `npm run lint`: 0 errores y 0 advertencias.
+- `npm test`: 55 suites / 566 tests aprobados.
+
+
 
 
 

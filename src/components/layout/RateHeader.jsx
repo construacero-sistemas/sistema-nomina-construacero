@@ -2,13 +2,11 @@
 // Barra de tasas de cambio para la cabecera superior de la aplicación (móvil y desktop).
 import { AlertTriangle } from 'lucide-react'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
-import { formatFechaHora } from '../../../compat/utils/formatDateTime.js'
 import RateSelector from '../nomina/RateSelector.jsx'
 
 export function RateHeader() {
-  const { usd, eur, usdt, lastUpdate, loading, stale, error, refresh } = useTasaCambioNomina()
+  const { usd, eur, usdt, loading, stale, error, refresh } = useTasaCambioNomina()
   const format = value => value > 0 ? `${value.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
-  const updated = formatFechaHora(lastUpdate)
 
   return (
     <div className="flex items-center gap-1.5 md:gap-2 text-[11px]" aria-label="Tasas de cambio">
@@ -38,7 +36,6 @@ export function RateHeader() {
           Reintentar
         </button>
       )}
-      {!error && updated && <span className="text-white/35 text-[10px] hidden xl:inline">({updated})</span>}
     </div>
   )
 }
