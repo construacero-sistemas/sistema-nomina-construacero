@@ -8,7 +8,9 @@ import useAuthStore from '../compat/store/useAuthStore.js'
 import LoginPage from '../compat/modules/auth/LoginPage.jsx'
 import LogoutConfirmModal from './components/LogoutConfirmModal.jsx'
 import ModuloBloqueado from './components/ModuloBloqueado.jsx'
-import { NOMINA_BLOQUEADA, rutaPorDefecto } from './config/modulos.js'
+import ComandoDesbloqueo from './components/ComandoDesbloqueo.jsx'
+import { useCandados } from './config/candadosRuntime.js'
+import { rutaPorDefecto } from './config/modulos.js'
 import SistemaView from './views/SistemaView.jsx'
 import useTasaCambioNomina from './hooks/useTasaCambioNomina.js'
 
@@ -17,13 +19,18 @@ const FinanzasView = lazy(() => import('./components/finanzas/FinanzasView.jsx')
 import RateSelector from './components/nomina/RateSelector.jsx'
 import { formatFechaHora } from '../compat/utils/formatDateTime.js'
 
-// Módulos bloqueados temporalmente: el estado vive en src/config/modulos.js
-// (interruptor único del lanzamiento por fases).
+// El estado EN VIVO de los candados vive en src/config/candadosRuntime.js.
 const NAV = [
-  { to: '/nomina', label: 'Nómina', desc: 'Salarios, asistencia y recibos', icon: Wallet, locked: NOMINA_BLOQUEADA },
+  { to: '/nomina', label: 'Nómina', desc: 'Salarios, asistencia y recibos', icon: Wallet, locked: false },
   { to: '/finanzas', label: 'Finanzas', desc: 'Movimientos, bancos y balances', icon: Landmark, locked: false },
   { to: '/sistema', label: 'Sistema', desc: 'Personal y configuración general', icon: Settings2, locked: false },
 ]
+
+/** ¿Está este ítem del NAV bloqueado ahora mismo? (consulta el runtime) */
+function itemBloqueado(item, candados) {
+  if (item.to === '/nomina') return candados.nomina
+  return item.locked
+}
 
 function NavLockedButton({ item, collapsed, onClick }) {
   const Icon = item.icon
@@ -116,6 +123,7 @@ function NavItem({ item, collapsed, onClick }) {
 }
 
 function MobileDrawerContent({ onClose, onLogout }) {
+  const candados = useCandados()
   const { usd, eur, usdt, loading } = useTasaCambioNomina()
   const format = value => value > 0 ? `${value.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
 
@@ -130,7 +138,9 @@ function MobileDrawerContent({ onClose, onLogout }) {
           <img
             src="/logo.png"
             alt="Construacero Carabobo C.A."
-            className="h-8 w-auto object-contain brightness-110"
+            className="h-8 w-auto object-contain brightness-110 select-none"
+            draggable={false}
+            onPointerDown={() => window.dispatchEvent(new CustomEvent('logo-tap'))}
           />
           <div>
             <h4 className="text-xs font-black text-white tracking-wide">Construacero</h4>
@@ -157,7 +167,7 @@ function MobileDrawerContent({ onClose, onLogout }) {
           </span>
           <nav className="space-y-1" aria-label="Navegación móvil">
             {NAV.map(item => {
-              if (item.locked) {
+              if (itemBloqueado(item, candados)) {
                 return (
                   <button
                     key={item.to}
@@ -308,6 +318,7 @@ function RateHeader() {
 
 function Shell() {
   const logout = useAuthStore(state => state.logout)
+  const candados = useCandados()
   const navigate = useNavigate()
   const location = useLocation()
   const mainRef = useRef(null)
@@ -354,8 +365,10 @@ function Shell() {
         <img
           src="/logo.png"
           alt="Construacero Carabobo C.A."
-          className="md:hidden h-7 w-auto object-contain"
+          className="md:hidden h-7 w-auto object-contain select-none"
           style={{ filter: 'brightness(1.1)' }}
+          draggable={false}
+          onPointerDown={() => window.dispatchEvent(new CustomEvent('logo-tap'))}
         />
 
         <div className="hidden md:flex items-center gap-2.5">
@@ -422,9 +435,10 @@ function Shell() {
               <img
                 src="/logo.png"
                 alt="Construacero Carabobo C.A."
-                className={`object-contain transition-all duration-300 select-none pointer-events-none ${collapsed ? 'h-10 w-10' : 'h-[66px] md:h-20'}`}
+                className={`object-contain transition-all duration-300 select-none ${collapsed ? 'h-10 w-10' : 'h-[66px] md:h-20'}`}
                 style={{ filter: 'brightness(1.05) drop-shadow(0 0 12px rgba(184,134,11,0.2))' }}
                 draggable={false}
+                onPointerDown={() => window.dispatchEvent(new CustomEvent('logo-tap'))}
               />
               {!collapsed && (
                 <div className="mt-1.5 md:mt-2 flex items-center gap-2 w-full justify-center">
@@ -438,7 +452,7 @@ function Shell() {
             </div>
 
             <nav className="relative z-10 flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5 sidebar-scrollbar" aria-label="Navegación principal">
-              {NAV.map(item => item.locked
+              {NAV.map(item => itemBloqueado(item, candados)
                 ? <NavLockedButton key={item.to} item={item} collapsed={collapsed} onClick={() => setMenuOpen(false)} />
                 : <NavItem key={item.to} item={item} collapsed={collapsed} onClick={() => setMenuOpen(false)} />)}
             </nav>
@@ -504,7 +518,7 @@ function Shell() {
         <div className="flex items-center justify-around px-1 h-16 min-h-[4rem]">
           {NAV.map(item => {
             const Icon = item.icon
-            if (item.locked) {
+            if (itemBloqueado(item, candados)) {
               return <button
                 key={item.to}
                 type="button"
@@ -554,12 +568,16 @@ function Shell() {
         onClose={() => setConfirmLogoutOpen(false)}
         onConfirm={ejecutarCerrarSesion}
       />
+
+      {/* Comando secreto de desbloqueo (teclado / toques en logo) */}
+      <ComandoDesbloqueo />
     </div>
   )
 }
 
 export default function NominaApp() {
   const initialize = useAuthStore(state => state.initialize)
+  const candados = useCandados()
   useEffect(() => {
     return initialize()
   }, [initialize])
@@ -567,9 +585,14 @@ export default function NominaApp() {
   return (
     <Routes>
       <Route element={<Public />}><Route path="/login" element={<LoginPage />} /></Route>
-      <Route element={<Protected />}><Route element={<Shell />}>{NOMINA_BLOQUEADA
-  ? <Route path="/nomina" element={<ModuloBloqueado />} />
-  : <Route path="/nomina" element={<NominaView />} />}<Route path="/finanzas" element={<FinanzasView />} /><Route path="/sistema" element={<SistemaView />} /></Route></Route>        <Route path="*" element={<Navigate to={rutaPorDefecto()} replace />} />
+      <Route element={<Protected />}><Route element={<Shell />}>
+        {candados.nomina
+          ? <Route path="/nomina" element={<ModuloBloqueado />} />
+          : <Route path="/nomina" element={<NominaView />} />}
+        <Route path="/finanzas" element={<FinanzasView />} />
+        <Route path="/sistema" element={<SistemaView />} />
+      </Route></Route>
+      <Route path="*" element={<Navigate to={rutaPorDefecto()} replace />} />
     </Routes>
   )
 }

@@ -91,7 +91,7 @@ describe('generarFinanzasResumenPDFImpl', () => {
     expect(docStub.line).toHaveBeenCalled()
     // El texto del anulado aparece tachado: el concepto sigue estando (histórico)
     const textos = docStub.text.mock.calls.map(c => String(c[0]))
-    expect(textos.some(t => t.includes('Cobro anulado'))).toBe(true)
+    expect(textos.some(t => /Cobro anulado/i.test(t))).toBe(true)
   })
 
   it('título y nombre de archivo reflejan el filtro de tipo', async () => {
@@ -118,5 +118,24 @@ describe('generarFinanzasResumenPDFImpl', () => {
     expect(docStub.autoPrint).toHaveBeenCalledTimes(1)
     expect(docStub.output).toHaveBeenCalledWith('bloburl')
     expect(docStub.save).not.toHaveBeenCalled()
+  })
+
+  it('desglosa por categorías y calcula el total por cada categoría', async () => {
+    await generarFinanzasResumenPDFImpl({
+      movimientos: MOVIMIENTOS,
+      resumen: RESUMEN,
+      rango: { desde: '2026-09-01', hasta: '2026-09-30' },
+      action: 'download',
+    })
+
+    const textos = docStub.text.mock.calls.map(c => String(c[0]))
+    // Título de la sección de categorías
+    expect(textos.some(t => t.includes('DESGLOSE Y TOTALES POR CATEGORÍA'))).toBe(true)
+    // Encabezados de categorías
+    expect(textos.some(t => t.includes('CATEGORÍA: VENTAS'))).toBe(true)
+    expect(textos.some(t => t.includes('CATEGORÍA: SERVICIOS'))).toBe(true)
+    // Totales específicos por categoría
+    expect(textos.some(t => t.includes('TOTAL VENTAS:'))).toBe(true)
+    expect(textos.some(t => t.includes('TOTAL SERVICIOS:'))).toBe(true)
   })
 })

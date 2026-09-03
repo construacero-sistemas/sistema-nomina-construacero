@@ -13,15 +13,16 @@ import {
   RefreshCw,
   Wallet,
   Lock,
+  Printer,
 } from 'lucide-react'
-import { SYNC_POS_BLOQUEADO } from '../../config/modulos.js'
+import { useCandados } from '../../config/candadosRuntime.js'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import PageHeader from '../../../compat/components/ui/PageHeader.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
-import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
+import ResumenPeriodoKpis from './ResumenPeriodoKpis.jsx'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import {
@@ -34,7 +35,10 @@ import {
   useReasignarCuenta,
   useEliminarCategoria,
   useRestaurarCategoria,
+  useCrearCategoria,
+  useCrearMovimiento,
 } from '../../hooks/useFinanzas.js'
+import { showToast } from '../../../compat/components/ui/toastBus.js'
 import { useCuentasCustodia } from '../../hooks/useCuentasCustodia.js'
 import MovimientoForm from './MovimientoForm.jsx'
 import { Settings2 } from 'lucide-react'
@@ -48,7 +52,7 @@ import CuentasCustodiaGrid from './CuentasCustodiaGrid.jsx'
 import CuentaFormModal from './CuentaFormModal.jsx'
 import CategoriasModal from './CategoriasModal.jsx'
 import AnularDialog from './AnularDialog.jsx'
-import { FilterField, Choice, InlineError } from './FinanzasFiltrosUI.jsx'
+import { FinanzasFiltrosSeccion, InlineError } from './FinanzasFiltrosUI.jsx'
 import { exportarCsv } from './exportarMovimientosCsv.js'
 import { isoToday, monthStart, RANGOS_RAPIDOS, rangoRapidoActivo, aplicarRangoRapido as resolverRango } from './fechasRapidas.js'
 import { fechaCorta, formatNumber, formatUsd } from './formatos.js'
@@ -76,6 +80,7 @@ export default function FinanzasView() {
 
   const [formOpen, setFormOpen] = useState(false)
   const [syncPosOpen, setSyncPosOpen] = useState(false)
+  const { syncPos: syncPosBloqueado } = useCandados()
   const [transferenciaOpen, setTransferenciaOpen] = useState(false)
   const [cuentaDetalle, setCuentaDetalle] = useState(null)
   const [cuentaFormOpen, setCuentaFormOpen] = useState(false)
@@ -93,7 +98,9 @@ export default function FinanzasView() {
   const revertirAnulacion = useRevertirAnulacion()
   const eliminarCategoriaM = useEliminarCategoria()
   const restaurarCategoriaM = useRestaurarCategoria()
+  const crearCategoriaM = useCrearCategoria()
   const reasignarMutation = useReasignarCuenta()
+  const crearMovimiento = useCrearMovimiento()
 
   const categoriasVisibles = categorias.data?.categorias || []
   const categoriasEliminadas = categorias.data?.eliminadas || []
@@ -101,6 +108,16 @@ export default function FinanzasView() {
     ? (eliminarCategoriaM.variables?.id || restaurarCategoriaM.variables?.id || null)
     : null
   const summary = resumen.data?.resumen
+
+  const opcionesCategoriaFiltro = useMemo(() => [
+    ...categoriasVisibles.map(item => ({
+      value: item.nombre,
+      label: item.nombre,
+      sub: item.movimientos_count > 0 ? `${item.movimientos_count} movs` : undefined,
+    })),
+    { value: '__crear__', label: '+ Crear nueva categoría...' },
+    { value: '__gestionar__', label: '⚙️ Gestionar categorías...' },
+  ], [categoriasVisibles])
 
   const movimientosList = useMemo(
     () => movimientos.data?.pages.flatMap(page => page.movimientos) || [],
@@ -156,17 +173,46 @@ export default function FinanzasView() {
     setMostrarAnulados(false)
   }
 
-  const handleGuardarCuenta = (cuentaData) => {
+  const handleGuardarCuenta = async (cuentaData, saldoInicial = 0) => {
     if (cuentaEditar) {
-      editarCuenta(cuentaEditar.id, cuentaData)
+      await editarCuenta(cuentaEditar.id, cuentaData)
     } else {
-      agregarCuenta(cuentaData)
+      const nueva = await agregarCuenta(cuentaData)
+      if (Number(saldoInicial) > 0) {
+        const metodoPagoSugerido = cuentaData.tipo === 'banco_ves'
+          ? 'Banco en Bolívares'
+          : cuentaData.tipo === 'cripto_usdt'
+          ? 'USDT'
+          : cuentaData.tipo === 'zelle'
+          ? 'Zelle'
+          : cuentaData.tipo === 'efectivo_usd'
+          ? 'Efectivo $'
+          : 'Efectivo Bs'
+
+        try {
+          await crearMovimiento.mutateAsync({
+            tipo: 'ingreso',
+            categoria: 'Saldo Inicial',
+            concepto: `Saldo inicial / Apertura de cuenta (${cuentaData.nombre})`,
+            monto: Number(saldoInicial),
+            moneda: cuentaData.moneda || 'USD',
+            cuentaOrigen: cuentaData.nombre,
+            cuenta_id: nueva?.id || null,
+            metodoPago: metodoPagoSugerido,
+            fecha: isoToday(),
+            referencia: 'Apertura',
+          })
+          showToast.success(`Cuenta creada con saldo inicial de ${cuentaData.moneda === 'VES' ? 'Bs. ' : '$'}${saldoInicial}`)
+        } catch (err) {
+          logClientError({ mensaje: `Error registrando saldo inicial: ${err?.message || err}`, categoria: 'FINANZAS_SALDO_INICIAL' })
+        }
+      }
     }
   }
 
   // Reporte PDF del rango/filtros activos (resumen + detalle línea por línea).
-  const handleExportarPdf = async () => {
-    setExportandoPdf(true)
+  const handleExportarPdf = async (action = 'download') => {
+    setExportandoPdf(action)
     try {
       const { generarFinanzasResumenPDF } = await import('../../services/pdf/finanzasResumenPDF.js')
       await generarFinanzasResumenPDF({
@@ -179,12 +225,12 @@ export default function FinanzasView() {
           tipoFiltro: tipo || '',
         },
         rango: { desde, hasta },
-        action: 'download',
+        action,
       })
     } catch (error) {
       logClientError({ mensaje: `Error exportando reporte financiero: ${error?.message || error}`, stack: error?.stack, categoria: 'FINANZAS_PDF' })
     } finally {
-      setExportandoPdf(false)
+      setExportandoPdf(null)
     }
   }
 
@@ -217,13 +263,13 @@ export default function FinanzasView() {
             </button>
             <button
               type="button"
-              onClick={SYNC_POS_BLOQUEADO ? undefined : () => setSyncPosOpen(true)}
-              aria-disabled={SYNC_POS_BLOQUEADO}
-              title={SYNC_POS_BLOQUEADO ? 'Disponible próximamente' : undefined}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 rounded-xl border border-primary/20 bg-primary/10 text-xs font-black text-primary hover:bg-primary/20 active:scale-95 transition-all shadow-xs cursor-pointer whitespace-nowrap opacity-60 disabled:cursor-not-allowed"
+              onClick={syncPosBloqueado ? undefined : () => setSyncPosOpen(true)}
+              aria-disabled={syncPosBloqueado}
+              title={syncPosBloqueado ? 'Disponible próximamente' : undefined}
+              className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 rounded-xl border border-primary/20 bg-primary/10 text-xs font-black text-primary hover:bg-primary/20 active:scale-95 transition-all shadow-xs cursor-pointer whitespace-nowrap ${syncPosBloqueado ? 'opacity-60 cursor-not-allowed' : ''}`}
               style={{ touchAction: 'manipulation' }}
             >
-              {SYNC_POS_BLOQUEADO && <Lock size={14} className="text-primary/60" aria-hidden="true" />}
+              {syncPosBloqueado && <Lock size={14} className="text-primary/60" aria-hidden="true" />}
               <ArrowDownToLine size={14} /> Sincronizar POS
             </button>
             {MOSTRAR_CSV && (
@@ -316,105 +362,63 @@ export default function FinanzasView() {
          ========================================================= */}
       {activeTab === 'movimientos' && (
         <div className="space-y-4">
-          {/* Sección de Filtros */}
-          <section aria-label="Filtros y rango del reporte" className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-black text-slate-800">Filtros y Período</h2>
-                <p className="mt-0.5 text-xs text-slate-400 hidden sm:block">Filtra las fechas, tipo de movimiento o categoría.</p>
-              </div>
-              {filtroCartera && (
-                <button
-                  type="button"
-                  onClick={() => setFiltroCartera('')}
-                  className="text-xs font-bold text-primary hover:underline cursor-pointer"
-                >
-                  Mostrar todas las carteras
-                </button>
-              )}
-            </div>
-
-            {/* Rangos rápidos: la acción más común a un toque (especialmente en móvil) */}
-            <div className="mb-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Rangos de fecha rápidos">
-              {RANGOS_RAPIDOS.map(rango => (
-                <button
-                  key={rango.id}
-                  type="button"
-                  onClick={() => aplicarRangoRapido(rango.id)}
-                  aria-pressed={chipActivo === rango.id}
-                  className={`px-3 h-8 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
-                    chipActivo === rango.id
-                      ? 'bg-primary text-white border-primary'
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                  style={{ touchAction: 'manipulation' }}
-                >
-                  {rango.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              <FilterField label="Desde"><DatePicker value={desde} onChange={setDesde} /></FilterField>
-              <FilterField label="Hasta"><DatePicker value={hasta} onChange={setHasta} /></FilterField>
-              <FilterField label="Tipo"><Choice value={tipo} onChange={setTipo} placeholder="Todos" options={[{ value: 'ingreso', label: 'Ingresos' }, { value: 'egreso', label: 'Egresos' }]} /></FilterField>
-              <FilterField label="Categoría">
-                <div className="flex gap-1.5">
-                  <div className="flex-1 min-w-0"><Choice value={categoria} onChange={setCategoria} placeholder="Todas" options={categoriasVisibles.map(item => ({ value: item.nombre, label: item.nombre }))} /></div>
-                  <button
-                    type="button"
-                    onClick={() => setCategoriasOpen(true)}
-                    className="shrink-0 h-11 w-11 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700 flex items-center justify-center cursor-pointer"
-                    aria-label="Gestionar categorías"
-                    title="Gestionar categorías"
-                  >
-                    <Settings2 size={15} />
-                  </button>
-                </div>
-              </FilterField>
-              <FilterField label="Moneda"><Choice value={moneda} onChange={setMoneda} placeholder="Todas" options={['USD', 'VES', 'USDT'].map(value => ({ value, label: value }))} /></FilterField>
-              <div className="flex items-end gap-2">
-                <button type="button" onClick={resetFiltros} className="flex-1 h-11 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">Limpiar</button>
-                <button type="button" onClick={() => { movimientos.refetch(); resumen.refetch() }} className="h-11 w-11 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center cursor-pointer" aria-label="Actualizar reportes"><RefreshCw size={15} /></button>
-              </div>
-            </div>            <label className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 cursor-pointer">
-              <input type="checkbox" checked={mostrarAnulados} onChange={e => setMostrarAnulados(e.target.checked)} className="rounded border-slate-300 text-primary focus:ring-primary" />
-              Mostrar movimientos anulados también
-            </label>
+          <FinanzasFiltrosSeccion
+            filtroCartera={filtroCartera}
+            setFiltroCartera={setFiltroCartera}
+            rangosRapidos={RANGOS_RAPIDOS}
+            chipActivo={chipActivo}
+            aplicarRangoRapido={aplicarRangoRapido}
+            desde={desde}
+            setDesde={setDesde}
+            hasta={hasta}
+            setHasta={setHasta}
+            tipo={tipo}
+            setTipo={setTipo}
+            categoria={categoria}
+            setCategoria={setCategoria}
+            opcionesCategoriaFiltro={opcionesCategoriaFiltro}
+            setCategoriasOpen={setCategoriasOpen}
+            moneda={moneda}
+            setMoneda={setMoneda}
+            resetFiltros={resetFiltros}
+            onRefresh={() => { movimientos.refetch(); resumen.refetch() }}
+            mostrarAnulados={mostrarAnulados}
+            setMostrarAnulados={setMostrarAnulados}
+          />
 
             {/* Exportación del reporte del período filtrado */}
             <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
               <p className="text-[11px] text-slate-400 font-semibold">
                 El PDF refleja los filtros activos: {fechaCorta(desde)} – {fechaCorta(hasta)}{tipo ? ` · ${tipo === 'ingreso' ? 'ingresos' : 'egresos'}` : ''} · {movimientosFiltrados.length} movimiento(s)
               </p>
-              <button
-                type="button"
-                onClick={handleExportarPdf}
-                disabled={!fechaValida || exportandoPdf || movimientosFiltrados.length === 0}
-                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-11 rounded-xl bg-primary/10 border border-primary/20 text-xs font-black text-primary hover:bg-primary/20 disabled:opacity-40 active:scale-95 transition-all shadow-xs cursor-pointer"
-                style={{ touchAction: 'manipulation' }}
-              >
-                <FileText size={14} />
-                <span>{exportandoPdf ? 'Generando PDF...' : 'Descargar reporte PDF'}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleExportarPdf('print')}
+                  disabled={!fechaValida || !!exportandoPdf || movimientosFiltrados.length === 0}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 min-h-11 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-black text-slate-700 disabled:opacity-40 active:scale-95 transition-all cursor-pointer"
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  <Printer size={14} />
+                  <span>{exportandoPdf === 'print' ? 'Preparando...' : 'Imprimir'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportarPdf('download')}
+                  disabled={!fechaValida || !!exportandoPdf || movimientosFiltrados.length === 0}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-11 rounded-xl bg-primary/10 border border-primary/20 text-xs font-black text-primary hover:bg-primary/20 disabled:opacity-40 active:scale-95 transition-all shadow-xs cursor-pointer"
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  <FileText size={14} />
+                  <span>{exportandoPdf === 'download' ? 'Generando PDF...' : 'Descargar PDF'}</span>
+                </button>
+              </div>
             </div>
 
             {!fechaValida && <p className="mt-2 text-xs font-semibold text-red-600" role="alert">El rango de fechas no es válido.</p>}
-          </section>
 
           {/* KPI Cards Globales del período */}
-          <section aria-label="Resumen financiero" className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <KpiCard icon={BarChart3} label="Ingresos del período" value={formatUsd(summary?.ingresos_usd)} sub={`Bs. ${formatNumber(summary?.ingresos_ves)}`} color="green" loading={resumen.isLoading} />
-            <KpiCard icon={Wallet} label="Gastos del período" value={formatUsd(summary?.egresos_usd)} sub={`Bs. ${formatNumber(summary?.egresos_ves)}`} color="red" loading={resumen.isLoading} />
-            <KpiCard
-              icon={Landmark}
-              label="Flujo neto del período"
-              value={formatUsd(summary?.balance_usd)}
-              sub={`Bs. ${formatNumber(summary?.balance_ves)}`}
-              color={Number(summary?.balance_usd) >= 0 ? 'blue' : 'red'}
-              loading={resumen.isLoading}
-            />
-          </section>
+          <ResumenPeriodoKpis summary={summary} loading={resumen.isLoading} />
 
           {resumen.isError && <InlineError message="No se pudo cargar el resumen." onRetry={() => resumen.refetch()} />}
 
@@ -529,6 +533,7 @@ export default function FinanzasView() {
       )}
 
       {formOpen && <MovimientoForm categorias={categoriasVisibles} cuentas={cuentas} onClose={() => setFormOpen(false)} />}
+      {syncPosOpen && <SyncPosModal open={syncPosOpen} onClose={() => setSyncPosOpen(false)} />}
       {transferenciaOpen && (
         <TransferenciaCarterasModal
           key={cuentaTransferir?.id || 'transferencia-default'}
@@ -574,6 +579,7 @@ export default function FinanzasView() {
           categorias={categoriasVisibles}
           eliminadas={categoriasEliminadas}
           pendingId={pendingCategoriaId}
+          onCrear={crearCategoriaM.mutateAsync}
           onDelete={id => eliminarCategoriaM.mutate({ id })}
           onRestore={id => restaurarCategoriaM.mutate({ id })}
           onClose={() => setCategoriasOpen(false)}

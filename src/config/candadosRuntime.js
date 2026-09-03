@@ -12,9 +12,12 @@
 // al desbloquear, sin tocar `modulos.js` ni duplicar el flag (guardrail).
 
 import { useSyncExternalStore } from 'react'
+import { NOMINA_BLOQUEADA, SYNC_POS_BLOQUEADO } from './modulos.js'
 
-let nominaBloqueadaRuntime = true
-let syncPosBloqueadoRuntime = true
+// El runtime NACE de los flags estáticos: el día del lanzamiento (flags en
+// false) la app arranca desbloqueada y el comando sobra.
+let nominaBloqueadaRuntime = NOMINA_BLOQUEADA
+let syncPosBloqueadoRuntime = SYNC_POS_BLOQUEADO
 
 const listeners = new Set()
 
@@ -32,16 +35,11 @@ export function desbloquearSesion({ nomina = true, syncPos = true } = {}) {
   emitir()
 }
 
-/** Vuelve al estado estático (bloquea de nuevo) y notifica. */
+/** Vuelve al estado de los interruptores estáticos y notifica. */
 export function bloquearSesion() {
-  nominaBloqueadaRuntime = true
-  syncPosBloqueadoRuntime = true
+  nominaBloqueadaRuntime = NOMINA_BLOQUEADA
+  syncPosBloqueadoRuntime = SYNC_POS_BLOQUEADO
   emitir()
-}
-
-/** ¿Está activo el desbloqueo de sesión? (algún candado levantado) */
-export function sesionDesbloqueada() {
-  return !nominaBloqueadaRuntime || !syncPosBloqueadoRuntime
 }
 
 function suscribir(listener) {

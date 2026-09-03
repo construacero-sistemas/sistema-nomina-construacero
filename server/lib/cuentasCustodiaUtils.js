@@ -17,28 +17,57 @@ export function esCajaPermanente(cuenta) {
 
 export const BANCOS_VENEZUELA = [
   'BNC (Banco Nacional de Crédito)',
-  'Mercantil',
   'Banesco',
+  'Mercantil',
   'Banco de Venezuela',
   'BBVA Provincial',
+  'Bancamiga',
   'Bancaribe',
-  'Banco Exterior',
-  'BFC (Banco Fondo Común)',
+  'Banco Bicentenario',
+  'Banco del Tesoro',
   'Banplus',
+  'BFC (Banco Fondo Común)',
+  'Banco Exterior',
+  '100% Banco',
+  'Banco Plaza',
+  'Venezolano de Crédito',
+  'BANFANB',
+  'Banco Activo',
+  'DelSur Banco Universal',
+  'Banco Caroní',
+  'Banco Sofitasa',
+  'Bancrecer',
+  'Mi Banco',
+  'Banco Agrícola de Venezuela',
+  'Bangente',
+  'Banco Internacional de Desarrollo',
   'Otro Banco',
 ]
 
-export const PLATAFORMAS_INTERNACIONALES = [
+export const PLATAFORMAS_CRIPTO = [
   'Binance Pay (USDT)',
+  'Binance P2P (USDT)',
+  'Bybit (USDT)',
+  'OKX (USDT)',
+  'Billetera Cripto (USDT)',
+  'Otra Billetera Cripto',
+]
+
+export const PLATAFORMAS_ZELLE_USD = [
   'Zelle',
-  'Bank of America',
-  'Wells Fargo',
-  'Chase',
-  'Banesco Panamá',
-  'Zinli',
-  'Wally Tech',
-  'Paypal',
-  'Otra Plataforma',
+  'Bank of America (USD)',
+  'Wells Fargo (USD)',
+  'Chase (USD)',
+  'Banesco Panamá (USD)',
+  'Zinli (USD)',
+  'Wally Tech (USD)',
+  'Paypal (USD)',
+  'Otro Banco Internacional',
+]
+
+export const PLATAFORMAS_INTERNACIONALES = [
+  ...PLATAFORMAS_CRIPTO,
+  ...PLATAFORMAS_ZELLE_USD,
 ]
 
 // Cuentas semilla. Un negocio nuevo arranca SOLO con las dos cajas físicas
@@ -91,6 +120,33 @@ function cleanString(value, max = MAX_STR) {
   return s ? s.slice(0, max) : null
 }
 
+export function capitalizarTexto(str) {
+  if (!str || typeof str !== 'string') return ''
+  const trimmed = String(str).trim()
+  if (!trimmed) return ''
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+}
+
+export function capitalizarPalabras(str) {
+  if (!str || typeof str !== 'string') return ''
+  const EXCEPCIONES = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'en', 'y', 'a', 'por', 'con'])
+  return String(str)
+    .trim()
+    .split(/\s+/)
+    .map((word, idx) => {
+      if (!word) return ''
+      if (word.length > 1 && word === word.toUpperCase()) return word
+      const cleanWord = word.replace(/^[^\w]+|[^\w]+$/g, '')
+      if (cleanWord.length > 1 && cleanWord === cleanWord.toUpperCase() && !/^\d+$/.test(cleanWord)) {
+        return word
+      }
+      const lower = word.toLowerCase()
+      if (idx > 0 && EXCEPCIONES.has(lower)) return lower
+      return word.charAt(0).toUpperCase() + word.slice(1)
+    })
+    .join(' ')
+}
+
 /**
  * Valida y normaliza el payload de una cuenta de custodia.
  * @param {object} input - Datos crudos del body
@@ -101,8 +157,9 @@ export function normalizeCuentaCustodia(input = {}) {
   const tipo = String(input.tipo || '').trim()
   if (!TIPOS_CUENTA_VALIDOS.includes(tipo)) throw new RangeError('Tipo de cuenta inválido')
 
-  const nombre = cleanString(input.nombre, NOMBRE_MAX)
-  if (!nombre) throw new RangeError('El nombre o alias de la cuenta es obligatorio')
+  const nombreLimpio = cleanString(input.nombre, NOMBRE_MAX)
+  if (!nombreLimpio) throw new RangeError('El nombre o alias de la cuenta es obligatorio')
+  const nombre = capitalizarPalabras(nombreLimpio)
 
   // La cartera/moneda se derivan del tipo para no aceptar inconsistencias.
   const moneda = String(input.moneda || '').toUpperCase()
@@ -113,9 +170,11 @@ export function normalizeCuentaCustodia(input = {}) {
   const subcuentaId = cleanString(input.subcuentaId || input.subcuenta_id, 80)
   if (!subcuentaId) throw new RangeError('subcuentaId es obligatorio')
 
-  const banco = cleanString(input.banco, 120)
+  const bancoLimpio = cleanString(input.banco, 120)
+  const banco = bancoLimpio ? capitalizarPalabras(bancoLimpio) : nombre
   const numeroCuenta = cleanString(input.numeroCuenta || input.numero_cuenta, MAX_STR)
-  const titular = cleanString(input.titular, 160)
+  const titularLimpio = cleanString(input.titular, 160)
+  const titular = titularLimpio ? capitalizarPalabras(titularLimpio) : null
   const identificacion = cleanString(input.identificacion, 60)
   const codigo = cleanString(input.codigo, 80)
 
@@ -125,7 +184,7 @@ export function normalizeCuentaCustodia(input = {}) {
     cartera,
     moneda,
     subcuentaId,
-    banco: banco || nombre,
+    banco,
     numeroCuenta,
     titular,
     identificacion,

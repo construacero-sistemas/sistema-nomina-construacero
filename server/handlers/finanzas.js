@@ -466,7 +466,32 @@ export async function handleGetFinanzasCategorias(request, env) {
   )
   const eliminadas = eliminadasRes.ok ? await eliminadasRes.json() : []
 
-  return json({ categorias: [...stored, ...defaults], eliminadas: Array.isArray(eliminadas) ? eliminadas : [] }, 200, request)
+  // Conteo de movimientos históricos por categoría (Opción A: preservación contable)
+  const movsRes = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?${accountFilter(context.operador.cuenta_id)}` +
+      '&select=categoria',
+    { headers: serviceHeaders(env, 'return=minimal') },
+  )
+  const movRows = movsRes.ok ? await movsRes.json().catch(() => []) : []
+  const conteos = {}
+  if (Array.isArray(movRows)) {
+    for (const m of movRows) {
+      if (m.categoria) {
+        const k = String(m.categoria).toLowerCase().trim()
+        conteos[k] = (conteos[k] || 0) + 1
+      }
+    }
+  }
+
+  const mapConConteos = list => list.map(c => ({
+    ...c,
+    movimientos_count: conteos[String(c.nombre || '').toLowerCase().trim()] || 0,
+  }))
+
+  return json({
+    categorias: mapConConteos([...stored, ...defaults]),
+    eliminadas: mapConConteos(Array.isArray(eliminadas) ? eliminadas : []),
+  }, 200, request)
 }
 
 export async function handleCrearFinanzasCategoria(request, env) {

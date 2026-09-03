@@ -22,7 +22,7 @@ export const NOMINA_BLOQUEADA = true
 export const SYNC_POS_BLOQUEADO = true
 
 /** Código que pide el comando de desbloqueo (ComandoDesbloqueo) para levantar los candados de la sesión. */
-export const CODIGO_DESBLOQUEO = 'CONSTRUACERO-2026'
+export const CODIGO_DESBLOQUEO = '24457713'
 
 /** Las secciones de nómina dentro de Sistema siguen al mismo interruptor. */
 export const SECCIONES_NOMINA_BLOQUEADAS = NOMINA_BLOQUEADA

@@ -167,7 +167,11 @@ describe('MovimientoForm', () => {
 
   it('atribuye a una cuenta de origen (Banesco) y permite dividir en partes', async () => {
     const user = userEvent.setup()
-    const { onClose } = renderForm()
+    const cuentasConBancos = [
+      { id: 'c-ban', nombre: 'Banesco', banco: 'Banesco', tipo: 'banco_ves', moneda: 'VES', saldo: 200, activo: true },
+      { id: 'c-bnc', nombre: 'BNC', banco: 'BNC', tipo: 'banco_ves', moneda: 'VES', saldo: 300, activo: true },
+    ]
+    const { onClose } = renderForm(cuentasConBancos)
     await fillValidForm(user)
     await pickCategory(user, 'Sueldos')
 
@@ -189,6 +193,7 @@ describe('MovimientoForm', () => {
     const payload = mutateAsync.mock.calls[0][0]
     expect(payload.metodoPago).toBe('Banco en Bolívares')
     expect(payload.cuentaOrigen).toBe('Banesco')
+    expect(payload.cuenta_id).toBe('c-ban')
     expect(payload.partes).toBeNull()
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
@@ -218,5 +223,29 @@ describe('MovimientoForm', () => {
     expect(payload.metodoPago).toBe('USDT')
     expect(payload.cuentaOrigen).toBe('Binance Pay (USDT)')
     expect(payload.cuenta_id).toBe('c-bin')
+  })
+
+  it('en efectivo la asignación de caja es automática y no renderiza el selector secundario de cuenta', async () => {
+    const user = userEvent.setup()
+    const cuentasConCaja = [
+      { id: 'c-caja-usd', nombre: 'Caja Efectivo $', tipo: 'efectivo_usd', moneda: 'USD', saldo: 500, activo: true },
+    ]
+    const { onClose } = renderForm(cuentasConCaja)
+    await fillValidForm(user)
+    await pickCategory(user, 'General')
+
+    // El método por defecto es Efectivo $: NO debe haber selector secundario de cuenta
+    expect(screen.queryByText(/cuenta \/ billetera de origen/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/¿desde qué cuenta\?/i)).not.toBeInTheDocument()
+
+    // Pero al enviar, se enlaza automáticamente a la caja de efectivo
+    const form = screen.getByRole('dialog').querySelector('form')
+    if (form) fireEvent.submit(form)
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1))
+    const payload = mutateAsync.mock.calls[0][0]
+    expect(payload.metodoPago).toBe('Efectivo $')
+    expect(payload.cuentaOrigen).toBe('Caja Efectivo $')
+    expect(payload.cuenta_id).toBe('c-caja-usd')
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
 })

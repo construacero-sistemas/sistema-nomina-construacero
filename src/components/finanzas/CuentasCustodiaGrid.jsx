@@ -25,6 +25,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
+import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 
 function formatMoney(amount) {
   return Number(amount || 0).toLocaleString('es-VE', {
@@ -276,10 +277,10 @@ export default function CuentasCustodiaGrid({
 
                       <div className="min-w-0">
                         <h4 className="text-xs font-black text-slate-900 truncate">
-                          {cuenta.nombre}
+                          {capitalizarPalabras(cuenta.nombre)}
                         </h4>
                         <p className="text-[10px] text-slate-400 font-bold truncate">
-                          {cuenta.banco || (esVes ? 'Banco en Bolívares' : 'Dólares USD')}
+                          {capitalizarPalabras(cuenta.banco || (esVes ? 'Banco en Bolívares' : 'Dólares USD'))}
                         </p>
                       </div>
                     </div>

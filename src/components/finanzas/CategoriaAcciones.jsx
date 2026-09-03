@@ -57,7 +57,8 @@ export function CrearCategoriaPanel({ tipo, nombre, onNombre, onGuardar, onCance
  * Confirmación de borrado de categoría. Nunca borra la fila: es baja lógica
  * y el historial de movimientos conserva el nombre.
  */
-export function EliminarCategoriaDialog({ nombre, pending, onClose, onConfirm }) {
+export function EliminarCategoriaDialog({ nombre, movimientosCount = 0, pending, onClose, onConfirm }) {
+  const tieneMovimientos = movimientosCount > 0
   return (
     <div
       className="fixed inset-0 z-[310] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150"
@@ -70,12 +71,21 @@ export function EliminarCategoriaDialog({ nombre, pending, onClose, onConfirm })
         <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4 text-red-400">
           <Trash2 size={22} />
         </div>
-        <h3 id="eliminar-categoria-title" className="text-base font-black text-white">¿Eliminar la categoría "{nombre}"?</h3>
+        <h3 id="eliminar-categoria-title" className="text-base font-black text-white">
+          {tieneMovimientos ? `¿Archivar la categoría "${nombre}"?` : `¿Eliminar la categoría "${nombre}"?`}
+        </h3>
         <p className="mt-2 text-xs text-slate-300 leading-relaxed">
-          Los movimientos que la usan <strong className="text-white">no se pierden</strong>: conservan el nombre en el historial y el PDF.
-          Solo deja de ofrecerse al registrar movimientos nuevos.
+          {tieneMovimientos ? (
+            <>
+              Esta categoría tiene <strong className="text-amber-300 font-bold">{movimientosCount} movimiento(s)</strong> registrados. Al archivarla, <strong className="text-white">no se perderá ningún dato</strong>: tus movimientos pasados y reportes contables se conservarán 100% intactos. Solo dejará de ofrecerse para nuevos registros.
+            </>
+          ) : (
+            <>
+              Los movimientos que la usan <strong className="text-white">no se pierden</strong>: conservan el nombre en el historial y el PDF. Solo deja de ofrecerse al registrar movimientos nuevos.
+            </>
+          )}
         </p>
-        <p className="mt-3 text-[11px] text-emerald-300/90">Podrás restaurarla desde "Gestionar categorías".</p>
+        <p className="mt-3 text-[11px] text-emerald-300/90">Podrás restaurarla en cualquier momento desde "Gestionar categorías".</p>
         <div className="mt-5 flex gap-2 justify-center">
           <button
             type="button"
@@ -94,10 +104,10 @@ export function EliminarCategoriaDialog({ nombre, pending, onClose, onConfirm })
             {pending ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
-                Eliminando...
+                {tieneMovimientos ? 'Archivando...' : 'Eliminando...'}
               </>
             ) : (
-              'Sí, eliminar'
+              tieneMovimientos ? 'Sí, archivar' : 'Sí, eliminar'
             )}
           </button>
         </div>

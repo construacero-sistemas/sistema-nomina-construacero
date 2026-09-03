@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
-import { BANCOS_VENEZUELA, PLATAFORMAS_INTERNACIONALES } from '../../utils/cuentasCustodiaUtils.js'
+import { BANCOS_VENEZUELA, PLATAFORMAS_CRIPTO, PLATAFORMAS_ZELLE_USD, capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 
 const TIPOS_CUENTA = [
   { value: 'banco_ves',    label: 'Banco Nacional (Bolívares Bs)',      moneda: 'VES', cartera: 'VES', subcuentaId: 'Banco en Bolívares' },
@@ -32,6 +32,8 @@ export default function CuentaFormModal({
   const [nombre, setNombre] = useState(cuentaEditar?.nombre || '')
   const [tipo, setTipo] = useState(cuentaEditar?.tipo || 'banco_ves')
   const [banco, setBanco] = useState(cuentaEditar?.banco || 'BNC (Banco Nacional de Crédito)')
+  const [otroBanco, setOtroBanco] = useState('')
+  const [saldoInicial, setSaldoInicial] = useState('')
   const [numeroCuenta, setNumeroCuenta] = useState(cuentaEditar?.numeroCuenta || '')
   const [titular, setTitular] = useState(cuentaEditar?.titular || 'Construacero C.A.')
   const [identificacion, setIdentificacion] = useState(cuentaEditar?.identificacion || '')
@@ -55,7 +57,11 @@ export default function CuentaFormModal({
 
   const opcionesBancos = tipo === 'banco_ves'
     ? BANCOS_VENEZUELA.map(b => ({ value: b, label: b }))
-    : PLATAFORMAS_INTERNACIONALES.map(p => ({ value: p, label: p }))
+    : tipo === 'cripto_usdt'
+      ? PLATAFORMAS_CRIPTO.map(p => ({ value: p, label: p }))
+      : tipo === 'zelle'
+        ? PLATAFORMAS_ZELLE_USD.map(p => ({ value: p, label: p }))
+        : []
 
   const tipoConfig = TIPOS_CUENTA.find(t => t.value === tipo) || TIPOS_CUENTA[0]
 
@@ -63,22 +69,25 @@ export default function CuentaFormModal({
     e.preventDefault()
     setError('')
 
-    if (!nombre.trim()) {
+    const nombreLimpio = capitalizarPalabras(nombre.trim())
+    if (!nombreLimpio) {
       setError('El nombre o alias de la cuenta es obligatorio.')
       return
     }
 
+    const bancoFinal = banco === 'Otro Banco' && otroBanco.trim() ? otroBanco.trim() : (banco.trim() || nombreLimpio)
+
     onGuardar({
-      nombre: nombre.trim(),
+      nombre: nombreLimpio,
       tipo,
       cartera: tipoConfig.cartera,
       moneda: tipoConfig.moneda,
       subcuentaId: tipoConfig.subcuentaId,
-      banco: banco.trim() || nombre.trim(),
+      banco: capitalizarPalabras(bancoFinal),
       numeroCuenta: numeroCuenta.trim() || null,
-      titular: titular.trim() || null,
+      titular: titular.trim() ? capitalizarPalabras(titular.trim()) : null,
       identificacion: identificacion.trim() || null,
-    })
+    }, Number(saldoInicial) || 0)
 
     onClose()
   }
@@ -114,6 +123,7 @@ export default function CuentaFormModal({
             type="text"
             value={nombre}
             onChange={e => setNombre(e.target.value)}
+            onBlur={() => setNombre(prev => capitalizarPalabras(prev))}
             placeholder="Ej: Banco BNC Principal, Binance Empresa, Zelle Wells..."
             className="w-full h-11 px-3.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
             required
@@ -129,6 +139,17 @@ export default function CuentaFormModal({
               onChange={setBanco}
               options={opcionesBancos}
             />
+            {banco === 'Otro Banco' && (
+              <input
+                type="text"
+                value={otroBanco}
+                onChange={e => setOtroBanco(e.target.value)}
+                onBlur={() => setOtroBanco(prev => capitalizarPalabras(prev))}
+                placeholder="Indica el nombre de la institución o banco..."
+                className="w-full h-10 mt-1 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                required
+              />
+            )}
           </div>
         )}
 
@@ -164,6 +185,7 @@ export default function CuentaFormModal({
               type="text"
               value={titular}
               onChange={e => setTitular(e.target.value)}
+              onBlur={() => setTitular(prev => capitalizarPalabras(prev))}
               placeholder="Construacero C.A."
               className="w-full h-11 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800"
             />
@@ -180,6 +202,38 @@ export default function CuentaFormModal({
             />
           </div>
         </div>
+
+        {/* Saldo Inicial / Apertura (Opcional para cuentas nuevas) */}
+        {!cuentaEditar && (
+          <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-black text-amber-900 flex items-center gap-1.5">
+                <Wallet size={13} className="text-amber-700" />
+                Saldo inicial de apertura (Opcional)
+              </label>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-200/60 text-amber-800">
+                {tipoConfig.moneda === 'VES' ? 'Bs. VES' : `$ ${tipoConfig.moneda}`}
+              </span>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">
+                {tipoConfig.moneda === 'VES' ? 'Bs' : '$'}
+              </span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={saldoInicial}
+                onChange={e => setSaldoInicial(e.target.value)}
+                placeholder="0.00"
+                className="w-full h-11 pl-9 pr-3.5 rounded-xl border border-amber-200 bg-white text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+              />
+            </div>
+            <p className="text-[11px] text-amber-800 font-medium leading-relaxed">
+              Si la cuenta ya tiene fondos disponibles en la vida real, indica el saldo para crear automáticamente su movimiento de apertura.
+            </p>
+          </div>
+        )}
 
         {/* Botones de acción */}
         <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">

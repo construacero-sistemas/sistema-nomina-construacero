@@ -43,11 +43,38 @@ export function validateDateRange(desde, hasta) {
   return { desde, hasta }
 }
 
+export function capitalizarTexto(str) {
+  if (!str || typeof str !== 'string') return ''
+  const trimmed = String(str).trim()
+  if (!trimmed) return ''
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+}
+
+export function capitalizarPalabras(str) {
+  if (!str || typeof str !== 'string') return ''
+  const EXCEPCIONES = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'en', 'y', 'a', 'por', 'con'])
+  return String(str)
+    .trim()
+    .split(/\s+/)
+    .map((word, idx) => {
+      if (!word) return ''
+      if (word.length > 1 && word === word.toUpperCase()) return word
+      const cleanWord = word.replace(/^[^\w]+|[^\w]+$/g, '')
+      if (cleanWord.length > 1 && cleanWord === cleanWord.toUpperCase() && !/^\d+$/.test(cleanWord)) {
+        return word
+      }
+      const lower = word.toLowerCase()
+      if (idx > 0 && EXCEPCIONES.has(lower)) return lower
+      return word.charAt(0).toUpperCase() + word.slice(1)
+    })
+    .join(' ')
+}
+
 export function normalizeMovement(input = {}) {
   const tipo = String(input.tipo || '').trim().toLowerCase()
   const moneda = String(input.moneda || '').trim().toUpperCase()
-  const categoria = String(input.categoria || '').trim()
-  const concepto = String(input.concepto || '').trim()
+  const categoria = capitalizarPalabras(input.categoria)
+  const concepto = capitalizarTexto(input.concepto)
   const monto = Number(input.monto)
   const tasaVes = moneda === 'VES' ? 1 : Number(input.tasaVes ?? input.tasa_ves)
   const tasaUsdInput = input.tasaUsdVes ?? input.tasa_usd_ves
@@ -104,7 +131,7 @@ export function normalizeMovement(input = {}) {
     referencia,
     observaciones,
     metodo_pago: metodoPago,
-    cuenta_origen: cuentaOrigen,
+    cuenta_origen: cuentaOrigen ? capitalizarPalabras(cuentaOrigen) : null,
     partes,
     idempotency_key: idempotencyKey,
   }

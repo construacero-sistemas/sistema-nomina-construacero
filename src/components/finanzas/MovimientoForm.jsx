@@ -11,7 +11,6 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useCrearCategoria, useCrearMovimiento, useEliminarCategoria, useRestaurarCategoria } from '../../hooks/useFinanzas.js'
-import { BANCOS_VENEZUELA } from '../../hooks/useCuentasCustodia.js'
 import MovimientoResumen from './MovimientoResumen.jsx'
 import MovimientoPartes from './MovimientoPartes.jsx'
 import MovimientoConversion from './MovimientoConversion.jsx'
@@ -24,6 +23,7 @@ import { FORMAS_PAGO_OPCIONES } from '../../constants/formasPago.js'
 import { formatNumber } from './formatos.js'
 import { isoToday as today } from './fechasRapidas.js'
 import { getCuentasCompatibles } from './cuentasCompatibles.js'
+import { capitalizarPalabras, capitalizarTexto } from '../../utils/cuentasCustodiaUtils.js'
 
 const inputClass = 'w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
@@ -98,21 +98,17 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
     return getCuentasCompatibles(metodoPago, cuentas)
   }, [metodoPago, cuentas])
 
-  // Opciones de cuenta/banco según el método.
+  // Opciones de cuenta/banco según el método (SOLO cuentas reales registradas)
   const opcionesCuenta = useMemo(() => {
-    if (cuentasCompatibles.length > 0) {
-      return cuentasCompatibles.map(c => ({
-        value: c.id,
-        label: c.nombre ? (c.banco && !c.nombre.toLowerCase().includes(c.banco.toLowerCase()) ? `${c.nombre} · ${c.banco}` : c.nombre) : (c.banco || 'Cuenta sin nombre'),
-        sub: `Saldo: ${c.moneda === 'VES' ? 'Bs.' : '$'}${formatNumber(c.saldo)} ${c.moneda}`,
-        saldo: c.saldo,
-      }))
-    }
-    if (esMetodoBanco) {
-      return BANCOS_VENEZUELA.map(b => ({ value: b, label: b }))
-    }
-    return []
-  }, [cuentasCompatibles, esMetodoBanco])
+    return cuentasCompatibles.map(c => ({
+      value: c.id,
+      label: c.nombre ? (c.banco && !c.nombre.toLowerCase().includes(c.banco.toLowerCase()) ? `${c.nombre} · ${c.banco}` : c.nombre) : (c.banco || 'Cuenta sin nombre'),
+      sub: `Saldo: ${c.moneda === 'VES' ? 'Bs.' : '$'}${formatNumber(c.saldo)} ${c.moneda}`,
+      saldo: c.saldo,
+    }))
+  }, [cuentasCompatibles])
+
+  const esEfectivo = metodoPago === 'Efectivo $' || metodoPago === 'Efectivo Bs'
 
   // Nombre legible de la cuenta seleccionada (para el resumen y el payload)
   const cuentaOrigenNombre = opcionesCuenta.find(o => o.value === cuentaOrigen)?.label || ''
@@ -256,7 +252,10 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
     if (modoTasa === 'manual' && !(Number(tasaManual) > 0)) {
       return 'Ingresa un valor válido para la tasa manual.'
     }
-    if (esMetodoBanco && !cuentaOrigen.trim()) return 'Selecciona la cuenta o banco de origen.'
+    if (!esEfectivo) {
+      if (opcionesCuenta.length === 0) return `No tienes cuentas registradas para ${metodoPago}. Regístrala en Cuentas y Custodia.`
+      if (!cuentaOrigen.trim()) return tipo === 'ingreso' ? 'Selecciona la cuenta de destino.' : 'Selecciona la cuenta de origen.'
+    }
     if (partes.length > 0) {
       const sumaPartes = partes.reduce((acc, p) => acc + (Number(p.monto) || 0), 0)
       if (Math.abs(sumaPartes - montoNum) > 0.01) return 'La suma de las partes debe igualar el monto total.'
@@ -285,8 +284,8 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
       await crear.mutateAsync({
         fecha,
         tipo,
-        categoria: categoria.trim(),
-        concepto: concepto.trim(),
+        categoria: capitalizarTexto(categoria.trim()),
+        concepto: capitalizarTexto(concepto.trim()),
         monto: montoNum,
         moneda,
         tasaVes: esVes ? 1 : tasaEfectiva,
@@ -298,7 +297,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
         referencia: refFinal,
         observaciones: observaciones.trim() || null,
         metodoPago,
-        cuentaOrigen: cuentaOrigenFinal,
+        cuentaOrigen: cuentaOrigenFinal ? capitalizarPalabras(cuentaOrigenFinal) : null,
         cuenta_id: cuentaSeleccionada?.id || null,
         partes: partes.length > 0 ? partes.map(p => ({
           monto: Number(p.monto),
@@ -331,14 +330,11 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
 
         {/* 1. Selector de Tipo (Ingreso / Egreso) */}
         <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-100/90 rounded-2xl">
-          <button type="button" onClick={() => seleccionarTipo('ingreso')} disabled={disabled}
-            className={`flex flex-col items-center justify-center gap-0.5 min-h-12 rounded-xl text-xs font-black transition-all cursor-pointer px-1 ${tipo === 'ingreso' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>
+          <button type="button" onClick={() => seleccionarTipo('ingreso')} disabled={disabled} className={`flex flex-col items-center justify-center gap-0.5 min-h-12 rounded-xl text-xs font-black transition-all cursor-pointer px-1 ${tipo === 'ingreso' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>
             <span className="flex items-center gap-1.5 whitespace-nowrap"><ArrowDownRight size={16} className="shrink-0" />Ingreso</span>
             <span className={`text-[10px] font-semibold leading-tight ${tipo === 'ingreso' ? 'text-emerald-100' : 'text-slate-400'}`}>Entrada</span>
           </button>
-
-          <button type="button" onClick={() => seleccionarTipo('egreso')} disabled={disabled}
-            className={`flex flex-col items-center justify-center gap-0.5 min-h-12 rounded-xl text-xs font-black transition-all cursor-pointer px-1 ${tipo === 'egreso' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>
+          <button type="button" onClick={() => seleccionarTipo('egreso')} disabled={disabled} className={`flex flex-col items-center justify-center gap-0.5 min-h-12 rounded-xl text-xs font-black transition-all cursor-pointer px-1 ${tipo === 'egreso' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>
             <span className="flex items-center gap-1.5 whitespace-nowrap"><ArrowUpRight size={16} className="shrink-0" />Egreso</span>
             <span className={`text-[10px] font-semibold leading-tight ${tipo === 'egreso' ? 'text-rose-100' : 'text-slate-400'}`}>Salida / Gasto</span>
           </button>
@@ -418,20 +414,19 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
           />
         </div>
 
-        {/* 2b. Cuenta de custodia asociada (bancos, Binance USDT, Zelle, Cajas) */}
-        {opcionesCuenta.length > 0 && (
+        {/* 2b. Cuenta de custodia asociada (bancos, Binance USDT, Zelle) — en efectivo la asignación de caja es 100% automática */}
+        {!esEfectivo && (
           <div className="space-y-1">
             <label className="block text-xs font-bold text-slate-700">
               {tipo === 'ingreso' ? 'Cuenta / Billetera de destino *' : 'Cuenta / Billetera de origen *'}
             </label>
-            <CustomSelect
-              value={cuentaOrigen}
-              onChange={setCuentaOrigen}
-              options={opcionesCuenta}
-              placeholder={tipo === 'ingreso' ? '¿A qué cuenta ingresa?' : '¿Desde qué cuenta?'}
-              disabled={disabled}
-              showSubInTrigger={false}
-            />
+            {opcionesCuenta.length > 0 ? (
+              <CustomSelect value={cuentaOrigen} onChange={setCuentaOrigen} options={opcionesCuenta} placeholder={tipo === 'ingreso' ? '¿A qué cuenta ingresa?' : '¿Desde qué cuenta?'} disabled={disabled} showSubInTrigger={false} />
+            ) : (
+              <div className="p-3 rounded-xl border border-amber-200 bg-amber-50 text-xs font-semibold text-amber-800">
+                No tienes ninguna cuenta registrada para <strong>{metodoPago}</strong>. Regístrala en Cuentas y Custodia.
+              </div>
+            )}
           </div>
         )}
 
@@ -486,6 +481,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
           <input
             value={concepto}
             onChange={e => setConcepto(e.target.value)}
+            onBlur={() => setConcepto(prev => capitalizarTexto(prev))}
             maxLength={180}
             minLength={3}
             className={inputClass}
@@ -588,6 +584,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
       {categoriaAEliminar && (
         <EliminarCategoriaDialog
           nombre={categoriaAEliminar.nombre}
+          movimientosCount={categoriaAEliminar.movimientos_count || 0}
           pending={eliminarCategoria.isPending}
           onClose={() => setCategoriaAEliminar(null)}
           onConfirm={eliminarCategoriaConfirmada}

@@ -2346,3 +2346,135 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 
 **Pendientes:**
 - Formato de recibo de pago de nómina en PDF según reporte de ventas (`C:\Users\luigg\Desktop\CONSTRAUCERO COTIZACIONES\listo-pos-cotizaciones`).
+
+## 112. Selección estricta de cuentas registradas por método, asignación automática en efectivo y gestión de categorías (Opción A)
+
+**Fecha:** 03/09/2026
+**Objetivo:** resolver integralmente la vinculación de cuentas y la administración de categorías según las directivas del usuario:
+1. En efectivo (`Efectivo $` y `Efectivo Bs`) la asignación a la caja física de custodia es 100% automática en segundo plano y se oculta el dropdown redundante de "Cuenta / Billetera de origen".
+2. Mostrar **únicamente cuentas reales registradas en el sistema**:
+   - `Zelle`: solo cuentas de Zelle / bancos internacionales en USD (y nunca billeteras Binance / USDT).
+   - `USDT (Cripto)`: solo cuentas de Binance / billeteras cripto USDT registradas (corregido tipo en BD para la cuenta `binance`).
+   - `Transferencia`, `Pago Móvil`, `Punto de Venta` y `Banco en Bolívares`: únicamente cuentas bancarias en Bolívares registradas (eliminado el listado estático general de bancos).
+   - Si no hay cuentas registradas para el método, se muestra un mensaje informativo claro y se previene el guardado.
+3. Gestión integral de categorías con **Opción A** (Archivado seguro con aviso de histórico):
+   - Creación rápida de categorías en todas las zonas (desplegable de filtro en `FinanzasView`, modal de gestión `CategoriasModal` y formulario `MovimientoForm`).
+   - Conteo exacto de movimientos por categoría en backend (`movimientos_count`).
+   - Diálogo inteligente que advierte la cantidad exacta de movimientos asociados y explica que el histórico contable se mantendrá 100% intacto, con opción a restaurar en cualquier momento.
+
+**Implementación:**
+- `server/handlers/finanzas.js`: cálculo y retorno de `movimientos_count` para cada categoría activa y archivada en `handleGetFinanzasCategorias`.
+- `server/lib/cuentasCustodiaUtils.js`: separación estricta de sugerencias entre `PLATAFORMAS_CRIPTO` y `PLATAFORMAS_ZELLE_USD`.
+- `CuentaFormModal.jsx`: sugerencias dinámicas según el tipo de cuenta seleccionado (Zelle muestra bancos USD; Cripto muestra Binance/Bybit).
+- `cuentasCompatibles.js`: reglas puras y estrictas de emparejamiento por método (`esCripto`, `esZelle`, `esBancoVes`, `esEfectivoUsd`, `esEfectivoVes`).
+- `MovimientoForm.jsx`:
+  - Ocultamiento del selector secundario de cuenta para efectivo (`!esEfectivo`) y asignación automática de la caja.
+  - Eliminado el fallback a bancos estáticos; ahora solo lista cuentas reales compatibles.
+  - Diálogo de advertencia contable cuando una categoría a archivar posee movimientos.
+- `CategoriasModal.jsx`: formulario superior de creación rápida, badges de conteo (`N movs`), diálogo de archivado seguro (Opción A) y sección de papelera/restauración.
+- `FinanzasFiltrosUI.jsx` & `FinanzasView.jsx`: opciones `+ Crear nueva categoría...` y `⚙ Gestionar categorías...` dentro del select de filtros; modularización de `FinanzasFiltrosSeccion` para mantener `FinanzasView.jsx` en 555 líneas.
+- Base de datos Supabase: corregida la cuenta `binance` a `tipo='cripto_usdt'`, `moneda='USDT'` y reactivadas las cuentas `Banco BNC` y `Zelle Corporativo`.
+- Pruebas unitarias: creadas suites `CategoriasModal.test.jsx` y `cuentasCompatibles.test.jsx`, y actualizadas `MovimientoForm.test.jsx` y `finanzas.test.js`.
+
+**Verificación:**
+- `npm run check:project`: OK (0 archivos > 600 líneas).
+- `npm run test:responsive`: 30/30 pruebas responsivas PASSED.
+- `npm run lint`: 0 errores, 0 advertencias.
+- `npm test`: 556/556 tests PASSED (53 archivos de prueba, 0 fallos).
+- `npm run build`: Build exitoso, bundle `376.00 kB` ≤ 400 kB.
+
+**Pendientes:**
+- Formato de recibo de pago de nómina en PDF según reporte de ventas (`C:\Users\luigg\Desktop\CONSTRAUCERO COTIZACIONES\listo-pos-cotizaciones`).
+
+## 113. Cabecera clara corporativa, desglose por categorías y corrección de márgenes en PDF de Finanzas
+
+**Fecha:** 03/09/2026
+**Objetivo:** resolver los errores visuales y estructurales detectados en el PDF de Finanzas (`media_1788446154647.png`):
+1. **Cabecera clara corporativa**: sustituir el fondo azul oscuro por fondo blanco claro (`customBgColor: [255, 255, 255]`, textos oscuros `#000000`, hazard stripes y blueprint markers precisos) homologado con el estilo corporativo de Construacero.
+2. **Desglose y totales por categoría**:
+   - Tabla ejecutiva superior **DESGLOSE Y TOTALES POR CATEGORÍA** con columnas: `CATEGORÍA`, `TIPO`, `MOVIMIENTOS`, `TOTAL (USD)` y `TOTAL (VES)`.
+   - Agrupación por categoría en el **DETALLE DE MOVIMIENTOS**, con banner estilizado por categoría, listado de transacciones y fila destacada de **TOTAL POR CATEGORÍA** (con sus subtotales en USD y Bs).
+3. **Corrección de márgenes y cálculos monetarios**:
+   - Ajuste de cuadrícula de 188 mm (`PAGE_W: 216mm`, `MARGIN: 14mm` en ambos lados) eliminando el desbordamiento que cortaba la columna `EQUIV. BS` y los montos en bolívares.
+   - Cálculo unificado de contravalor en bolívares para operaciones en USD, USDT y VES (resolviendo el bug donde movimientos en cripto/dólares mostraban `Bs 0,00` en los resúmenes).
+
+**Implementación:**
+- `finanzasResumenPDF.impl.js`:
+  - `drawPremiumHeader` invocado con cabecera blanca corporativa (`customBgColor: [255, 255, 255]`).
+  - Cabecera simplificada en páginas 2+ (`drawSimplifiedHeader`).
+  - Agrupación automática en `categoriasMap` y renderizado de la tabla ejecutiva de categorías.
+  - Renderizado agrupado por categoría con subtotales específicos y fila de totales generales sin recortes.
+- `finanzasResumenPDF.test.jsx`: añadida aserción para verificar la presencia de la sección de categorías, encabezados de categoría y totales por categoría (5/5 tests pasando).
+
+**Verificación:**
+- `npm run check:project`: OK (0 archivos > 600 líneas).
+- `npm run lint`: 0 errores.
+- `npm test`: 557/557 tests PASSED (53 suites de prueba).
+- `npm run build`: Build exitoso, bundle `376.00 kB` ≤ 400 kB.
+
+**Pendientes:**
+- Formato de recibo de pago de nómina en PDF según reporte de ventas (`C:\Users\luigg\Desktop\CONSTRAUCERO COTIZACIONES\listo-pos-cotizaciones`).
+
+## 114. Lista completa de bancos SUDEBAN, saldo inicial opcional al crear cuenta y botón de imprimir PDF
+
+**Fecha:** 03/09/2026
+**Objetivo:**
+1. **Catálogo exhaustivo de bancos venezolanos**: asegurar que el selector de cuentas bancarias incluya todas las instituciones financieras activas en Venezuela bajo supervisión de SUDEBAN, con opción de indicar nombre personalizado en "Otro Banco".
+2. **Saldo inicial / Apertura contable opcional**: permitir que al crear una nueva cuenta o billetera el usuario indique opcionalmente sus fondos reales de apertura, generando automáticamente el asiento contable de apertura de fondos.
+3. **Opción de Imprimir PDF directo**: añadir botón "Imprimir" con icono `Printer` junto al botón de "Descargar PDF" en la barra de exportación de finanzas.
+
+**Implementación:**
+- `server/lib/cuentasCustodiaUtils.js`:
+  - `BANCOS_VENEZUELA` ampliado a las 25 entidades activas de Venezuela: *BNC (0191), Banesco (0134), Mercantil (0105), Banco de Venezuela (0102), BBVA Provincial (0108), Bancamiga (0172), Bancaribe (0114), Banco Bicentenario (0175), Banco del Tesoro (0163), Banplus (0174), BFC (0151), Banco Exterior (0115), 100% Banco (0156), Banco Plaza (0138), Venezolano de Crédito (0104), BANFANB (0177), Banco Activo (0171), DelSur (0157), Banco Caroní (0128), Banco Sofitasa (0137), Bancrecer (0168), Mi Banco (0169), Banco Agrícola (0166), Bangente (0146), Banco Internacional de Desarrollo (0173)* y *Otro Banco*.
+- `CuentaFormModal.jsx`:
+  - Entrada de texto condicional si el usuario elige "Otro Banco".
+  - Sección *"Saldo inicial de apertura (Opcional)"* con selector de moneda dinámico (Bs o USD), input numérico y explicación contable.
+- `FinanzasView.jsx`:
+  - Manejo de `saldoInicial`: al crearse la cuenta con saldo $> 0$, se registra automáticamente el movimiento de ingreso de apertura (`categoria: 'Saldo Inicial'`, `concepto: 'Saldo inicial / Apertura de cuenta...'`).
+  - Botón "Imprimir" (`handleExportarPdf('print')`) con icono de impresora y autoPrint directo en el navegador.
+
+**Verificación:**
+- `npm run check:project`: OK (0 archivos > 600 líneas; `FinanzasView.jsx`: 598 líneas, `CuentaFormModal.jsx`: 254 líneas).
+- `npm run lint`: 0 errores.
+- `npm test`: 557/557 tests PASSED (53 suites de prueba).
+- `npm run build`: Build exitoso, bundle `376.00 kB` ≤ 400 kB.
+
+**Pendientes:**
+- Formato de recibo de pago de nómina en PDF según reporte de ventas (`C:\Users\luigg\Desktop\CONSTRAUCERO COTIZACIONES\listo-pos-cotizaciones`).
+
+---
+
+### Entrada #115 - 2026-09-03
+**Contexto:** El usuario solicitó explícitamente: *"toda cuenta creada, motivo o cualquier cosa escrita debe tener las primeras letras en mayusculas"*. Se observó en pantalla que cuentas como `binance` o motivos como `pago repuestos` aparecían en minúsculas.
+
+**Acciones realizadas:**
+1. **Actualización en Base de Datos Supabase:**
+   - Se ejecutó script de normalización en Supabase actualizando registros existentes:
+     - `binance` $\rightarrow$ `Binance`
+     - `pago repuestos` $\rightarrow$ `Pago Repuestos`
+     - `prueba` $\rightarrow$ `Prueba`
+     - `personales` $\rightarrow$ `Personales`
+     - Cuentas y movimientos con palabras minúsculas pasaron a mayúsculas respetando siglas corporativas (`USDT`, `BNC`, `POS`, `CxC`).
+2. **Utilidades de Capitalización deterministas (`capitalizarPalabras` y `capitalizarTexto`):**
+   - Creadas y exportadas en `server/lib/cuentasCustodiaUtils.js` y `server/lib/finanzasUtils.js`.
+   - `capitalizarPalabras`: Convierte cada palabra a Title Case respetando siglas y preposiciones españolas gramaticales (`de`, `del`, `la`, `las`, `en`, `y`, etc.).
+   - `capitalizarTexto`: Garantiza la primera letra en mayúscula para oraciones y motivos descriptivos.
+3. **Normalización en Backend y Formularios Frontend:**
+   - En `server/lib/cuentasCustodiaUtils.js`: `normalizeCuentaCustodia` aplica automáticamente `capitalizarPalabras` a `nombre`, `banco` y `titular`.
+   - En `server/lib/finanzasUtils.js`: `normalizeMovement` aplica `capitalizarTexto` a `concepto` y `categoria`, y `capitalizarPalabras` a `cuenta_origen`.
+   - En `CuentaFormModal.jsx`: auto-capitalización en `onBlur` y `handleSubmit` para nombre, titular y otro banco.
+   - En `MovimientoForm.jsx`: auto-capitalización en `onBlur` y `handleSubmit` para motivo y categoría.
+   - En `CategoriasModal.jsx`: auto-capitalización en `onBlur` y `handleCrear` para nombre de categoría.
+4. **Visualización en Cuadrículas y Reporte PDF:**
+   - `CuentasCustodiaGrid.jsx`: renderiza nombres y bancos con capitalización garantizada.
+   - `MovimientoTable.jsx`: renderiza concepto y categoría con capitalización garantizada en vista escritorio y móvil.
+   - `finanzasResumenPDF.impl.js`: desglose por categorías, detalle y cuentas capitalizados nítidamente en el PDF.
+
+**Verificación:**
+- `npm run check:project`: OK (0 archivos > 600 líneas).
+- `npm run lint`: 0 errores.
+- `npm test`: 557/557 tests PASSED (53 suites de prueba).
+- `npm run build`: Build exitoso en 26.95s, bundle `376.01 kB` ≤ 400 kB.
+
+
+

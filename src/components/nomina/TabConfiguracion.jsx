@@ -2,7 +2,7 @@
 // Configuración administrativa de calendario, recargos, conceptos y reglas.
 import { Children, useState } from 'react'
 import { DollarSign, Plus, ShieldCheck, Sparkles, Clock, CalendarDays, Lock } from 'lucide-react'
-import { SECCIONES_NOMINA_BLOQUEADAS } from '../../config/modulos.js'
+import { useCandados } from '../../config/candadosRuntime.js'
 import { useConfigNomina, useGuardarConfigNomina } from '../../hooks/useNomina.js'
 import {
   useCrearConcepto,
@@ -29,8 +29,8 @@ export default function TabConfiguracion() {
   const [desde] = useState(monthStart)
   const [hasta] = useState(monthEnd)
   // Lanzamiento por fases: la lógica de nómina va bloqueada; Almacenamiento queda abierto.
-  // El estado vive en el interruptor único src/config/modulos.js.
-  const SECCIONES_BLOQUEADAS = SECCIONES_NOMINA_BLOQUEADAS
+  // El estado EN VIVO vive en src/config/candadosRuntime.js (comando secreto lo levanta).
+  const { nomina: SECCIONES_BLOQUEADAS } = useCandados()
   const [seccion, setSeccion] = useState(SECCIONES_BLOQUEADAS ? 'retencion' : 'calendario')
   const feriados = useFeriados(desde, hasta)
   const conceptos = useNominaConceptos()

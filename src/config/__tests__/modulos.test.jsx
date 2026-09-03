@@ -31,9 +31,15 @@ describe('interruptor de módulos (src/config/modulos.js)', () => {
   it('Sincronizar POS usa el mismo interruptor único (sin fuente propia)', () => {
     const src = readFileSync(new URL('../modulos.js', import.meta.url), 'utf8')
     expect(src.match(/export const SYNC_POS_BLOQUEADO = (?:true|false)/g)).toHaveLength(1)
-    // FinanzasView solo consume el flag; nunca lo redeclara.
+    // FinanzasView consume el runtime de candados; nunca redeclara el flag.
     const view = readFileSync(new URL('../../components/finanzas/FinanzasView.jsx', import.meta.url), 'utf8')
-    expect(view).toContain("from '../../config/modulos.js'")
+    expect(view).toContain("from '../../config/candadosRuntime.js'")
     expect(view).not.toMatch(/SYNC_POS_BLOQUEADO\s*=/)
+  })
+
+  it('el runtime nace de los flags estáticos (fuente única intacta)', () => {
+    const runtime = readFileSync(new URL('../candadosRuntime.js', import.meta.url), 'utf8')
+    expect(runtime).toContain("from './modulos.js'")
+    expect(runtime).not.toMatch(/(?:const|let|var)\s+NOMINA_BLOQUEADA\s*=/)
   })
 })

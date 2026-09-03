@@ -168,18 +168,25 @@ describe('finanzas — flujo crear, reportar y anular', () => {
           return [{ id: IDS.config, nombre: 'Obra propia', tipo: 'egreso', activo: true }]
         },
       },
+      {
+        match: '/finanzas_movimientos',
+        method: 'GET',
+        respond: () => [{ categoria: 'Obra propia' }, { categoria: 'Obra propia' }],
+      },
     ])
     const response = await H.handleGetFinanzasCategorias(makeRequest(), ENV)
     const result = await readResponse(response)
     expect(result.status).toBe(200)
-    expect(result.body.categorias.some(item => item.nombre === 'Obra propia')).toBe(true)
+    const obraPropia = result.body.categorias.find(item => item.nombre === 'Obra propia')
+    expect(obraPropia).toBeTruthy()
+    expect(obraPropia.movimientos_count).toBe(2)
     expect(result.body.categorias.some(item => item.nombre === 'Ventas' && item.predeterminada)).toBe(true)
     expect(result.body.eliminadas).toEqual([])
-    // Dos lecturas: activas + papelera de eliminadas (ambas filtradas por tenant)
-    expect(mock.calls).toHaveLength(2)
+    // Tres lecturas: activas + papelera de eliminadas + conteo de movimientos históricos
+    expect(mock.calls).toHaveLength(3)
     expect(mock.calls[0].url).toContain(`cuenta_id=eq.${OPERADORES.administracion.cuenta_id}`)
     expect(mock.calls[1].url).toContain('activo=eq.false')
-    expect(mock.calls[1].url).toContain(`cuenta_id=eq.${OPERADORES.administracion.cuenta_id}`)
+    expect(mock.calls[2].url).toContain('/finanzas_movimientos')
   })
 
   it('crea una categoría con tenant y actor administrativo', async () => {
