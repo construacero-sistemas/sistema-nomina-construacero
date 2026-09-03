@@ -2656,5 +2656,23 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm run check:project`: OK.
 - `npm run lint`: 0 errores.
 
+---
+
+### Entrada #125 - 2026-09-03
+**Contexto:** El usuario reportó un error de interpolación de texto en el modal de bloqueo de eliminación de cuentas con saldo (`No se puede eliminar la cuenta`), donde se mostraba literalmente `${formatMoney(cuenta.saldo)}` (*"corrigue este mensaje"* con captura adjunta).
+
+**Causa raíz:**
+- En `src/components/finanzas/CuentasCustodiaGrid.jsx` (función `motivoBloqueo`), la plantilla de texto literal combinaba `${cuenta.moneda === 'VES' ? 'Bs. ' : '$'}` seguido inmediatamente de `{formatMoney(cuenta.saldo)}` sin el prefijo `$` de interpolación, provocando que se interpretara como texto plano.
+
+**Acciones realizadas:**
+- En `src/components/finanzas/CuentasCustodiaGrid.jsx`:
+  - Se extrajo el símbolo de moneda (`simbolo`) y se invocó explícitamente `formatMoney(cuenta.saldo)` como variable interpolada `${simbolo}${saldoFormateado}`.
+  - El mensaje ahora renderiza nítidamente el importe exacto con formato venezolano (ej. `Esta cuenta tiene $150,00 registrados...` o `Esta cuenta tiene Bs. 150,00 registrados...`).
+
+**Verificación:**
+- `src/components/finanzas/__tests__/CuentasCustodiaGrid.test.jsx`: 11/11 tests PASSED.
+- `npm run check:project`: OK (563 líneas ≤ 600 líneas).
+- `npm run lint`: 0 errores.
+
 
 

@@ -71,7 +71,9 @@ export default function CuentasCustodiaGrid({
   const motivoBloqueo = (cuenta) => {
     if (!cuenta) return ''
     if (Number(cuenta.saldo) !== 0) {
-      return `Esta cuenta tiene ${cuenta.moneda === 'VES' ? 'Bs. ' : '$'}{formatMoney(cuenta.saldo)} registrados. Para eliminarla, deja primero el saldo en 0 (mueve los fondos a otra cuenta).`
+      const simbolo = cuenta.moneda === 'VES' ? 'Bs. ' : '$'
+      const saldoFormateado = formatMoney(cuenta.saldo)
+      return `Esta cuenta tiene ${simbolo}${saldoFormateado} registrados. Para eliminarla, deja primero el saldo en 0 (mueve los fondos a otra cuenta).`
     }
     return ''
   }
