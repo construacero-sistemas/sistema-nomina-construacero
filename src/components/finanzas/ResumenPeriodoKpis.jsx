@@ -1,5 +1,5 @@
 // src/components/finanzas/ResumenPeriodoKpis.jsx
-// Tarjetas KPI del resumen financiero con selector de moneda en 1 toque (Consolidado / USD / VES / USDT).
+// Tarjetas KPI del resumen financiero con selector de moneda en 1 toque y desglose triple de tesorería (USD, USDT y Bs).
 import { BarChart3, Landmark, Wallet } from 'lucide-react'
 
 import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
@@ -12,10 +12,57 @@ const OPCIONES_MONEDA = [
   { id: 'USDT', label: 'USDT' },
 ]
 
+function formatSigned(num, prefix = '', suffix = '') {
+  const n = Number(num || 0)
+  const abs = formatNumber(Math.abs(n))
+  if (n < 0) return `-${prefix}${abs}${suffix}`
+  return `${prefix}${abs}${suffix}`
+}
+
+function DesgloseTriple({ usd = 0, usdt = 0, ves = 0, totalUsdEstimado = 0 }) {
+  return (
+    <div className="space-y-1.5 pt-1">
+      {/* Fila Dólares ($) */}
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-slate-500 font-bold flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+          <span>Dólares ($):</span>
+        </span>
+        <span className="font-black text-slate-900">{formatSigned(usd, '$')}</span>
+      </div>
+
+      {/* Fila USDT */}
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-slate-500 font-bold flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+          <span>USDT:</span>
+        </span>
+        <span className="font-black text-slate-900">{formatSigned(usdt, '', ' USDT')}</span>
+      </div>
+
+      {/* Fila Bolívares (Bs) */}
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-slate-500 font-bold flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" aria-hidden="true" />
+          <span>Bolívares (Bs):</span>
+        </span>
+        <span className="font-black text-slate-900">{formatSigned(ves, 'Bs. ')}</span>
+      </div>
+
+      {/* Pie Consolidado Estimado */}
+      <div className="pt-2 mt-1 border-t border-slate-100 flex items-center justify-between text-[11px]">
+        <span className="text-slate-400 font-medium">≈ Total estimado:</span>
+        <span className="font-black text-slate-700">~{formatSigned(totalUsdEstimado, '$', ' USD')}</span>
+      </div>
+    </div>
+  )
+}
+
 export default function ResumenPeriodoKpis({ summary, loading, moneda = '', onSelectMoneda }) {
   const esVes = moneda === 'VES'
   const esUsdt = moneda === 'USDT'
   const esUsd = moneda === 'USD'
+  const esTodas = !moneda
 
   // Configuración dinámica de etiquetas y valores según moneda activa
   const formatVal = (valUsd, valVes) => {
@@ -73,7 +120,16 @@ export default function ResumenPeriodoKpis({ summary, loading, moneda = '', onSe
           sub={formatSub(summary?.ingresos_usd, summary?.ingresos_ves)}
           color="green"
           loading={loading}
-        />
+        >
+          {esTodas ? (
+            <DesgloseTriple
+              usd={summary?.ingresos_usd_puro}
+              usdt={summary?.ingresos_usdt_puro}
+              ves={summary?.ingresos_ves_puro}
+              totalUsdEstimado={summary?.ingresos_usd}
+            />
+          ) : null}
+        </KpiCard>
         <KpiCard
           icon={Wallet}
           label={`Gastos ${sufijoLabel}`}
@@ -81,7 +137,16 @@ export default function ResumenPeriodoKpis({ summary, loading, moneda = '', onSe
           sub={formatSub(summary?.egresos_usd, summary?.egresos_ves)}
           color="red"
           loading={loading}
-        />
+        >
+          {esTodas ? (
+            <DesgloseTriple
+              usd={summary?.egresos_usd_puro}
+              usdt={summary?.egresos_usdt_puro}
+              ves={summary?.egresos_ves_puro}
+              totalUsdEstimado={summary?.egresos_usd}
+            />
+          ) : null}
+        </KpiCard>
         <KpiCard
           icon={Landmark}
           label={`Flujo neto ${sufijoLabel}`}
@@ -89,7 +154,16 @@ export default function ResumenPeriodoKpis({ summary, loading, moneda = '', onSe
           sub={formatSub(summary?.balance_usd, summary?.balance_ves)}
           color={balanceNum >= 0 ? 'blue' : 'red'}
           loading={loading}
-        />
+        >
+          {esTodas ? (
+            <DesgloseTriple
+              usd={summary?.balance_usd_puro}
+              usdt={summary?.balance_usdt_puro}
+              ves={summary?.balance_ves_puro}
+              totalUsdEstimado={summary?.balance_usd}
+            />
+          ) : null}
+        </KpiCard>
       </div>
     </section>
   )

@@ -2894,6 +2894,40 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 56 suites / 572 pruebas aprobadas (100%).
 - `npm run build`: Compilación exitosa en 22.62s.
 
+---
+
+### Entrada #134 - 2026-09-03
+**Contexto:** El usuario solicitó que en las tarjetas KPI del resumen financiero (Ingresos, Gastos y Flujo Neto), la vista "Todas" no compacte de forma ciega todo en un único número de dólares referencial (ya que USDT no es lo mismo que Dólares en efectivo/Zelle, ni Bolívares en bancos nacionales), sino que esté dividido explícitamente en los 3 circuitos monetarios reales:
+1. Dólares ($) por cuentas en efectivo o Zelle.
+2. USDT por cuentas cripto / Binance Pay.
+3. Bolívares (Bs) por cuentas nacionales bancarias.
+
+**Acciones realizadas:**
+- **Base de Datos PostgreSQL (Supabase):**
+  - Se creó y aplicó la migración `supabase/migrations/233_finanzas_resumen_desglose_monedas.sql`.
+  - Se amplió la función `public.finanzas_resumen` para calcular y retornar adicionalmente las columnas agregadas de moneda pura: `total_usd_puro`, `total_usdt_puro` y `total_ves_puro`, manteniendo `total_usd` y `total_ves` como totales consolidados referenciales.
+- **Backend (Cloudflare Worker):**
+  - En `server/lib/finanzasUtils.js`: se actualizó `summarizeRows(rows)` para acumular y calcular `ingresos_usd_puro`, `egresos_usd_puro`, `balance_usd_puro`, `ingresos_usdt_puro`, `egresos_usdt_puro`, `balance_usdt_puro`, `ingresos_ves_puro`, `egresos_ves_puro` y `balance_ves_puro`.
+  - En `server/lib/__tests__/finanzasUtils.test.js`: se agregaron aserciones que validan la segregación monetaria de tesorería (14/14 pruebas aprobadas).
+- **Componentes de UI y Frontend:**
+  - En `compat/components/ui/KpiCard.jsx`: se habilitó soporte para la propiedad `children`, permitiendo que el componente renderice un cuerpo enriquecido sin romper la interfaz estándar de valor numérico único.
+  - En `src/components/finanzas/ResumenPeriodoKpis.jsx`:
+    - En la vista **"Todas (Consolidado)"**, las tarjetas muestran el desglose triple con viñetas de color (verde para USD, ámbar para USDT y azul para Bolívares) y un pie divisorio con el total aproximado en USD:
+      - 💵 **Dólares ($):** `$ X.XXX,XX`
+      - 🪙 **USDT:** `X.XXX,XX USDT`
+      - 🇻🇪 **Bolívares (Bs):** `Bs. X.XXX,XX`
+      - **≈ Total estimado:** `~$ X.XXX,XX USD`
+    - Al tocar las píldoras individuales (`[USD]`, `[Bolívares (VES)]` o `[USDT]`), las tarjetas conservan su vista enfocada de número grande en esa moneda particular.
+  - En `src/components/finanzas/__tests__/ResumenPeriodoKpis.test.jsx`: se actualizaron las pruebas unitarias para validar que en la vista "Todas" se despliegan las 3 líneas por tarjeta (4/4 pruebas aprobadas).
+
+**Verificación:**
+- `npm run check:project`: OK (27 migraciones y 256 archivos).
+- `npm run test:responsive`: 30/30 pruebas aprobadas (100%).
+- `npm run test:bundle-size`: Chunk principal `369.9 kB` ≤ 400 kB.
+- `npm run lint`: 0 errores y 0 advertencias.
+- `npm test`: 56 suites / 572 pruebas aprobadas (100%).
+- `npm run build`: Compilación exitosa en 22.15s.
+
 
 
 

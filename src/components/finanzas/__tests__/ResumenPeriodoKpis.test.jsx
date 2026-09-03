@@ -12,17 +12,28 @@ const SUMMARY = {
   ingresos_ves: 80481,
   egresos_ves: 20120.25,
   balance_ves: 60360.75,
+  ingresos_usd_puro: 50,
+  ingresos_usdt_puro: 30,
+  ingresos_ves_puro: 16096.2,
+  egresos_usd_puro: 25,
+  egresos_usdt_puro: 0,
+  egresos_ves_puro: 0,
+  balance_usd_puro: 25,
+  balance_usdt_puro: 30,
+  balance_ves_puro: 16096.2,
 }
 
 describe('ResumenPeriodoKpis', () => {
-  it('renderiza consolidado global por defecto con cifras en USD y sub en Bs', () => {
+  it('renderiza desglose triple de tesorería (USD, USDT y Bolívares) en vista Todas', () => {
     render(<ResumenPeriodoKpis summary={SUMMARY} loading={false} />)
     expect(screen.getByText(/Ingresos del período/i)).toBeInTheDocument()
-    expect(screen.getByText(/\$\s*100,00/i)).toBeInTheDocument()
-    expect(screen.getByText(/Gastos del período/i)).toBeInTheDocument()
-    expect(screen.getByText(/\$\s*25,00/i)).toBeInTheDocument()
-    expect(screen.getByText(/Flujo neto del período/i)).toBeInTheDocument()
-    expect(screen.getByText(/\$\s*75,00/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/Dólares \(\$\):/i)).toHaveLength(3)
+    expect(screen.getAllByText(/USDT:/i)).toHaveLength(3)
+    expect(screen.getAllByText(/Bolívares \(Bs\):/i)).toHaveLength(3)
+    expect(screen.getAllByText(/≈ Total estimado:/i)).toHaveLength(3)
+    expect(screen.getByText(/\$50,00/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/30,00 USDT/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/Bs\.\s*16\.096,20/i).length).toBeGreaterThanOrEqual(1)
   })
 
   it('al seleccionar VES muestra las cifras prominentes en Bs y equivalencia en USD', () => {

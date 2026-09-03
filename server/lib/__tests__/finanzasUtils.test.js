@@ -124,16 +124,19 @@ describe('finanzasUtils — validación determinista', () => {
 describe('finanzasUtils — agregación y exposición', () => {
   it('calcula ingresos, egresos, balance y categorías en VES y USD', () => {
     const result = summarizeRows([
-      { tipo: 'ingreso', categoria: 'Ventas', total_ves: 500, total_usd: 40, movimientos: 2, movimientos_sin_usd: 1 },
-      { tipo: 'egreso', categoria: 'Proveedores', total_ves: 120, total_usd: 10, movimientos: 1, movimientos_sin_usd: 0 },
-      { tipo: 'egreso', categoria: 'Proveedores', total_ves: 30, total_usd: 2.5, movimientos: 1, movimientos_sin_usd: 0 },
+      { tipo: 'ingreso', categoria: 'Ventas', total_ves: 500, total_usd: 40, total_usd_puro: 30, total_usdt_puro: 10, total_ves_puro: 0, movimientos: 2, movimientos_sin_usd: 1 },
+      { tipo: 'egreso', categoria: 'Proveedores', total_ves: 120, total_usd: 10, total_usd_puro: 10, total_usdt_puro: 0, total_ves_puro: 0, movimientos: 1, movimientos_sin_usd: 0 },
+      { tipo: 'egreso', categoria: 'Proveedores', total_ves: 30, total_usd: 2.5, total_usd_puro: 0, total_usdt_puro: 0, total_ves_puro: 2000, movimientos: 1, movimientos_sin_usd: 0 },
     ])
     expect(result).toMatchObject({
       ingresos_ves: 500, egresos_ves: 150, balance_ves: 350, movimientos: 4,
       ingresos_usd: 40, egresos_usd: 12.5, balance_usd: 27.5, movimientos_sin_usd: 1,
+      ingresos_usd_puro: 30, egresos_usd_puro: 10, balance_usd_puro: 20,
+      ingresos_usdt_puro: 10, egresos_usdt_puro: 0, balance_usdt_puro: 10,
+      ingresos_ves_puro: 0, egresos_ves_puro: 2000, balance_ves_puro: -2000,
     })
     expect(result.categorias).toEqual(expect.arrayContaining([
-      { tipo: 'egreso', categoria: 'Proveedores', total_ves: 150, total_usd: 12.5, movimientos: 2 },
+      expect.objectContaining({ tipo: 'egreso', categoria: 'Proveedores', total_ves: 150, total_usd: 12.5, movimientos: 2 }),
     ]))
   })
 

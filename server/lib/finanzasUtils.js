@@ -214,6 +214,15 @@ export function summarizeRows(rows = []) {
     ingresos_usd: 0,
     egresos_usd: 0,
     balance_usd: 0,
+    ingresos_usd_puro: 0,
+    egresos_usd_puro: 0,
+    balance_usd_puro: 0,
+    ingresos_usdt_puro: 0,
+    egresos_usdt_puro: 0,
+    balance_usdt_puro: 0,
+    ingresos_ves_puro: 0,
+    egresos_ves_puro: 0,
+    balance_ves_puro: 0,
     movimientos: 0,
     movimientos_sin_usd: 0,
     categorias: [],
@@ -222,10 +231,25 @@ export function summarizeRows(rows = []) {
   for (const row of rows) {
     const totalVes = Number(row.total_ves) || 0
     const totalUsd = Number(row.total_usd) || 0
+    const totalUsdPuro = Number(row.total_usd_puro) || 0
+    const totalUsdtPuro = Number(row.total_usdt_puro) || 0
+    const totalVesPuro = Number(row.total_ves_puro) || 0
     const key = `${row.tipo}:${row.categoria}`
-    const item = categories.get(key) || { tipo: row.tipo, categoria: row.categoria, total_ves: 0, total_usd: 0, movimientos: 0 }
+    const item = categories.get(key) || {
+      tipo: row.tipo,
+      categoria: row.categoria,
+      total_ves: 0,
+      total_usd: 0,
+      total_usd_puro: 0,
+      total_usdt_puro: 0,
+      total_ves_puro: 0,
+      movimientos: 0,
+    }
     item.total_ves = roundMoney(item.total_ves + totalVes)
     item.total_usd = roundMoney(item.total_usd + totalUsd)
+    item.total_usd_puro = roundMoney(item.total_usd_puro + totalUsdPuro)
+    item.total_usdt_puro = roundMoney(item.total_usdt_puro + totalUsdtPuro)
+    item.total_ves_puro = roundMoney(item.total_ves_puro + totalVesPuro)
     item.movimientos += Number(row.movimientos) || 0
     categories.set(key, item)
     summary.movimientos += Number(row.movimientos) || 0
@@ -233,14 +257,23 @@ export function summarizeRows(rows = []) {
     if (row.tipo === 'ingreso') {
       summary.ingresos_ves = roundMoney(summary.ingresos_ves + totalVes)
       summary.ingresos_usd = roundMoney(summary.ingresos_usd + totalUsd)
+      summary.ingresos_usd_puro = roundMoney(summary.ingresos_usd_puro + totalUsdPuro)
+      summary.ingresos_usdt_puro = roundMoney(summary.ingresos_usdt_puro + totalUsdtPuro)
+      summary.ingresos_ves_puro = roundMoney(summary.ingresos_ves_puro + totalVesPuro)
     }
     if (row.tipo === 'egreso') {
       summary.egresos_ves = roundMoney(summary.egresos_ves + totalVes)
       summary.egresos_usd = roundMoney(summary.egresos_usd + totalUsd)
+      summary.egresos_usd_puro = roundMoney(summary.egresos_usd_puro + totalUsdPuro)
+      summary.egresos_usdt_puro = roundMoney(summary.egresos_usdt_puro + totalUsdtPuro)
+      summary.egresos_ves_puro = roundMoney(summary.egresos_ves_puro + totalVesPuro)
     }
   }
   summary.balance_ves = roundMoney(summary.ingresos_ves - summary.egresos_ves)
   summary.balance_usd = roundMoney(summary.ingresos_usd - summary.egresos_usd)
+  summary.balance_usd_puro = roundMoney(summary.ingresos_usd_puro - summary.egresos_usd_puro)
+  summary.balance_usdt_puro = roundMoney(summary.ingresos_usdt_puro - summary.egresos_usdt_puro)
+  summary.balance_ves_puro = roundMoney(summary.ingresos_ves_puro - summary.egresos_ves_puro)
   summary.categorias = [...categories.values()].sort((a, b) => b.total_usd - a.total_usd)
   return summary
 }

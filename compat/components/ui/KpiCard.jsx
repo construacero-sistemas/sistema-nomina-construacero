@@ -9,7 +9,7 @@ const COLORS = {
   blue: 'bg-blue-50 text-blue-700',
 }
 
-export default function KpiCard({ icon: Icon, label, value, color = 'slate', sub, loading = false }) {
+export default function KpiCard({ icon: Icon, label, value, color = 'slate', sub, loading = false, children }) {
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4">
       <div className="flex items-center gap-2">
@@ -20,6 +20,8 @@ export default function KpiCard({ icon: Icon, label, value, color = 'slate', sub
       </div>
       {loading ? (
         <div className="h-7 w-24 mt-3 rounded bg-slate-100 animate-pulse" aria-hidden="true" />
+      ) : children ? (
+        <div className="mt-2 sm:mt-3">{children}</div>
       ) : (
         <>
           <div className="mt-2 sm:mt-3 text-lg sm:text-xl font-black text-slate-800 break-words">{value}</div>
