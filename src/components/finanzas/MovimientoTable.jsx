@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import HorizontalScroll from '../../../compat/components/ui/HorizontalScroll.jsx'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
+import { calcularEquivalente } from './formatos.js'
 
 function money(value, currency) {
   return `${Number(value || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
@@ -24,7 +25,7 @@ function date(value) {
 
 const OPCIONES_POR_PAGINA = [10, 25, 50, 100]
 
-export default function MovimientoTable({ movimientos = [], onAnular, onRevertir }) {
+export default function MovimientoTable({ movimientos = [], onAnular, onRevertir, tasaBcv = 0, tasaUsdt = 0 }) {
   const [pagina, setPagina] = useState(1)
   const [porPagina, setPorPagina] = useState(10)
 
@@ -93,7 +94,7 @@ export default function MovimientoTable({ movimientos = [], onAnular, onRevertir
               <th className="px-4 py-3 text-left font-black">Tipo</th>
               <th className="px-4 py-3 text-left font-black">Categoría / Concepto</th>
               <th className="px-4 py-3 text-right font-black">Monto</th>
-              <th className="px-4 py-3 text-right font-black">Equivalente VES</th>
+              <th className="px-4 py-3 text-right font-black">Contravalor / Equivalente</th>
               <th className="px-4 py-3 text-left font-black">Estado</th>
               <th className="px-4 py-3 text-right font-black">Acción</th>
             </tr>
@@ -107,7 +108,7 @@ export default function MovimientoTable({ movimientos = [], onAnular, onRevertir
               </tr>
             ) : (
               movimientosPaginados.map((item) => (
-                <DesktopRow key={item.id} item={item} onAnular={onAnular} onRevertir={onRevertir} />
+                <DesktopRow key={item.id} item={item} onAnular={onAnular} onRevertir={onRevertir} tasaBcv={tasaBcv} tasaUsdt={tasaUsdt} />
               ))
             )}
           </tbody>
@@ -122,7 +123,7 @@ export default function MovimientoTable({ movimientos = [], onAnular, onRevertir
           </div>
         ) : (
           movimientosPaginados.map((item) => (
-            <MobileRow key={item.id} item={item} onAnular={onAnular} onRevertir={onRevertir} />
+            <MobileRow key={item.id} item={item} onAnular={onAnular} onRevertir={onRevertir} tasaBcv={tasaBcv} tasaUsdt={tasaUsdt} />
           ))
         )}
       </div>
@@ -224,8 +225,9 @@ export default function MovimientoTable({ movimientos = [], onAnular, onRevertir
   )
 }
 
-function DesktopRow({ item, onAnular, onRevertir }) {
+function DesktopRow({ item, onAnular, onRevertir, tasaBcv, tasaUsdt }) {
   const activo = item.estado === 'activo'
+  const equiv = calcularEquivalente(item, tasaBcv, tasaUsdt)
   return (
     <tr className="hover:bg-slate-50/70 transition-colors">
       <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{date(item.fecha)}</td>
@@ -242,8 +244,11 @@ function DesktopRow({ item, onAnular, onRevertir }) {
       <td className="px-4 py-3 text-right font-bold text-slate-700 whitespace-nowrap">
         {money(item.monto, item.moneda)}
       </td>
-      <td className="px-4 py-3 text-right font-black text-slate-900 whitespace-nowrap">
-        {money(item.monto_ves, 'VES')}
+      <td className="px-4 py-3 text-right whitespace-nowrap">
+        <p className={`font-black ${equiv.esUsd ? 'text-primary' : 'text-slate-900'}`}>{equiv.valor}</p>
+        {equiv.subtexto && (
+          <p className="text-[10px] text-slate-400 font-semibold">{equiv.subtexto}</p>
+        )}
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
         <StateBadge state={item.estado} />
@@ -274,8 +279,9 @@ function DesktopRow({ item, onAnular, onRevertir }) {
   )
 }
 
-function MobileRow({ item, onAnular, onRevertir }) {
+function MobileRow({ item, onAnular, onRevertir, tasaBcv, tasaUsdt }) {
   const activo = item.estado === 'activo'
+  const equiv = calcularEquivalente(item, tasaBcv, tasaUsdt)
   return (
     <article className="p-4">
       <div className="flex items-start justify-between gap-3">
@@ -291,8 +297,9 @@ function MobileRow({ item, onAnular, onRevertir }) {
       <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 border border-slate-100">
         <Metric label="Monto" value={money(item.monto, item.moneda)} />
         <Metric
-          label="Equivalente VES"
-          value={money(item.monto_ves, 'VES')}
+          label={equiv.label}
+          value={equiv.valor}
+          sub={equiv.subtexto}
           accent={item.tipo === 'ingreso'}
         />
       </div>
@@ -321,13 +328,14 @@ function MobileRow({ item, onAnular, onRevertir }) {
   )
 }
 
-function Metric({ label, value, accent }) {
+function Metric({ label, value, sub, accent }) {
   return (
     <div>
       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
       <p className={`mt-0.5 truncate text-sm font-black ${accent ? 'text-emerald-700' : 'text-slate-800'}`}>
         {value}
       </p>
+      {sub && <p className="text-[10px] text-slate-400 font-semibold truncate">{sub}</p>}
     </div>
   )
 }

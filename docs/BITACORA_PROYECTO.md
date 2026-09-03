@@ -2866,6 +2866,34 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 56 suites / 570 pruebas unitarias aprobadas (100%).
 - `npm run build`: Compilación exitosa en 42.41s.
 
+---
+
+### Entrada #133 - 2026-09-03
+**Contexto:** El usuario reportó mediante captura que en las filas/tarjetas de movimientos de finanzas, un registro en Bolívares mostraba redundancia: `MONTO: 31.697,66 VES` y `EQUIVALENTE VES: 31.697,66 VES`. Solicitó que:
+- Si el movimiento está en Bolívares (VES), debe marcar su equivalente en $ (USD) a la tasa elegida en el sistema (tasa referencial o BCV).
+- Si el movimiento está en dólares (USD), debe marcar su equivalente en Bolívares (VES) a la tasa elegida.
+- Si el movimiento está en USDT, debe marcar su equivalente en Bolívares a la tasa USDT.
+
+**Acciones realizadas:**
+- En `src/components/finanzas/formatos.js`:
+  - Se creó y exportó la función utilitaria `calcularEquivalente(item, tasaBcv, tasaUsdt)` para computar con precisión matemática el contravalor, su etiqueta dinámica (`Equivalente USD` vs `Equivalente VES`), y el subtexto referencial de la tasa aplicada (`a X,XX Bs/$` o `a X,XX Bs/USDT`).
+- En `src/components/finanzas/MovimientoTable.jsx`:
+  - En la vista móvil (`MobileRow`), la métrica secundaria ahora es reactiva y adaptativa: para movimientos en VES muestra `EQUIVALENTE USD: 39,39 USD` con subtexto `a 804,81 Bs/$`. Para USD o USDT muestra su contravalor en Bolívares con su respectiva tasa.
+  - En la vista de escritorio (`DesktopRow`), la cabecera se renombró a `Contravalor / Equivalente` y la celda renderiza el importe calculado con su leyenda de tasa en gris tenue.
+  - Se extendieron las propiedades de `MovimientoTable` con `tasaBcv` y `tasaUsdt` como valores predeterminados para garantizar desacoplamiento total en pruebas unitarias.
+- En `src/components/finanzas/FinanzasView.jsx`:
+  - Se extrajo `usdt` de `useTasaCambioNomina()` y se pasaron `tasaBcv={usd}` y `tasaUsdt={usdt}` a `<MovimientoTable />`.
+- En `src/components/finanzas/__tests__/MovimientoTable.test.jsx`:
+  - Se agregaron pruebas para verificar la presentación dinámica en USD para movimientos en VES y en VES para movimientos en USD/USDT (5/5 pruebas aprobadas).
+
+**Verificación:**
+- `npm run check:project`: OK (26 migraciones y 256 archivos).
+- `npm run test:responsive`: 30/30 pruebas aprobadas (100%).
+- `npm run test:bundle-size`: Chunk principal `369.9 kB` ≤ 400 kB.
+- `npm run lint`: 0 errores y 0 advertencias.
+- `npm test`: 56 suites / 572 pruebas aprobadas (100%).
+- `npm run build`: Compilación exitosa en 22.62s.
+
 
 
 

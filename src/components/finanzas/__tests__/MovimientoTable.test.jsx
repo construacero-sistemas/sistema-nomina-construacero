@@ -55,4 +55,37 @@ describe('MovimientoTable — reversibilidad de anulaciones', () => {
     fireEvent.click(screen.getByLabelText('Anular movimiento'))
     expect(onAnular).toHaveBeenCalledWith(activo)
   })
+
+  it('muestra equivalente en USD para movimientos en VES', () => {
+    const movVes = mkMov({
+      id: 'm-ves',
+      moneda: 'VES',
+      monto: 31697.66,
+      tasa_usd_ves: 804.81,
+      tasa_ves: 1,
+    })
+    render(<MovimientoTable movimientos={[movVes]} />)
+    expect(screen.getAllByText(/39,39 USD/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/a 804,81 Bs\/\$/i).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('muestra equivalente en VES para movimientos en USD y USDT', () => {
+    const movUsd = mkMov({
+      id: 'm-usd',
+      moneda: 'USD',
+      monto: 100,
+      tasa_ves: 804.81,
+      monto_ves: 80481,
+    })
+    const movUsdt = mkMov({
+      id: 'm-usdt',
+      moneda: 'USDT',
+      monto: 150,
+      tasa_ves: 977,
+      monto_ves: 146550,
+    })
+    render(<MovimientoTable movimientos={[movUsd, movUsdt]} />)
+    expect(screen.getAllByText(/80\.481,00 VES/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/146\.550,00 VES/i).length).toBeGreaterThanOrEqual(1)
+  })
 })

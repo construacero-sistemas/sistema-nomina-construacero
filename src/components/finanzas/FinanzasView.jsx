@@ -92,7 +92,7 @@ export default function FinanzasView() {
   const [categoriasOpen, setCategoriasOpen] = useState(false)
   const [cuentaTransferir, setCuentaTransferir] = useState(null)
 
-  const { usd } = useTasaCambioNomina()
+  const { usd, usdt } = useTasaCambioNomina()
   const categorias = useFinanzasCategorias()
   const movimientos = useFinanzasMovimientos({ desde, hasta, tipo, categoria, moneda, mostrarAnulados })
   const resumen = useFinanzasResumen({ desde, hasta, tipo, categoria, moneda })
@@ -436,6 +436,8 @@ export default function FinanzasView() {
                   movimientos={movimientosFiltrados}
                   onAnular={movimiento => setAnular(movimiento)}
                   onRevertir={movimiento => revertirAnulacion.mutate({ id: movimiento.id })}
+                  tasaBcv={usd}
+                  tasaUsdt={usdt}
                 />
               </div>
             )}
