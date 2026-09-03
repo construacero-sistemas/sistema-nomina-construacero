@@ -85,8 +85,8 @@ export function normalizeMovement(input = {}) {
   const fecha = String(input.fecha || '')
   const referencia = input.referencia == null ? null : String(input.referencia).trim()
   const observaciones = input.observaciones == null ? null : String(input.observaciones).trim()
-  const metodoPago = input.metodoPago == null ? null : String(input.metodoPago).trim()
-  const cuentaOrigen = input.cuentaOrigen == null ? null : String(input.cuentaOrigen).trim()
+  const metodoPago = (input.metodoPago ?? input.metodo_pago) == null ? null : String(input.metodoPago ?? input.metodo_pago).trim()
+  const cuentaOrigen = (input.cuentaOrigen ?? input.cuenta_origen) == null ? null : String(input.cuentaOrigen ?? input.cuenta_origen).trim()
   const partesInput = Array.isArray(input.partes) ? input.partes : null
   const partes = partesInput == null ? null : normalizePartes(partesInput, monto)
   const idempotencyKey = String(input.idempotencyKey ?? input.idempotency_key ?? '').trim()

@@ -2674,5 +2674,34 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm run check:project`: OK (563 líneas ≤ 600 líneas).
 - `npm run lint`: 0 errores.
 
+---
+
+### Entrada #126 - 2026-09-03
+**Contexto:** El usuario solicitó la creación de una prueba determinista que simule un mes completo de uso en todas las fases del módulo de Finanzas y entregue un reporte exhaustivo de la corrida (*"crea un tests determinista que simules un mes de uso en todas las fases de finanzas y me das el reporte"*).
+
+**Acciones realizadas:**
+- En `scripts/test-finanzas-deterministic.mjs`:
+  - Se diseñó y construyó la suite integral determinista de simulación de extremo a extremo simulando 30 días de operaciones reales (Agosto 2026) a través de 10 fases contables completas:
+    1. **Fase 1 (Día 1):** Configuración de 6 cuentas de custodia (BNC, Mercantil, Binance USDT, Zelle, Cajas físicas Bs y $) y asientos de apertura.
+    2. **Fase 2 (Día 2):** Creación y categorización contable con categorías del sistema y personalizadas («Mantenimiento de Galpones», «Fletes y Distribución»).
+    3. **Fase 3 (Días 3-10):** Registro de ingresos operativos y ventas multi-moneda (efectivo USD, mayorista en VES por BNC, internacional en Binance USDT, cobranza corporativa Zelle y venta dividida/split 50% $/50% Bs).
+    4. **Fase 4 (Días 11-14):** Egresos operativos y verificación del guardrail de rechazo estricto si el concepto/motivo tiene menos de 3 caracteres.
+    5. **Fase 5 (Día 15):** Integración contable con Nómina (asiento de egreso por salarios de 1ra quincena con verificación de idempotencia estricta contra duplicados).
+    6. **Fase 6 (Días 16-20):** Sincronización batch diaria con la API del POS (`/api/finanzas-sync/cierre-diario`), importando y consolidando ventas diarias.
+    7. **Fase 7 (Días 21-24):** Tesorería y transferencias entre cuentas (traspaso interbancario BNC → Mercantil y fondeo de divisas Efectivo $ → Binance USDT).
+    8. **Fase 8 (Días 25-28):** Auditoría y conciliación: reasignación de movimientos huérfanos a cuentas destino, anulación con motivo formal y reversión de anulación.
+    9. **Fase 9 (Día 30):** Cuadre mensual, conciliación de balances, balance neto superavitario y verificación de la ecuación de solvencia en las 6 cuentas.
+    10. **Fase 10:** Validación determinista de directrices de `AGENT.md` (33 eventos de auditoría registrados, cajas permanentes blindadas contra eliminación, cero movimientos sin motivo descriptivo y cero emojis gráficos).
+- En `server/lib/finanzasUtils.js`:
+  - Se robusteció `normalizeMovement` para aceptar de forma agnóstica tanto notación camelCase (`cuentaOrigen`, `metodoPago`) como snake_case (`cuenta_origen`, `metodo_pago`).
+- En `package.json`:
+  - Se añadieron los scripts `"test:finanzas-deterministic"` y `"test:nomina-deterministic"`, y se unificó `"test:deterministic"` para ejecutar ambas suites integrales.
+
+**Verificación:**
+- `npm run test:finanzas-deterministic`: 10/10 fases completadas con éxito, 38/38 aserciones aprobadas (0 fallos).
+- `npm test`: 53/53 suites aprobadas (562 tests pasando).
+- `npm run check:project`: OK (0 violaciones de reglas de arquitectura).
+- `npm run lint`: 0 errores y 0 warnings.
+
 
 

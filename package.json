@@ -12,7 +12,9 @@
     "test": "vitest run --config vitest.config.js",
     "lint": "eslint src api compat server --quiet",
     "check:project": "node scripts/check-project.mjs",
-    "test:deterministic": "node scripts/test-nomina-deterministic.mjs",
+    "test:deterministic": "node scripts/test-nomina-deterministic.mjs && node scripts/test-finanzas-deterministic.mjs",
+    "test:nomina-deterministic": "node scripts/test-nomina-deterministic.mjs",
+    "test:finanzas-deterministic": "node scripts/test-finanzas-deterministic.mjs",
     "test:responsive": "node scripts/test-responsiveness-deterministic.mjs",
     "test:bundle-size": "node scripts/test-bundle-size.mjs",
     "verify": "npm run check:project && npm run test:responsive && npm run test:bundle-size && npm run lint && npm test && npm run build && npm run test:bundle-size"
