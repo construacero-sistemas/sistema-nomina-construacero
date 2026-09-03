@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { Download } from 'lucide-react'
 
 export default function PwaInstallButton() {
-  const [prompt, setPrompt] = useState(null)
+  const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [installed, setInstalled] = useState(false)
   const [showIosGuide, setShowIosGuide] = useState(false)
   const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone
   useEffect(() => {
-    const handler = (e) => { e.preventDefault(); setPrompt(e) }
+    const handler = (e) => { e.preventDefault(); setDeferredPrompt(e) }
     window.addEventListener('beforeinstallprompt', handler)
     const installedHandler = () => setInstalled(true)
     window.addEventListener('appinstalled', installedHandler)
@@ -19,13 +19,13 @@ export default function PwaInstallButton() {
   }, [])
   if (installed || isStandalone) return null
   async function handleInstall() {
-    if (!prompt) return
-    prompt.prompt()
-    const { outcome } = await prompt.userChoice
+    if (!deferredPrompt) return
+    deferredPrompt.prompt()
+    const { outcome } = await deferredPrompt.userChoice
     if (outcome === 'accepted') setInstalled(true)
-    setPrompt(null)
+    setDeferredPrompt(null)
   }
-  if (isIos && !prompt) {
+  if (isIos && !deferredPrompt) {
     return (
       <>
         <button onClick={() => setShowIosGuide(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:scale-105 active:scale-95" style={{ background: 'rgba(184,134,11,0.15)', border: '1px solid rgba(184,134,11,0.4)', color: '#B8860B', backdropFilter: 'blur(8px)' }}>

@@ -116,7 +116,7 @@ export default function FinanzasView() {
       sub: item.movimientos_count > 0 ? `${item.movimientos_count} movs` : undefined,
     })),
     { value: '__crear__', label: '+ Crear nueva categoría...' },
-    { value: '__gestionar__', label: '⚙️ Gestionar categorías...' },
+    { value: '__gestionar__', label: 'Gestionar categorías...' },
   ], [categoriasVisibles])
 
   const movimientosList = useMemo(
