@@ -138,8 +138,15 @@ export function useCuentasCustodia(movimientos = []) {
 
   const restaurarUnaMutation = useMutation({
     mutationFn: id => apiPost('/api/finanzas/cuentas-custodia/restaurar-una', { id }),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       showToast.success('Cuenta restaurada')
+      queryClient.setQueryData([...BASE_KEY, cuentaId], old => {
+        if (!old) return old
+        return {
+          ...old,
+          eliminadas: (old.eliminadas || []).filter(c => c.id !== id),
+        }
+      })
       queryClient.invalidateQueries({ queryKey: [...BASE_KEY, cuentaId] })
     },
     onError: error => showToast.error(error.message || 'No se pudo restaurar la cuenta'),
@@ -147,8 +154,15 @@ export function useCuentasCustodia(movimientos = []) {
 
   const descartarMutation = useMutation({
     mutationFn: ({ id, todos = false }) => apiPost('/api/finanzas/cuentas-custodia/descartar', { id, todos }),
-    onSuccess: (_, { todos }) => {
+    onSuccess: (_, { id, todos }) => {
       showToast.success(todos ? 'Papelera vaciada definitivamente' : 'Cuenta descartada')
+      queryClient.setQueryData([...BASE_KEY, cuentaId], old => {
+        if (!old) return old
+        return {
+          ...old,
+          eliminadas: todos ? [] : (old.eliminadas || []).filter(c => c.id !== id),
+        }
+      })
       queryClient.invalidateQueries({ queryKey: [...BASE_KEY, cuentaId] })
     },
     onError: error => showToast.error(error.message || 'No se pudo descartar de la papelera'),

@@ -2614,5 +2614,29 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - Auditoría automatizada de `AGENT.md`: 7/7 suites de reglas en verde (100% aprobadas).
 - `npm run verify`: PASS completo (suite determinista de responsividad 30/30, bundle-size `367.2 kB` ≤ 400 kB, eslint 0 errores, vitest 562/562 tests pasando, vite build OK).
 
+---
+
+### Entrada #123 - 2026-09-03
+**Contexto:** El usuario reportó que al presionar el botón `✕` o `Descartar y no mostrar más` en las cuentas eliminadas de la papelera, estas no se eliminaban (*"le doy a la x o a descartar y no mostrar mas y no se descartan no se eleiminan"*).
+
+**Causa raíz identificada:**
+- En PostgreSQL, la función trigger `proteger_cajas_permanentes()` (migración 230) interceptaba operaciones `BEFORE UPDATE OF activo OR DELETE ON cuentas_custodia`.
+- Al procesar un evento `DELETE`, la función evaluaba `NEW.codigo` y ejecutaba `RETURN NEW;`. En PostgreSQL, los disparadores `BEFORE DELETE` reciben `NEW = NULL` y requieren obligatoriamente `RETURN OLD;` para autorizar la eliminación de la fila. Al retornar `NEW` (nulo), PostgreSQL cancelaba silenciosamente la eliminación sin lanzar error, dejando las cuentas intactas en la base de datos.
+
+**Acciones realizadas:**
+- En la base de datos PostgreSQL de Supabase:
+  - Se actualizó la función `proteger_cajas_permanentes()` para diferenciar `TG_OP = 'DELETE'`, evaluando `OLD.codigo` y retornando `RETURN OLD;` cuando la cuenta eliminada no es una caja física permanente.
+  - Se eliminaron definitivamente de la base de datos las cuentas inactivas remanentes (`Banco Mercantil` y `Binance Pay (USDT)`).
+- En `supabase/migrations/230_cajas_permanentes.sql`:
+  - Se sincronizó la corrección en la definición SQL para preservar la consistencia de las migraciones.
+- En `src/hooks/useCuentasCustodia.js`:
+  - Se implementó actualización reactiva inmediata en la cache de React Query (`queryClient.setQueryData`) en las mutaciones `descartarMutation` y `restaurarUnaMutation`, haciendo que las cuentas desaparezcan al instante de la interfaz sin esperar la reconsulta de red.
+
+**Verificación:**
+- Base de datos Supabase: Verificado que `DELETE` físico funciona y retorna las filas eliminadas. Las cuentas ya no existen en `cuentas_custodia`.
+- `src/hooks/__tests__/useCuentasCustodia.test.jsx`: 5/5 tests PASSED.
+- `src/components/finanzas/__tests__/CuentasCustodiaGrid.test.jsx`: 11/11 tests PASSED.
+- `npm run verify`: PASS completo (30/30 tests responsivos, 562/562 vitest, eslint 0 errores, build 367.2 kB ≤ 400 kB).
+
 
 

@@ -48,13 +48,17 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  -- Aplica solo a las semillas permanentes.
-  IF NEW.codigo IN ('caja-efectivo-bs', 'caja-efectivo-usd') THEN
-    IF TG_OP = 'DELETE' THEN
+  -- En DELETE, validar sobre OLD y retornar OLD para permitir el borrado
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.codigo IN ('caja-efectivo-bs', 'caja-efectivo-usd') THEN
       RAISE EXCEPTION 'Las cajas físicas permanentes no se pueden eliminar';
     END IF;
-    -- En UPDATE/INSERT, forzar activo=true (la UI y el backend ya lo impiden;
-    -- esto cubre accesos directos a la tabla, ej. desde el SQL editor).
+    RETURN OLD;
+  END IF;
+
+  -- En UPDATE/INSERT, forzar activo=true (la UI y el backend ya lo impiden;
+  -- esto cubre accesos directos a la tabla, ej. desde el SQL editor).
+  IF NEW.codigo IN ('caja-efectivo-bs', 'caja-efectivo-usd') THEN
     IF NEW.activo = false THEN
       RAISE EXCEPTION 'Las cajas físicas permanentes no se pueden desactivar';
     END IF;
