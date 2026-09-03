@@ -2531,5 +2531,23 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 562/562 tests PASSED (53 suites de prueba).
 - `npm run build`: Build exitoso en 33.39s, bundle `376.01 kB` ≤ 400 kB.
 
+---
+
+### Entrada #119 - 2026-09-03
+**Contexto:** El usuario reportó problemas de diseño en móvil dentro del modal de gestión de categorías (`CategoriasModal.jsx`), donde el selector segmentado de tipo (`[Ambos] [Egresos] [Ingresos]`) se estrechaba a la izquierda dejando un enorme vacío blanco a la derecha, seguido de un botón `+ Añadir` desproporcionado en una tercera fila (*"corrigue esto en moviles"*).
+
+**Acciones realizadas:**
+- En `src/components/finanzas/CategoriasModal.jsx`:
+  - Se adaptó el formulario superior a dos filas armónicas en móvil: Fila 1 para el nombre de categoría (`w-full h-11`), y Fila 2 agrupando el selector segmentado y el botón de añadir (`flex items-center gap-2 w-full sm:w-auto`).
+  - El selector segmentado ahora usa `grid grid-cols-3 flex-1`, garantizando que las 3 opciones (`Ambos`, `Egresos`, `Ingresos`) se distribuyan simétricamente al 33.3% exacto de ancho, con esquinas redondeadas tipo píldora (`rounded-lg`) y sin vacíos residuales.
+  - El botón `+ Añadir` se integró en la misma fila al lado del selector (`h-11 shrink-0`), ahorrando espacio vertical en el modal y facilitando la creación rápida con una sola mano.
+  - En pantallas de escritorio (`sm:`), el diseño se expande naturalmente en una sola fila continua y balanceada.
+
+**Verificación:**
+- `npm run check:project`: OK (0 archivos > 600 líneas; `CategoriasModal.jsx`: 224 líneas).
+- `npm run lint`: 0 errores.
+- `npm test`: 562/562 tests PASSED (53 suites de prueba).
+- `npm run build`: Build exitoso en 29.56s, bundle `376.01 kB` ≤ 400 kB.
+
 
 

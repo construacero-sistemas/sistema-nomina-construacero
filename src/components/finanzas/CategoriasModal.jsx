@@ -69,35 +69,45 @@ export default function CategoriasModal({
               onBlur={() => setNuevoNombre(prev => capitalizarTexto(prev))}
               maxLength={80}
               placeholder="Nombre (ej. Mantenimiento, Publicidad...)"
-              className="flex-1 h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50"
+              className="w-full sm:flex-1 h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50"
               disabled={creando}
             />
-            <div className="inline-flex h-11 rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0" role="group" aria-label="Tipo de categoría">
-              {[
-                { v: 'ambos', l: 'Ambos' },
-                { v: 'egreso', l: 'Egresos' },
-                { v: 'ingreso', l: 'Ingresos' },
-              ].map(op => (
-                <button
-                  key={op.v}
-                  type="button"
-                  onClick={() => setNuevoTipo(op.v)}
-                  disabled={creando}
-                  aria-pressed={nuevoTipo === op.v}
-                  className={`px-2.5 text-[11px] font-bold transition-colors cursor-pointer disabled:opacity-50 ${nuevoTipo === op.v ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
-                >
-                  {op.l}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div
+                className="grid grid-cols-3 flex-1 sm:flex-initial sm:inline-flex h-11 rounded-xl border border-slate-200 bg-slate-100/70 p-1 gap-0.5"
+                role="group"
+                aria-label="Tipo de categoría"
+              >
+                {[
+                  { v: 'ambos', l: 'Ambos' },
+                  { v: 'egreso', l: 'Egresos' },
+                  { v: 'ingreso', l: 'Ingresos' },
+                ].map(op => (
+                  <button
+                    key={op.v}
+                    type="button"
+                    onClick={() => setNuevoTipo(op.v)}
+                    disabled={creando}
+                    aria-pressed={nuevoTipo === op.v}
+                    className={`flex items-center justify-center px-2.5 sm:px-3 text-[11px] font-bold rounded-lg transition-all cursor-pointer disabled:opacity-50 whitespace-nowrap ${
+                      nuevoTipo === op.v
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    {op.l}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="submit"
+                disabled={creando || !nuevoNombre.trim()}
+                className="h-11 px-4 rounded-xl bg-primary text-xs font-black text-white hover:bg-primary-hover disabled:opacity-50 active:scale-95 transition-all shadow-xs inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+              >
+                {creando ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                Añadir
+              </button>
             </div>
-            <button
-              type="submit"
-              disabled={creando || !nuevoNombre.trim()}
-              className="h-11 px-4 rounded-xl bg-primary text-xs font-black text-white hover:bg-primary-hover disabled:opacity-50 active:scale-95 transition-all shadow-xs inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
-            >
-              {creando ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-              Añadir
-            </button>
           </div>
 
           {errorCrear && (
