@@ -32,6 +32,8 @@ function formatMoney(amount) {
 
 export default function CuentasCustodiaGrid({
   cuentas = [],
+  cuentasEliminadas = [],
+  onRestaurarEliminada,
   onNuevaCuenta,
   onEditarCuenta,
   onEliminarCuenta,
@@ -168,6 +170,30 @@ export default function CuentasCustodiaGrid({
           </div>
         </div>
       )}
+      {/* Papelera: cuentas eliminadas recuperables (borrado lógico) */}
+      {expandido && cuentasEliminadas.length > 0 && (
+        <div className="pt-3 border-t border-slate-100 animate-in fade-in duration-200">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-2">
+            Eliminadas recientemente ({cuentasEliminadas.length}) — recuperables
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {cuentasEliminadas.map(cuenta => (
+              <span key={cuenta.id} className="inline-flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                <span className="max-w-[180px] truncate font-semibold text-slate-600">{cuenta.nombre}</span>
+                <button
+                  type="button"
+                  onClick={() => onRestaurarEliminada?.(cuenta.id)}
+                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                  aria-label={`Restaurar ${cuenta.nombre}`}
+                >
+                  <RotateCcw size={12} /> Restaurar
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {expandido && cuentas.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-slate-100 animate-in fade-in duration-200">
           {cuentas.map(cuenta => {

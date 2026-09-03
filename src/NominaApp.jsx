@@ -1,11 +1,14 @@
 import { lazy, Suspense, useEffect, useCallback, useRef, useState } from 'react'
 import {
-  AlertTriangle, ChevronRight, Landmark, LogOut, Menu, PanelLeftClose,
+  AlertTriangle, ChevronRight, Landmark, Lock, LogOut, Menu, PanelLeftClose,
   PanelLeftOpen, Settings2, TrendingUp, User, Wallet, X
 } from 'lucide-react'
-import { Navigate, Outlet, Route, Routes, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, Outlet, Route, Routes, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../compat/store/useAuthStore.js'
 import LoginPage from '../compat/modules/auth/LoginPage.jsx'
+import LogoutConfirmModal from './components/LogoutConfirmModal.jsx'
+import ModuloBloqueado from './components/ModuloBloqueado.jsx'
+import { NOMINA_BLOQUEADA, rutaPorDefecto } from './config/modulos.js'
 import SistemaView from './views/SistemaView.jsx'
 import useTasaCambioNomina from './hooks/useTasaCambioNomina.js'
 
@@ -14,11 +17,32 @@ const FinanzasView = lazy(() => import('./components/finanzas/FinanzasView.jsx')
 import RateSelector from './components/nomina/RateSelector.jsx'
 import { formatFechaHora } from '../compat/utils/formatDateTime.js'
 
+// Módulos bloqueados temporalmente: el estado vive en src/config/modulos.js
+// (interruptor único del lanzamiento por fases).
 const NAV = [
-  { to: '/nomina', label: 'Nómina', desc: 'Salarios, asistencia y recibos', icon: Wallet },
-  { to: '/finanzas', label: 'Finanzas', desc: 'Movimientos, bancos y balances', icon: Landmark },
-  { to: '/sistema', label: 'Sistema', desc: 'Personal y configuración general', icon: Settings2 },
+  { to: '/nomina', label: 'Nómina', desc: 'Salarios, asistencia y recibos', icon: Wallet, locked: NOMINA_BLOQUEADA },
+  { to: '/finanzas', label: 'Finanzas', desc: 'Movimientos, bancos y balances', icon: Landmark, locked: false },
+  { to: '/sistema', label: 'Sistema', desc: 'Personal y configuración general', icon: Settings2, locked: false },
 ]
+
+function NavLockedButton({ item, collapsed, onClick }) {
+  const Icon = item.icon
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={collapsed ? `${item.label} (próximamente)` : undefined}
+      aria-label={`${item.label} — bloqueado temporalmente`}
+      aria-disabled="true"
+      className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-1.5 rounded-xl text-sm font-bold text-white/30 cursor-not-allowed transition-colors duration-150`}
+      style={{ touchAction: 'manipulation' }}
+    >
+      <Icon size={18} />
+      {!collapsed && <span className="flex-1 text-left">{item.label}</span>}
+      {!collapsed && <Lock size={13} className="text-white/25 shrink-0" aria-hidden="true" />}
+    </button>
+  )
+}
 
 function Loading() {
   const [showRetry, setShowRetry] = useState(false)
@@ -62,72 +86,6 @@ function Loading() {
             Toca aquí si no carga
           </button>
         )}
-      </div>
-    </div>
-  )
-}
-
-function LogoutConfirmModal({ isOpen, onClose, onConfirm }) {
-  useEffect(() => {
-    if (!isOpen) return
-    const handleKeyDown = e => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
-
-  if (!isOpen) return null
-
-  return (
-    <div
-      className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="logout-modal-title"
-    >
-      <div
-        className="relative border border-white/10 w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center overflow-hidden animate-in zoom-in-95 duration-200"
-        style={{
-          background: 'linear-gradient(180deg, #0f1f38 0%, #0a1628 100%)',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(239,68,68,0.1)',
-        }}
-      >
-        <div
-          className="absolute -top-12 left-1/2 -translate-x-1/2 w-32 h-32 rounded-full pointer-events-none opacity-25"
-          style={{ background: 'radial-gradient(circle, #ef4444 0%, transparent 70%)', filter: 'blur(20px)' }}
-        />
-
-        <div className="relative z-10">
-          <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4 text-red-400">
-            <LogOut size={22} />
-          </div>
-
-          <h3 id="logout-modal-title" className="text-lg font-black text-white mb-2">
-            ¿Cerrar sesión?
-          </h3>
-          <p className="text-xs text-white/60 mb-6 leading-relaxed">
-            Tu sesión actual se cerrará de forma segura en este dispositivo.
-          </p>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white/80 hover:text-white text-xs font-bold transition-all active:scale-95"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={onConfirm}
-              className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-950/50 transition-all active:scale-95 flex items-center justify-center gap-1.5"
-            >
-              <LogOut size={14} />
-              <span>Cerrar sesión</span>
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   )
@@ -199,6 +157,30 @@ function MobileDrawerContent({ onClose, onLogout }) {
           </span>
           <nav className="space-y-1" aria-label="Navegación móvil">
             {NAV.map(item => {
+              if (item.locked) {
+                return (
+                  <button
+                    key={item.to}
+                    type="button"
+                    onClick={onClose}
+                    aria-label={`${item.label} — bloqueado temporalmente`}
+                    aria-disabled="true"
+                    className="w-full flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/[0.05] text-white/35 cursor-not-allowed"
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/[0.04] text-white/30">
+                        <item.icon size={18} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black leading-tight text-white/50">{item.label}</p>
+                        <p className="text-[10px] text-white/35 mt-0.5">Disponible próximamente</p>
+                      </div>
+                    </div>
+                    <Lock size={15} className="text-white/25 shrink-0" aria-hidden="true" />
+                  </button>
+                )
+              }
               const Icon = item.icon
               return (
                 <NavLink
@@ -298,7 +280,7 @@ function Public() {
   const initialized = useAuthStore(useCallback(state => state.initialized, []))
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
   if (!initialized) return <Loading />
-  if (perfil) return <Navigate to="/nomina" replace />
+  if (perfil) return <Navigate to={rutaPorDefecto()} replace />
   return <Outlet />
 }
 
@@ -456,7 +438,9 @@ function Shell() {
             </div>
 
             <nav className="relative z-10 flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5 sidebar-scrollbar" aria-label="Navegación principal">
-              {NAV.map(item => <NavItem key={item.to} item={item} collapsed={collapsed} onClick={() => setMenuOpen(false)} />)}
+              {NAV.map(item => item.locked
+                ? <NavLockedButton key={item.to} item={item} collapsed={collapsed} onClick={() => setMenuOpen(false)} />
+                : <NavItem key={item.to} item={item} collapsed={collapsed} onClick={() => setMenuOpen(false)} />)}
             </nav>
 
             {/* Zona de Cerrar sesión en Desktop Sidebar */}
@@ -520,6 +504,22 @@ function Shell() {
         <div className="flex items-center justify-around px-1 h-16 min-h-[4rem]">
           {NAV.map(item => {
             const Icon = item.icon
+            if (item.locked) {
+              return <button
+                key={item.to}
+                type="button"
+                aria-label={`${item.label} — bloqueado temporalmente`}
+                aria-disabled="true"
+                className="flex flex-col items-center gap-0.5 py-1.5 px-2 rounded-xl min-w-[58px] text-white/30 cursor-not-allowed"
+                style={{ touchAction: 'manipulation' }}
+              >
+                <div className="p-1.5 rounded-lg relative">
+                  <Icon size={20} strokeWidth={2} />
+                  <Lock size={10} className="absolute -top-0.5 -right-0.5 text-white/40" aria-hidden="true" />
+                </div>
+                <span className="text-[10px] font-bold">{item.label}</span>
+              </button>
+            }
             return <NavLink
               key={item.to}
               to={item.to}
@@ -567,8 +567,9 @@ export default function NominaApp() {
   return (
     <Routes>
       <Route element={<Public />}><Route path="/login" element={<LoginPage />} /></Route>
-      <Route element={<Protected />}><Route element={<Shell />}><Route path="/nomina" element={<NominaView />} /><Route path="/finanzas" element={<FinanzasView />} /><Route path="/sistema" element={<SistemaView />} /></Route></Route>
-      <Route path="*" element={<Navigate to="/nomina" replace />} />
+      <Route element={<Protected />}><Route element={<Shell />}>{NOMINA_BLOQUEADA
+  ? <Route path="/nomina" element={<ModuloBloqueado />} />
+  : <Route path="/nomina" element={<NominaView />} />}<Route path="/finanzas" element={<FinanzasView />} /><Route path="/sistema" element={<SistemaView />} /></Route></Route>        <Route path="*" element={<Navigate to={rutaPorDefecto()} replace />} />
     </Routes>
   )
 }

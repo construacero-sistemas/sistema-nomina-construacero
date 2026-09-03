@@ -266,6 +266,14 @@ for (const path of sourceFiles) {
   if (path.endsWith('.jsx') && /<select\b/i.test(text)) {
     fail(`Selector nativo cuadrado detectado en ${path}; usa el selector visual compartido`)
   }
+  // El candado de Nómina se define en un único interruptor (src/config/modulos.js).
+  // Cualquier otra declaración del flag es una fuente de divergencia: falla aquí.
+  // (Los tests quedan exentos: su trabajo es justamente verificar el flag.)
+  const pathNorm = path.split('\\').join('/')
+  const esTest = /__tests__\//.test(pathNorm)
+  if (!esTest && pathNorm !== 'src/config/modulos.js' && /(?:const|let|var)\s+(?:NOMINA_BLOQUEADA|SECCIONES_NOMINA_BLOQUEADAS|MODULO_BLOQUEADO)\s*=/.test(text)) {
+    fail(`El candado de Nómina debe definirse solo en src/config/modulos.js (declaración local en ${path})`)
+  }
 }
 if (boundedSourceFiles.length === 0) fail('No se encontraron fuentes acotadas para el guardrail de tamaño')
 

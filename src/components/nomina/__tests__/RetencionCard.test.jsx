@@ -6,9 +6,17 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import RetencionCard from '../RetencionCard.jsx'
 
+vi.mock('../../../../compat/services/supabase/client.js', () => ({
+  default: { auth: { getSession: async () => ({ data: { session: { access_token: 'test' } } }), refreshSession: async () => ({ data: { session: { access_token: 'test' } } }) } },
+}))
+
 vi.mock('../../../../compat/services/apiBase.js', () => ({
   apiUrl: (p) => `https://worker.test${p}`,
   getAuthHeaders: async () => ({ Authorization: 'Bearer test' }),
+}))
+
+vi.mock('../../../../compat/store/useAuthStore.js', () => ({
+  default: { getState: () => ({ perfil: { id: 'op-1' } }) },
 }))
 
 const USO = {
@@ -97,7 +105,7 @@ describe('RetencionCard — medidor de uso de BD', () => {
       </QueryClientProvider>,
     )
     // retry:1 de la query + retryDelay default (~1s) antes del estado de error.
-    await waitFor(() => expect(container.textContent).toMatch(/migración 229/i), { timeout: 4000 })
+    await waitFor(() => expect(container.textContent).toMatch(/No se pudo medir el uso/i), { timeout: 4000 })
     expect(container.textContent).toMatch(/db_usage does not exist/)
   })
 })

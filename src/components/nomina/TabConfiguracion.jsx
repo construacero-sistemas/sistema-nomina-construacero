@@ -1,7 +1,8 @@
 // src/components/nomina/TabConfiguracion.jsx
 // Configuración administrativa de calendario, recargos, conceptos y reglas.
 import { Children, useState } from 'react'
-import { DollarSign, Plus, ShieldCheck, Sparkles, Clock, CalendarDays } from 'lucide-react'
+import { DollarSign, Plus, ShieldCheck, Sparkles, Clock, CalendarDays, Lock } from 'lucide-react'
+import { SECCIONES_NOMINA_BLOQUEADAS } from '../../config/modulos.js'
 import { useConfigNomina, useGuardarConfigNomina } from '../../hooks/useNomina.js'
 import {
   useCrearConcepto,
@@ -27,25 +28,41 @@ const monthEnd = () => {
 export default function TabConfiguracion() {
   const [desde] = useState(monthStart)
   const [hasta] = useState(monthEnd)
-  const [seccion, setSeccion] = useState('calendario')
+  // Lanzamiento por fases: la lógica de nómina va bloqueada; Almacenamiento queda abierto.
+  // El estado vive en el interruptor único src/config/modulos.js.
+  const SECCIONES_BLOQUEADAS = SECCIONES_NOMINA_BLOQUEADAS
+  const [seccion, setSeccion] = useState(SECCIONES_BLOQUEADAS ? 'retencion' : 'calendario')
   const feriados = useFeriados(desde, hasta)
   const conceptos = useNominaConceptos()
   const reglas = useReglasLegales()
   const configNomina = useConfigNomina()
 
   const secciones = [
-    { id: 'calendario', label: 'Horarios y calendario', description: 'Jornada estándar de empresa y feriados' },
-    { id: 'recargos', label: 'Horas extra y recargos', description: 'Montos fijos en USD por hora extra, sábado y feriado' },
-    { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales' },
-    { id: 'retencion', label: 'Almacenamiento', description: 'Retención y purga inteligente de la base' },
+    { id: 'calendario', label: 'Horarios y calendario', description: 'Jornada estándar de empresa y feriados', locked: SECCIONES_BLOQUEADAS },
+    { id: 'recargos', label: 'Horas extra y recargos', description: 'Montos fijos en USD por hora extra, sábado y feriado', locked: SECCIONES_BLOQUEADAS },
+    { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales', locked: SECCIONES_BLOQUEADAS },
+    { id: 'retencion', label: 'Almacenamiento', description: 'Retención y purga inteligente de la base', locked: false },
   ]
-  const navegarSecciones = useTablistNav(secciones.map(item => item.id), seccion, setSeccion)
+  const navegarSecciones = useTablistNav(secciones.filter(item => !item.locked).map(item => item.id), seccion, setSeccion)
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-2" role="tablist" aria-label="Objetivos de configuración" onKeyDown={navegarSecciones}>
         {secciones.map(item => {
           const activo = seccion === item.id
+          if (item.locked) {
+            return <button
+              key={item.id}
+              type="button"
+              disabled
+              aria-disabled="true"
+              aria-label={`${item.label} — bloqueado temporalmente`}
+              className="flex-1 min-w-[200px] sm:min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left cursor-not-allowed"
+            >
+              <span className="flex items-center gap-1.5 text-xs font-black text-slate-400">{item.label}<Lock size={12} aria-hidden="true" /></span>
+              <span className="mt-1 block text-[11px] leading-snug text-slate-300">Disponible próximamente</span>
+            </button>
+          }
           return <button
             key={item.id}
             type="button"

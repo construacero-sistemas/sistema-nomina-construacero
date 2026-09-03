@@ -158,18 +158,28 @@ describe('finanzas — flujo crear, reportar y anular', () => {
   })
 
   it('lista categorías del tenant y completa las predeterminadas sin insertar filas', async () => {
-    mock = installFetchMock([{
-      match: '/finanzas_categorias',
-      method: 'GET',
-      respond: [{ id: IDS.config, nombre: 'Obra propia', tipo: 'egreso', activo: true }],
-    }])
+    mock = installFetchMock([
+      {
+        match: '/finanzas_categorias',
+        method: 'GET',
+        respond: (url) => {
+          // La segunda consulta (papelera) filtra activo=eq.false
+          if (String(url).includes('activo=eq.false')) return []
+          return [{ id: IDS.config, nombre: 'Obra propia', tipo: 'egreso', activo: true }]
+        },
+      },
+    ])
     const response = await H.handleGetFinanzasCategorias(makeRequest(), ENV)
     const result = await readResponse(response)
     expect(result.status).toBe(200)
     expect(result.body.categorias.some(item => item.nombre === 'Obra propia')).toBe(true)
     expect(result.body.categorias.some(item => item.nombre === 'Ventas' && item.predeterminada)).toBe(true)
-    expect(mock.calls).toHaveLength(1)
+    expect(result.body.eliminadas).toEqual([])
+    // Dos lecturas: activas + papelera de eliminadas (ambas filtradas por tenant)
+    expect(mock.calls).toHaveLength(2)
     expect(mock.calls[0].url).toContain(`cuenta_id=eq.${OPERADORES.administracion.cuenta_id}`)
+    expect(mock.calls[1].url).toContain('activo=eq.false')
+    expect(mock.calls[1].url).toContain(`cuenta_id=eq.${OPERADORES.administracion.cuenta_id}`)
   })
 
   it('crea una categoría con tenant y actor administrativo', async () => {

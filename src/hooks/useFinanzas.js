@@ -123,6 +123,42 @@ export function useAnularMovimiento() {
   })
 }
 
+export function useRevertirAnulacion() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id }) => apiPost('/api/finanzas/movimientos/revertir-anulacion', { id }),
+    onSuccess: () => {
+      showToast.success('Movimiento restaurado')
+      client.invalidateQueries({ queryKey: BASE_KEY })
+    },
+    onError: error => showToast.error(error.message || 'No se pudo revertir la anulación'),
+  })
+}
+
+export function useEliminarCategoria() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id }) => apiPost('/api/finanzas/categorias/eliminar', { id }),
+    onSuccess: () => {
+      showToast.success('Categoría eliminada')
+      client.invalidateQueries({ queryKey: [...BASE_KEY, 'categorias'] })
+    },
+    onError: error => showToast.error(error.message || 'No se pudo eliminar la categoría'),
+  })
+}
+
+export function useRestaurarCategoria() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id }) => apiPost('/api/finanzas/categorias/restaurar', { id }),
+    onSuccess: () => {
+      showToast.success('Categoría restaurada')
+      client.invalidateQueries({ queryKey: [...BASE_KEY, 'categorias'] })
+    },
+    onError: error => showToast.error(error.message || 'No se pudo restaurar la categoría'),
+  })
+}
+
 export function useReasignarCuenta() {
   const client = useQueryClient()
   return useMutation({

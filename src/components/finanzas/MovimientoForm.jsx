@@ -8,17 +8,20 @@ import {
   DollarSign,
   FolderPlus,
   Loader2,
+  Trash2,
 } from 'lucide-react'
-import { useCrearCategoria, useCrearMovimiento } from '../../hooks/useFinanzas.js'
+import { useCrearCategoria, useCrearMovimiento, useEliminarCategoria, useRestaurarCategoria } from '../../hooks/useFinanzas.js'
 import { BANCOS_VENEZUELA } from '../../hooks/useCuentasCustodia.js'
 import MovimientoResumen from './MovimientoResumen.jsx'
 import MovimientoPartes from './MovimientoPartes.jsx'
 import MovimientoConversion from './MovimientoConversion.jsx'
+import { CrearCategoriaPanel, EliminarCategoriaDialog } from './CategoriaAcciones.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
 import { FORMAS_PAGO_OPCIONES } from '../../constants/formasPago.js'
+import { formatNumber } from './formatos.js'
 
 const inputClass = 'w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
@@ -30,13 +33,6 @@ function today() {
   return `${y}-${m}-${d}`
 }
 
-function formatNumber(value) {
-  return Number(value || 0).toLocaleString('es-VE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-}
-
 // Flag temporal para ocultar el editor de "pago en varias partes" (por ahora).
 // Mientras esté en false no se renderiza; al volver a true se rehabilita.
 const MOSTRAR_PARTES = false
@@ -44,6 +40,8 @@ const MOSTRAR_PARTES = false
 export default function MovimientoForm({ categorias = [], cuentas = [], onClose }) {
   const crear = useCrearMovimiento()
   const crearCategoria = useCrearCategoria()
+  const eliminarCategoria = useEliminarCategoria()
+  const restaurarCategoria = useRestaurarCategoria()
   const { usd, eur, usdt } = useTasaCambioNomina()
 
   const [tipo, setTipo] = useState('egreso')
@@ -71,6 +69,8 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
   const [nuevaCategoria, setNuevaCategoria] = useState('')
   // Categorías creadas en esta sesión para que el label se resuelva al instante.
   const [categoriasExtra, setCategoriasExtra] = useState([])
+  // Borrado de categoría desde el propio selector (con confirmación).
+  const [categoriaAEliminar, setCategoriaAEliminar] = useState(null)
 
   const [error, setError] = useState('')
 
@@ -151,6 +151,32 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
     setCategoria(value)
   }
 
+  // Borrado reversible: guarda el id para pedir confirmación; la mutación
+  // (baja lógica) corrige la selección y restaura por si era de esta sesión.
+  function confirmarEliminarCategoria(opcion) {
+    const actual = categorias.find(c => c.nombre === opcion.value)
+    const extra = categoriasExtra.find(c => c.nombre === opcion.value)
+    const objetivo = actual || extra
+    if (!objetivo?.id) return
+    setCategoriaAEliminar(objetivo)
+  }
+
+  async function eliminarCategoriaConfirmada() {
+    const objetivo = categoriaAEliminar
+    if (!objetivo?.id) return
+    try {
+      await eliminarCategoria.mutateAsync({ id: objetivo.id })
+      // Si la categoría eliminada estaba seleccionada, limpiar la elección.
+      if (categoria === objetivo.nombre) setCategoria('')
+      // Si era una creada en esta sesión, sacarla de las extras para que
+      // desaparezca del selector de inmediato (el refetch cubre el resto).
+      setCategoriasExtra(prev => prev.filter(c => c.nombre !== objetivo.nombre))
+      setCategoriaAEliminar(null)
+    } catch {
+      // El hook ya mostró el toast de error; el diálogo sigue abierto para reintentar.
+    }
+  }
+
   async function guardarNuevaCategoria() {
     const nombre = nuevaCategoria.trim()
     if (nombre.length < 2) {
@@ -178,11 +204,13 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
   // Opciones de la lista de categorías, incluyendo las creadas en esta sesión
   // y la entrada para crear una nueva.
   const opcionesCategoria = useMemo(() => {
-    const base = categoriasCompatibles.map(item => ({ value: item.nombre, label: item.nombre }))
+    // Las predeterminadas (id null) no se pueden eliminar: sin botón de papelera.
+    const base = categoriasCompatibles.map(item => ({ value: item.nombre, label: item.nombre, noAction: !item.id }))
+    // Extras de la sesión aún no reflejadas en el servidor (evita claves duplicadas).
     const extras = categoriasExtra
-      .filter(c => c.tipo === 'ambos' || c.tipo === tipo)
+      .filter(c => (c.tipo === 'ambos' || c.tipo === tipo) && !categoriasCompatibles.some(b => b.nombre === c.nombre))
       .map(item => ({ value: item.nombre, label: item.nombre }))
-    return [...base, ...extras, { value: '__crear__', label: '+ Crear nueva categoría' }]
+    return [...base, ...extras, { value: '__crear__', label: '+ Crear nueva categoría', noAction: true }]
   }, [categoriasCompatibles, categoriasExtra, tipo])
 
   // Tasa efectiva aplicada según el modo seleccionado
@@ -422,55 +450,26 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
               options={opcionesCategoria}
               placeholder="Selecciona una categoría..."
               disabled={disabled}
+              rowAction={{
+                label: 'Eliminar',
+                icon: Trash2,
+                title: 'Eliminar categoría (podrás restaurarla)',
+                onSelect: confirmarEliminarCategoria,
+              }}
             />
           </Field>
         </div>
 
         {/* Crear categoría personalizada (inline, sin cerrar el formulario) */}
         {creandoCategoria && (
-          <div className="rounded-2xl border border-primary/25 bg-primary/5 p-3.5 space-y-2.5" role="group" aria-label="Crear nueva categoría">
-            <div className="flex items-center gap-2">
-              <FolderPlus size={15} className="text-primary shrink-0" />
-              <span className="text-xs font-black text-primary">
-                Nueva categoría · {tipo === 'ingreso' ? 'Ingreso' : 'Egreso'}
-              </span>
-            </div>
-            <input
-              value={nuevaCategoria}
-              onChange={e => setNuevaCategoria(e.target.value)}
-              maxLength={80}
-              placeholder="Ej: Mantenimiento, Publicidad, Comisiones..."
-              className={inputClass}
-              disabled={crearCategoriaPending}
-              aria-label="Nombre de la nueva categoría"
-              autoFocus
-            />
-            <div className="flex items-center gap-2 justify-end">
-              <button
-                type="button"
-                onClick={() => { setCreandoCategoria(false); setNuevaCategoria('') }}
-                disabled={crearCategoriaPending}
-                className="h-11 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={guardarNuevaCategoria}
-                disabled={crearCategoriaPending}
-                className="h-11 px-4 rounded-xl bg-primary text-xs font-black text-white hover:bg-primary-hover disabled:opacity-50 active:scale-95 transition-all inline-flex items-center gap-2 cursor-pointer shadow-sm"
-              >
-                {crearCategoriaPending ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    Creando...
-                  </>
-                ) : (
-                  'Crear categoría'
-                )}
-              </button>
-            </div>
-          </div>
+          <CrearCategoriaPanel
+            tipo={tipo}
+            nombre={nuevaCategoria}
+            onNombre={setNuevaCategoria}
+            onGuardar={guardarNuevaCategoria}
+            onCancelar={() => { setCreandoCategoria(false); setNuevaCategoria('') }}
+            pending={crearCategoriaPending}
+          />
         )}
 
         {/* 4. Concepto a Ancho Completo */}
@@ -575,6 +574,16 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
           </button>
         </div>
       </form>
+
+      {/* Confirmación de borrado de categoría (baja lógica, reversible) */}
+      {categoriaAEliminar && (
+        <EliminarCategoriaDialog
+          nombre={categoriaAEliminar.nombre}
+          pending={eliminarCategoria.isPending}
+          onClose={() => setCategoriaAEliminar(null)}
+          onConfirm={eliminarCategoriaConfirmada}
+        />
+      )}
     </Modal>
   )
 }

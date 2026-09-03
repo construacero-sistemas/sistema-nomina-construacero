@@ -17,7 +17,7 @@ import {
 const SELECT = [
   'id', 'codigo', 'nombre', 'tipo', 'cartera', 'moneda', 'banco',
   'numero_cuenta', 'titular', 'identificacion', 'subcuenta_id',
-  'predeterminada', 'activo', 'creado_en',
+  'predeterminada', 'activo', 'creado_en', 'actualizado_en',
 ].join(',')
 
 function svcHeaders(env, prefer = 'return=representation') {
@@ -88,7 +88,20 @@ export async function handleGetCuentasCustodia(request, env) {
     }
   }
 
-  return json({ cuentas: rows.map(cuentaCustodiaResponse) }, 200, request)
+  return json({ cuentas: rows.map(cuentaCustodiaResponse), eliminadas: await fetchEliminadas(env, operador.cuenta_id, headers) }, 200, request)
+}
+
+// Papelera: últimas cuentas eliminadas (borrado lógico) para poder
+// restaurarlas desde la UI. Acotada a 20 para mantener la respuesta ligera.
+async function fetchEliminadas(env, cuentaId, headers) {
+  const res = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/cuentas_custodia?${accountFilter(cuentaId)}` +
+      `&activo=eq.false&select=${SELECT}&order=actualizado_en.desc&limit=20`,
+    { headers },
+  )
+  if (!res.ok) return []
+  const rows = await res.json()
+  return (Array.isArray(rows) ? rows : []).map(cuentaCustodiaResponse)
 }
 
 async function seedDefaults(env, operador, headers) {
@@ -292,6 +305,49 @@ export async function handleEliminarCuentaCustodia(request, env) {
   return json({ ok: true, id }, 200, request)
 }
 
+// POST /api/finanzas/cuentas-custodia/restaurar-una
+// Reversibilidad: reactiva una cuenta específica eliminada (activo=false → true).
+// Complementa "restaurar" (que trae de vuelta las 2 cajas semilla).
+export async function handleRestaurarUnaCuentaCustodia(request, env) {
+  const context = await adminContext(request, env)
+  if (context.error) return context.error
+  const { operador } = context
+  const parsed = await readBody(request)
+  if (parsed.error) return parsed.error
+
+  const id = String(parsed.body?.id || '').trim()
+  if (!isValidUuid(id)) return jsonError('id inválido', 400, request)
+
+  const res = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/cuentas_custodia?id=eq.${encodeURIComponent(id)}` +
+      `&${accountFilter(operador.cuenta_id)}`,
+    {
+      method: 'PATCH',
+      headers: svcHeaders(env, 'return=representation'),
+      body: JSON.stringify({ activo: true, actualizado_en: new Date().toISOString() }),
+    },
+  )
+  if (!res.ok) return jsonError('No se pudo restaurar la cuenta', 500, request)
+  const [row] = await res.json().catch(() => [])
+  if (!row) return jsonError('Cuenta no encontrada', 404, request)
+
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), {
+    usuarioId: operador.id,
+    usuarioNombre: operador.nombre,
+    usuarioRol: operador.rol,
+    cuentaId: operador.cuenta_id,
+    categoria: 'FINANZAS',
+    accion: 'CUENTA_RESTAURADA',
+    entidadTipo: 'cuentas_custodia',
+    entidadId: id,
+    meta: { nombre: row.nombre },
+    ip: context.ip,
+  }).catch(() => {})
+  clearEgressCache()
+
+  return json({ ok: true, cuenta: cuentaCustodiaResponse(row) }, 200, request)
+}
+
 // POST /api/finanzas/cuentas-custodia/restaurar
 // Restaura las cuentas semilla (las 2 cajas físicas). Si el usuario eliminó un
 // banco/Zelle y quiere el ejemplo de vuelta, puede recrearlo desde el formulario
@@ -349,6 +405,7 @@ export async function handleRestaurarCuentasCustodia(request, env) {
   )
   if (!res.ok) return jsonError('No se pudieron cargar las cuentas', 500, request)
   const rows = await res.json()
+
 
   registrarAuditoria(env, headers, {
     usuarioId: operador.id,

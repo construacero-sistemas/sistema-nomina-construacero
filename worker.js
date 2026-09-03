@@ -17,10 +17,13 @@ import {
   handleGetFinanzasMovimientos,
   handleCrearFinanzasMovimiento,
   handleAnularFinanzasMovimiento,
+  handleRevertirAnulacionMovimiento,
   handleReasignarCuentaMovimientos,
   handleGetFinanzasResumen,
   handleGetFinanzasCategorias,
   handleCrearFinanzasCategoria,
+  handleEliminarFinanzasCategoria,
+  handleRestaurarFinanzasCategoria,
 } from './server/handlers/finanzas.js'
 import { handleSyncVentasPos } from './server/handlers/finanzas.sync.js'
 import {
@@ -29,6 +32,7 @@ import {
   handleActualizarCuentaCustodia,
   handleEliminarCuentaCustodia,
   handleRestaurarCuentasCustodia,
+  handleRestaurarUnaCuentaCustodia,
 } from './server/handlers/cuentasCustodia.js'
 import { handleGetRates } from './server/handlers/rates.js'
 import { handleCrearLogs } from './server/handlers/logs.js'
@@ -62,16 +66,20 @@ const routes = new Map([
   ['GET /api/finanzas/movimientos', handleGetFinanzasMovimientos],
   ['POST /api/finanzas/movimientos/crear', handleCrearFinanzasMovimiento],
   ['POST /api/finanzas/movimientos/anular', handleAnularFinanzasMovimiento],
+  ['POST /api/finanzas/movimientos/revertir-anulacion', handleRevertirAnulacionMovimiento],
   ['POST /api/finanzas/movimientos/reasignar-cuenta', handleReasignarCuentaMovimientos],
   ['POST /api/finanzas/sync-pos', handleSyncVentasPos],
   ['GET /api/finanzas/reportes/resumen', handleGetFinanzasResumen],
   ['GET /api/finanzas/categorias', handleGetFinanzasCategorias],
   ['POST /api/finanzas/categorias/crear', handleCrearFinanzasCategoria],
+  ['POST /api/finanzas/categorias/eliminar', handleEliminarFinanzasCategoria],
+  ['POST /api/finanzas/categorias/restaurar', handleRestaurarFinanzasCategoria],
   ['GET /api/finanzas/cuentas-custodia', handleGetCuentasCustodia],
   ['POST /api/finanzas/cuentas-custodia/crear', handleCrearCuentaCustodia],
   ['POST /api/finanzas/cuentas-custodia/actualizar', handleActualizarCuentaCustodia],
   ['POST /api/finanzas/cuentas-custodia/eliminar', handleEliminarCuentaCustodia],
   ['POST /api/finanzas/cuentas-custodia/restaurar', handleRestaurarCuentasCustodia],
+  ['POST /api/finanzas/cuentas-custodia/restaurar-una', handleRestaurarUnaCuentaCustodia],
   ['GET /api/retencion', handleGetRetencion],
   ['GET /api/retencion/uso', handleGetRetencionUso],
   ['POST /api/retencion/purgar', handlePurgarRetencion],

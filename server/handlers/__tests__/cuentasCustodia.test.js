@@ -8,6 +8,7 @@ import {
   handleActualizarCuentaCustodia,
   handleEliminarCuentaCustodia,
   handleRestaurarCuentasCustodia,
+  handleRestaurarUnaCuentaCustodia,
 } from '../cuentasCustodia.js'
 import { CUENTAS_DEFAULT, CAJAS_PERMANENTES } from '../../lib/cuentasCustodiaUtils.js'
 
@@ -223,5 +224,49 @@ describe('cuentas de custodia', () => {
     const res = await handleGetCuentasCustodia(makeRequest(undefined, { url: `${urlBase()}/finanzas/cuentas-custodia` }), ENV)
     const { status } = await readResponse(res)
     expect(status).toBe(403)
+  })
+
+  it('POST /restaurar-una reactiva una cuenta eliminada concreta (reversible)', async () => {
+    let patch
+    mock = installFetchMock([
+      {
+        match: '/cuentas_custodia?id=',
+        method: 'PATCH',
+        respond: (url, init) => {
+          patch = JSON.parse(init.body)
+          return [{ ...CUENTA_FILA, activo: true }]
+        },
+      },
+      { match: '/auditoria', method: 'POST', respond: [] },
+    ])
+    const res = await handleRestaurarUnaCuentaCustodia(
+      makeRequest({ id: CUENTA_FILA.id }, { url: `${urlBase()}/finanzas/cuentas-custodia/restaurar-una` }),
+      ENV,
+    )
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.cuenta.activo).toBe(true)
+    expect(patch.activo).toBe(true)
+  })
+
+  it('POST /restaurar-una rechaza id inválido y devuelve 404 si la cuenta es de otra cuenta_id', async () => {
+    mock = installFetchMock([
+      { match: '/cuentas_custodia?id=', method: 'PATCH', respond: [] },
+    ])
+    // id inválido: 400 sin llamar a Supabase
+    const resBad = await handleRestaurarUnaCuentaCustodia(
+      makeRequest({ id: 'no-es-uuid' }, { url: `${urlBase()}/finanzas/cuentas-custodia/restaurar-una` }),
+      ENV,
+    )
+    const { status: s1 } = await readResponse(resBad)
+    expect(s1).toBe(400)
+    // cuenta de otro tenant: el PATCH filtrado no encuentra filas → 404
+    const res404 = await handleRestaurarUnaCuentaCustodia(
+      makeRequest({ id: CUENTA_FILA.id }, { url: `${urlBase()}/finanzas/cuentas-custodia/restaurar-una` }),
+      ENV,
+    )
+    const { status: s2 } = await readResponse(res404)
+    expect(s2).toBe(404)
   })
 })

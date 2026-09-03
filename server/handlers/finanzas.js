@@ -264,6 +264,157 @@ export async function handleAnularFinanzasMovimiento(request, env) {
   return json({ ok: true, idempotente: false, movimiento: movementResponse(row) }, 200, request)
 }
 
+// POST /api/finanzas/movimientos/revertir-anulacion
+// Reversibilidad: un movimiento anulado vuelve a estado activo. El POST de
+// anulación nunca borra, así que restaurar es seguro: se limpian los campos de
+// auditoría de la anulación (el CHECK de la tabla lo exige en estado activo)
+// y se deja constancia en auditoría. Idempotente si ya está activo.
+export async function handleRevertirAnulacionMovimiento(request, env) {
+  const context = await adminContext(request, env)
+  if (context.error) return context.error
+  const parsed = await readBody(request)
+  if (parsed.error) return parsed.error
+
+  const id = String(parsed.body?.id || '').trim()
+  if (!isValidUuid(id)) return jsonError('id inválido', 400, request)
+
+  const current = await readMovement(env, context.operador.cuenta_id, id)
+  if (current.error) return jsonError('No se pudo leer el movimiento', 500, request)
+  if (!current.row) return jsonError('Movimiento no encontrado', 404, request)
+  if (current.row.estado === 'activo') {
+    return json({ ok: true, idempotente: true, movimiento: movementResponse(current.row) }, 200, request)
+  }
+
+  const response = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?id=eq.${queryValue(id)}` +
+      `&${accountFilter(context.operador.cuenta_id)}&estado=eq.anulado`,
+    {
+      method: 'PATCH',
+      headers: serviceHeaders(env),
+      // El CHECK (estado='activo' AND anulado_en IS NULL ...) exige limpiar
+      // los campos de anulación al revertir; motivo_anulacion se conserva en
+      // el log de auditoría, no en la fila.
+      body: JSON.stringify({
+        estado: 'activo',
+        anulado_en: null,
+        anulado_por: null,
+        motivo_anulacion: null,
+        anulacion_idempotency_key: null,
+      }),
+    },
+  )
+  if (!response.ok) return jsonError('No se pudo revertir la anulación', 409, request)
+  const [row] = await response.json()
+  if (!row) return jsonError('Movimiento no encontrado o ya activo', 409, request)
+
+  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
+    usuarioId: context.operador.id,
+    usuarioNombre: context.operador.nombre,
+    usuarioRol: context.operador.rol,
+    cuentaId: context.operador.cuenta_id,
+    categoria: 'FINANZAS',
+    accion: 'MOVIMIENTO_REVERTIDO',
+    entidadTipo: 'finanzas_movimientos',
+    entidadId: row.id,
+    meta: { motivo_anulacion_anterior: current.row.motivo_anulacion || null },
+    ip: context.ip,
+  }).catch(() => {})
+
+  return json({ ok: true, idempotente: false, movimiento: movementResponse(row) }, 200, request)
+}
+
+// POST /api/finanzas/categorias/eliminar
+// Baja LÓGICA (activo=false): la categoría deja de ofrecerse en nuevos
+// movimientos pero el historial conserva su nombre y se puede restaurar.
+// Las predeterminadas del sistema no se pueden eliminar (siempre aparecen).
+export async function handleEliminarFinanzasCategoria(request, env) {
+  const context = await adminContext(request, env)
+  if (context.error) return context.error
+  const parsed = await readBody(request)
+  if (parsed.error) return parsed.error
+
+  const id = String(parsed.body?.id || '').trim()
+  if (!isValidUuid(id)) return jsonError('id inválido', 400, request)
+
+  const lookup = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?id=eq.${queryValue(id)}` +
+      `&${accountFilter(context.operador.cuenta_id)}&select=id,nombre,activo&limit=1`,
+    { headers: serviceHeaders(env, 'return=minimal') },
+  )
+  if (!lookup.ok) return jsonError('No se pudo validar la categoría', 500, request)
+  const [row] = await lookup.json().catch(() => [])
+  if (!row) return jsonError('Categoría no encontrada', 404, request)
+  const esPredeterminada = DEFAULT_CATEGORIES.some(c => c.nombre.toLowerCase() === String(row.nombre).toLowerCase())
+  if (esPredeterminada) return jsonError('Las categorías predeterminadas no se pueden eliminar', 400, request)
+  if (!row.activo) return json({ ok: true, idempotente: true, id }, 200, request)
+
+  const response = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?id=eq.${queryValue(id)}` +
+      `&${accountFilter(context.operador.cuenta_id)}`,
+    {
+      method: 'PATCH',
+      headers: serviceHeaders(env),
+      body: JSON.stringify({ activo: false }),
+    },
+  )
+  if (!response.ok) return jsonError('No se pudo eliminar la categoría', 500, request)
+
+  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
+    usuarioId: context.operador.id,
+    usuarioNombre: context.operador.nombre,
+    usuarioRol: context.operador.rol,
+    cuentaId: context.operador.cuenta_id,
+    categoria: 'FINANZAS',
+    accion: 'CATEGORIA_ELIMINADA',
+    entidadTipo: 'finanzas_categorias',
+    entidadId: id,
+    meta: { logico: true, nombre: row.nombre },
+    ip: context.ip,
+  }).catch(() => {})
+
+  return json({ ok: true, id, nombre: row.nombre }, 200, request)
+}
+
+// POST /api/finanzas/categorias/restaurar
+// Reversibilidad: reactiva una categoría dada de baja (activo=false → true).
+export async function handleRestaurarFinanzasCategoria(request, env) {
+  const context = await adminContext(request, env)
+  if (context.error) return context.error
+  const parsed = await readBody(request)
+  if (parsed.error) return parsed.error
+
+  const id = String(parsed.body?.id || '').trim()
+  if (!isValidUuid(id)) return jsonError('id inválido', 400, request)
+
+  const response = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?id=eq.${queryValue(id)}` +
+      `&${accountFilter(context.operador.cuenta_id)}`,
+    {
+      method: 'PATCH',
+      headers: serviceHeaders(env),
+      body: JSON.stringify({ activo: true }),
+    },
+  )
+  if (!response.ok) return jsonError('No se pudo restaurar la categoría', 500, request)
+  const [row] = await response.json().catch(() => [])
+  if (!row) return jsonError('Categoría no encontrada', 404, request)
+
+  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
+    usuarioId: context.operador.id,
+    usuarioNombre: context.operador.nombre,
+    usuarioRol: context.operador.rol,
+    cuentaId: context.operador.cuenta_id,
+    categoria: 'FINANZAS',
+    accion: 'CATEGORIA_RESTAURADA',
+    entidadTipo: 'finanzas_categorias',
+    entidadId: id,
+    meta: { nombre: row.nombre },
+    ip: context.ip,
+  }).catch(() => {})
+
+  return json({ ok: true, categoria: row }, 200, request)
+}
+
 export async function handleGetFinanzasResumen(request, env) {
   const context = await adminContext(request, env)
   if (context.error) return context.error
@@ -306,7 +457,16 @@ export async function handleGetFinanzasCategorias(request, env) {
   const defaults = DEFAULT_CATEGORIES
     .filter(category => !names.has(category.nombre.toLowerCase()))
     .map(category => ({ ...category, id: null, activo: true, predeterminada: true }))
-  return json({ categorias: [...stored, ...defaults] }, 200, request)
+
+  // Papelera: categorías dadas de baja, recuperables desde el gestor.
+  const eliminadasRes = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?${accountFilter(context.operador.cuenta_id)}` +
+      '&activo=eq.false&select=id,nombre,tipo,activo&order=nombre.asc&limit=50',
+    { headers: serviceHeaders(env, 'return=minimal') },
+  )
+  const eliminadas = eliminadasRes.ok ? await eliminadasRes.json() : []
+
+  return json({ categorias: [...stored, ...defaults], eliminadas: Array.isArray(eliminadas) ? eliminadas : [] }, 200, request)
 }
 
 export async function handleCrearFinanzasCategoria(request, env) {

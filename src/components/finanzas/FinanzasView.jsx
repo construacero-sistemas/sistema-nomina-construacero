@@ -6,6 +6,7 @@ import {
   ArrowRightLeft,
   BarChart3,
   Download,
+  FileText,
   Landmark,
   Plus,
   ReceiptText,
@@ -23,14 +24,18 @@ import useAuthStore from '../../../compat/store/useAuthStore.js'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import {
   useAnularMovimiento,
+  useRevertirAnulacion,
   useFinanzasCategorias,
   useFinanzasMovimientos,
   useFinanzasResumen,
   usePuedeFinanzas,
   useReasignarCuenta,
+  useEliminarCategoria,
+  useRestaurarCategoria,
 } from '../../hooks/useFinanzas.js'
 import { useCuentasCustodia } from '../../hooks/useCuentasCustodia.js'
 import MovimientoForm from './MovimientoForm.jsx'
+import { Settings2 } from 'lucide-react'
 import MovimientoTable from './MovimientoTable.jsx'
 import SyncPosModal from './SyncPosModal.jsx'
 import CarterasHeader from './CarterasHeader.jsx'
@@ -39,23 +44,13 @@ import DetalleCuentaModal from './DetalleCuentaModal.jsx'
 import ReasignarCuentaModal from './ReasignarCuentaModal.jsx'
 import CuentasCustodiaGrid from './CuentasCustodiaGrid.jsx'
 import CuentaFormModal from './CuentaFormModal.jsx'
+import CategoriasModal from './CategoriasModal.jsx'
+import AnularDialog from './AnularDialog.jsx'
+import { exportarCsv } from './exportarMovimientosCsv.js'
+import { isoToday, monthStart, RANGOS_RAPIDOS, rangoRapidoActivo, aplicarRangoRapido as resolverRango } from './fechasRapidas.js'
+import { fechaCorta, formatNumber, formatUsd } from './formatos.js'
+import { logClientError } from '../../../compat/utils/errorLogger.js'
 import { calcularSaldosCarteras, clasificarMovimientoEnCartera, contarMovimientosSinCuenta } from '../../utils/carterasHelper.js'
-
-function getLocalIsoDate(date = new Date()) {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
-function isoToday() {
-  return getLocalIsoDate()
-}
-
-function monthStart() {
-  const date = new Date()
-  return getLocalIsoDate(new Date(date.getFullYear(), date.getMonth(), 1))
-}
 
 // Export CSV: oculto por ahora (se reactiva poniendo true).
 const MOSTRAR_CSV = false
@@ -84,14 +79,23 @@ export default function FinanzasView() {
   const [cuentaEditar, setCuentaEditar] = useState(null)
   const [anular, setAnular] = useState(null)
   const [reasignarOpen, setReasignarOpen] = useState(false)
+  const [exportandoPdf, setExportandoPdf] = useState(false)
+  const [categoriasOpen, setCategoriasOpen] = useState(false)
 
   const categorias = useFinanzasCategorias()
   const movimientos = useFinanzasMovimientos({ desde, hasta, tipo, categoria, moneda, mostrarAnulados })
   const resumen = useFinanzasResumen({ desde, hasta, tipo, categoria, moneda })
   const anularMutation = useAnularMovimiento()
+  const revertirAnulacion = useRevertirAnulacion()
+  const eliminarCategoriaM = useEliminarCategoria()
+  const restaurarCategoriaM = useRestaurarCategoria()
   const reasignarMutation = useReasignarCuenta()
 
   const categoriasVisibles = categorias.data?.categorias || []
+  const categoriasEliminadas = categorias.data?.eliminadas || []
+  const pendingCategoriaId = eliminarCategoriaM.isPending || restaurarCategoriaM.isPending
+    ? (eliminarCategoriaM.variables?.id || restaurarCategoriaM.variables?.id || null)
+    : null
   const summary = resumen.data?.resumen
 
   const movimientosList = useMemo(
@@ -102,9 +106,11 @@ export default function FinanzasView() {
   // Cuentas bancarias, Binance, Zelle y cajas de custodia
   const {
     cuentas,
+    cuentasEliminadas,
     agregarCuenta,
     editarCuenta,
     eliminarCuenta,
+    restaurarCuentaEliminada,
     restaurarPredeterminadas,
   } = useCuentasCustodia(movimientosList)
 
@@ -128,6 +134,13 @@ export default function FinanzasView() {
   }, [movimientosList, filtroCartera])
 
   const fechaValida = desde && hasta && desde <= hasta
+  const chipActivo = rangoRapidoActivo(desde, hasta)
+
+  const aplicarRangoRapido = id => {
+    const rango = resolverRango(id)
+    setDesde(rango.desde)
+    setHasta(rango.hasta)
+  }
 
   const resetFiltros = () => {
     setDesde(monthStart())
@@ -144,6 +157,30 @@ export default function FinanzasView() {
       editarCuenta(cuentaEditar.id, cuentaData)
     } else {
       agregarCuenta(cuentaData)
+    }
+  }
+
+  // Reporte PDF del rango/filtros activos (resumen + detalle línea por línea).
+  const handleExportarPdf = async () => {
+    setExportandoPdf(true)
+    try {
+      const { generarFinanzasResumenPDF } = await import('../../services/pdf/finanzasResumenPDF.js')
+      await generarFinanzasResumenPDF({
+        movimientos: movimientosFiltrados,
+        resumen: {
+          ingresos_usd: summary?.ingresos_usd,
+          egresos_usd: summary?.egresos_usd,
+          balance_usd: summary?.balance_usd,
+          balance_ves: summary?.balance_ves,
+          tipoFiltro: tipo || '',
+        },
+        rango: { desde, hasta },
+        action: 'download',
+      })
+    } catch (error) {
+      logClientError({ mensaje: `Error exportando reporte financiero: ${error?.message || error}`, stack: error?.stack, categoria: 'FINANZAS_PDF' })
+    } finally {
+      setExportandoPdf(false)
     }
   }
 
@@ -277,7 +314,7 @@ export default function FinanzasView() {
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-black text-slate-800">Filtros y Período</h2>
-                <p className="mt-0.5 text-xs text-slate-400">Filtra las fechas, tipo de movimiento o categoría.</p>
+                <p className="mt-0.5 text-xs text-slate-400 hidden sm:block">Filtra las fechas, tipo de movimiento o categoría.</p>
               </div>
               {filtroCartera && (
                 <button
@@ -290,22 +327,71 @@ export default function FinanzasView() {
               )}
             </div>
 
+            {/* Rangos rápidos: la acción más común a un toque (especialmente en móvil) */}
+            <div className="mb-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Rangos de fecha rápidos">
+              {RANGOS_RAPIDOS.map(rango => (
+                <button
+                  key={rango.id}
+                  type="button"
+                  onClick={() => aplicarRangoRapido(rango.id)}
+                  aria-pressed={chipActivo === rango.id}
+                  className={`px-3 h-8 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
+                    chipActivo === rango.id
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                  }`}
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  {rango.label}
+                </button>
+              ))}
+            </div>
+
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <FilterField label="Desde"><DatePicker value={desde} onChange={setDesde} /></FilterField>
               <FilterField label="Hasta"><DatePicker value={hasta} onChange={setHasta} /></FilterField>
               <FilterField label="Tipo"><Choice value={tipo} onChange={setTipo} placeholder="Todos" options={[{ value: 'ingreso', label: 'Ingresos' }, { value: 'egreso', label: 'Egresos' }]} /></FilterField>
-              <FilterField label="Categoría"><Choice value={categoria} onChange={setCategoria} placeholder="Todas" options={categoriasVisibles.map(item => ({ value: item.nombre, label: item.nombre }))} /></FilterField>
+              <FilterField label="Categoría">
+                <div className="flex gap-1.5">
+                  <div className="flex-1 min-w-0"><Choice value={categoria} onChange={setCategoria} placeholder="Todas" options={categoriasVisibles.map(item => ({ value: item.nombre, label: item.nombre }))} /></div>
+                  <button
+                    type="button"
+                    onClick={() => setCategoriasOpen(true)}
+                    className="shrink-0 h-11 w-11 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700 flex items-center justify-center cursor-pointer"
+                    aria-label="Gestionar categorías"
+                    title="Gestionar categorías"
+                  >
+                    <Settings2 size={15} />
+                  </button>
+                </div>
+              </FilterField>
               <FilterField label="Moneda"><Choice value={moneda} onChange={setMoneda} placeholder="Todas" options={['USD', 'VES', 'EUR', 'USDT'].map(value => ({ value, label: value }))} /></FilterField>
               <div className="flex items-end gap-2">
                 <button type="button" onClick={resetFiltros} className="flex-1 h-11 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">Limpiar</button>
                 <button type="button" onClick={() => { movimientos.refetch(); resumen.refetch() }} className="h-11 w-11 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center cursor-pointer" aria-label="Actualizar reportes"><RefreshCw size={15} /></button>
               </div>
-            </div>
-
-            <label className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 cursor-pointer">
+            </div>            <label className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 cursor-pointer">
               <input type="checkbox" checked={mostrarAnulados} onChange={e => setMostrarAnulados(e.target.checked)} className="rounded border-slate-300 text-primary focus:ring-primary" />
               Mostrar movimientos anulados también
             </label>
+
+            {/* Exportación del reporte del período filtrado */}
+            <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] text-slate-400 font-semibold">
+                El PDF refleja los filtros activos: {fechaCorta(desde)} – {fechaCorta(hasta)}{tipo ? ` · ${tipo === 'ingreso' ? 'ingresos' : 'egresos'}` : ''} · {movimientosFiltrados.length} movimiento(s)
+              </p>
+              <button
+                type="button"
+                onClick={handleExportarPdf}
+                disabled={!fechaValida || exportandoPdf || movimientosFiltrados.length === 0}
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-11 rounded-xl bg-primary/10 border border-primary/20 text-xs font-black text-primary hover:bg-primary/20 disabled:opacity-40 active:scale-95 transition-all shadow-xs cursor-pointer"
+                style={{ touchAction: 'manipulation' }}
+              >
+                <FileText size={14} />
+                <span>{exportandoPdf ? 'Generando PDF...' : 'Descargar reporte PDF'}</span>
+              </button>
+            </div>
+
             {!fechaValida && <p className="mt-2 text-xs font-semibold text-red-600" role="alert">El rango de fechas no es válido.</p>}
           </section>
 
@@ -344,6 +430,7 @@ export default function FinanzasView() {
                 <MovimientoTable
                   movimientos={movimientosFiltrados}
                   onAnular={movimiento => setAnular(movimiento)}
+                  onRevertir={movimiento => revertirAnulacion.mutate({ id: movimiento.id })}
                 />
               </div>
             )}
@@ -371,6 +458,8 @@ export default function FinanzasView() {
           {/* 2. Zona de Cuentas Bancarias, Binance, Zelle y Cajas de Custodia */}
           <CuentasCustodiaGrid
             cuentas={cuentas}
+            cuentasEliminadas={cuentasEliminadas}
+            onRestaurarEliminada={restaurarCuentaEliminada}
             onNuevaCuenta={() => {
               setCuentaEditar(null)
               setCuentaFormOpen(true)
@@ -419,6 +508,7 @@ export default function FinanzasView() {
                 <MovimientoTable
                   movimientos={movimientosFiltrados}
                   onAnular={movimiento => setAnular(movimiento)}
+                  onRevertir={movimiento => revertirAnulacion.mutate({ id: movimiento.id })}
                 />
               </div>
             )}
@@ -456,6 +546,16 @@ export default function FinanzasView() {
         />
       )}
       {anular && <AnularDialog movimiento={anular} pending={anularMutation.isPending} onClose={() => setAnular(null)} onConfirm={motivo => { anularMutation.mutate({ id: anular.id, motivo }, { onSuccess: () => setAnular(null) }) }} />}
+      {categoriasOpen && (
+        <CategoriasModal
+          categorias={categoriasVisibles}
+          eliminadas={categoriasEliminadas}
+          pendingId={pendingCategoriaId}
+          onDelete={id => eliminarCategoriaM.mutate({ id })}
+          onRestore={id => restaurarCategoriaM.mutate({ id })}
+          onClose={() => setCategoriasOpen(false)}
+        />
+      )}
       <ReasignarCuentaModal
         open={reasignarOpen}
         onClose={() => setReasignarOpen(false)}
@@ -485,85 +585,4 @@ function Choice({ value, onChange, placeholder, options }) {
 
 function InlineError({ message, onRetry }) {
   return <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700" role="alert">{message} <button type="button" onClick={onRetry} className="underline font-black">Volver a intentar</button></div>
-}
-
-function AnularDialog({ movimiento, pending, onClose, onConfirm }) {
-  const [motivo, setMotivo] = useState('')
-  return (
-    <Modal isOpen onClose={onClose} title="¿Anular este movimiento?" className="sm:max-w-md">
-      <p className="text-sm text-slate-500">No se borrará. Quedará fuera del balance vigente y conservará su historial.</p>
-      <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600"><strong>{movimiento.concepto}</strong> · {formatUsd(movimiento.monto)} {movimiento.moneda}</p>
-      <label className="block mt-4 text-xs font-bold text-slate-600">¿Por qué quieres anularlo? *<textarea value={motivo} onChange={e => setMotivo(e.target.value)} maxLength={300} rows={3} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm" placeholder="Describe por qué se anula..." /></label>
-      <div className="mt-4 flex justify-end gap-2">
-        <button type="button" onClick={onClose} disabled={pending} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
-        <button type="button" onClick={() => onConfirm(motivo.trim())} disabled={pending || motivo.trim().length < 3} className="px-4 py-2 rounded-xl bg-red-600 text-sm font-black text-white disabled:opacity-50">{pending ? 'Guardando...' : 'Sí, anular movimiento'}</button>
-      </div>
-    </Modal>
-  )
-}
-
-function formatNumber(value) {
-  return Number(value || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function formatUsd(value) {
-  return `$${formatNumber(value)}`
-}
-
-function exportarCsv(rows) {
-  if (!rows.length || typeof window === 'undefined') return
-  const headers = [
-    'Fecha',
-    'Tipo',
-    'Categoría',
-    'Cartera',
-    'Subcuenta / Método',
-    'Concepto',
-    'Monto',
-    'Moneda',
-    'Tasa de Cambio (Bs/$)',
-    'Monto en Bs',
-    'Referencia',
-    'Estado',
-    'Observaciones',
-  ]
-
-  const escape = value => `"${String(value ?? '').replaceAll('"', '""')}"`
-
-  const rowsData = rows.map(row => {
-    const { carteraId, subcuentaNombre } = clasificarMovimientoEnCartera(row)
-    const monto = Number(row.monto) || 0
-    const tasa = Number(row.tasa_usd_ves || row.tasa_ves || 1)
-    const montoVes = row.moneda === 'VES'
-      ? (Number(row.monto_ves) || monto)
-      : (Number(row.monto_ves) || (monto * tasa))
-
-    return [
-      row.fecha || '',
-      row.tipo === 'ingreso' ? 'Ingreso' : 'Egreso',
-      row.categoria || 'Sin categoría',
-      carteraId === 'USD' ? 'Cartera Dólares (USD)' : 'Cartera Bolívares (VES)',
-      subcuentaNombre || '',
-      row.concepto || '',
-      monto.toFixed(2),
-      row.moneda || 'USD',
-      tasa > 1 ? tasa.toFixed(2) : '1.00',
-      montoVes.toFixed(2),
-      row.referencia || '',
-      row.estado === 'anulado' ? 'Anulado' : 'Activo',
-      row.observaciones || '',
-    ]
-  })
-
-  const csv = [headers, ...rowsData]
-    .map(row => row.map(escape).join(';'))
-    .join('\n')
-
-  const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `finanzas-construacero-${getLocalIsoDate()}.csv`
-  link.click()
-  URL.revokeObjectURL(url)
 }

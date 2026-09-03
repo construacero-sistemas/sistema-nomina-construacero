@@ -1,7 +1,7 @@
-import { Settings2, Users, ArrowRight } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Settings2, Users, Lock } from 'lucide-react'
 import PageHeader from '../../compat/components/ui/PageHeader.jsx'
 import TabConfiguracion from '../components/nomina/TabConfiguracion.jsx'
+import { NOMINA_BLOQUEADA } from '../config/modulos.js'
 
 export default function SistemaView() {
   return (
@@ -29,14 +29,14 @@ export default function SistemaView() {
           </div>
         </div>
 
-        <Link
-          to="/nomina"
-          className="inline-flex items-center gap-1.5 self-start sm:self-auto px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white font-bold text-xs shadow-xs transition-all active:scale-95 shrink-0"
-          style={{ touchAction: 'manipulation' }}
+        <span
+          className={`inline-flex items-center gap-1.5 self-start sm:self-auto px-3.5 py-2 rounded-xl font-bold text-xs shrink-0 ${NOMINA_BLOQUEADA ? 'border border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed' : 'border-primary/25 bg-primary/5 text-primary'}`}
+          aria-disabled={NOMINA_BLOQUEADA || undefined}
+          title={NOMINA_BLOQUEADA ? 'Disponible próximamente' : 'Ir a Personal'}
         >
-          <span>Ir a Personal</span>
-          <ArrowRight size={13} />
-        </Link>
+          {NOMINA_BLOQUEADA && <Lock size={13} aria-hidden="true" />}
+          <span>{NOMINA_BLOQUEADA ? 'Gestión de personal — próximamente' : 'Gestión de personal en Nómina'}</span>
+        </span>
       </section>
 
       {/* Panel de Configuración General, Horarios, Tasas y Recargos */}

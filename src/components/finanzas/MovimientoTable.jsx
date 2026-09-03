@@ -9,6 +9,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Eye,
+  RotateCcw,
 } from 'lucide-react'
 import HorizontalScroll from '../../../compat/components/ui/HorizontalScroll.jsx'
 
@@ -22,7 +23,7 @@ function date(value) {
 
 const OPCIONES_POR_PAGINA = [10, 25, 50, 100]
 
-export default function MovimientoTable({ movimientos = [], onAnular }) {
+export default function MovimientoTable({ movimientos = [], onAnular, onRevertir }) {
   const [pagina, setPagina] = useState(1)
   const [porPagina, setPorPagina] = useState(10)
 
@@ -105,7 +106,7 @@ export default function MovimientoTable({ movimientos = [], onAnular }) {
               </tr>
             ) : (
               movimientosPaginados.map((item) => (
-                <DesktopRow key={item.id} item={item} onAnular={onAnular} />
+                <DesktopRow key={item.id} item={item} onAnular={onAnular} onRevertir={onRevertir} />
               ))
             )}
           </tbody>
@@ -120,7 +121,7 @@ export default function MovimientoTable({ movimientos = [], onAnular }) {
           </div>
         ) : (
           movimientosPaginados.map((item) => (
-            <MobileRow key={item.id} item={item} onAnular={onAnular} />
+            <MobileRow key={item.id} item={item} onAnular={onAnular} onRevertir={onRevertir} />
           ))
         )}
       </div>
@@ -222,7 +223,7 @@ export default function MovimientoTable({ movimientos = [], onAnular }) {
   )
 }
 
-function DesktopRow({ item, onAnular }) {
+function DesktopRow({ item, onAnular, onRevertir }) {
   const activo = item.estado === 'activo'
   return (
     <tr className="hover:bg-slate-50/70 transition-colors">
@@ -257,16 +258,22 @@ function DesktopRow({ item, onAnular }) {
             <Ban size={13} /> Anular
           </button>
         ) : (
-          <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 font-medium">
-            <Eye size={12} /> Anulado
-          </span>
+          <button
+            type="button"
+            onClick={() => onRevertir?.(item)}
+            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 transition-colors cursor-pointer"
+            aria-label="Revertir anulación"
+            title="El movimiento vuelve al balance activo"
+          >
+            <RotateCcw size={13} /> Restaurar
+          </button>
         )}
       </td>
     </tr>
   )
 }
 
-function MobileRow({ item, onAnular }) {
+function MobileRow({ item, onAnular, onRevertir }) {
   const activo = item.estado === 'activo'
   return (
     <article className="p-4">
@@ -300,9 +307,13 @@ function MobileRow({ item, onAnular }) {
             <Ban size={14} /> Anular
           </button>
         ) : (
-          <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 font-medium">
-            <Eye size={13} /> Conservado
-          </span>
+          <button
+            type="button"
+            onClick={() => onRevertir?.(item)}
+            className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+          >
+            <RotateCcw size={14} /> Restaurar
+          </button>
         )}
       </div>
     </article>

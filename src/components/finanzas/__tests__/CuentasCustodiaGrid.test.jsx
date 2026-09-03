@@ -117,3 +117,25 @@ describe('CuentasCustodiaGrid — borrado seguro', () => {
     expect(onEliminar).toHaveBeenCalledWith(cuenta.id)
   })
 })
+
+describe('CuentasCustodiaGrid — papelera reversible', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('lista las cuentas eliminadas y las restaura desde la papelera', () => {
+    const onRestaurarEliminada = vi.fn()
+    const eliminada = { id: 'c-del', nombre: 'Zelle viejo', moneda: 'USD', saldo: 0, permanente: false }
+    renderGrid([mkCuenta()], vi.fn(), {
+      cuentasEliminadas: [eliminada],
+      onRestaurarEliminada,
+    })
+
+    expect(screen.getByText(/Eliminadas recientemente/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Restaurar Zelle viejo/i }))
+    expect(onRestaurarEliminada).toHaveBeenCalledWith('c-del')
+  })
+
+  it('no muestra la sección de papelera si no hay cuentas eliminadas', () => {
+    renderGrid([mkCuenta()])
+    expect(screen.queryByText(/Eliminadas recientemente/i)).toBeNull()
+  })
+})

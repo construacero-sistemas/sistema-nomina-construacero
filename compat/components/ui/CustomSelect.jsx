@@ -4,44 +4,8 @@ import { useState, useEffect, useRef, useMemo, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { Search, ChevronDown, X, Check, Plus } from 'lucide-react'
 
-/** Normaliza texto: quita acentos y pasa a minúsculas */
-function normalizar(str) {
-  if (!str) return ''
-  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-}
-
-/** Quita todo lo que no sea número o letra (útil para cédulas) */
-function purificar(str) {
-  if (!str) return ''
-  return str.replace(/[^a-z0-9]/gi, '').toLowerCase()
-}
-
-/** Búsqueda inteligente: soporta acentos, inicio de palabra, y typos básicos */
-function matchScore(texto, query) {
-  const t = normalizar(texto)
-  const q = normalizar(query)
-  const qPure = purificar(query)
-  const tPure = purificar(texto)
-
-  // 1. Coincidencia exacta o inicio de cédula purificada (Ej: query "123" match "V12.3...")
-  if (qPure.length >= 3 && tPure.includes(qPure)) return 4
-  
-  // 2. Coincidencia exacta al inicio → máxima prioridad
-  if (t.startsWith(q)) return 3
-  
-  // 3. Coincidencia al inicio de alguna palabra
-  if (t.split(/\s+/).some(w => w.startsWith(q))) return 2
-  
-  // 4. Contiene la query
-  if (t.includes(q)) return 1
-  
-  // 5. Coincidencia por iniciales (ej: "dc" → "Distrito Capital")
-  if (q.length >= 2) {
-    const iniciales = t.split(/\s+/).map(w => w[0]).join('')
-    if (iniciales.includes(q)) return 1
-  }
-  return 0
-}
+// Búsqueda difusa extraída a módulo puro (reuso y testeable).
+import { normalizar, matchScore } from './selectMatching.js'
 
 /**
  * @param {object} props
@@ -55,6 +19,9 @@ function matchScore(texto, query) {
  * @param {string} [props.createLabel] - texto para la opción de crear (default: 'Crear')
  * @param {boolean} [props.disabled]
  * @param {React.ComponentType} [props.icon] - icono del trigger
+ * @param {{label: string, icon: React.ComponentType, title?: string, onSelect: (option: object) => void}} [props.rowAction]
+ * Acción opcional por fila (ej. eliminar la categoría): botón aparte dentro de la
+ * opción; dispara rowAction.onSelect(opt) sin seleccionar el valor.
  */
 export default function CustomSelect({
   options = [],
@@ -69,6 +36,7 @@ export default function CustomSelect({
   disabled = false,
   icon: TriggerIcon,
   showSubInTrigger = true,
+  rowAction,
 }) {
   const [abierto, setAbierto] = useState(false)
   const [busqueda, setBusqueda] = useState('')
@@ -361,6 +329,19 @@ export default function CustomSelect({
                               {opt.sub && <div className="text-[13px] text-slate-400 truncate mt-0.5">{opt.sub}</div>}
                             </div>
                             {isSelected && <Check size={18} className="text-primary shrink-0" />}
+                            {rowAction && !opt.noAction && (
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`${rowAction.label} ${opt.label}`}
+                                title={rowAction.title}
+                                onClick={e => { e.stopPropagation(); rowAction.onSelect(opt) }}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); rowAction.onSelect(opt) } }}
+                                className="shrink-0 rounded-lg p-2 -mr-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 active:bg-rose-100 cursor-pointer transition-colors"
+                              >
+                                <rowAction.icon size={16} aria-hidden="true" />
+                              </span>
+                            )}
                           </button>
                         )
                       })}
@@ -502,6 +483,19 @@ export default function CustomSelect({
                         <span className="flex-1 whitespace-normal break-words leading-tight py-0.5">{opt.label}</span>
                         {opt.sub && <span className="text-xs text-slate-400 truncate max-w-[140px]">{opt.sub}</span>}
                         {isSelected && <Check size={14} className="text-primary shrink-0" />}
+                        {rowAction && !opt.noAction && (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`${rowAction.label} ${opt.label}`}
+                            title={rowAction.title}
+                            onClick={e => { e.stopPropagation(); rowAction.onSelect(opt) }}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); rowAction.onSelect(opt) } }}
+                            className="shrink-0 rounded-lg p-1.5 -mr-0.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 active:bg-rose-100 cursor-pointer transition-colors"
+                          >
+                            <rowAction.icon size={14} aria-hidden="true" />
+                          </span>
+                        )}
                       </button>
                     )
                   })}

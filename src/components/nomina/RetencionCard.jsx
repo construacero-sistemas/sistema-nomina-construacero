@@ -4,17 +4,19 @@
 import { useState } from 'react'
 import { Database, Trash2, Play, RefreshCw, ShieldCheck, Clock, HardDrive } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { getAuthHeaders, apiUrl } from '../../../compat/services/apiBase.js'
+import { authFetch } from '../../../compat/services/authFetch.js'
 
+// authFetch: mismo camino que el resto de hooks — timeout, header de operador
+// y refresh automático del token en 401.
 async function apiGet(path) {
-  const res = await fetch(apiUrl(path), { headers: await getAuthHeaders() })
+  const res = await authFetch(path)
   const payload = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(payload.error || `Error ${res.status}`)
   return payload
 }
 
 async function apiPost(path, body) {
-  const res = await fetch(apiUrl(path), { method: 'POST', headers: await getAuthHeaders(), body: JSON.stringify(body) })
+  const res = await authFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const payload = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(payload.error || `Error ${res.status}`)
   return payload
@@ -139,7 +141,7 @@ export default function RetencionCard() {
 
         {usoQ.isError ? (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            No se pudo medir el uso ({usoQ.error.message}). Aplica la migración 229 (db_usage) y reintenta.
+            No se pudo medir el uso ({usoQ.error.message}). Vuelve a iniciar sesión o reintenta desde el botón de actualizar.
           </p>
         ) : usoQ.isPending && !uso ? (
           <div className="h-2.5 rounded-full bg-slate-200 animate-pulse" aria-label="Cargando uso" />
