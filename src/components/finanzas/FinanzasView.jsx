@@ -314,11 +314,6 @@ export default function FinanzasView() {
               <span className="sm:hidden">Movimientos</span>
               <span className="hidden sm:inline">Movimientos y Flujo</span>
             </span>
-            {movimientosList.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold shrink-0">
-                {movimientosList.length}
-              </span>
-            )}
           </button>
 
           <button

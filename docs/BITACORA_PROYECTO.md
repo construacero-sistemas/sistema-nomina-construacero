@@ -2476,5 +2476,20 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 557/557 tests PASSED (53 suites de prueba).
 - `npm run build`: Build exitoso en 26.95s, bundle `376.01 kB` ≤ 400 kB.
 
+---
+
+### Entrada #116 - 2026-09-03
+**Contexto:** El usuario consultó si el contador numérico de movimientos que aparecía en la pestaña principal era necesario o si se recomendaba quitarlo. Tras confirmar su retiro para evitar confusión con notificaciones o tareas pendientes y mejorar la limpieza visual, se ejecutó el cambio.
+
+**Acciones realizadas:**
+- En `src/components/finanzas/FinanzasView.jsx`: Se eliminó el badge numérico `{movimientosList.length}` del botón de pestaña "Movimientos y Flujo".
+- La barra de pestañas ahora luce simétrica, limpia y profesional entre "Movimientos y Flujo" y "Cuentas y Tesorería". El conteo y volumen de datos se mantiene en la paginación y pie de tabla natural.
+
+**Verificación:**
+- `npm run check:project`: OK (0 archivos > 600 líneas; `FinanzasView.jsx`: 593 líneas).
+- `npm run lint`: 0 errores.
+- `npm test`: 557/557 tests PASSED (53 suites de prueba).
+- `npm run build`: Build exitoso en 31.34s, bundle `376.01 kB` ≤ 400 kB.
+
 
 
