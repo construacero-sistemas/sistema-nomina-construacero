@@ -132,7 +132,10 @@ function MobileDrawerContent({ onClose, onLogout }) {
       {/* 1. Cabecera del drawer móvil */}
       <div
         className="px-4 py-3.5 flex items-center justify-between shrink-0"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+        style={{
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          paddingTop: 'calc(0.875rem + env(safe-area-inset-top, 0px))',
+        }}
       >
         <div className="flex items-center gap-2.5">
           <img
@@ -324,9 +327,9 @@ function Shell() {
   }
 
   return (
-    <div className="flex h-screen h-[100dvh] pt-12 md:pt-14 overflow-hidden" style={{ background: '#f1f5f9' }}>
+    <div className="flex h-screen h-[100dvh] app-shell-safe overflow-hidden" style={{ background: '#f1f5f9' }}>
       <header
-        className="fixed top-0 left-0 right-0 z-40 h-12 md:h-14 px-3 md:px-4 flex items-center gap-2.5 md:gap-3 text-white"
+        className="fixed top-0 left-0 right-0 z-40 app-header-safe px-3 md:px-4 flex items-center gap-2.5 md:gap-3 text-white"
         style={{
           background: 'linear-gradient(135deg, #0a1628 0%, #0d1f3c 100%)',
           borderBottom: '1px solid rgba(255,255,255,0.08)',

@@ -2806,6 +2806,35 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm run build`: Build exitoso en 16.58s.
 - Prueba real en base de datos: purga a 0 ejecutada reduciendo 35 filas de auditoría, 1 de asistencia y 4 de logs anteriores, dejando las tablas derivadas en 0 filas.
 
+---
+
+### Entrada #131 - 2026-09-03
+**Contexto:** El usuario compartió una grabación de pantalla (`WhatsApp Video 2026-09-03 at 2.54.06 PM.mp4`) evidenciando que en iPhone Safari la pantalla se ampliaba abruptamente (zoom involuntario) al interactuar en la parte superior, cortando el diseño y dejando un vacío blanco exterior a la derecha y al pie (*"en iphone me esta haciedno zoom la pantalla de esa manera"*).
+
+**Causa raíz identificada:**
+1. En `index.html`, la metaetiqueta viewport carecía de `maximum-scale=1.0, user-scalable=no`.
+2. En `compat/styles/base.css`, `touch-action: manipulation` solo estaba asignado a inputs y botones. Tocar dos veces rápidamente sobre cualquier contenedor (`div`, `section`, header o tarjetas) disparaba la función nativa de Safari de doble toque (*double-tap to zoom*), provocando el desajuste entre el *Visual Viewport* de WebKit y el layout fijo de la aplicación (`h-[100dvh]`).
+3. En `src/NominaApp.jsx`, el header fijo no incorporaba `env(safe-area-inset-top)`, lo que provocaba que la Dynamic Island / notch del iPhone invadiera la barra superior e indujera pulsaciones imprecisas cerca del área del sistema.
+
+**Acciones realizadas:**
+- En `index.html`:
+  - Se configuró `<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />`.
+- En `compat/styles/base.css`:
+  - Se aplicó `touch-action: manipulation` a nivel global en `html, body, #root` y todos los elementos hijos (`*`), neutralizando definitivamente el doble toque de ampliación en Safari/iOS.
+  - Se crearon las clases `.app-header-safe` y `.app-shell-safe` para calcular dinámicamente la altura y relleno superior con `env(safe-area-inset-top, 0px)` en móvil y 3.5rem en escritorio.
+- En `src/main.jsx`:
+  - Se agregó escucha pasiva para prevenir `gesturestart` (bloqueo de zoom por pellizco accidental).
+- En `src/NominaApp.jsx`:
+  - Se integró `.app-shell-safe` en el contenedor raíz y `.app-header-safe` en el `<header>`.
+  - Se añadió `paddingTop: calc(0.875rem + env(safe-area-inset-top, 0px))` a la cabecera del drawer móvil.
+
+**Verificación:**
+- `npm run check:project`: OK (253 archivos inspeccionados).
+- `npm run test:responsive`: 30/30 pruebas aprobadas (100%).
+- `npm run lint`: 0 errores.
+- `npm test`: 55 suites / 566 pruebas unitarias aprobadas.
+- `npm run build`: Build exitoso en 58.23s, bundle `378.76 kB` ≤ 400 kB.
+
 
 
 

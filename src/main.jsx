@@ -14,6 +14,11 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => undefined), { once: true })
 }
 
+// Prevenir zoom involuntario (pinch) en iOS Safari
+if (typeof document !== 'undefined') {
+  document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false })
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary>
