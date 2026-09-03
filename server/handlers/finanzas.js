@@ -157,6 +157,22 @@ export async function handleCrearFinanzasMovimiento(request, env) {
     ...(movement.partes ? { partes: movement.partes } : {}),
   }
 
+  // Si es en Bolívares y no vino tasa_usd_ves, recuperar la última tasa para no dejarla nula
+  if (payload.moneda === 'VES' && payload.tasa_usd_ves == null) {
+    try {
+      const snapRes = await fetch(
+        `${env.SUPABASE_URL}/rest/v1/nomina_tasas_snapshot?cuenta_id=eq.${encodeURIComponent(context.operador.cuenta_id)}&order=fecha.desc&limit=1&select=bcv`,
+        { headers: serviceHeaders(env, 'return=minimal') },
+      )
+      if (snapRes.ok) {
+        const [snap] = await snapRes.json().catch(() => [])
+        if (Number(snap?.bcv) > 0) payload.tasa_usd_ves = Number(snap.bcv)
+      }
+    } catch {
+      // Continuar con payload actual si falla el snapshot
+    }
+  }
+
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos`, {
     method: 'POST',
     headers: serviceHeaders(env),
@@ -522,16 +538,10 @@ export async function handleCrearFinanzasCategoria(request, env) {
   }
   const [row] = await response.json()
   registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
-    usuarioId: context.operador.id,
-    usuarioNombre: context.operador.nombre,
-    usuarioRol: context.operador.rol,
-    cuentaId: context.operador.cuenta_id,
-    categoria: 'FINANZAS',
-    accion: 'CATEGORIA_CREADA',
-    entidadTipo: 'finanzas_categorias',
-    entidadId: row?.id || null,
-    meta: { tipo: category.tipo },
-    ip: context.ip,
+    usuarioId: context.operador.id, usuarioNombre: context.operador.nombre,
+    usuarioRol: context.operador.rol, cuentaId: context.operador.cuenta_id,
+    categoria: 'FINANZAS', accion: 'CATEGORIA_CREADA', entidadTipo: 'finanzas_categorias',
+    entidadId: row?.id || null, meta: { tipo: category.tipo }, ip: context.ip,
   }).catch(() => {})
   return json({ ok: true, categoria: row }, 201, request)
 }
@@ -568,15 +578,10 @@ export async function handleReasignarCuentaMovimientos(request, env) {
   const updated = await response.json().catch(() => [])
 
   registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
-    usuarioId: context.operador.id,
-    usuarioNombre: context.operador.nombre,
-    usuarioRol: context.operador.rol,
-    cuentaId: context.operador.cuenta_id,
-    categoria: 'FINANZAS',
-    accion: 'MOVIMIENTOS_REASIGNADOS',
-    entidadTipo: 'finanzas_movimientos',
-    entidadId: null,
-    meta: { total: ids.length, actualizados: Array.isArray(updated) ? updated.length : 0, cuenta_origen: cuentaOrigen },
+    usuarioId: context.operador.id, usuarioNombre: context.operador.nombre,
+    usuarioRol: context.operador.rol, cuentaId: context.operador.cuenta_id,
+    categoria: 'FINANZAS', accion: 'MOVIMIENTOS_REASIGNADOS', entidadTipo: 'finanzas_movimientos',
+    entidadId: null, meta: { total: ids.length, actualizados: Array.isArray(updated) ? updated.length : 0, cuenta_origen: cuentaOrigen },
     ip: context.ip,
   }).catch(() => {})
 

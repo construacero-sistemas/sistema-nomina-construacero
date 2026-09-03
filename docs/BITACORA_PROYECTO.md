@@ -2835,6 +2835,37 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 55 suites / 566 pruebas unitarias aprobadas.
 - `npm run build`: Build exitoso en 58.23s, bundle `378.76 kB` ≤ 400 kB.
 
+---
+
+### Entrada #132 - 2026-09-03
+**Contexto:** El usuario consultó si es buena idea dividir ingresos y egresos en Bs, $ y USDT tras evidenciar que al registrar un movimiento de apertura de cuenta en Bolívares (`31.697,66 VES`), las tarjetas de KPI mostraban `$0,00` como cifra principal y `Bs. 31.697,66` en letra pequeña subordinada, dando la falsa impresión de que el ingreso no había sido procesado. Se aprobó ejecutar la combinación **Opción A + C** (píldoras de filtro rápido por moneda + consolidación exacta sin pérdida de conversiones).
+
+**Causa raíz identificada:**
+1. En PostgreSQL, `public.finanzas_resumen` omitía sumar a `total_usd` todo movimiento en bolívares si `tasa_usd_ves` era `NULL`.
+2. En `FinanzasView.jsx`, la apertura de saldo inicial en cuentas no incluía `tasaUsdVes` ni `tasaVes`, dejando el registro en `tasa_usd_ves = null`.
+3. En `ResumenPeriodoKpis.jsx`, las tres tarjetas imponían de forma rígida el formato `$ USD` en el número grande, sin ofrecer selección rápida para visualizar el flujo puro en Bolívares o USDT.
+
+**Acciones realizadas:**
+- **Base de Datos PostgreSQL (Supabase):**
+  - Se creó y aplicó la migración `supabase/migrations/232_finanzas_resumen_multimoneda.sql`.
+  - Se sanearon los registros históricos en `finanzas_movimientos` con `tasa_usd_ves IS NULL` asignando la tasa BCV (804.81 para el saldo inicial de `31.697,66 VES`, fijando su equivalente consolidado en `$39,39 USD`).
+  - Se mejoró la función `public.finanzas_resumen` para computar USDT directamente 1:1 con USD y contar con fallback en bolívares para evitar que ningún movimiento quede en `$0,00`.
+- **Backend (Cloudflare Worker):**
+  - En `server/lib/finanzasUtils.js`: normalización de `tasa_usd_ves` con paridad 1:1 para USDT y prevención de tasas nulas.
+  - En `server/handlers/finanzas.js`: salvaguarda en la inserción de movimientos para consultar la tasa referencial activa si un movimiento en VES no envía tasa USD.
+- **Frontend (React):**
+  - En `src/components/finanzas/ResumenPeriodoKpis.jsx`: se implementó una barra de píldoras en 1 toque `[ Todas (Consolidado) | USD | Bolívares (VES) | USDT ]` y renderizado adaptativo donde al seleccionar Bolívares la cifra grande se muestra en `Bs.` (ej. `Bs. 31.697,66`) y el subtítulo en `$ USD equiv.`.
+  - En `src/components/finanzas/FinanzasView.jsx`: se inyectó `tasaUsdVes: usd` en la apertura de cuentas con saldo inicial y se conectaron las propiedades `moneda` y `onSelectMoneda`.
+  - Se creó la suite de pruebas `src/components/finanzas/__tests__/ResumenPeriodoKpis.test.jsx` (4 pruebas unitarias).
+
+**Verificación:**
+- `npm run check:project`: OK (26 migraciones y 256 archivos de código/configuración).
+- `npm run test:responsive`: 30/30 pruebas aprobadas (100%).
+- `npm run test:bundle-size`: Chunk principal `369.9 kB` ≤ 400 kB.
+- `npm run lint`: 0 errores y 0 advertencias.
+- `npm test`: 56 suites / 570 pruebas unitarias aprobadas (100%).
+- `npm run build`: Compilación exitosa en 42.41s.
+
 
 
 

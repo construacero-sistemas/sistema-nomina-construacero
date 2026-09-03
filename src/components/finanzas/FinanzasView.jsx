@@ -25,6 +25,7 @@ import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
 import ResumenPeriodoKpis from './ResumenPeriodoKpis.jsx'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
+import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
 import {
   useAnularMovimiento,
   useRevertirAnulacion,
@@ -91,6 +92,7 @@ export default function FinanzasView() {
   const [categoriasOpen, setCategoriasOpen] = useState(false)
   const [cuentaTransferir, setCuentaTransferir] = useState(null)
 
+  const { usd } = useTasaCambioNomina()
   const categorias = useFinanzasCategorias()
   const movimientos = useFinanzasMovimientos({ desde, hasta, tipo, categoria, moneda, mostrarAnulados })
   const resumen = useFinanzasResumen({ desde, hasta, tipo, categoria, moneda })
@@ -181,15 +183,8 @@ export default function FinanzasView() {
     } else {
       const nueva = await agregarCuenta(cuentaData)
       if (Number(saldoInicial) > 0) {
-        const metodoPagoSugerido = cuentaData.tipo === 'banco_ves'
-          ? 'Banco en Bolívares'
-          : cuentaData.tipo === 'cripto_usdt'
-          ? 'USDT'
-          : cuentaData.tipo === 'zelle'
-          ? 'Zelle'
-          : cuentaData.tipo === 'efectivo_usd'
-          ? 'Efectivo $'
-          : 'Efectivo Bs'
+        const METODOS = { banco_nacional: 'Banco en Bolívares', cripto_usdt: 'USDT', zelle: 'Zelle', efectivo_usd: 'Efectivo $' }
+        const metodoPagoSugerido = METODOS[cuentaData.tipo] || 'Efectivo Bs'
 
         try {
           await crearMovimiento.mutateAsync({
@@ -198,6 +193,8 @@ export default function FinanzasView() {
             concepto: `Saldo inicial / Apertura de cuenta (${cuentaData.nombre})`,
             monto: Number(saldoInicial),
             moneda: cuentaData.moneda || 'USD',
+            tasaVes: cuentaData.moneda === 'VES' ? 1 : (usd > 0 ? usd : 1),
+            tasaUsdVes: usd > 0 ? usd : 1,
             cuentaOrigen: cuentaData.nombre,
             cuenta_id: nueva?.id || null,
             metodoPago: metodoPagoSugerido,
@@ -415,7 +412,7 @@ export default function FinanzasView() {
             {!fechaValida && <p className="mt-2 text-xs font-semibold text-red-600" role="alert">El rango de fechas no es válido.</p>}
 
           {/* KPI Cards Globales del período */}
-          <ResumenPeriodoKpis summary={summary} loading={resumen.isLoading} />
+          <ResumenPeriodoKpis summary={summary} loading={resumen.isLoading} moneda={moneda} onSelectMoneda={setMoneda} />
 
           {resumen.isError && <InlineError message="No se pudo cargar el resumen." onRetry={() => resumen.refetch()} />}
 

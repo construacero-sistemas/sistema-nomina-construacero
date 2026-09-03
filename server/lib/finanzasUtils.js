@@ -78,9 +78,14 @@ export function normalizeMovement(input = {}) {
   const monto = Number(input.monto)
   const tasaVes = moneda === 'VES' ? 1 : Number(input.tasaVes ?? input.tasa_ves)
   const tasaUsdInput = input.tasaUsdVes ?? input.tasa_usd_ves
-  const tasaUsdVes = moneda === 'USD'
-    ? tasaVes
-    : (tasaUsdInput == null || tasaUsdInput === '' ? null : Number(tasaUsdInput))
+  let tasaUsdVes = null
+  if (moneda === 'USD') {
+    tasaUsdVes = tasaVes
+  } else if (moneda === 'USDT') {
+    tasaUsdVes = tasaUsdInput != null && tasaUsdInput !== '' ? Number(tasaUsdInput) : (tasaVes > 1 ? tasaVes : 1)
+  } else if (tasaUsdInput != null && tasaUsdInput !== '') {
+    tasaUsdVes = Number(tasaUsdInput)
+  }
   const fuenteTasa = moneda === 'VES' ? 'FIJA' : String(input.fuenteTasa ?? input.fuente_tasa ?? '').trim().toUpperCase()
   const fecha = String(input.fecha || '')
   const referencia = input.referencia == null ? null : String(input.referencia).trim()
