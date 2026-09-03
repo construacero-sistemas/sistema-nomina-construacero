@@ -8,8 +8,8 @@ import { requireAdmin } from '../lib/permissions.js'
 import { clearEgressCache } from '../lib/egressCache.js'
 import { registrarAuditoria } from '../lib/audit.js'
 
-const DEFAULT_RETENCION_MESES = 3
-const MIN_MESES = 1
+const DEFAULT_RETENCION_MESES = 0
+const MIN_MESES = 0
 const MAX_MESES = 36
 
 function svcHeaders(env) {
@@ -27,7 +27,7 @@ async function adminContext(request, env) {
   return result
 }
 
-// Lee la ventana de retención de la configuración del negocio (default 3).
+// Lee la ventana de retención de la configuración del negocio (default 0).
 async function readRetencionMeses(env, cuentaId, headers) {
   const response = await fetch(
     `${env.SUPABASE_URL}/rest/v1/configuracion_negocio?cuenta_id=eq.${encodeURIComponent(cuentaId)}&select=retencion_meses&limit=1`,
@@ -53,7 +53,7 @@ export async function handleGetRetencion(request, env) {
 
   const [configRow] = configRes.ok ? await configRes.json() : []
   const logs = logRes.ok ? await logRes.json() : []
-  const retencionMeses = Number(configRow?.retencion_meses) > 0
+  const retencionMeses = Number.isFinite(Number(configRow?.retencion_meses)) && Number(configRow.retencion_meses) >= 0
     ? Number(configRow.retencion_meses)
     : DEFAULT_RETENCION_MESES
 
@@ -65,7 +65,7 @@ export async function handleGetRetencion(request, env) {
   }, 200, request)
 }
 
-// POST /api/retencion/purgar -> ejecuta (o simula) la purga. body: { dry_run, meses? }
+// POST /api/retencion/purgar -> ejecuta la purga real (dry_run solo si se pide explícitamente). body: { dry_run?, meses? }
 async function ejecutarPurga(request, env, disparador) {
   const context = await adminContext(request, env)
   if (context.error) return context.error
@@ -74,7 +74,7 @@ async function ejecutarPurga(request, env, disparador) {
   let body = {}
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
 
-  const dryRun = body?.dry_run !== false
+  const dryRun = body?.dry_run === true
   let meses = body?.meses !== undefined ? Number(body.meses) : DEFAULT_RETENCION_MESES
   if (!Number.isInteger(meses) || meses < MIN_MESES || meses > MAX_MESES) {
     return jsonError(`meses debe estar entre ${MIN_MESES} y ${MAX_MESES}`, 400, request)
@@ -100,19 +100,21 @@ async function ejecutarPurga(request, env, disparador) {
   const rows = await response.json()
   const total = (rows || []).reduce((sum, row) => sum + Number(row.eliminadas || 0), 0)
 
-  // Registrar en auditoría y limpiar caché de lectura.
-  registrarAuditoria(env, svcHeaders(env), {
-    usuarioId: operador.id,
-    usuarioNombre: operador.nombre,
-    usuarioRol: operador.rol,
-    cuentaId: operador.cuenta_id,
-    categoria: 'SISTEMA',
-    accion: dryRun ? 'PURGA_SIMULACION' : 'PURGA_EJECUTADA',
-    entidadTipo: 'purga_log',
-    entidadId: null,
-    meta: { dry_run: dryRun, meses, total_eliminadas: total },
-    ip,
-  }).catch(() => {})
+  // Registrar en auditoría solo si no fue purga total a cero (para no dejar filas residuales)
+  if (!(!dryRun && meses === 0)) {
+    registrarAuditoria(env, svcHeaders(env), {
+      usuarioId: operador.id,
+      usuarioNombre: operador.nombre,
+      usuarioRol: operador.rol,
+      cuentaId: operador.cuenta_id,
+      categoria: 'SISTEMA',
+      accion: dryRun ? 'PURGA_SIMULACION' : 'PURGA_EJECUTADA',
+      entidadTipo: 'purga_log',
+      entidadId: null,
+      meta: { dry_run: dryRun, meses, total_eliminadas: total },
+      ip,
+    }).catch(() => {})
+  }
   clearEgressCache()
 
   return json({ dry_run: dryRun, meses, total_eliminadas: total, detalle: rows }, 200, request)

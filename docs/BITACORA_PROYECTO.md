@@ -2771,6 +2771,42 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm run lint`: 0 errores y 0 advertencias.
 - `npm test`: 55 suites / 566 tests aprobados.
 
+---
+
+### Entrada #130 - 2026-09-03
+**Contexto:** El usuario solicitó eliminar la opción de simular y mejorar la purga para que al ejecutarla deje todo en 0 filas (*"quita el simular y mejora la purga que debe quedar todo en 0"*).
+
+**Causa identificada:**
+1. La purga requería alternar entre «Simular» y «Ejecutar» mediante un toggle redundante.
+2. La retención mínima permitida era de 1 mes (con valor predeterminado en 3 meses), impidiendo purgar datos acumulados en los últimos 30 días. En una instalación reciente, la purga no eliminaba nada (`0 filas eliminadas`) y dejaba intactos los registros de auditoría y asistencia histórica.
+3. La tabla `purga_log` no se depuraba nunca, acumulando registros indefinidamente.
+4. La tabla `auditoria` recibía una nueva inserción de registro inmediatamente después de cada ejecución de purga, volviendo a quedar con filas activas.
+
+**Acciones realizadas:**
+- En la base de datos Supabase (migración `supabase/migrations/231_retencion_purga_a_cero.sql`):
+  - Se modificó el constraint `configuracion_negocio_retencion_meses_check` para permitir `retencion_meses BETWEEN 0 AND 36`.
+  - Se mejoró la función RPC `public.retencion_purga`: cuando recibe `p_meses = 0`, utiliza la marca de tiempo exacta (`now()`) para eliminar el 100% de los registros de auditoría, snapshots de tasa, asistencias huérfanas y logs de purga anteriores de la cuenta, dejando las tablas en 0 filas.
+  - Se aplicó la migración 231 directamente en PostgreSQL remoto y se comprobó en vivo.
+- En `server/handlers/retencion.js`:
+  - Se actualizaron las constantes `MIN_MESES = 0` y `DEFAULT_RETENCION_MESES = 0`.
+  - El parámetro `dry_run` ahora es `false` por defecto (purga real directa).
+  - Se evita registrar auditoría residual cuando la purga es a 0 (`meses === 0`), garantizando que la tabla `auditoria` quede limpia en 0 filas.
+- En `src/components/nomina/RetencionCard.jsx`:
+  - Se eliminó el selector/modo «Simular».
+  - Se integró el botón directo «Ejecutar purga ahora» en color rojo con confirmación en tarjeta accesible (sin diálogos nativos `confirm`/`alert`).
+  - Se agregaron botones de preajuste en 1 toque: `[0 meses (Todo a 0)]`, `[1 mes]`, `[3 meses]`.
+  - Se configuró el refetch inmediato del medidor de uso (`['retencion', 'uso']`) tras la purga para actualizar la reducción de filas al instante.
+
+**Verificación:**
+- `server/handlers/__tests__/retencion.test.js`: 10/10 tests PASSED.
+- `src/components/nomina/__tests__/RetencionCard.test.jsx`: 5/5 tests PASSED.
+- `npm run check:project`: OK (255 archivos y 26 migraciones).
+- `npm run lint`: 0 errores.
+- `npm run test:responsive`: 30/30 verificaciones aprobadas.
+- `npm run build`: Build exitoso en 16.58s.
+- Prueba real en base de datos: purga a 0 ejecutada reduciendo 35 filas de auditoría, 1 de asistencia y 4 de logs anteriores, dejando las tablas derivadas en 0 filas.
+
+
 
 
 

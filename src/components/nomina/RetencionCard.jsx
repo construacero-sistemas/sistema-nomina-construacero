@@ -2,7 +2,7 @@
 // Almacenamiento y retención: ventana de meses + purga inteligente (simular/ejecutar)
 // + medidor de uso de la base de datos (MB/filas por tabla, límite 500 MB).
 import { useState } from 'react'
-import { Database, Trash2, Play, RefreshCw, ShieldCheck, Clock, HardDrive } from 'lucide-react'
+import { Database, Trash2, RefreshCw, ShieldCheck, Clock, HardDrive } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { authFetch } from '../../../compat/services/authFetch.js'
 
@@ -64,7 +64,7 @@ export default function RetencionCard() {
   const queryClient = useQueryClient()
   const [mesesDraft, setMesesDraft] = useState(null)
   const [detalle, setDetalle] = useState(null)
-  const [modo, setModo] = useState('simulacion') // 'simulacion' | 'real'
+  const [confirmarOpen, setConfirmarOpen] = useState(false)
   const [errores, setErrores] = useState({})
 
   const estadoQ = useQuery({
@@ -94,23 +94,26 @@ export default function RetencionCard() {
   })
 
   const purgarM = useMutation({
-    mutationFn: ({ m, dry }) => apiPost('/api/retencion/purgar', { meses: m, dry_run: dry }),
+    mutationFn: (m) => apiPost('/api/retencion/purgar', { meses: m, dry_run: false }),
     onSuccess: (data) => {
       setDetalle(data)
+      setConfirmarOpen(false)
       queryClient.invalidateQueries({ queryKey: ['retencion'] })
+      queryClient.refetchQueries({ queryKey: ['retencion', 'uso'] })
       setErrores({})
     },
-    onError: (e) => setErrores({ purgar: e.message }),
+    onError: (e) => {
+      setConfirmarOpen(false)
+      setErrores({ purgar: e.message })
+    },
   })
 
   const data = estadoQ.data
   // La ventana mostrada SIEMPRE refleja lo guardado en el servidor; el input
-  // es un borrador local para editar. Sin esto, tras recargar se vería el
-  // default (3) aunque el usuario haya guardado otro valor.
-  const mesesGuardados = Number(data?.retencion_meses) > 0 ? Number(data.retencion_meses) : 3
+  // es un borrador local para editar.
+  const mesesGuardados = Number.isFinite(Number(data?.retencion_meses)) && Number(data.retencion_meses) >= 0 ? Number(data.retencion_meses) : 0
   const meses = mesesDraft ?? mesesGuardados
   const detalleResumen = detalle?.detalle || []
-  const confirmado = detalle && !detalle.dry_run
   const ejecutando = purgarM.isPending || configurarM.isPending
 
   return (
@@ -198,15 +201,15 @@ export default function RetencionCard() {
 
       {/* Ventana de retención */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <label className="block text-xs font-bold text-slate-700">Meses de historial a conservar</label>
           <div className="flex gap-2">
             <input
               type="number"
-              min={1}
+              min={0}
               max={36}
               value={meses}
-              onChange={(e) => setMesesDraft(Number(e.target.value))}
+              onChange={(e) => setMesesDraft(Math.max(0, Math.min(36, Number(e.target.value) || 0)))}
               className={inputClass}
               disabled={ejecutando}
               aria-label="Meses de retención"
@@ -214,66 +217,108 @@ export default function RetencionCard() {
             <button
               type="button"
               onClick={() => configurarM.mutate(meses)}
-              disabled={ejecutando || !Number.isInteger(meses) || meses < 1 || meses > 36 || meses === data?.retencion_meses}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 rounded-xl bg-primary text-white text-xs font-black hover:bg-primary/90 disabled:opacity-40 whitespace-nowrap"
+              disabled={ejecutando || !Number.isInteger(meses) || meses < 0 || meses > 36 || meses === data?.retencion_meses}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 rounded-xl bg-primary text-white text-xs font-black hover:bg-primary/90 disabled:opacity-40 whitespace-nowrap cursor-pointer"
+              style={{ touchAction: 'manipulation' }}
             >
               <RefreshCw size={14} className={configurarM.isPending ? 'animate-spin' : ''} /> Guardar
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <button
+              type="button"
+              onClick={() => { setMesesDraft(0); configurarM.mutate(0) }}
+              disabled={ejecutando}
+              className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${meses === 0 ? 'bg-red-50 border-red-300 text-red-700' : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'}`}
+              style={{ touchAction: 'manipulation' }}
+            >
+              0 meses (Todo a 0)
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMesesDraft(1); configurarM.mutate(1) }}
+              disabled={ejecutando}
+              className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${meses === 1 ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'}`}
+              style={{ touchAction: 'manipulation' }}
+            >
+              1 mes
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMesesDraft(3); configurarM.mutate(3) }}
+              disabled={ejecutando}
+              className={`px-2 py-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${meses === 3 ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'}`}
+              style={{ touchAction: 'manipulation' }}
+            >
+              3 meses
             </button>
           </div>
           {errores.configurar && <p className="text-xs text-red-600">{errores.configurar}</p>}
         </div>
 
-        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 text-xs text-slate-500 space-y-1">
-          <p className="flex items-center gap-1.5"><Clock size={13} className="text-primary" /> Ventana: <b className="text-slate-700">{meses} meses</b></p>
+        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 text-xs text-slate-500 space-y-1 flex flex-col justify-center">
+          <p className="flex items-center gap-1.5"><Clock size={13} className="text-primary" /> Ventana: <b className="text-slate-700">{meses === 0 ? '0 meses (Purga total a 0)' : `${meses} meses`}</b></p>
           <p className="flex items-center gap-1.5"><ShieldCheck size={13} className="text-emerald-500" /> Nunca borra movimientos ni nómina (contabilidad)</p>
         </div>
       </div>
 
-      {/* Modo + ejecutar */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex rounded-xl border border-slate-200 overflow-hidden" role="group" aria-label="Modo de purga">
+      {/* Botón de Purga Directa (Sin Simular) */}
+      <div className="space-y-3">
+        {!confirmarOpen ? (
           <button
             type="button"
-            onClick={() => setModo('simulacion')}
-            className={`px-3 py-2.5 text-xs font-black whitespace-nowrap ${modo === 'simulacion' ? 'bg-primary text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+            onClick={() => setConfirmarOpen(true)}
+            disabled={ejecutando}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 min-h-11 rounded-xl text-xs font-black text-white bg-red-600 hover:bg-red-700 shadow-sm active:scale-[.98] disabled:opacity-40 w-full sm:w-auto cursor-pointer"
+            style={{ touchAction: 'manipulation' }}
           >
-            Simular
+            <Trash2 size={15} />
+            <span>Ejecutar purga ahora</span>
+            {purgarM.isPending && <RefreshCw size={13} className="animate-spin" />}
           </button>
-          <button
-            type="button"
-            onClick={() => { setModo('real'); setDetalle(null) }}
-            className={`px-3 py-2.5 text-xs font-black whitespace-nowrap ${modo === 'real' ? 'bg-red-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
-          >
-            Ejecutar
-          </button>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => purgarM.mutate({ m: meses, dry: modo === 'simulacion' })}
-          disabled={ejecutando}
-          className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-11 rounded-xl text-xs font-black text-white shadow-sm active:scale-[.98] disabled:opacity-40 flex-1 sm:flex-none ${modo === 'real' ? 'bg-red-600 hover:bg-red-700' : 'bg-primary hover:bg-primary/90'}`}
-        >
-          {modo === 'real' ? <Trash2 size={15} /> : <Play size={15} />}
-          {modo === 'real' ? 'Ejecutar purga ahora' : 'Simular purga'}
-          {purgarM.isPending && <span className="animate-spin">·</span>}
-        </button>
+        ) : (
+          <div className="p-4 rounded-xl border border-red-200 bg-red-50/70 space-y-3">
+            <p className="text-xs font-bold text-red-800">
+              ¿Confirmas ejecutar la purga? {meses === 0 ? 'Se eliminarán todos los registros de auditoría, asistencia histórica, snapshots y logs, dejando las tablas en 0.' : `Se eliminará el historial anterior a ${meses} mes(es).`}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => purgarM.mutate(meses)}
+                disabled={ejecutando}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 min-h-11 rounded-xl bg-red-600 text-white text-xs font-black hover:bg-red-700 active:scale-95 transition-all shadow-xs cursor-pointer"
+                style={{ touchAction: 'manipulation' }}
+              >
+                <Trash2 size={14} />
+                <span>{purgarM.isPending ? 'Purgando...' : 'Sí, purgar ahora'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmarOpen(false)}
+                disabled={ejecutando}
+                className="inline-flex items-center justify-center px-3.5 py-2 min-h-11 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 active:scale-95 transition-all cursor-pointer"
+                style={{ touchAction: 'manipulation' }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       {errores.purgar && <p className="text-xs text-red-600">{errores.purgar}</p>}
 
       {/* Resultado */}
       {detalle && (
-        <div className={`rounded-xl border p-4 space-y-2 ${detalle.dry_run ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+        <div className="rounded-xl border p-4 space-y-2 border-emerald-200 bg-emerald-50">
           <div className="flex items-center justify-between">
-            <span className={`text-xs font-black ${detalle.dry_run ? 'text-amber-700' : 'text-emerald-700'}`}>
-              {detalle.dry_run ? 'Simulación (no borró nada)' : 'Purga ejecutada'}
-            </span>
-            <span className={`text-lg font-black ${detalle.dry_run ? 'text-amber-700' : 'text-emerald-700'}`}>{detalle.total_eliminadas ?? totalFromDetalle(detalleResumen)}</span>
+            <span className="text-xs font-black text-emerald-700">Purga ejecutada</span>
+            <span className="text-lg font-black text-emerald-700">{detalle.total_eliminadas ?? totalFromDetalle(detalleResumen)} filas eliminadas</span>
           </div>
           <ul className="text-xs text-slate-600 space-y-0.5">
             <li className="flex justify-between"><span>Registros de asistencia</span><b>{detalle.detalle?.find(r => r.tabla === 'registro_asistencia')?.eliminadas ?? 0}</b></li>
             <li className="flex justify-between"><span>Snapshots de tasa</span><b>{detalle.detalle?.find(r => r.tabla === 'nomina_tasas_snapshot')?.eliminadas ?? 0}</b></li>
             <li className="flex justify-between"><span>Logs de auditoría</span><b>{detalle.detalle?.find(r => r.tabla === 'auditoria')?.eliminadas ?? 0}</b></li>
+            <li className="flex justify-between"><span>Historial de purgas</span><b>{detalle.detalle?.find(r => r.tabla === 'purga_log')?.eliminadas ?? 0}</b></li>
           </ul>
         </div>
       )}
@@ -285,8 +330,8 @@ export default function RetencionCard() {
           <div className="space-y-1.5">
             {data.ultimos_logs.map((log, i) => (
               <div key={i} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs">
-                <span className="text-slate-500">{formatoFecha(log.creado_en)} · {log.disparador}</span>
-                <span className="font-bold text-slate-700">{log.dry_run ? 'Simulación' : `${log.total_eliminadas} filas`}</span>
+                <span className="text-slate-500">{formatoFecha(log.creado_en)} · {log.disparador} {log.retencion_meses === 0 ? '(a 0)' : `(${log.retencion_meses}m)`}</span>
+                <span className="font-bold text-slate-700">{log.total_eliminadas} filas</span>
               </div>
             ))}
           </div>

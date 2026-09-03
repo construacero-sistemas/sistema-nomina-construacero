@@ -43,7 +43,7 @@ describe('purga inteligente', () => {
     const { status, body } = await readResponse(res)
     expect(status).toBe(200)
     expect(body.retencion_meses).toBe(3)
-    expect(body.min_meses).toBe(1)
+    expect(body.min_meses).toBe(0)
     expect(body.max_meses).toBe(36)
     expect(body.ultimos_logs).toHaveLength(1)
     expect(body.ultimos_logs[0].total_eliminadas).toBe(173)
@@ -143,7 +143,7 @@ describe('purga inteligente', () => {
 
   it('valida meses fuera de rango', async () => {
     mock = installFetchMock([])
-    for (const meses of [0, 37, 3.5, 'x']) {
+    for (const meses of [-1, 37, 3.5, 'x']) {
       const res = await handlePurgarRetencion(makeRequest({ dry_run: true, meses }, { url: `${urlBase()}/retencion/purgar` }), ENV)
       const { status } = await readResponse(res)
       expect(status).toBe(400)
