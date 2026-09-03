@@ -2549,5 +2549,27 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 562/562 tests PASSED (53 suites de prueba).
 - `npm run build`: Build exitoso en 29.56s, bundle `376.01 kB` ≤ 400 kB.
 
+---
+
+### Entrada #120 - 2026-09-03
+**Contexto:** El usuario solicitó: 1) Retirar el botón «Añadir nota (opcional)» del formulario de movimientos financieros para eliminar redundancias y simplificar la carga; 2) Solucionar el recorte con puntos suspensivos del título y subtítulo en la cabecera de cuentas en móvil (`Cuentas Bancarias y Custodia ...`); 3) Sincronizar las variables de entorno de Vercel para el backend Functions.
+
+**Acciones realizadas:**
+- En `src/components/finanzas/MovimientoForm.jsx`:
+  - Se eliminó el botón desplegable «Añadir nota (opcional)» y el estado `mostrarNota` / `observaciones`.
+  - El formulario ahora fluye directamente desde el Motivo obligatorio y Comprobante opcional directo al Resumen en vivo y botón de Guardar, reduciendo fricción y altura vertical.
+- En `src/components/finanzas/CuentasCustodiaGrid.jsx`:
+  - Se adaptó el encabezado: en pantallas móviles muestra `Cuentas y Custodia` (ajuste perfecto en una sola línea junto a la pastilla de conteo) y en pantallas mayores `Cuentas Bancarias y Custodia Digital`.
+  - Se retiró la clase `truncate` del subtítulo y se condensó la redacción para que no se corte con puntos suspensivos.
+- En `api/index.js` y Vercel:
+  - Se configuraron y sincronizaron en Vercel `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `NOMINA_TIMEZONE`.
+  - En `api/index.js`: se agregaron fallbacks automáticos en `runtimeEnv()` para tomar variables `VITE_*` si las versiones sin prefijo no están definidas.
+
+**Verificación:**
+- `npm run check:project`: OK (0 archivos > 600 líneas; `MovimientoForm.jsx`: 565 líneas, `CuentasCustodiaGrid.jsx`: 517 líneas, `api/index.js`: 88 líneas).
+- `npm run lint`: 0 errores.
+- `npm test`: 562/562 tests PASSED (53 suites de prueba).
+- `npm run build`: Build exitoso en 35.05s, bundle `376.01 kB` ≤ 400 kB.
+
 
 

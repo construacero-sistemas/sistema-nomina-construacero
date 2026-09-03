@@ -57,9 +57,6 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
   const [observacionTasa, setObservacionTasa] = useState('')
 
   const [referencia, setReferencia] = useState('')
-  const [observaciones, setObservaciones] = useState('')
-  // Nota opcional colapsada para simplificar la zona de detalles.
-  const [mostrarNota, setMostrarNota] = useState(false)
 
   // Creación de categorías personalizadas (inline, sin salir del formulario)
   const [creandoCategoria, setCreandoCategoria] = useState(false)
@@ -295,7 +292,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
           ? (observacionTasa.trim() || `Tasa manual fijada en ${tasaEfectiva.toFixed(2)} Bs/$`)
           : `Tasa ${fuenteTasaFinal} registrada (${tasaEfectiva.toFixed(2)} Bs/$)`,
         referencia: refFinal,
-        observaciones: observaciones.trim() || null,
+        observaciones: null,
         metodoPago,
         cuentaOrigen: cuentaOrigenFinal ? capitalizarPalabras(cuentaOrigenFinal) : null,
         cuenta_id: cuentaSeleccionada?.id || null,
@@ -506,33 +503,6 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
             />
           </Field>
         )}
-
-        {/* Nota opcional (colapsada por defecto) */}
-        <div className="space-y-2.5">
-          <button
-            type="button"
-            onClick={() => setMostrarNota(v => !v)}
-            disabled={disabled}
-            aria-expanded={mostrarNota}
-            className="w-full flex items-center justify-between gap-2 h-11 px-3.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-          >
-            <span>Añadir nota (opcional)</span>
-            <ChevronDown size={16} className={`shrink-0 transition-transform ${mostrarNota ? 'rotate-180' : ''}`} />
-          </button>
-
-          {mostrarNota && (
-            <Field label="Observaciones">
-              <input
-                value={observaciones}
-                onChange={e => setObservaciones(e.target.value)}
-                maxLength={1000}
-                className={inputClass}
-                placeholder="Notas o detalles adicionales..."
-                disabled={disabled}
-              />
-            </Field>
-          )}
-        </div>
 
         {/* 6. Resumen previo a guardar (vivo) */}
         <MovimientoResumen

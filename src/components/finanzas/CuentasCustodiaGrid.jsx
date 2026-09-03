@@ -95,17 +95,18 @@ export default function CuentasCustodiaGrid({
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-black text-slate-800 truncate">
-                Cuentas Bancarias y Custodia Digital
+              <h3 className="text-sm font-black text-slate-800">
+                <span className="sm:hidden">Cuentas y Custodia</span>
+                <span className="hidden sm:inline">Cuentas Bancarias y Custodia Digital</span>
               </h3>
               <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold shrink-0">
                 {cuentas.length} cuentas
               </span>
             </div>
-            <p className="text-xs text-slate-400 truncate">
+            <p className="text-xs text-slate-400">
               {expandido
-                ? 'Detalle de bancos nacionales, billeteras Binance USDT, Zelle y efectivo con saldos y equivalencias.'
-                : 'Oculto por defecto. Pulsa el botón para ver todas las cuentas y billeteras.'}
+                ? 'Bancos nacionales, Binance USDT, Zelle y cajas de efectivo.'
+                : 'Toca \'Ver detalle\' para consultar saldos y billeteras.'}
             </p>
           </div>
         </div>

@@ -13,7 +13,17 @@ const ENV_KEYS = [
 ]
 
 function runtimeEnv() {
-  return Object.fromEntries(ENV_KEYS.map(key => [key, process.env[key] || '']))
+  const env = Object.fromEntries(ENV_KEYS.map(key => [key, process.env[key] || '']))
+  if (!env.SUPABASE_URL && process.env.VITE_SUPABASE_URL) {
+    env.SUPABASE_URL = process.env.VITE_SUPABASE_URL
+  }
+  if (!env.SUPABASE_ANON_KEY && process.env.VITE_SUPABASE_ANON_KEY) {
+    env.SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY
+  }
+  if (!env.NOMINA_TIMEZONE) {
+    env.NOMINA_TIMEZONE = process.env.NOMINA_TIMEZONE || 'America/Caracas'
+  }
+  return env
 }
 
 function requestUrl(req) {
