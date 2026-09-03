@@ -48,21 +48,24 @@ export function RateSelector({ className = '', compact = false }) {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white transition-all text-xs font-bold active:scale-95"
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:py-1 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white transition-all text-xs font-bold active:scale-95 min-h-11 sm:min-h-0 ${compact ? 'text-[11px] px-2' : ''}`}
+        style={{ touchAction: 'manipulation' }}
         title="Cambiar tasa de conversión a Bolívares"
+        aria-label={`Cambiar tasa de conversión: ${shortLabelTasa} ${formatBs(tasaActiva)}`}
+        aria-expanded={open}
       >
         <span className="text-white/60 font-semibold">{shortLabelTasa}:</span>
         <span className="font-black text-amber-300">
           {loading ? '...' : formatBs(tasaActiva).replace('Bs ', '')}
         </span>
-        <ChevronDown size={13} className={`text-white/60 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={13} className={`text-white/60 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Popover / Menú desplegable */}
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white text-slate-800 p-2.5 shadow-2xl border border-slate-200/80 z-50 animate-in fade-in slide-in-from-top-2">
+          <div className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-2xl bg-white text-slate-800 p-2.5 shadow-2xl border border-slate-200/80 z-50 animate-in fade-in slide-in-from-top-2">
             <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-100 mb-1.5">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
                 Tasa secundaria (Bs)
@@ -91,11 +94,12 @@ export function RateSelector({ className = '', compact = false }) {
                     key={opt.id}
                     type="button"
                     onClick={() => handleSelect(opt.id)}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs transition-all ${
+                    className={`w-full min-h-11 flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs transition-all ${
                       isSelected
                         ? 'bg-amber-50 text-amber-950 font-black border border-amber-200'
                         : 'hover:bg-slate-50 text-slate-700 font-semibold'
                     }`}
+                    style={{ touchAction: 'manipulation' }}
                   >
                     <div className="flex items-center gap-2">
                       <div className={`w-4 h-4 rounded-full flex items-center justify-center ${isSelected ? 'bg-amber-500 text-white' : 'border border-slate-300'}`}>

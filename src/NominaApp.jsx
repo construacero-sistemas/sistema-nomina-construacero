@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useCallback, useRef, useState } from 'react'
 import {
-  AlertTriangle, ChevronRight, Landmark, Lock, LogOut, Menu, PanelLeftClose,
+  ChevronRight, Landmark, Lock, LogOut, Menu, PanelLeftClose,
   PanelLeftOpen, Settings2, TrendingUp, User, Wallet, X
 } from 'lucide-react'
 import { Link, Navigate, Outlet, Route, Routes, NavLink, useLocation, useNavigate } from 'react-router-dom'
@@ -13,11 +13,10 @@ import { useCandados } from './config/candadosRuntime.js'
 import { rutaPorDefecto } from './config/modulos.js'
 import SistemaView from './views/SistemaView.jsx'
 import useTasaCambioNomina from './hooks/useTasaCambioNomina.js'
+import RateHeader from './components/layout/RateHeader.jsx'
 
 const NominaView = lazy(() => import('./views/NominaView.jsx'))
 const FinanzasView = lazy(() => import('./components/finanzas/FinanzasView.jsx'))
-import RateSelector from './components/nomina/RateSelector.jsx'
-import { formatFechaHora } from '../compat/utils/formatDateTime.js'
 
 // El estado EN VIVO de los candados vive en src/config/candadosRuntime.js.
 const NAV = [
@@ -294,27 +293,7 @@ function Public() {
   return <Outlet />
 }
 
-function RateHeader() {
-  const { usd, eur, usdt, lastUpdate, loading, stale, error, refresh } = useTasaCambioNomina()
-  const format = value => value > 0 ? `${value.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
-  const updated = formatFechaHora(lastUpdate)
-  return (
-    <div className="hidden lg:flex items-center gap-2 text-[11px]" aria-label="Tasas de cambio">
-      <span className="text-white/45 font-medium">Tasa Activa:</span>
-      <RateSelector />
-      <div className="flex items-center gap-1.5 ml-1 text-white/50 text-[10px]">
-        <span title="BCV Dólar">USD: {loading ? '...' : format(usd)}</span>
-        <span>·</span>
-        <span title="BCV Euro">EUR: {loading ? '...' : format(eur)}</span>
-        <span>·</span>
-        <span title="USDT">USDT: {loading ? '...' : format(usdt)}</span>
-      </div>
-      {stale && <AlertTriangle size={10} className="text-amber-300" aria-label="Se muestra el último valor disponible" />}
-      {error && <button type="button" onClick={refresh} className="text-red-300 underline text-[10px]">Reintentar</button>}
-      {!error && updated && <span className="text-white/35 text-[10px] hidden xl:inline">({updated})</span>}
-    </div>
-  )
-}
+
 
 function Shell() {
   const logout = useAuthStore(state => state.logout)

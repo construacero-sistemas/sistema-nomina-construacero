@@ -2703,5 +2703,34 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm run check:project`: OK (0 violaciones de reglas de arquitectura).
 - `npm run lint`: 0 errores y 0 warnings.
 
+---
+
+### Entrada #127 - 2026-09-03
+**Contexto:** El usuario solicitó que en dispositivos móviles también se muestre la opción para cambiar la tasa de cambio directamente desde la cabecera superior (*"en movil tambien debe salir para cambiar la tasa desde el header"*).
+
+**Causa raíz:**
+- En `src/NominaApp.jsx`, el componente de la cabecera de tasas (`RateHeader`) estaba oculto en dispositivos móviles y tabletas mediante la clase `hidden lg:flex`. Por ende, el selector de tasa (`RateSelector`) solo se renderizaba a partir de pantallas de 1024 px de ancho.
+
+**Acciones realizadas:**
+- En `src/components/layout/RateHeader.jsx`:
+  - Se modularizó e independizó el componente `RateHeader` para desacoplarlo de `src/NominaApp.jsx` (reduciendo la longitud de `NominaApp.jsx` de 598 a 577 líneas, respetando el límite estricto de $\le 600$ líneas).
+  - Se configuró la visualización adaptable:
+    - En pantallas móviles y tabletas (`< 1024px`): se muestra el selector interactivo de tasa (`RateSelector`) en la zona derecha de la cabecera con acceso directo en 1 toque.
+    - En pantallas grandes (`lg:`, $\ge 1024\text{px}$): se muestra la etiqueta textual `Tasa Activa:` junto con las tasas de referencia del mercado (USD, EUR, USDT) y marcas de tiempo.
+- En `src/components/nomina/RateSelector.jsx`:
+  - Se perfeccionó la ergonomía táctil en móviles agregando `min-h-11 sm:min-h-0` (área táctil $\ge 44\text{px}$), `touchAction: 'manipulation'` (eliminando los 300 ms de retardo táctil en navegadores móviles) y contención de anchura máxima `max-w-[calc(100vw-1.5rem)]` para prevenir desbordes de viewport.
+  - Se aseguraron áreas táctiles de 44 px en todas las opciones del menú desplegable de tasas.
+- En `src/components/layout/__tests__/RateHeader.test.jsx`:
+  - Se escribió una suite de pruebas unitarias verificando la presencia accesible del selector en la cabecera, el despliegue del menú y la conmutación de tasas.
+
+**Verificación:**
+- `npx vitest run src/components/layout/__tests__/RateHeader.test.jsx`: 3/3 tests PASSED.
+- `npm run test:responsive`: 30/30 verificaciones de responsividad y mobile iPhone aprobadas (0 fallos).
+- `npm run check:project`: OK (250 archivos auditados, 0 violaciones de longitud máxima).
+- `npm run lint`: 0 errores.
+- `npm test`: 54/54 suites aprobadas (565 tests pasando).
+- `npm run build`: Vite build exitoso (0 errores).
+
+
 
 
