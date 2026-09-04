@@ -278,30 +278,18 @@ export default function SyncPosMetodoItem({
             </div>
 
             <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-black text-slate-900 tracking-tight">
-                  {label}
-                </span>
-                {despachos.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setMostrarDetalle(prev => !prev)}
-                    className={`min-h-11 -my-2.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-xl text-xs font-bold transition-all ${
-                      mostrarDetalle
-                        ? 'bg-primary/10 text-primary border border-primary/30'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70 border border-slate-200/60'
-                    }`}
-                    style={{ touchAction: 'manipulation' }}
-                  >
-                    <span>{despachos.length} {despachos.length === 1 ? 'despacho' : 'despachos'}</span>
-                    {mostrarDetalle ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                  </button>
-                )}
-              </div>
-              {excluidos.length > 0 && (
-                <span className="text-[10px] font-bold text-amber-600 block mt-0.5">
-                  {excluidos.length} {excluidos.length === 1 ? 'despacho excluido' : 'despachos excluidos'}
-                </span>
+              <span className="text-sm font-black text-slate-900 tracking-tight block truncate">
+                {label}
+              </span>
+              {despachos.length > 0 && (
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold mt-0.5">
+                  <span>{despachos.length} {despachos.length === 1 ? 'despacho' : 'despachos'}</span>
+                  {excluidos.length > 0 && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100/90 text-amber-700">
+                      {excluidos.length} excl.
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -465,16 +453,25 @@ export default function SyncPosMetodoItem({
 
             {/* Expansión de Despachos */}
             {despachos.length > 0 && !mostrarDetalle && (
-              <div className="pt-0.5">
+              <div className="pt-1">
                 <button
                   type="button"
                   onClick={() => setMostrarDetalle(true)}
-                  className="min-h-11 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50/80 hover:bg-slate-100 text-[11px] font-bold text-slate-600 hover:text-slate-900 border border-slate-200/60 transition-all active:scale-98"
+                  className="min-h-11 w-full inline-flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-50/90 hover:bg-slate-100 text-xs font-bold text-slate-600 hover:text-slate-900 border border-slate-200/80 transition-all active:scale-[0.99]"
                   style={{ touchAction: 'manipulation' }}
                 >
-                  <ListFilter size={13} className="text-slate-400" />
-                  <span>Ver detalle ({despachos.length} despachos)</span>
-                  <ChevronDown size={14} className="text-slate-400" />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ListFilter size={14} className="text-slate-400 shrink-0" />
+                    <span className="truncate">Ver detalle ({despachos.length} {despachos.length === 1 ? 'despacho' : 'despachos'})</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {excluidos.length > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                        {excluidos.length} excl.
+                      </span>
+                    )}
+                    <ChevronDown size={14} className="text-slate-400" />
+                  </div>
                 </button>
               </div>
             )}
@@ -482,18 +479,18 @@ export default function SyncPosMetodoItem({
             {despachos.length > 0 && mostrarDetalle && (
               <div className="space-y-2 pt-1 animate-fadeIn">
                 <div className="flex items-center justify-between px-1">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                    <ListFilter size={12} className="text-primary" />
-                    Despachos incluidos
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                    <ListFilter size={13} className="text-primary" />
+                    Despachos detallados ({despachos.length})
                   </span>
                   <button
                     type="button"
                     onClick={() => setMostrarDetalle(false)}
-                    className="min-h-11 inline-flex items-center gap-1 px-2 text-xs font-bold text-slate-500 hover:text-slate-700"
+                    className="min-h-11 inline-flex items-center gap-1 px-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
                     style={{ touchAction: 'manipulation' }}
                   >
-                    <span>Ocultar</span>
-                    <ChevronUp size={13} />
+                    <span>Ocultar detalle</span>
+                    <ChevronUp size={14} />
                   </button>
                 </div>
                 <SyncPosDespachosList

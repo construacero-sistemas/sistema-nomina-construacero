@@ -73,8 +73,8 @@ function getPresetRange(presetId) {
 
 const METODOS_CONFIG = [
   { key: 'efectivo_usd', label: 'Efectivo $', icon: DollarSign, moneda: 'USD' },
-  { key: 'zelle_usd', label: 'Zelle (USD)', icon: Globe, moneda: 'USD' },
-  { key: 'usdt_usd', label: 'USDT (Cripto)', icon: Coins, moneda: 'USDT' },
+  { key: 'zelle_usd', label: 'Zelle', icon: Globe, moneda: 'USD' },
+  { key: 'usdt_usd', label: 'USDT', icon: Coins, moneda: 'USDT' },
   { key: 'efectivo_ves', label: 'Efectivo Bs', icon: Banknote, moneda: 'VES' },
   { key: 'transferencia_ves', label: 'Transferencia Bancaria', icon: Building2, moneda: 'VES' },
   { key: 'pago_movil_ves', label: 'Pago Móvil', icon: Smartphone, moneda: 'VES' },

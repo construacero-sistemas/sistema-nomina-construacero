@@ -3038,11 +3038,20 @@ Al alcanzar los 7 toques (`TOQUES_REQUERIDOS`), el diálogo se renderizaba insta
 - `npm test`: 59 suites / 595 pruebas aprobadas (100%).
 - `npm run verify`: Compilación exitosa en 31.01s.
 
+---
 
+### Entrada #139 - 2026-09-03
+**Contexto:** Corrección y refinamiento responsivo de la tarjeta de métodos POS (`SyncPosMetodoItem.jsx`) y el modal de sincronización (`SyncPosModal.jsx`), solucionando el overlap horizontal en pantallas móviles y eliminando duplicación de botones con chevrons.
 
+**Problemas detectados y resueltos:**
+1. **Overlap horizontal en móvil (ej. Efectivo $):** En pantallas pequeñas (<400px), el botón-píldora con `min-h-11 -my-2.5` colocado en la misma fila con `flex-wrap` competía por ancho y colisionaba sobre el importe grande en dólares (`$3.176,50 USD`).
+   - *Solución:* Se desacopló la cabecera en dos filas verticales dentro de la columna de texto: el nombre del método (`label`) en la fila superior con `block truncate`, y la cantidad de despachos como subtítulo limpio en la fila inferior (`mt-0.5`), acompañado de un badge discreto ámbar si hay tickets excluidos (`{excluidos.length} excl.`).
+2. **Duplicación de botones de detalle (ej. Zelle):** Existía un botón con chevron en la cabecera y otro botón idéntico al pie de la tarjeta (`Ver detalle`).
+   - *Solución:* Se eliminó el botón duplicado de la cabecera. Se unificó el control al pie de la tarjeta en una barra táctil de ancho completo (`w-full min-h-11 justify-between px-3.5`), que muestra el total de despachos, badge de excluidos si aplica y chevron hacia abajo; al expandirse, muestra el encabezado `Despachos detallados (N)` con botón accesible para ocultar.
+3. **Labels limpios sin saltos de línea:** Se simplificaron `'Zelle (USD)'` y `'USDT (Cripto)'` a `'Zelle'` y `'USDT'`, dado que la divisa ya se muestra en el badge lateral.
+4. **Validación en Desktop (PC):** En pantallas grandes, el modal (`sm:max-w-2xl`) mantiene amplia holgura horizontal, separación nítida entre títulos y montos, y distribución alineada.
 
-
-
-
-
-
+**Verificación:**
+- `npm run test:responsive`: 34 / 34 pruebas deterministas aprobadas (100%).
+- `npx vitest run src/components/finanzas/__tests__/SyncPosMetodoItem.test.jsx`: 7 / 7 pruebas aprobadas.
+- `npm run verify`: 59 suites / 595 pruebas unitarias e integración aprobadas (100%), lint limpio (0 errores), bundle size 369.9 kB (<= 400 kB) y build Vite exitoso.
