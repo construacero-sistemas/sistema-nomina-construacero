@@ -89,15 +89,32 @@ function drawSectionTitle(doc, y, titulo) {
   return y + 4
 }
 
-async function generarFinanzasResumenPDFImpl({ movimientos = [], resumen = {}, rango = {}, config = {}, action = 'download' }) {
+async function generarFinanzasResumenPDFImpl({
+  movimientos = [],
+  resumen = {},
+  rango = {},
+  config = {},
+  tasaActiva = null,
+  nombreTasa = '',
+  action = 'download',
+}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' })
   const logoData = await cargarLogo(config.logo_url)
+
+  const tasaEfectiva = Number(tasaActiva) > 0
+    ? Number(tasaActiva)
+    : (Number(resumen.tasaActiva) > 0 ? Number(resumen.tasaActiva) : 0)
 
   const titulo = resumen.tipoFiltro === 'ingreso'
     ? 'Reporte de Ingresos'
     : resumen.tipoFiltro === 'egreso'
       ? 'Reporte de Egresos'
       : 'Reporte de Ingresos y Egresos'
+
+  const subtituloRango = `${fecha(rango.desde)} – ${fecha(rango.hasta)}`
+  const subtituloConTasa = tasaEfectiva > 0
+    ? `${subtituloRango}  ·  Tasa Activa: ${tasaEfectiva.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs/$ ${nombreTasa ? `(${nombreTasa})` : ''}`.trim()
+    : subtituloRango
 
   // Sobrescribir addPage para incluir watermark y cabecera clara simplificada
   const originalAddPage = doc.addPage.bind(doc)
@@ -113,7 +130,7 @@ async function generarFinanzasResumenPDFImpl({ movimientos = [], resumen = {}, r
     logoData,
     config,
     title: titulo,
-    subtitle: `${fecha(rango.desde)} – ${fecha(rango.hasta)}`,
+    subtitle: subtituloConTasa,
     customBgColor:       [255, 255, 255],
     customAccentColor:   [0, 0, 0],
     customTextColor:     [0, 0, 0],
@@ -128,16 +145,28 @@ async function generarFinanzasResumenPDFImpl({ movimientos = [], resumen = {}, r
   const ingresos = nMovs ? movimientos.filter(m => m.tipo === 'ingreso' && m.estado !== 'anulado') : []
   const egresos = nMovs ? movimientos.filter(m => m.tipo === 'egreso' && m.estado !== 'anulado') : []
 
-  // Totales precisos considerando movimientos en USD, USDT y VES
+  // Conversiones monetarias exactas a la tasa activa seleccionada
+  const getTasaConversion = (m) => {
+    if (tasaEfectiva > 0) return tasaEfectiva
+    const tUsd = Number(m.tasa_usd_ves)
+    if (tUsd > 1) return tUsd
+    const tVes = Number(m.tasa_ves)
+    if (tVes > 1) return tVes
+    return 1
+  }
+
   const calcMontoUsd = (m) => {
     const monto = Number(m.monto) || 0
-    const tasa = Number(m.tasa_usd_ves || m.tasa_ves || 1)
-    return m.moneda === 'VES' ? (tasa > 0 ? monto / tasa : monto) : monto
+    if (m.moneda === 'USD' || m.moneda === 'USDT') return monto
+    const tasa = getTasaConversion(m)
+    return tasa > 0 ? monto / tasa : monto
   }
+
   const calcMontoVes = (m) => {
     const monto = Number(m.monto) || 0
-    const tasa = Number(m.tasa_usd_ves || m.tasa_ves || 1)
-    return m.moneda === 'VES' ? (Number(m.monto_ves) || monto) : (Number(m.monto_ves) || (monto * tasa))
+    if (m.moneda === 'VES') return Number(m.monto_ves) || monto
+    const tasa = getTasaConversion(m)
+    return monto * tasa
   }
 
   const totalIngresosUsd = ingresos.reduce((sum, m) => sum + calcMontoUsd(m), 0)
@@ -288,14 +317,14 @@ async function generarFinanzasResumenPDFImpl({ movimientos = [], resumen = {}, r
   y = checkPage(doc, y, 22)
   y = drawSectionTitle(doc, y, 'DETALLE DE MOVIMIENTOS POR CATEGORÍA')
 
-  // Total ancho: 22 + 14 + 68 + 32 + 24 + 28 = 188 mm (CONTENT_W)
+  // Total ancho: 20 + 12 + 70 + 30 + 26 + 30 = 188 mm (CONTENT_W)
   const cols = [
-    { label: 'FECHA',           x: MARGIN,        w: 22 },
-    { label: 'TIPO',            x: MARGIN + 22,   w: 14 },
-    { label: 'CONCEPTO',        x: MARGIN + 36,   w: 68 },
-    { label: 'CUENTA / MÉTODO', x: MARGIN + 104,  w: 32 },
-    { label: 'MONTO',           x: MARGIN + 136,  w: 24 },
-    { label: 'EQUIV. BS',       x: MARGIN + 160,  w: 28 },
+    { label: 'FECHA',           x: MARGIN,        w: 20 },
+    { label: 'TIPO',            x: MARGIN + 20,   w: 12 },
+    { label: 'CONCEPTO',        x: MARGIN + 32,   w: 70 },
+    { label: 'CUENTA / MÉTODO', x: MARGIN + 102,  w: 30 },
+    { label: 'MONTO',           x: MARGIN + 132,  w: 26 },
+    { label: 'CONTRAVALOR',     x: MARGIN + 158,  w: 30 },
   ]
 
   function movHeaders(yPos) {
@@ -305,7 +334,7 @@ async function generarFinanzasResumenPDFImpl({ movimientos = [], resumen = {}, r
     doc.setFontSize(6)
     doc.setTextColor(...C_WHITE)
     cols.forEach(c => {
-      if (c.label === 'MONTO' || c.label === 'EQUIV. BS') {
+      if (c.label === 'MONTO' || c.label === 'CONTRAVALOR') {
         doc.text(c.label, c.x + c.w - 2, yPos + 4.5, { align: 'right' })
       } else {
         doc.text(c.label, c.x + 1.5, yPos + 4.5)
@@ -342,20 +371,29 @@ async function generarFinanzasResumenPDFImpl({ movimientos = [], resumen = {}, r
     y = movHeaders(y)
 
     cat.movimientos.forEach((m, idx) => {
-      y = checkPage(doc, y, 7)
+      const esIngreso = m.tipo === 'ingreso'
+      const anul = m.estado === 'anulado'
+      const monto = Number(m.monto) || 0
+      const mUsd = calcMontoUsd(m)
+      const mVes = calcMontoVes(m)
+
+      const conceptoStr = capitalizarPalabras(String(m.concepto || '—'))
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(6.5)
+      const maxConceptoW = cols[2].w - 3 // 70 - 3 = 67 mm
+      const lineasConcepto = doc.splitTextToSize(conceptoStr, maxConceptoW)
+      const lineHeight = 3.2
+      const rowHeight = Math.max(6.5, lineasConcepto.length * lineHeight + 2.5)
+
+      y = checkPage(doc, y, rowHeight)
       if (y < MARGIN + 14) {
         y = movHeaders(y)
       }
 
       if (idx % 2 === 0) {
         doc.setFillColor(252, 252, 253)
-        doc.rect(MARGIN, y - 1, CONTENT_W, 6, 'F')
+        doc.rect(MARGIN, y - 1, CONTENT_W, rowHeight, 'F')
       }
-
-      const esIngreso = m.tipo === 'ingreso'
-      const anul = m.estado === 'anulado'
-      const monto = Number(m.monto) || 0
-      const montoVes = calcMontoVes(m)
 
       // Fecha
       doc.setFont('helvetica', 'normal')
@@ -368,28 +406,35 @@ async function generarFinanzasResumenPDFImpl({ movimientos = [], resumen = {}, r
       doc.setTextColor(...(anul ? C_GRAY : esIngreso ? C_EMERALD : C_RED))
       doc.text(esIngreso ? 'ING' : 'EGR', cols[1].x + 1.5, y + 3)
 
-      // Concepto
+      // Concepto Completo (sin recortar con salto de línea)
       doc.setFont('helvetica', 'normal')
       doc.setTextColor(...(anul ? C_GRAY : C_DARK))
-      doc.text(capitalizarPalabras(String(m.concepto || '—')).substring(0, 46), cols[2].x + 1.5, y + 3)
+      lineasConcepto.forEach((linea, lIdx) => {
+        doc.text(linea, cols[2].x + 1.5, y + 3 + lIdx * lineHeight)
+      })
 
       // Cuenta / Método
       doc.setFontSize(5.5)
       doc.setTextColor(...C_GRAY)
-      const cuentaTxt = capitalizarPalabras(String(m.cuenta_origen || m.metodo_pago || '')).substring(0, 22) || '—'
+      const cuentaTxt = capitalizarPalabras(String(m.cuenta_origen || m.metodo_pago || '')).substring(0, 24) || '—'
       doc.text(cuentaTxt, cols[3].x + 1.5, y + 3)
 
       // Monto
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(6.5)
       doc.setTextColor(...(anul ? C_GRAY : esIngreso ? C_EMERALD : C_RED))
-      const montoTexto = m.moneda === 'VES' ? fmtBs(monto) : fmtUsd(monto)
+      const montoTexto = m.moneda === 'VES'
+        ? fmtBs(monto)
+        : (m.moneda === 'USDT' ? `${fmtUsd(monto).replace('$', '')} USDT` : fmtUsd(monto))
       doc.text(montoTexto, cols[4].x + cols[4].w - 2, y + 3, { align: 'right' })
 
-      // Equivalente en Bs
+      // Contravalor / Equivalente inteligente a la tasa elegida
       doc.setFont('helvetica', 'normal')
       doc.setTextColor(...C_GRAY)
-      doc.text(fmtBs(montoVes).replace('Bs ', ''), cols[5].x + cols[5].w - 2, y + 3, { align: 'right' })
+      const contravalorTexto = m.moneda === 'VES'
+        ? fmtUsd(mUsd)
+        : fmtBs(mVes)
+      doc.text(contravalorTexto, cols[5].x + cols[5].w - 2, y + 3, { align: 'right' })
 
       // Tachado si anulado
       if (anul) {
@@ -398,7 +443,7 @@ async function generarFinanzasResumenPDFImpl({ movimientos = [], resumen = {}, r
         doc.line(cols[2].x + 1.5, y + 2, cols[2].x + 1.5 + 44, y + 2)
       }
 
-      y += 6
+      y += rowHeight
     })
 
     // Fila de Total de la Categoría

@@ -14,6 +14,7 @@ import {
   Wallet,
   Lock,
   Printer,
+  Settings2,
 } from 'lucide-react'
 import { useCandados } from '../../config/candadosRuntime.js'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
@@ -21,7 +22,6 @@ import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import PageHeader from '../../../compat/components/ui/PageHeader.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
-import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
 import ResumenPeriodoKpis from './ResumenPeriodoKpis.jsx'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
@@ -42,7 +42,6 @@ import {
 import { showToast } from '../../../compat/components/ui/toastBus.js'
 import { useCuentasCustodia } from '../../hooks/useCuentasCustodia.js'
 import MovimientoForm from './MovimientoForm.jsx'
-import { Settings2 } from 'lucide-react'
 import MovimientoTable from './MovimientoTable.jsx'
 import SyncPosModal from './SyncPosModal.jsx'
 import CarterasHeader from './CarterasHeader.jsx'
@@ -66,7 +65,7 @@ const MOSTRAR_CSV = false
 export default function FinanzasView() {
   const perfil = useAuthStore(state => state.perfil)
   const puede = usePuedeFinanzas()
-  const { tasaActiva } = useMonedaNomina()
+  const { tasaActiva, nombreTasa } = useMonedaNomina()
 
   // Pestaña activa: 'movimientos' (operación diaria) o 'tesoreria' (saldos y carteras)
   const [activeTab, setActiveTab] = useState('movimientos')
@@ -224,6 +223,8 @@ export default function FinanzasView() {
           tipoFiltro: tipo || '',
         },
         rango: { desde, hasta },
+        tasaActiva,
+        nombreTasa,
         action,
       })
     } catch (error) {
@@ -412,7 +413,7 @@ export default function FinanzasView() {
             {!fechaValida && <p className="mt-2 text-xs font-semibold text-red-600" role="alert">El rango de fechas no es válido.</p>}
 
           {/* KPI Cards Globales del período */}
-          <ResumenPeriodoKpis summary={summary} loading={resumen.isLoading} moneda={moneda} onSelectMoneda={setMoneda} />
+          <ResumenPeriodoKpis summary={summary} loading={resumen.isLoading} moneda={moneda} onSelectMoneda={setMoneda} tasaActiva={tasaActiva} />
 
           {resumen.isError && <InlineError message="No se pudo cargar el resumen." onRetry={() => resumen.refetch()} />}
 
@@ -436,7 +437,7 @@ export default function FinanzasView() {
                   movimientos={movimientosFiltrados}
                   onAnular={movimiento => setAnular(movimiento)}
                   onRevertir={movimiento => revertirAnulacion.mutate({ id: movimiento.id })}
-                  tasaBcv={usd}
+                  tasaBcv={tasaActiva || usd}
                   tasaUsdt={usdt}
                 />
               </div>

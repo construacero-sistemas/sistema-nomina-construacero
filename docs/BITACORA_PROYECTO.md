@@ -2928,6 +2928,36 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 56 suites / 572 pruebas aprobadas (100%).
 - `npm run build`: Compilación exitosa en 22.15s.
 
+---
+
+### Entrada #135 - 2026-09-03
+**Contexto:** El usuario solicitó resolver dos discrepancias en el reporte PDF y en la pantalla de Finanzas:
+1. En el PDF de Finanzas (`finanzasResumenPDF`), un movimiento en Bolívares (`31.697,66 VES`) imprimía erróneamente `$31.697,66` en la columna USD de las tarjetas de resumen y tablas (colocando el signo `$` al monto en Bolívares). Se requería calcular el equivalente real en dólares usando la tasa activa elegida por el usuario.
+2. En el PDF, la columna de concepto recortaba los textos largos a 46 caracteres (`substring(0, 46)`), perdiendo información como `(Cuenta Venezuela)`. Se requería que el concepto saliera 100% completo con salto de línea dinámico.
+3. En las tarjetas KPI de la pantalla, remover los símbolos confusos `~` y `≈` (que parecían un signo negativo o error tipográfico), y calcular dinámicamente el `Total estimado:` y los contravalores usando la **Tasa Activa** que el usuario selecciona en la barra superior (`useMonedaNomina`: BCV, USDT o Manual).
+
+**Acciones realizadas:**
+- **Reporte PDF (`src/services/pdf/finanzasResumenPDF.impl.js`):**
+  - Se conectó `tasaActiva` y `nombreTasa`. El subtítulo del reporte ahora refleja la tasa activa empleada: `Tasa Activa: X.XXX,XX Bs/$ (Nombre)`.
+  - Se corrigió `calcMontoUsd(m)` para que los importes en Bolívares se conviertan dividiendo entre la tasa activa (ej. `31.697,66 / 804,81 = $ 39,39 USD`, nunca más `$31.697,66`).
+  - Se eliminó el truncamiento del concepto: se implementó `doc.splitTextToSize` con altura de fila dinámica (`rowHeight = Math.max(6.5, lineasConcepto.length * 3.2 + 2.5)`), garantizando que todo el texto se imprima íntegramente.
+  - Se renombró la columna de la tabla de `EQUIV. BS` a `CONTRAVALOR`, mostrando de forma inteligente el contravalor en USD para registros en Bolívares, y en Bolívares para registros en USD/USDT.
+- **Tarjetas KPI y Pantalla (`src/components/finanzas/ResumenPeriodoKpis.jsx` y `FinanzasView.jsx`):**
+  - Se eliminaron los símbolos `~` y `≈`, mostrando limpiamente `Total estimado: $39,39 USD`.
+  - Se integró `tasaActiva` en `DesgloseTriple` y `formatSub`: la conversión de Bolívares a dólares en el pie de la tarjeta y en las píldoras se calcula en tiempo real con la tasa activa elegida en la cabecera.
+  - En `FinanzasView.jsx`: se inyectó `tasaActiva` en `ResumenPeriodoKpis`, `MovimientoTable` y `generarFinanzasResumenPDF`.
+- **Pruebas Automatizadas:**
+  - En `src/services/pdf/__tests__/finanzasResumenPDF.test.jsx`: se añadió prueba que valida que `31.697,66 VES` se convierte a `$39,39`, no muestra `$31.697,66` y pasa el concepto completo a `splitTextToSize` (6/6 pruebas aprobadas).
+  - En `src/components/finanzas/__tests__/ResumenPeriodoKpis.test.jsx`: se añadió prueba de cálculo dinámico con `tasaActiva` y ausencia de virgulillas (5/5 pruebas aprobadas).
+
+**Verificación:**
+- `npm run check:project`: OK (27 migraciones y 256 archivos).
+- `npm run test:responsive`: 30/30 pruebas aprobadas (100%).
+- `npm run test:bundle-size`: Chunk principal `369.9 kB` ≤ 400 kB.
+- `npm run lint`: 0 errores y 0 advertencias.
+- `npm test`: 56 suites / 573 pruebas aprobadas (100%).
+- `npm run build`: Compilación exitosa en 52.83s.
+
 
 
 

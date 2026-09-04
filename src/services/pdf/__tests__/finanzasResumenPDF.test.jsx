@@ -25,6 +25,7 @@ const docStub = {
   autoPrint: vi.fn(),
   save: vi.fn(),
   output: vi.fn(() => 'blob:fake'),
+  splitTextToSize: vi.fn((text) => (Array.isArray(text) ? text : [String(text)])),
   internal: { getNumberOfPages: vi.fn(() => 1), pageSize: { getWidth: () => 216, getHeight: () => 279 } },
   GState: vi.fn(),
 }
@@ -137,5 +138,41 @@ describe('generarFinanzasResumenPDFImpl', () => {
     // Totales específicos por categoría
     expect(textos.some(t => t.includes('TOTAL VENTAS:'))).toBe(true)
     expect(textos.some(t => t.includes('TOTAL SERVICIOS:'))).toBe(true)
+  })
+
+  it('convierte montos en VES usando tasaActiva y preserva el concepto completo sin recortar', async () => {
+    await generarFinanzasResumenPDFImpl({
+      movimientos: [
+        {
+          id: 'm-ves',
+          fecha: '2026-09-03',
+          tipo: 'ingreso',
+          categoria: 'Saldo Inicial',
+          concepto: 'Saldo inicial / Apertura de cuenta (Cuenta Venezuela)',
+          moneda: 'VES',
+          monto: 31697.66,
+          monto_ves: 31697.66,
+          estado: 'activo',
+          cuenta_origen: 'Cuenta Venezuela',
+        },
+      ],
+      resumen: {},
+      rango: { desde: '2026-09-01', hasta: '2026-09-03' },
+      tasaActiva: 804.81,
+      nombreTasa: 'BCV Dólar',
+      action: 'download',
+    })
+
+    const textos = docStub.text.mock.calls.map(c => String(c[0]))
+    // Convierte 31697.66 VES a $39,39 USD en vez de mostrar $31.697,66
+    expect(textos.some(t => t.includes('$39,39'))).toBe(true)
+    expect(textos.some(t => t.includes('$31.697,66'))).toBe(false)
+    // El subtítulo incluye la tasa activa
+    expect(textos.some(t => t.includes('Tasa Activa: 804,81 Bs/$ (BCV Dólar)'))).toBe(true)
+    // SplitTextToSize fue llamado con el concepto completo
+    expect(docStub.splitTextToSize).toHaveBeenCalledWith(
+      expect.stringContaining('Saldo Inicial / Apertura de Cuenta (Cuenta Venezuela)'),
+      expect.any(Number)
+    )
   })
 })
