@@ -3004,6 +3004,8 @@ Al alcanzar los 7 toques (`TOQUES_REQUERIDOS`), el diálogo se renderizaba insta
 - `npm test`: 57 suites / 584 pruebas aprobadas (100%).
 - `npm run verify`: Compilación de Vite exitosa y bundle size en 369.9 kB (≤ 400 kB).
 
+- **Refinamiento UI/UX (`SyncPosMetodoItem.jsx`):** Se dotó a cada método de pago de una paleta temática armónica (verde esmeralda para Efectivo $, morado para Zelle, azul para Bolívares, índigo para Pago Móvil, ámbar para USDT, etc.), botón-píldora interactivo para alternar el detalle de despachos directamente en la cabecera, etiquetas de tipo de cuenta amigables ("Caja física $", "Banco nacional" en vez de códigos internos técnicos), y reorganización ergonómica compacta sin filas vacías redundantes.
+
 
 
 
