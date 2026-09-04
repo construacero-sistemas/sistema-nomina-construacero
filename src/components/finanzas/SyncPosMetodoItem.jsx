@@ -1,5 +1,5 @@
 // src/components/finanzas/SyncPosMetodoItem.jsx
-// Tarjeta interactiva para asignar cuenta, dividir entre bancos o activar/desactivar un método de pago del POS
+// Tarjeta interactiva refinada para asignar cuenta, dividir entre bancos o activar/desactivar un método de pago del POS
 import { useState, useMemo } from 'react'
 import {
   Check,
@@ -25,11 +25,65 @@ function formatMoney(amount) {
   })
 }
 
+function formatTipoCuenta(tipo) {
+  switch (tipo) {
+    case 'efectivo_usd': return 'Caja física $'
+    case 'efectivo_ves': return 'Caja física Bs'
+    case 'banco_ves': return 'Banco nacional'
+    case 'cripto_usdt': return 'Billetera cripto'
+    case 'zelle': return 'Cuenta Zelle'
+    default: return 'Cuenta de custodia'
+  }
+}
+
+const METODO_THEMES = {
+  efectivo_usd: {
+    iconBg: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
+    borderActive: 'border-emerald-200/80 hover:border-emerald-300',
+    badge: 'bg-emerald-50 text-emerald-800 border-emerald-200/60',
+  },
+  zelle_usd: {
+    iconBg: 'bg-purple-50 text-purple-700 border-purple-200/80',
+    borderActive: 'border-purple-200/80 hover:border-purple-300',
+    badge: 'bg-purple-50 text-purple-800 border-purple-200/60',
+  },
+  usdt_usd: {
+    iconBg: 'bg-amber-50 text-amber-700 border-amber-200/80',
+    borderActive: 'border-amber-200/80 hover:border-amber-300',
+    badge: 'bg-amber-50 text-amber-800 border-amber-200/60',
+  },
+  efectivo_ves: {
+    iconBg: 'bg-blue-50 text-blue-700 border-blue-200/80',
+    borderActive: 'border-blue-200/80 hover:border-blue-300',
+    badge: 'bg-blue-50 text-blue-800 border-blue-200/60',
+  },
+  transferencia_ves: {
+    iconBg: 'bg-sky-50 text-sky-700 border-sky-200/80',
+    borderActive: 'border-sky-200/80 hover:border-sky-300',
+    badge: 'bg-sky-50 text-sky-800 border-sky-200/60',
+  },
+  pago_movil_ves: {
+    iconBg: 'bg-indigo-50 text-indigo-700 border-indigo-200/80',
+    borderActive: 'border-indigo-200/80 hover:border-indigo-300',
+    badge: 'bg-indigo-50 text-indigo-800 border-indigo-200/60',
+  },
+  punto_venta_ves: {
+    iconBg: 'bg-teal-50 text-teal-700 border-teal-200/80',
+    borderActive: 'border-teal-200/80 hover:border-teal-300',
+    badge: 'bg-teal-50 text-teal-800 border-teal-200/60',
+  },
+}
+
+const DEFAULT_THEME = {
+  iconBg: 'bg-slate-50 text-slate-700 border-slate-200',
+  borderActive: 'border-slate-200 hover:border-slate-300',
+  badge: 'bg-slate-100 text-slate-700 border-slate-200',
+}
+
 export default function SyncPosMetodoItem({
   metodoKey,
   label,
   icon: IconComponent,
-  colorScheme = 'blue',
   montoOriginal = 0,
   montoOriginalUsd = 0,
   moneda = 'USD',
@@ -45,6 +99,8 @@ export default function SyncPosMetodoItem({
   const dividido = Boolean(config.dividido)
   const partes = config.partes || []
   const excluidos = config.excluidos || []
+
+  const theme = METODO_THEMES[metodoKey] || DEFAULT_THEME
 
   // Calcular el monto descontando despachos excluidos
   const montoEfectivo = useMemo(() => {
@@ -74,7 +130,7 @@ export default function SyncPosMetodoItem({
     return cuentasFiltradas.map(c => ({
       value: c.nombre,
       label: c.nombre,
-      sub: `${c.tipo || 'cuenta'} · ${c.moneda || moneda}`,
+      sub: `${formatTipoCuenta(c.tipo)} · ${c.moneda || moneda}`,
     }))
   }, [cuentasFiltradas, moneda])
 
@@ -94,7 +150,6 @@ export default function SyncPosMetodoItem({
   }
 
   const handleActivarDivision = () => {
-    // Inicializar con 2 partes dividiendo el monto
     const mitad = round2(montoEfectivo / 2)
     const resto = round2(montoEfectivo - mitad)
     const c1 = config.cuenta_origen || (opcionesCuentas[0]?.value || '')
@@ -190,55 +245,75 @@ export default function SyncPosMetodoItem({
     <div
       className={`rounded-2xl border transition-all ${
         activo
-          ? 'bg-white border-slate-200 shadow-sm'
-          : 'bg-slate-50/70 border-slate-200/80 opacity-60'
+          ? `bg-white border-slate-200/90 shadow-xs hover:shadow-sm ${theme.borderActive}`
+          : 'bg-slate-50/60 border-slate-200/60 opacity-60'
       }`}
     >
-      {/* Cabecera del Método de Pago */}
       <div className="p-3.5 sm:p-4 space-y-3">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          {/* Checkbox y Nombre */}
-          <div className="flex items-center gap-2.5 min-w-0">
+        {/* Cabecera del Método de Pago */}
+        <div className="flex items-center justify-between gap-3">
+          {/* Checkbox + Icono + Nombre + Despachos */}
+          <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={handleToggleActivo}
               aria-label={activo ? `Desmarcar ${label}` : `Marcar ${label}`}
-              className="min-h-11 min-w-11 -m-2 flex items-center justify-center text-slate-700 hover:text-primary transition-colors"
+              className="min-h-11 min-w-11 -m-2 flex items-center justify-center text-slate-700 hover:text-primary transition-transform active:scale-90"
               style={{ touchAction: 'manipulation' }}
             >
               <div
-                className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
+                className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
                   activo
-                    ? 'bg-primary border-primary text-white'
-                    : 'bg-white border-slate-300 text-transparent'
+                    ? 'bg-primary border-primary text-white shadow-xs'
+                    : 'bg-white border-slate-300 text-transparent hover:border-slate-400'
                 }`}
               >
-                <Check size={14} className="stroke-[3]" />
+                <Check size={13} className="stroke-[3]" />
               </div>
             </button>
 
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
-                <IconComponent size={16} />
-              </div>
-              <div className="min-w-0">
-                <span className="text-xs font-black text-slate-900 block truncate">
+            <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0 shadow-2xs ${theme.iconBg}`}>
+              <IconComponent size={19} />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-black text-slate-900 tracking-tight">
                   {label}
                 </span>
-                <span className="text-[10px] text-slate-500 block">
-                  {despachos.length} {despachos.length === 1 ? 'despacho' : 'despachos'}
-                  {excluidos.length > 0 && ` (${excluidos.length} excluidos)`}
-                </span>
+                {despachos.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setMostrarDetalle(prev => !prev)}
+                    className={`min-h-11 -my-2.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-xl text-xs font-bold transition-all ${
+                      mostrarDetalle
+                        ? 'bg-primary/10 text-primary border border-primary/30'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70 border border-slate-200/60'
+                    }`}
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    <span>{despachos.length} {despachos.length === 1 ? 'despacho' : 'despachos'}</span>
+                    {mostrarDetalle ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  </button>
+                )}
               </div>
+              {excluidos.length > 0 && (
+                <span className="text-[10px] font-bold text-amber-600 block mt-0.5">
+                  {excluidos.length} {excluidos.length === 1 ? 'despacho excluido' : 'despachos excluidos'}
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Importe */}
+          {/* Importe grande */}
           <div className="text-right shrink-0">
-            <div className="text-sm font-black text-slate-900">
-              {moneda === 'VES'
-                ? `Bs. ${formatMoney(montoEfectivo)}`
-                : `$${formatMoney(montoEfectivo)} USD`}
+            <div className="flex items-baseline justify-end gap-1">
+              <span className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                {moneda === 'VES' ? `Bs. ${formatMoney(montoEfectivo)}` : `$${formatMoney(montoEfectivo)}`}
+              </span>
+              <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 uppercase">
+                {moneda}
+              </span>
             </div>
             {moneda === 'VES' && (
               <div className="text-[11px] font-semibold text-slate-500">
@@ -250,21 +325,21 @@ export default function SyncPosMetodoItem({
 
         {/* Configuración de Cuentas de Custodia (solo si está activo) */}
         {activo && (
-          <div className="space-y-2.5 pt-1 border-t border-slate-100">
+          <div className="space-y-2.5 pt-2.5 border-t border-slate-100">
             {!dividido ? (
               /* Modo Cuenta Única */
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-bold text-slate-600">
-                    Cuenta de destino:
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                    Cuenta de destino
                   </span>
                   <button
                     type="button"
                     onClick={handleActivarDivision}
-                    className="min-h-11 inline-flex items-center gap-1 text-[11px] font-black text-primary hover:text-primary-hover px-2 py-1 rounded-lg hover:bg-primary/5 transition-colors"
+                    className="min-h-11 inline-flex items-center gap-1.5 text-xs font-black text-primary hover:text-primary-hover px-3 py-1 rounded-xl bg-primary/5 hover:bg-primary/10 border border-primary/20 transition-all active:scale-95"
                     style={{ touchAction: 'manipulation' }}
                   >
-                    <Plus size={13} />
+                    <Plus size={13} className="stroke-[3]" />
                     <span>Dividir entre cuentas</span>
                   </button>
                 </div>
@@ -273,13 +348,13 @@ export default function SyncPosMetodoItem({
                   options={opcionesCuentas}
                   value={config.cuenta_origen || ''}
                   onChange={handleSelectCuentaUnica}
-                  placeholder={`Seleccionar cuenta (${moneda})...`}
+                  placeholder={`Seleccionar cuenta de destino (${moneda})...`}
                   searchable={opcionesCuentas.length > 4}
                 />
               </div>
             ) : (
               /* Modo Multi-cuenta (Dividido) */
-              <div className="rounded-xl bg-slate-50 p-3 border border-slate-200 space-y-3">
+              <div className="rounded-2xl bg-slate-50/80 p-3 border border-slate-200 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
                     <ListFilter size={14} className="text-primary" />
@@ -288,7 +363,7 @@ export default function SyncPosMetodoItem({
                   <button
                     type="button"
                     onClick={handleDesactivarDivision}
-                    className="min-h-11 inline-flex items-center text-[11px] font-bold text-slate-500 hover:text-slate-700 px-2 py-1 rounded-lg hover:bg-slate-200/60 transition-colors"
+                    className="min-h-11 inline-flex items-center text-xs font-bold text-slate-500 hover:text-slate-800 px-2.5 py-1 rounded-xl hover:bg-slate-200/60 transition-colors"
                     style={{ touchAction: 'manipulation' }}
                   >
                     Volver a cuenta única
@@ -300,7 +375,7 @@ export default function SyncPosMetodoItem({
                   {partes.map((parte, idx) => (
                     <div
                       key={idx}
-                      className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center bg-white p-2 rounded-xl border border-slate-200 shadow-2xs"
+                      className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs"
                     >
                       <div className="sm:col-span-6">
                         <CustomSelect
@@ -343,10 +418,10 @@ export default function SyncPosMetodoItem({
                 <button
                   type="button"
                   onClick={handleAddParte}
-                  className="min-h-11 w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-dashed border-slate-300 bg-white text-xs font-bold text-primary hover:bg-primary/5 active:scale-95 transition-all"
+                  className="min-h-11 w-full inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border border-dashed border-slate-300 bg-white text-xs font-black text-primary hover:bg-primary/5 active:scale-95 transition-all shadow-2xs"
                   style={{ touchAction: 'manipulation' }}
                 >
-                  <Plus size={14} />
+                  <Plus size={14} className="stroke-[3]" />
                   <span>Agregar otra cuenta bancaria</span>
                 </button>
 
@@ -382,33 +457,46 @@ export default function SyncPosMetodoItem({
               </div>
             )}
 
-            {/* Botón Ver Despachos Detallados */}
-            {despachos.length > 0 && (
-              <div className="pt-1">
+            {/* Expansión de Despachos */}
+            {despachos.length > 0 && !mostrarDetalle && (
+              <div className="pt-0.5">
                 <button
                   type="button"
-                  onClick={() => setMostrarDetalle(prev => !prev)}
-                  className="min-h-11 w-full inline-flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-bold text-slate-700 hover:bg-slate-100/70 active:scale-98 transition-all"
+                  onClick={() => setMostrarDetalle(true)}
+                  className="min-h-11 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50/80 hover:bg-slate-100 text-[11px] font-bold text-slate-600 hover:text-slate-900 border border-slate-200/60 transition-all active:scale-98"
                   style={{ touchAction: 'manipulation' }}
                 >
-                  <span className="flex items-center gap-1.5">
-                    <ListFilter size={13} className="text-slate-500" />
-                    <span>Ver detalle ({despachos.length} despachos)</span>
-                  </span>
-                  {mostrarDetalle ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  <ListFilter size={13} className="text-slate-400" />
+                  <span>Ver detalle ({despachos.length} despachos)</span>
+                  <ChevronDown size={14} className="text-slate-400" />
                 </button>
+              </div>
+            )}
 
-                {mostrarDetalle && (
-                  <div className="mt-2 animate-fadeIn">
-                    <SyncPosDespachosList
-                      despachos={despachos}
-                      excluidos={excluidos}
-                      onToggleDespacho={handleToggleDespacho}
-                      onToggleTodos={handleToggleTodosDespachos}
-                      moneda={moneda}
-                    />
-                  </div>
-                )}
+            {despachos.length > 0 && mostrarDetalle && (
+              <div className="space-y-2 pt-1 animate-fadeIn">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                    <ListFilter size={12} className="text-primary" />
+                    Despachos incluidos
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setMostrarDetalle(false)}
+                    className="min-h-11 inline-flex items-center gap-1 px-2 text-xs font-bold text-slate-500 hover:text-slate-700"
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    <span>Ocultar</span>
+                    <ChevronUp size={13} />
+                  </button>
+                </div>
+                <SyncPosDespachosList
+                  despachos={despachos}
+                  excluidos={excluidos}
+                  onToggleDespacho={handleToggleDespacho}
+                  onToggleTodos={handleToggleTodosDespachos}
+                  moneda={moneda}
+                />
               </div>
             )}
           </div>
