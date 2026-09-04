@@ -86,6 +86,8 @@ export async function fetchDayPosDataFromDirectDb(env, fecha) {
     let totalDespachos = 0
     let tasaPromedioBcv = 1
 
+    const despachosDetalle = []
+
     for (const d of (Array.isArray(despachosRaw) ? despachosRaw : [])) {
       totalDespachos += 1
       const flete = Number(d.flete_usd || 0)
@@ -103,8 +105,15 @@ export async function fetchDayPosDataFromDirectDb(env, fecha) {
       }
       formas = Array.isArray(formas) ? formas : []
 
+      const despId = d.despacho_id || d.id || `desp-${totalDespachos}`
+      const numDesp = d.numero_despacho || d.numero || `DSP-${totalDespachos}`
+      const cliNom = d.cliente_nombre || d.cliente || d.nombre_cliente || 'Cliente General'
+      const fecDesp = String(d.fecha_despacho || d.fecha || fecha).slice(0, 10)
+
+      let fIdx = 0
       for (const f of formas) {
         if (!f) continue
+        fIdx += 1
         const metodo = String(f.metodo || f.formaPago || '').toLowerCase()
         const montoUsd = Number(f.monto || 0)
 
@@ -122,23 +131,44 @@ export async function fetchDayPosDataFromDirectDb(env, fecha) {
 
         ventasLiquidasUsd += montoUsd
 
+        let metodoClave = 'otros_usd'
         if (metodo.includes('usdt')) {
           desglose.usdt_usd += montoUsd
+          metodoClave = 'usdt_usd'
         } else if (metodo.includes('zelle')) {
           desglose.zelle_usd += montoUsd
+          metodoClave = 'zelle_usd'
         } else if (metodo.includes('efectivo') && (metodo.includes('$') || metodo.includes('dolar') || metodo.includes('dólar') || !metodo.includes('bs'))) {
           desglose.efectivo_usd += montoUsd
+          metodoClave = 'efectivo_usd'
         } else if (metodo.includes('efectivo') && (metodo.includes('bs') || metodo.includes('bolivar') || metodo.includes('bolívar'))) {
           desglose.efectivo_ves += (montoUsd * tasaDoc)
+          metodoClave = 'efectivo_ves'
         } else if (metodo.includes('pago móvil') || metodo.includes('pago movil')) {
           desglose.pago_movil_ves += (montoUsd * tasaDoc)
+          metodoClave = 'pago_movil_ves'
         } else if (metodo.includes('transferencia')) {
           desglose.transferencia_ves += (montoUsd * tasaDoc)
+          metodoClave = 'transferencia_ves'
         } else if (metodo.includes('punto') || metodo.includes('tarjeta') || metodo.includes('debito') || metodo.includes('débito')) {
           desglose.punto_venta_ves += (montoUsd * tasaDoc)
+          metodoClave = 'punto_venta_ves'
         } else {
           desglose.otros_usd += montoUsd
         }
+
+        despachosDetalle.push({
+          id: `${despId}-${fIdx}`,
+          despacho_id: despId,
+          numero: numDesp,
+          cliente: cliNom,
+          fecha: fecDesp,
+          metodo_original: f.metodo || f.formaPago || 'No especificado',
+          metodo_clave: metodoClave,
+          monto_usd: round2(montoUsd),
+          monto_ves: round2(montoUsd * tasaDoc),
+          tasa: tasaDoc,
+        })
       }
     }
 
@@ -216,6 +246,7 @@ export async function fetchDayPosDataFromDirectDb(env, fecha) {
           punto_venta_ves: round2(desglose.punto_venta_ves),
           otros_usd: round2(desglose.otros_usd),
         },
+        despachos_detalle: despachosDetalle,
         generado_en: new Date().toISOString(),
       },
     }

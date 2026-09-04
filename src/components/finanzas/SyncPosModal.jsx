@@ -1,6 +1,6 @@
 // src/components/finanzas/SyncPosModal.jsx
-// Modal de selección de fecha/período (Hoy, Ayer, Día Específico, Semana, Mes) y sincronización con el POS
-import { useState } from 'react'
+// Modal de selección de fecha/período y sincronización personalizada del POS con distribución entre cuentas
+import { useState, useMemo } from 'react'
 import {
   AlertCircle,
   ArrowDownToLine,
@@ -9,20 +9,24 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  Coins,
   CreditCard,
   DollarSign,
   Globe,
   Loader2,
-  RefreshCw,
   Search,
-  ShoppingCart,
   Smartphone,
   TrendingUp,
-  Wallet,
 } from 'lucide-react'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import { useEjecutarSyncPos, usePreviewSyncPos } from '../../hooks/useFinanzas.js'
+import { useCuentasCustodia } from '../../hooks/useCuentasCustodia.js'
+import SyncPosMetodoItem from './SyncPosMetodoItem.jsx'
+
+function round2(num) {
+  return Math.round((Number(num) || 0) * 100) / 100
+}
 
 function formatMoney(amount) {
   return Number(amount || 0).toLocaleString('es-VE', {
@@ -67,11 +71,54 @@ function getPresetRange(presetId) {
   return { desde: todayStr, hasta: todayStr, isRange: false }
 }
 
+const METODOS_CONFIG = [
+  { key: 'efectivo_usd', label: 'Efectivo $', icon: DollarSign, moneda: 'USD' },
+  { key: 'zelle_usd', label: 'Zelle (USD)', icon: Globe, moneda: 'USD' },
+  { key: 'usdt_usd', label: 'USDT (Cripto)', icon: Coins, moneda: 'USDT' },
+  { key: 'efectivo_ves', label: 'Efectivo Bs', icon: Banknote, moneda: 'VES' },
+  { key: 'transferencia_ves', label: 'Transferencia Bancaria', icon: Building2, moneda: 'VES' },
+  { key: 'pago_movil_ves', label: 'Pago Móvil', icon: Smartphone, moneda: 'VES' },
+  { key: 'punto_venta_ves', label: 'Punto de Venta', icon: CreditCard, moneda: 'VES' },
+]
+
+function sugerirCuentaParaMetodo(metodoDef, cuentas = []) {
+  if (!Array.isArray(cuentas) || cuentas.length === 0) return ''
+  const moneda = (metodoDef.moneda || 'USD').toUpperCase()
+  const cuentasMismaMoneda = cuentas.filter(c => String(c.moneda || '').toUpperCase() === moneda)
+  const pool = cuentasMismaMoneda.length > 0 ? cuentasMismaMoneda : cuentas
+
+  const key = metodoDef.key || ''
+  if (key === 'efectivo_usd') {
+    const found = pool.find(c => c.tipo === 'efectivo_usd' || /efectivo/.test(c.nombre.toLowerCase()))
+    if (found) return found.nombre
+  }
+  if (key === 'zelle_usd') {
+    const found = pool.find(c => /zelle/.test(c.nombre.toLowerCase()))
+    if (found) return found.nombre
+  }
+  if (key === 'usdt_usd') {
+    const found = pool.find(c => c.tipo === 'cripto_usdt' || /usdt|binance|gaby/.test(c.nombre.toLowerCase()))
+    if (found) return found.nombre
+  }
+  if (key === 'efectivo_ves') {
+    const found = pool.find(c => c.tipo === 'efectivo_ves' || /efectivo/.test(c.nombre.toLowerCase()))
+    if (found) return found.nombre
+  }
+  if (key === 'pago_movil_ves' || key === 'transferencia_ves' || key === 'punto_venta_ves') {
+    const found = pool.find(c => /venezuela|bdv/.test(c.nombre.toLowerCase())) ||
+      pool.find(c => c.tipo === 'banco_ves')
+    if (found) return found.nombre
+  }
+  return pool[0]?.nombre || ''
+}
+
 export default function SyncPosModal({ open, onClose }) {
   const [selectedPreset, setSelectedPreset] = useState('hoy')
   const [desde, setDesde] = useState(() => getLocalIsoDate())
   const [hasta, setHasta] = useState(() => getLocalIsoDate())
+  const [distribucionOverrides, setDistribucionOverrides] = useState({})
 
+  const { cuentas = [] } = useCuentasCustodia()
   const previewMutation = usePreviewSyncPos()
   const ejecutarMutation = useEjecutarSyncPos()
 
@@ -83,13 +130,14 @@ export default function SyncPosModal({ open, onClose }) {
     setDesde(range.desde)
     setHasta(range.hasta)
     previewMutation.reset()
+    setDistribucionOverrides({})
   }
 
-  // Para cuando se elige un solo día específico
   const handleSingleDateChange = (val) => {
     setDesde(val)
     setHasta(val)
     previewMutation.reset()
+    setDistribucionOverrides({})
   }
 
   const handleRangeDateChange = (type, val) => {
@@ -97,20 +145,13 @@ export default function SyncPosModal({ open, onClose }) {
     if (type === 'desde') setDesde(val)
     if (type === 'hasta') setHasta(val)
     previewMutation.reset()
+    setDistribucionOverrides({})
   }
 
   const handleConsultar = () => {
     if (desde && hasta) {
+      setDistribucionOverrides({})
       previewMutation.mutate({ desde, hasta })
-    }
-  }
-
-  const handleConfirmarSync = async () => {
-    try {
-      await ejecutarMutation.mutateAsync({ desde, hasta })
-      onClose()
-    } catch {
-      // Manejado por toast de mutación
     }
   }
 
@@ -119,12 +160,117 @@ export default function SyncPosModal({ open, onClose }) {
   const isLoading = previewMutation.isPending
   const isExecuting = ejecutarMutation.isPending
 
+  // Distribución inteligente combinando datos del POS, cuentas de custodia y personalización del usuario
+  const distribucion = useMemo(() => {
+    if (!data) return {}
+    const dp = data.desglose_pagos || {}
+    const res = {}
+    for (const m of METODOS_CONFIG) {
+      const monto = Number(dp[m.key] || 0)
+      if (monto > 0) {
+        const override = distribucionOverrides[m.key]
+        res[m.key] = {
+          activo: override?.activo !== undefined ? override.activo : true,
+          cuenta_origen: override?.cuenta_origen !== undefined ? override.cuenta_origen : sugerirCuentaParaMetodo(m, cuentas),
+          dividido: Boolean(override?.dividido),
+          partes: override?.partes || [],
+          excluidos: override?.excluidos || [],
+        }
+      }
+    }
+    return res
+  }, [data, cuentas, distribucionOverrides])
+
+  const handleUpdateMetodoConfig = (metodoKey, newCfg) => {
+    setDistribucionOverrides(prev => ({
+      ...prev,
+      [metodoKey]: newCfg,
+    }))
+  }
+
+  // Agrupar despachos por clave de método
+  const despachosPorMetodo = useMemo(() => {
+    const res = {}
+    for (const m of METODOS_CONFIG) {
+      res[m.key] = []
+    }
+    for (const d of (data?.despachos_detalle || [])) {
+      if (res[d.metodo_clave]) {
+        res[d.metodo_clave].push(d)
+      }
+    }
+    return res
+  }, [data])
+
+  // Cálculo en tiempo real del Total Ingresos Empresa a Registrar
+  const totalDinamico = useMemo(() => {
+    if (!data) return { totalUsd: 0, totalVes: 0, metodosActivos: 0, totalMetodosConVenta: 0, tieneDescuadre: false }
+    const tasa = Number(data.tasa_bcv || 1) || 1
+    const dp = data.desglose_pagos || {}
+    let sumaUsd = 0
+    let sumaVes = 0
+    let metodosActivos = 0
+    let totalMetodosConVenta = 0
+    let tieneDescuadre = false
+
+    for (const m of METODOS_CONFIG) {
+      const monto = Number(dp[m.key] || 0)
+      if (monto <= 0) continue
+      totalMetodosConVenta += 1
+
+      const cfg = distribucion[m.key]
+      if (!cfg || cfg.activo === false) continue
+
+      metodosActivos += 1
+
+      const despachosMetodo = despachosPorMetodo[m.key] || []
+      const excluidos = cfg.excluidos || []
+      const campoMonto = m.moneda === 'VES' ? 'monto_ves' : 'monto_usd'
+      const sumaExcluidos = despachosMetodo
+        .filter(d => excluidos.includes(d.id))
+        .reduce((s, d) => s + Number(d[campoMonto] || 0), 0)
+      const montoEfectivo = Math.max(0, round2(monto - sumaExcluidos))
+
+      if (cfg.dividido && Array.isArray(cfg.partes) && cfg.partes.length > 0) {
+        const sumaPartes = round2(cfg.partes.reduce((s, p) => s + Number(p.monto || 0), 0))
+        if (Math.abs(montoEfectivo - sumaPartes) > 0.01) {
+          tieneDescuadre = true
+        }
+      }
+
+      if (m.moneda === 'VES') {
+        sumaVes += montoEfectivo
+        sumaUsd += (montoEfectivo / tasa)
+      } else {
+        sumaUsd += montoEfectivo
+        sumaVes += (montoEfectivo * tasa)
+      }
+    }
+
+    return {
+      totalUsd: round2(sumaUsd),
+      totalVes: round2(sumaVes),
+      metodosActivos,
+      totalMetodosConVenta,
+      tieneDescuadre,
+    }
+  }, [data, distribucion, despachosPorMetodo])
+
+  const handleConfirmarSync = async () => {
+    try {
+      await ejecutarMutation.mutateAsync({ desde, hasta, confirm: true, distribucion })
+      onClose()
+    } catch {
+      // Manejado por toast de mutación
+    }
+  }
+
   return (
     <Modal
       isOpen={open}
       onClose={isExecuting ? undefined : onClose}
       title="Sincronizar Ventas del POS"
-      className="sm:max-w-lg"
+      className="sm:max-w-2xl"
     >
       <div className="space-y-4">
         {/* Paso 1: Selección de Período o Fecha */}
@@ -133,7 +279,7 @@ export default function SyncPosModal({ open, onClose }) {
             ¿Qué fecha o período deseas sincronizar?
           </label>
 
-          {/* Botones de presets rápidos: Hoy, Ayer, Día Específico, Semana, Mes */}
+          {/* Presets rápidos */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
             {[
               { id: 'hoy', label: 'Hoy' },
@@ -149,11 +295,12 @@ export default function SyncPosModal({ open, onClose }) {
                   type="button"
                   onClick={() => handleSelectPreset(preset.id)}
                   disabled={isLoading || isExecuting}
-                  className={`py-2 px-1.5 rounded-xl text-xs font-black transition-all text-center border shadow-xs ${
+                  className={`min-h-11 py-2 px-1.5 rounded-xl text-xs font-black transition-all text-center border shadow-xs ${
                     active
                       ? 'bg-primary text-white border-primary shadow-sm ring-2 ring-primary/20'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
+                  style={{ touchAction: 'manipulation' }}
                 >
                   {preset.label}
                 </button>
@@ -161,7 +308,7 @@ export default function SyncPosModal({ open, onClose }) {
             })}
           </div>
 
-          {/* Campo de Fecha Única o Rango según el modo */}
+          {/* Campos de Fecha */}
           {!isRangeMode ? (
             <div className="space-y-1 pt-1">
               <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5">
@@ -200,16 +347,17 @@ export default function SyncPosModal({ open, onClose }) {
             type="button"
             onClick={handleConsultar}
             disabled={isLoading || isExecuting || !desde || !hasta}
-            className="w-full py-2.5 rounded-xl bg-slate-900 text-amber-400 hover:bg-slate-800 text-xs font-black flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+            className="min-h-11 w-full rounded-xl bg-slate-900 text-amber-400 hover:bg-slate-800 text-xs font-black flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+            style={{ touchAction: 'manipulation' }}
           >
             {isLoading ? (
               <>
-                <Loader2 size={14} className="animate-spin text-amber-400" />
+                <Loader2 size={15} className="animate-spin text-amber-400" />
                 Consultando ventas en el POS...
               </>
             ) : (
               <>
-                <Search size={14} />
+                <Search size={15} />
                 Consultar Ventas del POS
               </>
             )}
@@ -229,7 +377,7 @@ export default function SyncPosModal({ open, onClose }) {
           </div>
         )}
 
-        {/* Resumen de ventas obtenido */}
+        {/* Resumen dinámico y configuración por método */}
         {previewMutation.isSuccess && !isLoading && data && (
           <div className="space-y-3.5 animate-fadeIn">
             {/* Banner de estado */}
@@ -246,25 +394,25 @@ export default function SyncPosModal({ open, onClose }) {
                 <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
                 <div>
                   <strong className="block font-black">Período listo para importar</strong>
-                  Se crearán los ingresos en sus respectivas Carteras (USD y Bolívares).
+                  Se crearán los ingresos asignados a sus respectivas Cuentas de Custodia.
                 </div>
               </div>
             )}
 
-            {/* Tarjeta de Total */}
+            {/* Tarjeta de Total Dinámico */}
             <div
               className="rounded-2xl p-4 text-white shadow-md flex items-center justify-between"
               style={{ background: 'linear-gradient(135deg, #1B365D 0%, #0d223f 100%)' }}
             >
               <div>
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300 block">
-                  Total Ingresos Empresa (Sin Fletes)
+                  Total Ingresos Empresa a Registrar
                 </span>
                 <span className="text-2xl font-black tracking-tight">
-                  ${formatMoney(data.total_ingresos_usd)} <span className="text-sm font-bold text-amber-400">USD</span>
+                  ${formatMoney(totalDinamico.totalUsd)} <span className="text-sm font-bold text-amber-400">USD</span>
                 </span>
                 <span className="text-[11px] text-slate-300 block mt-0.5">
-                  {data.total_despachos || 0} despachos procesados
+                  Bs. {formatMoney(totalDinamico.totalVes)} · {totalDinamico.metodosActivos} de {totalDinamico.totalMetodosConVenta} métodos seleccionados
                 </span>
               </div>
               <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-amber-400">
@@ -288,93 +436,49 @@ export default function SyncPosModal({ open, onClose }) {
               </div>
             )}
 
-            {/* Desglose por método de pago y carteras */}
-            {data.desglose_pagos && (
-              <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
-                <span className="text-[11px] font-black text-slate-600 uppercase tracking-wider block">
-                  Entradas por Cartera y Método
+            {/* Lista Interactiva de Métodos de Pago */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2 px-0.5">
+                <span className="text-xs font-black text-slate-700 uppercase tracking-wider">
+                  Distribución y Asignación por Método
                 </span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                  {Number(data.desglose_pagos.efectivo_usd) > 0 && (
-                    <div className="p-2.5 rounded-xl bg-emerald-50/90 border border-emerald-200 font-bold text-emerald-900 shadow-xs">
-                      <span className="text-[10px] font-bold text-emerald-700 flex items-center gap-1 mb-1">
-                        <DollarSign size={13} className="shrink-0 text-emerald-600" />
-                        Efectivo $
-                      </span>
-                      <div className="text-sm font-black text-emerald-950">
-                        ${formatMoney(data.desglose_pagos.efectivo_usd)}
-                      </div>
-                    </div>
-                  )}
-                  {Number(data.desglose_pagos.zelle_usd) > 0 && (
-                    <div className="p-2.5 rounded-xl bg-purple-50/90 border border-purple-200 font-bold text-purple-900 shadow-xs">
-                      <span className="text-[10px] font-bold text-purple-700 flex items-center gap-1 mb-1">
-                        <Globe size={13} className="shrink-0 text-purple-600" />
-                        Zelle (USD)
-                      </span>
-                      <div className="text-sm font-black text-purple-950">
-                        ${formatMoney(data.desglose_pagos.zelle_usd)}
-                      </div>
-                    </div>
-                  )}
-                  {Number(data.desglose_pagos.usdt_usd) > 0 && (
-                    <div className="p-2.5 rounded-xl bg-cyan-50/90 border border-cyan-200 font-bold text-cyan-900 shadow-xs">
-                      <span className="text-[10px] font-bold text-cyan-700 flex items-center gap-1 mb-1">
-                        <Globe size={13} className="shrink-0 text-cyan-600" />
-                        USDT (Cripto)
-                      </span>
-                      <div className="text-sm font-black text-cyan-950">
-                        ${formatMoney(data.desglose_pagos.usdt_usd)}
-                      </div>
-                    </div>
-                  )}
-                  {Number(data.desglose_pagos.efectivo_ves) > 0 && (
-                    <div className="p-2.5 rounded-xl bg-blue-50/90 border border-blue-200 font-bold text-blue-900 shadow-xs">
-                      <span className="text-[10px] font-bold text-blue-700 flex items-center gap-1 mb-1">
-                        <Banknote size={13} className="shrink-0 text-blue-600" />
-                        Efectivo Bs
-                      </span>
-                      <div className="text-sm font-black text-blue-950">
-                        Bs. {formatMoney(data.desglose_pagos.efectivo_ves)}
-                      </div>
-                    </div>
-                  )}
-                  {Number(data.desglose_pagos.transferencia_ves) > 0 && (
-                    <div className="p-2.5 rounded-xl bg-blue-50/90 border border-blue-200 font-bold text-blue-900 shadow-xs">
-                      <span className="text-[10px] font-bold text-blue-700 flex items-center gap-1 mb-1">
-                        <Building2 size={13} className="shrink-0 text-blue-600" />
-                        Transferencia
-                      </span>
-                      <div className="text-sm font-black text-blue-950">
-                        Bs. {formatMoney(data.desglose_pagos.transferencia_ves)}
-                      </div>
-                    </div>
-                  )}
-                  {Number(data.desglose_pagos.pago_movil_ves) > 0 && (
-                    <div className="p-2.5 rounded-xl bg-indigo-50/90 border border-indigo-200 font-bold text-indigo-900 shadow-xs">
-                      <span className="text-[10px] font-bold text-indigo-700 flex items-center gap-1 mb-1">
-                        <Smartphone size={13} className="shrink-0 text-indigo-600" />
-                        Pago Móvil
-                      </span>
-                      <div className="text-sm font-black text-indigo-950">
-                        Bs. {formatMoney(data.desglose_pagos.pago_movil_ves)}
-                      </div>
-                    </div>
-                  )}
-                  {Number(data.desglose_pagos.punto_venta_ves) > 0 && (
-                    <div className="p-2.5 rounded-xl bg-teal-50/90 border border-teal-200 font-bold text-teal-900 shadow-xs">
-                      <span className="text-[10px] font-bold text-teal-700 flex items-center gap-1 mb-1">
-                        <CreditCard size={13} className="shrink-0 text-teal-600" />
-                        Punto Venta
-                      </span>
-                      <div className="text-sm font-black text-teal-950">
-                        Bs. {formatMoney(data.desglose_pagos.punto_venta_ves)}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <span className="text-[11px] text-slate-500">
+                  Marca qué métodos registrar y su cuenta destino
+                </span>
               </div>
-            )}
+
+              <div className="space-y-2.5">
+                {METODOS_CONFIG.map(metodoDef => {
+                  const monto = Number(data.desglose_pagos?.[metodoDef.key] || 0)
+                  if (monto <= 0) return null
+
+                  return (
+                    <SyncPosMetodoItem
+                      key={metodoDef.key}
+                      metodoKey={metodoDef.key}
+                      label={metodoDef.label}
+                      icon={metodoDef.icon}
+                      montoOriginal={monto}
+                      montoOriginalUsd={metodoDef.moneda === 'VES' ? round2(monto / (data.tasa_bcv || 1)) : monto}
+                      moneda={metodoDef.moneda}
+                      tasaBcv={data.tasa_bcv || 1}
+                      despachos={despachosPorMetodo[metodoDef.key] || []}
+                      cuentas={cuentas}
+                      config={distribucion[metodoDef.key] || {}}
+                      onChangeConfig={(newCfg) => handleUpdateMetodoConfig(metodoDef.key, newCfg)}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Advertencia si hay descuadre en división */}
+        {totalDinamico.tieneDescuadre && (
+          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-900 flex items-center gap-2">
+            <AlertCircle size={16} className="text-amber-600 shrink-0" />
+            <span>Hay diferencias pendientes por asignar en las divisiones entre cuentas bancarias.</span>
           </div>
         )}
 
@@ -384,25 +488,32 @@ export default function SyncPosModal({ open, onClose }) {
             type="button"
             onClick={onClose}
             disabled={isExecuting}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            className="min-h-11 px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            style={{ touchAction: 'manipulation' }}
           >
             Cancelar
           </button>
           <button
             type="button"
             onClick={handleConfirmarSync}
-            disabled={isLoading || isExecuting || !previewMutation.isSuccess || Number(data?.total_ingresos_usd || 0) <= 0}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-xs font-black text-white hover:bg-primary-hover disabled:opacity-50 active:scale-95 transition-all shadow-md"
+            disabled={
+              isLoading ||
+              isExecuting ||
+              !previewMutation.isSuccess ||
+              totalDinamico.totalUsd <= 0 ||
+              totalDinamico.tieneDescuadre
+            }
+            className="min-h-11 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-xs font-black text-white hover:bg-primary-hover disabled:opacity-50 active:scale-95 transition-all shadow-md"
             style={{ touchAction: 'manipulation' }}
           >
             {isExecuting ? (
               <>
-                <Loader2 size={14} className="animate-spin" />
+                <Loader2 size={15} className="animate-spin" />
                 Registrando en Finanzas...
               </>
             ) : (
               <>
-                <ArrowDownToLine size={15} />
+                <ArrowDownToLine size={16} />
                 {tienePrevio ? 'Actualizar en Finanzas' : 'Confirmar e Ingresar'}
               </>
             )}

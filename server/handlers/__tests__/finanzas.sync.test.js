@@ -177,5 +177,112 @@ describe('finanzas.sync — sincronización de ventas del POS hacia Carteras', (
     expect(result.status).toBe(502)
     expect(result.body.error).toMatch(/POS/i)
   })
+
+  it('respeta la selección y omite métodos marcados como activo: false en la distribución', async () => {
+    let creados = []
+    mock = installFetchMock([
+      { match: '/api/finanzas-sync/cierre-diario', method: 'GET', respond: posClosureResponse },
+      { match: 'idempotency_key=eq.', method: 'GET', respond: [] },
+      {
+        match: '/finanzas_movimientos',
+        method: 'POST',
+        respond: (url, init) => {
+          const body = JSON.parse(init.body)
+          creados.push(body)
+          return [{ id: IDS.linea, ...body, estado: 'activo' }]
+        },
+      },
+    ])
+
+    // Desactivamos Zelle y CxC, solo dejamos Efectivo $
+    const response = await H.handleSyncVentasPos(
+      makeRequest({
+        fecha: '2026-08-30',
+        confirm: true,
+        distribucion: {
+          efectivo_usd: { activo: true, cuenta_origen: 'Caja Efectivo $' },
+          zelle_usd: { activo: false },
+          cxc: { activo: false },
+        },
+      }),
+      testEnv
+    )
+    const result = await readResponse(response)
+
+    expect(result.status).toBe(200)
+    expect(result.body.ok).toBe(true)
+    expect(creados).toHaveLength(1)
+    expect(creados[0].metodo_pago).toBe('Efectivo $')
+    expect(creados[0].cuenta_origen).toBe('Caja Efectivo $')
+    expect(creados[0].concepto).toBe('Ventas POS en Efectivo $ (Caja Efectivo $) - 2026-08-30')
+    expect(result.body.total_ingresos_usd).toBe(1000)
+  })
+
+  it('divide un método entre múltiples cuentas bancarias en partes con cuenta_origen y referencias distintas', async () => {
+    let creados = []
+    const posConPagoMovil = {
+      ...posClosureResponse,
+      desglose_pagos: {
+        ...posClosureResponse.desglose_pagos,
+        pago_movil_ves: 10000,
+        efectivo_usd: 0,
+        zelle_usd: 0,
+      },
+      ventas_contado_usd: 200,
+      cobros_cxc_usd: 0,
+      total_ingresos_usd: 200,
+      tasa_bcv: 50,
+    }
+
+    mock = installFetchMock([
+      { match: '/api/finanzas-sync/cierre-diario', method: 'GET', respond: posConPagoMovil },
+      { match: 'idempotency_key=eq.', method: 'GET', respond: [] },
+      {
+        match: '/finanzas_movimientos',
+        method: 'POST',
+        respond: (url, init) => {
+          const body = JSON.parse(init.body)
+          creados.push(body)
+          return [{ id: IDS.linea, ...body, estado: 'activo' }]
+        },
+      },
+    ])
+
+    const response = await H.handleSyncVentasPos(
+      makeRequest({
+        fecha: '2026-08-30',
+        confirm: true,
+        distribucion: {
+          pago_movil_ves: {
+            activo: true,
+            partes: [
+              { cuenta_origen: 'Cuenta Venezuela', monto: 6000 },
+              { cuenta_origen: 'Banesco', monto: 4000 },
+            ],
+          },
+        },
+      }),
+      testEnv
+    )
+    const result = await readResponse(response)
+
+    expect(result.status).toBe(200)
+    expect(result.body.ok).toBe(true)
+    expect(creados).toHaveLength(2)
+
+    // Tramo 1 en Cuenta Venezuela
+    expect(creados[0].monto).toBe(6000)
+    expect(creados[0].moneda).toBe('VES')
+    expect(creados[0].cuenta_origen).toBe('Cuenta Venezuela')
+    expect(creados[0].idempotency_key).toBe('pos-vta-pagomovil-ves-2026-08-30-p1')
+    expect(creados[0].concepto).toBe('Ventas POS en Pago Móvil (Cuenta Venezuela) - 2026-08-30')
+
+    // Tramo 2 en Banesco
+    expect(creados[1].monto).toBe(4000)
+    expect(creados[1].moneda).toBe('VES')
+    expect(creados[1].cuenta_origen).toBe('Banesco')
+    expect(creados[1].idempotency_key).toBe('pos-vta-pagomovil-ves-2026-08-30-p2')
+    expect(creados[1].concepto).toBe('Ventas POS en Pago Móvil (Banesco) - 2026-08-30')
+  })
 })
 

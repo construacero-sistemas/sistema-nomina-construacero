@@ -2976,10 +2976,34 @@ Al alcanzar los 7 toques (`TOQUES_REQUERIDOS`), el diálogo se renderizaba insta
 - En `src/config/__tests__/candadosRuntime.test.jsx`:
   - Se agregó prueba unitaria verificando que toques de más (ej. 10 toques) y clics directos en el backdrop mantienen el diálogo abierto (11/11 pruebas aprobadas).
 
+### Entrada #137 - 2026-09-03
+**Contexto:** Se implementó el sistema de distribución, asignación de cuentas de custodia y selección/exclusión de pagos del POS (`listo-pos-cotizaciones`) hacia el módulo de Finanzas, auditado y alineado al 100% con `AGENT.md`:
+1. **Asignación a Cuentas de Custodia:** Los asientos de ventas sincronizadas ahora guardan explícitamente `cuenta_origen` y `metodo_pago`, sumando directamente a los saldos reales de cajas y bancos en lugar de quedar con badge "Sin cuenta asignada".
+2. **Multi-cuenta Bancaria / División:** Para métodos de pago que se cobran a través de varios bancos de la empresa (ej. Pago Móvil o Transferencias en Bolívares que entran tanto a Banco de Venezuela como a Banesco), se habilitó la función "+ Dividir entre cuentas", permitiendo especificar múltiples tramos con importes independientes y balance en vivo.
+3. **Selección / Exclusión de Pagos:** Checkbox individual por método de pago para activar o descartar métodos completos, además de listado paginado (6 filas por página) para desmarcar ventas o despachos puntuales.
+4. **Cumplimiento estricto de AGENT.md:** Cero emojis (solo `lucide-react`), touch targets ≥ 44 px (`min-h-11`), cero `<select>` nativos (usando `CustomSelect`), inputs `text-[16px] sm:text-sm` para prevenir zoom en iOS, archivos ≤ 600 líneas, y cero catch vacíos.
+
+**Acciones realizadas:**
+- **Backend (`server/lib/posSyncHelper.js` y `server/handlers/finanzas.sync.js`):**
+  - En `posSyncHelper.js`: Se extrajo y retornó `despachos_detalle` con el desglose individual por ticket (`id`, `numero`, `cliente`, `fecha`, `metodo_original`, `metodo_clave`, `monto_usd`, `monto_ves`).
+  - En `finanzas.sync.js`:
+    - Se incorporaron `metodo_pago` y `cuenta_origen` en `MOVEMENT_SELECT` y `saveSyncMovement` (tanto en INSERT como en PATCH), con reintentos sin columnas si la base de datos no las soporta.
+    - Se procesa el objeto `distribucion` del body: se omiten métodos marcados con `activo: false`, se generan múltiples movimientos independientes por cada tramo si hay división (`pos-vta-${metodo}-${fecha}-p${idx}`), y se calculan los totales y auditorías reales sincronizados.
+- **Frontend Modularizado (`src/components/finanzas/`):**
+  - `SyncPosDespachosList.jsx` (167 líneas): Componente con paginación de 6 despachos por página, botones Anterior/Siguiente de `min-h-11`, selección masiva o individual y cero emojis.
+  - `SyncPosMetodoItem.jsx` (419 líneas): Tarjeta interactiva con selector `CustomSelect` filtrado por moneda, modo dividido con validación de balance en tiempo real, touch targets de 44 px y botón para expandir despachos.
+  - `SyncPosModal.jsx` (526 líneas): Conectado a `useCuentasCustodia()` con sugerencias automáticas de cuentas, cálculo dinámico de total reactivo con `useMemo` (cero advertencias de React hooks), y envío de `distribucion` al confirmar.
+- **Pruebas Automatizadas:**
+  - `server/handlers/__tests__/finanzas.sync.test.js`: Pruebas de omisión de métodos inactivos y división en partes con `cuenta_origen` (8/8 pruebas aprobadas).
+  - `src/components/finanzas/__tests__/SyncPosMetodoItem.test.jsx`: 7 pruebas cubriendo renderizado, toggle activo, división, validación de balance y paginación de 6 filas (7/7 pruebas aprobadas).
+
 **Verificación:**
+- `npm run check:project`: OK (27 migraciones y 259 archivos inspeccionados).
 - `npm run test:responsive`: 30/30 pruebas aprobadas (100%).
 - `npm run lint`: 0 errores y 0 advertencias.
-- `npm test -- src/config/__tests__/candadosRuntime.test.jsx`: 11/11 pruebas aprobadas.
+- `npm test`: 57 suites / 584 pruebas aprobadas (100%).
+- `npm run verify`: Compilación de Vite exitosa y bundle size en 369.9 kB (≤ 400 kB).
+
 
 
 

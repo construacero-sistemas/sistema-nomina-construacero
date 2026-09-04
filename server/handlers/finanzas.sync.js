@@ -11,7 +11,7 @@ const MOVEMENT_SELECT = [
   'id', 'fecha', 'tipo', 'categoria', 'concepto', 'monto', 'moneda',
   'tasa_ves', 'monto_ves', 'fuente_tasa', 'observacion_tasa',
   'referencia', 'observaciones', 'estado', 'creado_en', 'anulado_en',
-  'motivo_anulacion',
+  'motivo_anulacion', 'metodo_pago', 'cuenta_origen',
 ].join(',')
 
 function round2(num) {
@@ -56,17 +56,22 @@ async function readExistingByKey(env, accountId, key) {
 async function saveSyncMovement(env, cuentaId, operadorId, movementData) {
   const existing = await readExistingByKey(env, cuentaId, movementData.idempotency_key)
   if (existing.row) {
+    const patchBody = {
+      monto: movementData.monto,
+      tasa_ves: movementData.tasa_ves,
+      concepto: movementData.concepto,
+      referencia: movementData.referencia,
+      observaciones: movementData.observaciones,
+      ...(movementData.tasa_usd_ves != null ? { tasa_usd_ves: movementData.tasa_usd_ves } : {}),
+      ...(movementData.metodo_pago ? { metodo_pago: movementData.metodo_pago } : {}),
+      ...(movementData.cuenta_origen ? { cuenta_origen: movementData.cuenta_origen } : {}),
+    }
     const patchRes = await fetch(
       `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?id=eq.${queryValue(existing.row.id)}&${accountFilter(cuentaId)}`,
       {
         method: 'PATCH',
         headers: serviceHeaders(env),
-        body: JSON.stringify({
-          monto: movementData.monto,
-          tasa_ves: movementData.tasa_ves,
-          ...(movementData.tasa_usd_ves != null ? { tasa_usd_ves: movementData.tasa_usd_ves } : {}),
-          observaciones: movementData.observaciones,
-        }),
+        body: JSON.stringify(patchBody),
       }
     )
     if (!patchRes.ok) {
@@ -109,6 +114,8 @@ async function saveSyncMovement(env, cuentaId, operadorId, movementData) {
     observaciones: movementData.observaciones,
     idempotency_key: movementData.idempotency_key,
     creado_por: operadorId,
+    ...(movementData.metodo_pago ? { metodo_pago: movementData.metodo_pago } : {}),
+    ...(movementData.cuenta_origen ? { cuenta_origen: movementData.cuenta_origen } : {}),
   }
 
   const postRes = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos`, {
@@ -124,6 +131,8 @@ async function saveSyncMovement(env, cuentaId, operadorId, movementData) {
       fuente_tasa: 'BCV',
     }
     delete retryPayload.tasa_usd_ves
+    delete retryPayload.metodo_pago
+    delete retryPayload.cuenta_origen
 
     const retryRes = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos`, {
       method: 'POST',
@@ -235,6 +244,7 @@ export async function handleSyncVentasPos(request, env) {
       otros_usd: 0,
     },
     tasa_bcv: 1,
+    despachos_detalle: [],
     dias: [],
   }
 
@@ -270,6 +280,10 @@ export async function handleSyncVentasPos(request, env) {
       consolidated.desglose_pagos.pago_movil_ves += Number(dp.pago_movil_ves || 0)
       consolidated.desglose_pagos.punto_venta_ves += Number(dp.punto_venta_ves || 0)
       consolidated.desglose_pagos.otros_usd += Number(dp.otros_usd || 0)
+
+      if (Array.isArray(dayData.despachos_detalle)) {
+        consolidated.despachos_detalle.push(...dayData.despachos_detalle)
+      }
 
       consolidated.dias.push({ fecha, posData: dayData })
     }
@@ -307,6 +321,7 @@ export async function handleSyncVentasPos(request, env) {
   }
 
   // 3. Registrar o actualizar movimientos para cada día
+  const distribucion = body.distribucion && typeof body.distribucion === 'object' ? body.distribucion : null
   const resultados = []
 
   for (const { fecha, posData } of consolidated.dias) {
@@ -315,6 +330,7 @@ export async function handleSyncVentasPos(request, env) {
 
     const entries = [
       {
+        clave: 'efectivo_usd',
         subcuenta: 'Efectivo $',
         cartera: 'USD',
         monto: Number(desglose.efectivo_usd || 0),
@@ -326,6 +342,7 @@ export async function handleSyncVentasPos(request, env) {
         idempotency_key: `pos-vta-efectivo-usd-${fecha}`,
       },
       {
+        clave: 'zelle_usd',
         subcuenta: 'Zelle',
         cartera: 'USD',
         monto: Number(desglose.zelle_usd || 0),
@@ -337,6 +354,7 @@ export async function handleSyncVentasPos(request, env) {
         idempotency_key: `pos-vta-zelle-usd-${fecha}`,
       },
       {
+        clave: 'usdt_usd',
         subcuenta: 'USDT',
         cartera: 'USD',
         monto: Number(desglose.usdt_usd || 0),
@@ -348,6 +366,7 @@ export async function handleSyncVentasPos(request, env) {
         idempotency_key: `pos-vta-usdt-usd-${fecha}`,
       },
       {
+        clave: 'efectivo_ves',
         subcuenta: 'Efectivo Bs',
         cartera: 'VES',
         monto: Number(desglose.efectivo_ves || 0),
@@ -359,6 +378,7 @@ export async function handleSyncVentasPos(request, env) {
         idempotency_key: `pos-vta-efectivo-ves-${fecha}`,
       },
       {
+        clave: 'transferencia_ves',
         subcuenta: 'Transferencia',
         cartera: 'VES',
         monto: Number(desglose.transferencia_ves || 0),
@@ -370,6 +390,7 @@ export async function handleSyncVentasPos(request, env) {
         idempotency_key: `pos-vta-transferencia-ves-${fecha}`,
       },
       {
+        clave: 'pago_movil_ves',
         subcuenta: 'Pago Móvil',
         cartera: 'VES',
         monto: Number(desglose.pago_movil_ves || 0),
@@ -381,6 +402,7 @@ export async function handleSyncVentasPos(request, env) {
         idempotency_key: `pos-vta-pagomovil-ves-${fecha}`,
       },
       {
+        clave: 'punto_venta_ves',
         subcuenta: 'Punto de Venta',
         cartera: 'VES',
         monto: Number(desglose.punto_venta_ves || 0),
@@ -403,12 +425,66 @@ export async function handleSyncVentasPos(request, env) {
     for (const entry of entries) {
       if (entry.monto <= 0) continue
 
+      const cfg = distribucion ? distribucion[entry.clave] : null
+
+      // Si el usuario desmarcó este método de pago
+      if (cfg && cfg.activo === false) {
+        continue
+      }
+
+      // Si el método se dividió entre múltiples cuentas bancarias/custodia
+      if (cfg && Array.isArray(cfg.partes) && cfg.partes.length > 0) {
+        let pIdx = 0
+        for (const parte of cfg.partes) {
+          pIdx += 1
+          const parteMonto = round2(parte.monto)
+          if (parteMonto <= 0) continue
+          const cuentaOrigen = String(parte.cuenta_origen || parte.nombreCuenta || parte.nombre || '').trim() || null
+          const conceptoParte = cuentaOrigen
+            ? `Ventas POS en ${entry.subcuenta} (${cuentaOrigen}) - ${fecha}`
+            : `Ventas POS en ${entry.subcuenta} (Tramo ${pIdx}) - ${fecha}`
+
+          const saveRes = await saveSyncMovement(env, context.operador.cuenta_id, context.operador.id, {
+            fecha,
+            tipo: 'ingreso',
+            categoria: 'Ventas',
+            concepto: conceptoParte,
+            monto: parteMonto,
+            moneda: entry.moneda,
+            tasa_ves: entry.tasa_ves,
+            tasa_usd_ves: entry.tasa_usd_ves,
+            fuente_tasa: entry.fuente_tasa,
+            referencia: `${entry.subcuenta} · POS-${fecha}-P${pIdx}`,
+            observaciones: `Ingreso automático sincronizado desde POS (${entry.cartera})`,
+            idempotency_key: `${entry.idempotency_key}-p${pIdx}`,
+            metodo_pago: entry.subcuenta,
+            cuenta_origen: cuentaOrigen,
+          })
+
+          if (!saveRes.ok) {
+            return jsonError(`Error al sincronizar ${entry.subcuenta} tramo ${pIdx} (${fecha}): ${saveRes.error}`, 500, request)
+          }
+
+          resultados.push({ fecha, subcuenta: entry.subcuenta, parte: pIdx, accion: saveRes.accion, movimiento: saveRes.movimiento })
+        }
+        continue
+      }
+
+      // Cuenta única o fallback sin configuración personalizada
+      const cuentaOrigen = cfg ? (String(cfg.cuenta_origen || cfg.nombreCuenta || cfg.nombre || '').trim() || null) : null
+      const montoFinal = (cfg && cfg.monto != null) ? round2(cfg.monto) : entry.monto
+      if (montoFinal <= 0) continue
+
+      const conceptoFinal = cuentaOrigen
+        ? `Ventas POS en ${entry.subcuenta} (${cuentaOrigen}) - ${fecha}`
+        : entry.concepto
+
       const saveRes = await saveSyncMovement(env, context.operador.cuenta_id, context.operador.id, {
         fecha,
         tipo: 'ingreso',
         categoria: 'Ventas',
-        concepto: entry.concepto,
-        monto: entry.monto,
+        concepto: conceptoFinal,
+        monto: montoFinal,
         moneda: entry.moneda,
         tasa_ves: entry.tasa_ves,
         tasa_usd_ves: entry.tasa_usd_ves,
@@ -416,6 +492,8 @@ export async function handleSyncVentasPos(request, env) {
         referencia: `${entry.subcuenta} · POS-${fecha}`,
         observaciones: `Ingreso automático sincronizado desde POS (${entry.cartera})`,
         idempotency_key: entry.idempotency_key,
+        metodo_pago: entry.subcuenta,
+        cuenta_origen: cuentaOrigen,
       })
 
       if (!saveRes.ok) {
@@ -427,13 +505,19 @@ export async function handleSyncVentasPos(request, env) {
 
     // Cobros CxC adicionales
     const montoCxc = Number(posData.cobros_cxc_usd || 0)
-    if (montoCxc > 0) {
+    const cfgCxc = distribucion ? (distribucion.cxc || distribucion.cobros_cxc) : null
+    const cxcActivo = cfgCxc ? cfgCxc.activo !== false : true
+
+    if (montoCxc > 0 && cxcActivo) {
+      const cuentaCxc = cfgCxc ? (String(cfgCxc.cuenta_origen || cfgCxc.nombreCuenta || '').trim() || null) : null
       const keyCxc = `pos-cxc-${fecha}`
       const saveCxc = await saveSyncMovement(env, context.operador.cuenta_id, context.operador.id, {
         fecha,
         tipo: 'ingreso',
         categoria: 'Cobros de clientes',
-        concepto: `Cobros CxC (Abonos de Clientes) - ${fecha}`,
+        concepto: cuentaCxc
+          ? `Cobros CxC (${cuentaCxc}) - ${fecha}`
+          : `Cobros CxC (Abonos de Clientes) - ${fecha}`,
         monto: montoCxc,
         moneda: 'USD',
         tasa_ves: tasaBcv,
@@ -442,6 +526,8 @@ export async function handleSyncVentasPos(request, env) {
         referencia: `Transferencia · POS-CXC-${fecha}`,
         observaciones: `Abonos de clientes registrados en POS fecha ${fecha}`,
         idempotency_key: keyCxc,
+        metodo_pago: 'Transferencia',
+        cuenta_origen: cuentaCxc,
       })
 
       if (!saveCxc.ok) {
@@ -452,7 +538,18 @@ export async function handleSyncVentasPos(request, env) {
     }
   }
 
-  // 4. Auditoría
+  // 4. Calcular total real sincronizado y Auditoría
+  let totalSincronizadoUsd = 0
+  for (const r of resultados) {
+    const m = r.movimiento
+    if (!m) continue
+    const mUsd = m.moneda === 'VES'
+      ? ((Number(m.monto_ves) || Number(m.monto) || 0) / (Number(m.tasa_ves) || Number(consolidated.tasa_bcv) || 1))
+      : (Number(m.monto) || 0)
+    totalSincronizadoUsd += mUsd
+  }
+  totalSincronizadoUsd = round2(totalSincronizadoUsd)
+
   registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
     usuarioId: context.operador.id,
     usuarioNombre: context.operador.nombre,
@@ -465,7 +562,7 @@ export async function handleSyncVentasPos(request, env) {
     meta: {
       desde,
       hasta,
-      total_ingresos_usd: consolidated.total_ingresos_usd,
+      total_ingresos_usd: totalSincronizadoUsd || consolidated.total_ingresos_usd,
       operaciones: resultados.length,
     },
     ip: context.ip,
@@ -476,7 +573,7 @@ export async function handleSyncVentasPos(request, env) {
     synced: true,
     desde,
     hasta,
-    total_ingresos_usd: consolidated.total_ingresos_usd,
+    total_ingresos_usd: totalSincronizadoUsd || consolidated.total_ingresos_usd,
     resultados,
     posData: consolidated,
   }, 200, request)
