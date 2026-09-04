@@ -78,7 +78,7 @@ export function calcularCamposAsistencia(fecha, horaEntrada, horaSalida, horasJo
  * @param {number} bonosUsd       - ajuste manual (puede venir de DB)
  * @param {number} deduccionesUsd - ajuste manual
  */
-export function calcularLineaNomina(asistencias, configEmpleado, configNomina, bonosUsd = 0, deduccionesUsd = 0) {
+export function calcularLineaNomina(asistencias, configEmpleado, configNomina, bonosUsd = 0, deduccionesUsd = 0, comisionesPosUsd = 0) {
   const salarioNumero = Number(configEmpleado.salario_dia_usd)
   const jornadaNumero = Number(configEmpleado.horas_jornada)
   const salarioDia    = Number.isFinite(salarioNumero) ? Math.max(0, salarioNumero) : 0
@@ -157,9 +157,11 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
 
   const bonos = Number(bonosUsd)
   const deducciones = Number(deduccionesUsd)
+  const comisiones = Number(comisionesPosUsd)
   const bonosSeguros = Number.isFinite(bonos) ? Math.max(0, bonos) : 0
   const deduccionesSeguras = Number.isFinite(deducciones) ? Math.max(0, deducciones) : 0
-  const totalBruto = round4(montoNormal + montoExtra + montoSabado + montoFeriado + bonosSeguros)
+  const comisionesSeguras = Number.isFinite(comisiones) ? Math.max(0, comisiones) : 0
+  const totalBruto = round4(montoNormal + montoExtra + montoSabado + montoFeriado + bonosSeguros + comisionesSeguras)
   const totalNeto  = round4(Math.max(0, totalBruto - deduccionesSeguras))
 
   return {
@@ -178,6 +180,7 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
     monto_feriado_usd:    montoFeriado,
     bonos_usd:            round4(bonosSeguros),
     deducciones_usd:      round4(deduccionesSeguras),
+    comisiones_pos_usd:   round4(comisionesSeguras),
     total_bruto_usd:      totalBruto,
     total_neto_usd:       totalNeto,
   }

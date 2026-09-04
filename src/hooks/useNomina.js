@@ -480,3 +480,44 @@ export function useCrearReglaLegal() {
     onError: e => showToast.error(e.message || 'Error al guardar regla'),
   })
 }
+
+// ─── Comisiones de Vendedores del POS ──────────────────────────────────────────
+
+export function usePosVendedores() {
+  const perfil = useAuthStore(useCallback(s => s.perfil, []))
+  const puede = ROLES_VER.includes(perfil?.rol)
+  return useQuery({
+    queryKey: ['nomina', 'pos-vendedores'],
+    queryFn: () => apiGet('/api/nomina/pos-vendedores'),
+    enabled: !!perfil && puede,
+    staleTime: 1000 * 60 * 5,
+  })
+}
+
+export function usePreviewComisionesPos(periodoId) {
+  const perfil = useAuthStore(useCallback(s => s.perfil, []))
+  const puede = ROLES_ADMIN.includes(perfil?.rol)
+  return useQuery({
+    queryKey: ['nomina', 'comisiones-pos', periodoId],
+    queryFn: () => apiGet(`/api/nomina/comisiones-pos?periodoId=${periodoId}`),
+    enabled: !!perfil && puede && !!periodoId,
+    staleTime: 1000 * 30,
+  })
+}
+
+export function useAplicarComisionesPos() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: body => apiPost('/api/nomina/aplicar-comisiones-pos', body),
+    onSuccess: (_, variables) => {
+      showToast.success('Comisiones aplicadas con éxito a la nómina')
+      qc.invalidateQueries({ queryKey: KEY_LINEAS })
+      qc.invalidateQueries({ queryKey: KEY_PERIODOS })
+      if (variables?.periodoId) {
+        qc.invalidateQueries({ queryKey: ['nomina', 'comisiones-pos', variables.periodoId] })
+      }
+    },
+    onError: e => showToast.error(e.message || 'Error al aplicar comisiones'),
+  })
+}
+

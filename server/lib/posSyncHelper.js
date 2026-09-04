@@ -254,3 +254,103 @@ export async function fetchDayPosDataFromDirectDb(env, fecha) {
     return { ok: false, error: err.message }
   }
 }
+
+export async function fetchPosVendedores(env) {
+  const supaUrl = env.POS_SUPABASE_URL
+  const supaKey = env.POS_SUPABASE_SERVICE_KEY
+  if (!supaUrl || !supaKey) {
+    return { ok: false, error: 'Credenciales del POS no configuradas (POS_SUPABASE_URL / POS_SUPABASE_SERVICE_KEY)' }
+  }
+
+  const headers = {
+    apikey: supaKey,
+    Authorization: `Bearer ${supaKey}`,
+    'Content-Type': 'application/json',
+  }
+
+  try {
+    const res = await fetch(
+      `${supaUrl}/rest/v1/usuarios?activo=eq.true&select=id,nombre,rol,color,es_externo,codigo&order=nombre.asc`,
+      { headers }
+    )
+    if (!res.ok) {
+      return { ok: false, error: `Error consultando vendedores del POS (${res.status})` }
+    }
+    const data = await res.json()
+    return { ok: true, vendedores: Array.isArray(data) ? data : [] }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+export async function fetchComisionesLiberadasPos(env, { posVendedorIds = [], desde, hasta }) {
+  const supaUrl = env.POS_SUPABASE_URL
+  const supaKey = env.POS_SUPABASE_SERVICE_KEY
+  if (!supaUrl || !supaKey) {
+    return { ok: false, error: 'Credenciales del POS no configuradas (POS_SUPABASE_URL / POS_SUPABASE_SERVICE_KEY)' }
+  }
+
+  if (!posVendedorIds || !posVendedorIds.length || !desde || !hasta) {
+    return { ok: true, liberaciones: [] }
+  }
+
+  const headers = {
+    apikey: supaKey,
+    Authorization: `Bearer ${supaKey}`,
+    'Content-Type': 'application/json',
+  }
+
+  try {
+    const url = `${supaUrl}/rest/v1/comision_liberaciones?vendedor_id=in.(${posVendedorIds.join(',')})&creado_en=gte.${desde}T00:00:00&creado_en=lte.${hasta}T23:59:59.999&select=id,comision_id,despacho_id,vendedor_id,monto,tipo,creado_en&order=creado_en.asc`
+    const res = await fetch(url, { headers })
+    if (!res.ok) {
+      return { ok: false, error: `Error consultando liberaciones de comisiones del POS (${res.status})` }
+    }
+
+    const liberaciones = await res.json()
+    if (!Array.isArray(liberaciones) || !liberaciones.length) {
+      return { ok: true, liberaciones: [] }
+    }
+
+    // Consultar información de los despachos asociados
+    const despIds = [...new Set(liberaciones.map(l => l.despacho_id).filter(Boolean))]
+    const mapaDespachos = new Map()
+
+    if (despIds.length > 0) {
+      const despUrl = `${supaUrl}/rest/v1/notas_despacho?id=in.(${despIds.join(',')})&select=id,numero,creado_en,cliente:clientes!notas_despacho_cliente_id_fkey(nombre)`
+      const despRes = await fetch(despUrl, { headers })
+      if (despRes.ok) {
+        const despachos = await despRes.json()
+        if (Array.isArray(despachos)) {
+          for (const d of despachos) {
+            mapaDespachos.set(d.id, {
+              numero: d.numero ? `DSP-${d.numero}` : '—',
+              cliente: d.cliente?.nombre || 'Cliente General',
+              fecha: d.creado_en ? String(d.creado_en).slice(0, 10) : '',
+            })
+          }
+        }
+      }
+    }
+
+    const liberacionesEnriquecidas = liberaciones.map(lib => {
+      const desp = mapaDespachos.get(lib.despacho_id) || {}
+      return {
+        id: lib.id,
+        comision_id: lib.comision_id,
+        despacho_id: lib.despacho_id,
+        vendedor_id: lib.vendedor_id,
+        despacho_numero: desp.numero || '—',
+        cliente_nombre: desp.cliente || 'Cliente General',
+        fecha: desp.fecha || String(lib.creado_en).slice(0, 10),
+        monto_usd: round2(lib.monto || 0),
+        tipo: lib.tipo || 'contado',
+        creado_en: lib.creado_en,
+      }
+    })
+
+    return { ok: true, liberaciones: liberacionesEnriquecidas }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}

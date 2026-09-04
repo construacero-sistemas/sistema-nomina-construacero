@@ -1,4 +1,4 @@
-﻿// src/services/pdf/nominaReciboPDF.js
+// src/services/pdf/nominaReciboPDF.js
 // Recibo de pago individual de nómina para los trabajadores de Construacero Carabobo C.A.
 // Formato profesional homologado con el reporte corporativo de la empresa.
 import { jsPDF } from 'jspdf'
@@ -216,6 +216,21 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
       cant: '1 global',
       tarifa: '—',
       monto: Number(linea.bonos_usd || 0),
+      tipo: 'bono',
+    })
+  }
+
+  if (Number(linea.comisiones_pos_usd || 0) > 0) {
+    const despachosCount = Array.isArray(linea.comisiones_despachos_ids)
+      ? linea.comisiones_despachos_ids.length
+      : 0
+    conceptos.push({
+      label: despachosCount > 0
+        ? `Comisiones por Ventas (POS) — ${despachosCount} despacho(s) liquidado(s)`
+        : 'Comisiones por Ventas (POS)',
+      cant: despachosCount > 0 ? `${despachosCount} desp.` : '1 global',
+      tarifa: '—',
+      monto: Number(linea.comisiones_pos_usd || 0),
       tipo: 'bono',
     })
   }

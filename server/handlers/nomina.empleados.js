@@ -38,8 +38,8 @@ export async function handleGetConfigEmpleados(request, env) {
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   const selectConfig = ROLES_NOMINA.includes(operador.rol)
-    ? 'id,empleado_id,cargo,fecha_ingreso,salario_dia_usd,horas_jornada,hora_inicio,hora_fin,activo'
-    : 'id,empleado_id,cargo,fecha_ingreso,horas_jornada,hora_inicio,hora_fin,activo'
+    ? 'id,empleado_id,cargo,fecha_ingreso,salario_dia_usd,horas_jornada,hora_inicio,hora_fin,activo,pos_vendedor_id'
+    : 'id,empleado_id,cargo,fecha_ingreso,horas_jornada,hora_inicio,hora_fin,activo,pos_vendedor_id'
   const response = await fetch(
     `${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?activo=eq.true${nominaTenantFilter(operador.cuenta_id)}` +
       `&select=${selectConfig},empleado:clientes!empleado_id(id,nombre,tipo_cliente)&order=empleado(nombre).asc&limit=500`,
@@ -57,6 +57,7 @@ export async function handleGetConfigEmpleados(request, env) {
     hora_inicio: item.hora_inicio,
     hora_fin: item.hora_fin,
     activo: item.activo,
+    pos_vendedor_id: item.pos_vendedor_id ?? null,
     empleado: item.empleado ? { id: item.empleado.id, nombre: item.empleado.nombre, tipo_cliente: item.empleado.tipo_cliente } : null,
   })), 200, request)
 }
@@ -70,8 +71,9 @@ export async function handleCrearConfigEmpleado(request, env) {
   if (tenantError) return tenantError
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
-  const { empleadoId, nombre, documento, cargo, fechaIngreso, salarioDiaUsd, horasJornada, horaInicio, horaFin } = body || {}
+  const { empleadoId, nombre, documento, cargo, fechaIngreso, salarioDiaUsd, horasJornada, horaInicio, horaFin, posVendedorId } = body || {}
   if (empleadoId && !isValidUuid(empleadoId)) return jsonError('empleadoId inválido', 400, request)
+  if (posVendedorId && !isValidUuid(posVendedorId)) return jsonError('posVendedorId inválido', 400, request)
   if (!empleadoId && !textoNominaValido(nombre, 160)) return jsonError('nombre inválido', 400, request)
   if (Number.isFinite(Number(salarioDiaUsd)) && Number(salarioDiaUsd) < 0) return jsonError('Salario no puede ser negativo', 400, request)
   if (!montoNominaValido(salarioDiaUsd)) return jsonError('Salario inválido', 400, request)
@@ -100,7 +102,18 @@ export async function handleCrearConfigEmpleado(request, env) {
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_config_empleado`, {
     method: 'POST',
     headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-    body: JSON.stringify({ empleado_id: resolvedEmployeeId, cargo: cargo || null, fecha_ingreso: fechaIngreso || null, salario_dia_usd: Number(salarioDiaUsd) || 0, horas_jornada: Number(horasJornada) || 8, hora_inicio: horaInicio || '08:00', hora_fin: horaFin || '17:00', cuenta_id: operador.cuenta_id, activo: true }),
+    body: JSON.stringify({
+      empleado_id: resolvedEmployeeId,
+      cargo: cargo || null,
+      fecha_ingreso: fechaIngreso || null,
+      salario_dia_usd: Number(salarioDiaUsd) || 0,
+      horas_jornada: Number(horasJornada) || 8,
+      hora_inicio: horaInicio || '08:00',
+      hora_fin: horaFin || '17:00',
+      pos_vendedor_id: posVendedorId || null,
+      cuenta_id: operador.cuenta_id,
+      activo: true,
+    }),
   })
   if (!response.ok) {
     const detail = (await response.text()).toLowerCase()
@@ -120,8 +133,9 @@ export async function handleActualizarConfigEmpleado(request, env) {
   if (tenantError) return tenantError
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
-  const { id, cargo, fechaIngreso, salarioDiaUsd, horasJornada, horaInicio, horaFin, activo } = body || {}
+  const { id, cargo, fechaIngreso, salarioDiaUsd, horasJornada, horaInicio, horaFin, activo, posVendedorId } = body || {}
   if (!id || !isValidUuid(id)) return jsonError('id inválido', 400, request)
+  if (posVendedorId !== undefined && posVendedorId !== null && posVendedorId !== '' && !isValidUuid(posVendedorId)) return jsonError('posVendedorId inválido', 400, request)
   if (!booleanNominaValido(activo)) return jsonError('activo inválido', 400, request)
   if (salarioDiaUsd !== undefined && salarioDiaUsd !== null && salarioDiaUsd !== '' && (typeof salarioDiaUsd === 'boolean' || !Number.isFinite(Number(salarioDiaUsd)))) return jsonError('salarioDiaUsd inválido', 400, request)
   if (fechaIngreso !== undefined && fechaIngreso !== null && fechaIngreso !== '' && !fechaNominaValida(fechaIngreso)) return jsonError('fechaIngreso inválida', 400, request)
@@ -137,6 +151,7 @@ export async function handleActualizarConfigEmpleado(request, env) {
   if (horaInicio !== undefined) fields.hora_inicio = horaInicio
   if (horaFin !== undefined) fields.hora_fin = horaFin
   if (activo !== undefined) fields.activo = activo
+  if (posVendedorId !== undefined) fields.pos_vendedor_id = posVendedorId || null
   if (!Object.keys(fields).length) return jsonError('Nada que actualizar', 400, request)
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?id=eq.${id}${nominaTenantFilter(operador.cuenta_id)}`, {
     method: 'PATCH', headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify(fields),

@@ -155,7 +155,7 @@ async function generarNominaResumenPDFImpl({ periodo = {}, lineas = [], config =
     doc.text(fmtUsd(l.monto_normal_usd),                      cols[4].x + 1.5, y + 3)
     doc.text(recargos > 0 ? fmtUsd(recargos) : '—',           cols[5].x + 1.5, y + 3)
 
-    const bonos = Number(l.bonos_usd || 0)
+    const bonos = Number(l.bonos_usd || 0) + Number(l.comisiones_pos_usd || 0)
     doc.setTextColor(...(bonos > 0 ? C_EMERALD : C_GRAY))
     doc.text(bonos > 0 ? fmtUsd(bonos) : '—',                 cols[6].x + 1.5, y + 3)
 

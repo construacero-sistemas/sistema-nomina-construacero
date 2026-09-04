@@ -31,7 +31,7 @@ export async function handleGetLineas(request, env) {
       '&select=id,empleado_id,cargo_snap,salario_dia_usd_snap,horas_jornada_snap,' +
       'dias_trabajados,horas_normales,horas_extra,dias_sabado,dias_feriado,dias_ausencia,' +
       'monto_normal_usd,monto_extra_usd,monto_sabado_usd,monto_feriado_usd,bonos_usd,' +
-      'deducciones_usd,total_bruto_usd,total_neto_usd,nota_bonos,nota_deducciones,pagado,' +
+      'deducciones_usd,comisiones_pos_usd,comisiones_despachos_ids,total_bruto_usd,total_neto_usd,nota_bonos,nota_deducciones,pagado,' +
       'pagado_en,pagado_por_nombre,referencia_pago,empleado:clientes!empleado_id(id,nombre,rif)' +
       '&order=empleado(nombre).asc&limit=500',
     { headers },
@@ -56,7 +56,7 @@ export async function handleAjustarLinea(request, env) {
   const lineResponse = await fetch(
     `${env.SUPABASE_URL}/rest/v1/nomina_lineas?id=eq.${lineaId}` +
       `${nominaTenantFilter(operador.cuenta_id)}` +
-      '&select=id,periodo_id,pagado,monto_normal_usd,monto_extra_usd,monto_sabado_usd,monto_feriado_usd&limit=1',
+      '&select=id,periodo_id,pagado,monto_normal_usd,monto_extra_usd,monto_sabado_usd,monto_feriado_usd,comisiones_pos_usd&limit=1',
     { headers },
   )
   const [line] = lineResponse.ok ? await lineResponse.json() : []
@@ -75,8 +75,9 @@ export async function handleAjustarLinea(request, env) {
 
   const bonos = Math.max(0, Number(bonosUsd) || 0)
   const deducciones = Math.max(0, Number(deduccionesUsd) || 0)
+  const comisiones = Math.max(0, Number(line.comisiones_pos_usd) || 0)
   const base = Number(line.monto_normal_usd || 0) + Number(line.monto_extra_usd || 0) +
-    Number(line.monto_sabado_usd || 0) + Number(line.monto_feriado_usd || 0)
+    Number(line.monto_sabado_usd || 0) + Number(line.monto_feriado_usd || 0) + comisiones
   const bruto = r4(base + bonos)
   const neto = r4(Math.max(0, bruto - deducciones))
 

@@ -3055,3 +3055,46 @@ Al alcanzar los 7 toques (`TOQUES_REQUERIDOS`), el diálogo se renderizaba insta
 - `npm run test:responsive`: 34 / 34 pruebas deterministas aprobadas (100%).
 - `npx vitest run src/components/finanzas/__tests__/SyncPosMetodoItem.test.jsx`: 7 / 7 pruebas aprobadas.
 - `npm run verify`: 59 suites / 595 pruebas unitarias e integración aprobadas (100%), lint limpio (0 errores), bundle size 369.9 kB (<= 400 kB) y build Vite exitoso.
+
+---
+
+### Entrada #140 - 2026-09-04
+**Contexto:** Implementación integral de la Propuesta 1 para importar automáticamente y de forma auditable las comisiones liberadas de vendedores desde el sistema POS (`listo-pos-cotizaciones`) hacia la nómina en curso (`nomina-construacero`).
+
+**Acciones realizadas:**
+- **Base de Datos (Supabase):**
+  - Migración `supabase/migrations/234_vincular_vendedor_pos_nomina.sql`:
+    - Columna `pos_vendedor_id UUID` en `nomina_config_empleado` para vincular empleados con usuarios del POS.
+    - Columna `comisiones_pos_usd NUMERIC(12,4) DEFAULT 0` en `nomina_lineas`.
+    - Columna `comisiones_despachos_ids JSONB DEFAULT '[]'::jsonb` en `nomina_lineas` para trazabilidad de despachos liquidados.
+- **Backend Conectividad POS & Motor de Cálculo:**
+  - En `server/lib/posSyncHelper.js`: funciones `fetchPosVendedores` y `fetchComisionesLiberadasPos` consultando de solo lectura `usuarios`, `comision_liberaciones` y `notas_despacho` del POS.
+  - En `server/lib/nominaUtils.js`: motor de cálculo de líneas actualizado para sumar `comisiones_pos_usd` al `total_bruto_usd` y `total_neto_usd`.
+  - En `server/handlers/nomina.periodos.js`: preservación atómica de `comisiones_pos_usd` y `comisiones_despachos_ids` ante recálculos de asistencia.
+  - En `server/handlers/nomina.lineas.js`: inclusión de comisiones POS en `handleGetLineas` y preservación de comisiones al ajustar manualmente bonos/deducciones.
+  - Nuevo módulo `server/handlers/nomina.comisiones.js` (267 líneas, ≤ 600 líneas):
+    - `handleListarPosVendedores`: `GET /api/nomina/pos-vendedores`
+    - `handlePreviewComisionesPos`: `GET /api/nomina/comisiones-pos`
+    - `handleAplicarComisionesPos`: `POST /api/nomina/aplicar-comisiones-pos` con auditoría forense (`APLICAR_COMISIONES_POS`).
+  - En `worker.js`: rutas registradas y agregadas a `egressCacheTtl`.
+- **Frontend y Ergonomía (React + Tailwind):**
+  - En `src/hooks/useNomina.js`: hooks `usePosVendedores`, `usePreviewComisionesPos` y `useAplicarComisionesPos`.
+  - En `EmpleadoConfigModal.jsx`: selector amigable `CustomSelect` para vincular vendedor del POS, eliminación de emojis y touch targets ≥ 44px (`min-h-11`).
+  - En `TabEmpleados.jsx`: badge `"POS"` en la tarjeta del empleado vinculado.
+  - Nuevo componente modal `ImportarComisionesPosModal.jsx` (434 líneas, ≤ 600 líneas): diseño corporativo `#1B365D`, desglose desplegable por despacho, selección masiva o individual y botón accesible con cálculo reactivo.
+  - En `PeriodoDetalleModal.jsx`: botón de acción rápida *"Importar Comisiones POS"* cuando el período está abierto, columna dedicada en tabla de recibos y totales consolidados.
+  - En `nominaReciboPDF.impl.js`: renglón formal tipificado *"Comisiones por Ventas (POS) — N despacho(s) liquidado(s)"*.
+  - En `nominaResumenPDF.impl.js`: consolidación matemática exacta en la planilla resumen.
+- **Pruebas y Verificación:**
+  - Creado `server/handlers/__tests__/nomina.comisiones.test.js` (11 pruebas aprobadas).
+  - Creado `src/components/nomina/__tests__/ImportarComisionesPosModal.test.jsx` (4 pruebas aprobadas).
+  - `test:responsive`: 34/34 pruebas deterministas aprobadas (100%).
+  - `npm run verify`: 61 suites / 610 pruebas Vitest aprobadas (100%), lint limpio (0 errores) y bundle size 370.8 kB (≤ 400 kB).
+
+**Verificación:**
+- `npm run check:project`: OK (28 migraciones inspeccionadas).
+- `npm run test:responsive`: 34/34 pruebas deterministas aprobadas (100%).
+- `npm run lint`: 0 errores y 0 advertencias.
+- `npm test`: 61 suites / 610 pruebas aprobadas (100%).
+- `npm run verify`: Compilación exitosa en 30.24s.
+

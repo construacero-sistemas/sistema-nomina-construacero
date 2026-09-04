@@ -242,10 +242,17 @@ function EmpleadoNominaCard({ config, esAdmin, mostrarMontos = true, onEditar, o
             </span>
             <p className="font-black text-white leading-tight truncate text-sm" title={nombre}>{nombre}</p>
           </div>
-          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold text-white shrink-0 ${esVendedorRol ? 'bg-amber-500' : 'bg-emerald-500/90'}`}>
-            <span className="h-1.5 w-1.5 rounded-full bg-white" />
-            {esVendedorRol ? 'Vendedor' : 'Activo'}
-          </span>
+          <div className="flex items-center gap-1 shrink-0">
+            {config.pos_vendedor_id && (
+              <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-black bg-white/20 text-white border border-white/30" title="Vinculado al POS">
+                POS
+              </span>
+            )}
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold text-white shrink-0 ${esVendedorRol ? 'bg-amber-500' : 'bg-emerald-500/90'}`}>
+              <span className="h-1.5 w-1.5 rounded-full bg-white" />
+              {esVendedorRol ? 'Vendedor' : 'Activo'}
+            </span>
+          </div>
         </div>
         <div className="relative z-10 flex items-center gap-1.5 text-[11px] text-white/75">
           <Users size={11} />{config.cargo || 'Sin cargo asignado'}

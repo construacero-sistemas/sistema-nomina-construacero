@@ -1,13 +1,18 @@
 // src/components/nomina/EmpleadoConfigModal.jsx
 // Alta/edición intuitiva de la configuración salarial y de jornada de un empleado.
 import { useState, useMemo, useEffect } from 'react'
-import { RefreshCw, Clock, DollarSign, Calendar, Sparkles } from 'lucide-react'
-import { useNominaEmpleados, useCrearConfigEmpleado, useActualizarConfigEmpleado } from '../../hooks/useNomina'
+import { RefreshCw, Clock, DollarSign, Calendar, Sparkles, ShoppingBag } from 'lucide-react'
+import {
+  useNominaEmpleados,
+  useCrearConfigEmpleado,
+  useActualizarConfigEmpleado,
+  usePosVendedores,
+} from '../../hooks/useNomina'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 
-const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
+const inputCls = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
 const PREF_KEY_PREFIX = 'nomina_empleado_salario_pref_'
 
@@ -47,6 +52,17 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const [documento, setDocumento] = useState(config?.empleado?.documento ?? '')
   const [cargo, setCargo]           = useState(config?.cargo ?? '')
   const [fechaIngreso, setFechaIngreso] = useState(config?.fecha_ingreso ?? '')
+  const [posVendedorId, setPosVendedorId] = useState(config?.pos_vendedor_id ?? '')
+
+  const { data: posVendedores = [], isLoading: posVendedoresCargando } = usePosVendedores()
+
+  const opcionesVendedoresPos = useMemo(() => [
+    { value: '', label: 'Sin vincular al POS' },
+    ...(Array.isArray(posVendedores) ? posVendedores : []).map(v => ({
+      value: v.id,
+      label: `${v.nombre}${v.codigo ? ` (${v.codigo})` : ''}`,
+    })),
+  ], [posVendedores])
 
   const empKey = config?.empleado_id || config?.id
   const savedPref = useMemo(() => getSavedSalaryPref(empKey), [empKey])
@@ -167,6 +183,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
           salarioDiaUsd: salarioFinal,
           horasJornada:  Number(horasJornada) || 8,
           horaInicio, horaFin, activo,
+          posVendedorId: posVendedorId || null,
         })
         const targetId = res?.config?.empleado_id || config?.empleado_id || config?.id
         saveSalaryPref(targetId, prefData)
@@ -178,6 +195,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
           salarioDiaUsd: salarioFinal,
           horasJornada:  Number(horasJornada) || 8,
           horaInicio, horaFin,
+          posVendedorId: posVendedorId || null,
         })
         const targetId = res?.config?.empleado_id || res?.config?.id || empleadoId
         if (targetId) saveSalaryPref(targetId, prefData)
@@ -291,7 +309,12 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                {puesto === 'Vendedor' ? '⭐ Vendedor (Comisión)' : puesto}
+                {puesto === 'Vendedor' ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Sparkles size={11} className="text-amber-700" />
+                    Vendedor (Comisión)
+                  </span>
+                ) : puesto}
               </button>
             ))}
           </div>
@@ -441,6 +464,35 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
           </div>
         </div>
 
+        {/* Vinculación con Vendedor en POS */}
+        <div className="space-y-2 p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/70">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-black text-amber-900 flex items-center gap-1.5">
+              <ShoppingBag size={15} className="text-amber-700" />
+              Vendedor en Sistema POS (Opcional)
+            </label>
+            {posVendedorId && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                Vinculado
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-amber-800/80 leading-relaxed">
+            Asocia a este empleado con su usuario vendedor en el POS para importar automáticamente sus comisiones liberadas por ventas y cobranzas en cada nómina.
+          </p>
+          {posVendedoresCargando ? (
+            <div className="text-xs text-slate-400 py-2">Cargando vendedores del POS...</div>
+          ) : (
+            <CustomSelect
+              value={posVendedorId}
+              onChange={setPosVendedorId}
+              options={opcionesVendedoresPos}
+              placeholder="Seleccionar vendedor del POS..."
+              disabled={cargando}
+            />
+          )}
+        </div>
+
         {/* Activo (solo al editar) */}
         {esEdicion && (
           <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer pt-1">
@@ -459,14 +511,20 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
 
       {/* Footer */}
       <div className="flex justify-end gap-2 pt-3 mt-4 border-t border-slate-100">
-        <button onClick={onClose} type="button" disabled={cargando}
-          className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 transition-colors">
+        <button
+          onClick={onClose}
+          type="button"
+          disabled={cargando}
+          style={{ touchAction: 'manipulation' }}
+          className="min-h-11 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 transition-colors"
+        >
           Cancelar
         </button>
         <button
           onClick={guardar}
           disabled={cargando}
-          className="px-5 py-2 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-primary/20 transition-all active:scale-95"
+          style={{ touchAction: 'manipulation' }}
+          className="min-h-11 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-primary/20 transition-all active:scale-95"
         >
           {cargando ? 'Guardando...' : 'Guardar empleado'}
         </button>

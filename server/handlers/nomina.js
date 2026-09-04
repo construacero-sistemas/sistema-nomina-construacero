@@ -51,3 +51,10 @@ export {
   handlePagarLineas,
   handleRevertirPagoLinea,
 } from './nomina.lineas.js'
+
+export {
+  handleListarPosVendedores,
+  handlePreviewComisionesPos,
+  handleAplicarComisionesPos,
+} from './nomina.comisiones.js'
+

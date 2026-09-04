@@ -1,8 +1,8 @@
-﻿// src/components/nomina/PeriodoDetalleModal.jsx
+// src/components/nomina/PeriodoDetalleModal.jsx
 // Tabla y gestión completa de recibos del período: horas, montos, ajustes y pagos.
 // Regla: Moneda principal es SIEMPRE USD ($) y secundaria es Bs (calculada según la tasa activa).
 import { useState, useMemo } from 'react'
-import { FileText, Pencil, RotateCcw, Wallet, CheckCircle2, DollarSign, Users, Sparkles } from 'lucide-react'
+import { FileText, Pencil, RotateCcw, Wallet, CheckCircle2, DollarSign, Users, Sparkles, ShoppingBag } from 'lucide-react'
 import { useNominaLineas, useRevertirPagoLinea } from '../../hooks/useNomina'
 import useMonedaNomina, { formatBs, formatUsd } from '../../hooks/useMonedaNomina.js'
 import { useConfigNegocio } from '../../../compat/hooks/useConfigNegocio.js'
@@ -12,6 +12,7 @@ import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import RateSelector from './RateSelector.jsx'
 import LiquidacionModal from './LiquidacionModal'
 import PagarNominaModal from './PagarNominaModal'
+import ImportarComisionesPosModal from './ImportarComisionesPosModal.jsx'
 import { logClientError } from '../../../compat/utils/errorLogger.js'
 
 function fmt(n) {
@@ -28,6 +29,7 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
   const [pagando, setPagando]         = useState(null)
   const [confirmandoRev, setConfirmandoRev] = useState(null)
   const [exportando, setExportando]   = useState(false)
+  const [importandoComisiones, setImportandoComisiones] = useState(false)
 
   const abierto = periodo.estado === 'abierto'
 
@@ -37,6 +39,7 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
     neto:   lineas.reduce((s, l) => s + Number(l.total_neto_usd  || 0), 0),
     deduc:  lineas.reduce((s, l) => s + Number(l.deducciones_usd || 0), 0),
     bonos:  lineas.reduce((s, l) => s + Number(l.bonos_usd || 0), 0),
+    comisiones: lineas.reduce((s, l) => s + Number(l.comisiones_pos_usd || 0), 0),
     pagados: lineas.filter(l => l.pagado).length,
     pendientes: lineas.filter(l => !l.pagado),
   }), [lineas])
@@ -81,7 +84,12 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
             <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
               <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">Total Bruto (USD)</span>
               <span className="text-sm font-black text-slate-800 mt-0.5 block">${fmt(totales.bruto)}</span>
-              <span className="text-[10px] text-emerald-600 font-semibold">+${fmt(totales.bonos)} bonos</span>
+              <div className="flex flex-wrap gap-1 text-[10px] mt-0.5">
+                <span className="text-emerald-600 font-semibold">+{fmt(totales.bonos)} bonos</span>
+                {totales.comisiones > 0 && (
+                  <span className="text-amber-800 font-semibold">+{fmt(totales.comisiones)} comisiones</span>
+                )}
+              </div>
             </div>
 
             <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
@@ -116,6 +124,19 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
             </div>
 
             <div className="flex items-center gap-2 ml-auto">
+              {esAdmin && abierto && lineas.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setImportandoComisiones(true)}
+                  style={{ touchAction: 'manipulation' }}
+                  className="flex items-center gap-1.5 px-3.5 py-2 min-h-11 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-bold shadow-xs transition-all active:scale-95"
+                  title="Importar comisiones liberadas de vendedores desde el POS"
+                >
+                  <ShoppingBag size={14} className="text-amber-700" />
+                  <span>Importar Comisiones POS</span>
+                </button>
+              )}
+
               <button
                 onClick={exportarPlanilla}
                 disabled={exportando || lineas.length === 0}
@@ -162,6 +183,7 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
                     <th className="text-right px-2.5 py-3 font-bold">Base ($)</th>
                     <th className="text-right px-2.5 py-3 font-bold">Recargos</th>
                     <th className="text-right px-2.5 py-3 font-bold">Bonos</th>
+                    <th className="text-right px-2.5 py-3 font-bold">Comis. POS</th>
                     <th className="text-right px-2.5 py-3 font-bold">Deduc.</th>
                     <th className="text-right px-3 py-3 font-black">Neto (USD / Bs)</th>
                     <th className="text-right px-3 py-3 font-bold">Acciones</th>
@@ -203,6 +225,13 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
                         <td className="text-right px-2.5 py-2.5 font-bold">
                           {Number(l.bonos_usd) > 0 ? (
                             <span className="text-emerald-600">+${fmt(l.bonos_usd)}</span>
+                          ) : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="text-right px-2.5 py-2.5 font-bold">
+                          {Number(l.comisiones_pos_usd) > 0 ? (
+                            <span className="text-amber-800 font-mono" title={`${(l.comisiones_despachos_ids || []).length} despachos liquidados`}>
+                              +${fmt(l.comisiones_pos_usd)}
+                            </span>
                           ) : <span className="text-slate-300">—</span>}
                         </td>
                         <td className="text-right px-2.5 py-2.5 font-bold">
@@ -286,6 +315,9 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
                     <td className="text-right px-2.5 py-3 font-black text-emerald-700">
                       +${fmt(totales.bonos)}
                     </td>
+                    <td className="text-right px-2.5 py-3 font-black text-amber-800">
+                      {totales.comisiones > 0 ? `+$${fmt(totales.comisiones)}` : '—'}
+                    </td>
                     <td className="text-right px-2.5 py-3 font-black text-red-600">
                       -${fmt(totales.deduc)}
                     </td>
@@ -305,12 +337,23 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
 
         {/* Footer */}
         <div className="flex justify-end pt-3 mt-4 border-t border-slate-100">
-          <button onClick={onClose}
-            className="px-5 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors">
+          <button
+            onClick={onClose}
+            type="button"
+            style={{ touchAction: 'manipulation' }}
+            className="min-h-11 px-5 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors"
+          >
             Cerrar
           </button>
         </div>
       </Modal>
+
+      {importandoComisiones && (
+        <ImportarComisionesPosModal
+          periodo={periodo}
+          onClose={() => setImportandoComisiones(false)}
+        />
+      )}
 
       {liquidando && (
         <LiquidacionModal

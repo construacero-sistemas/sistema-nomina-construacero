@@ -86,7 +86,7 @@ export async function handleCalcularPeriodo(request, env) {
     fetch(`${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?activo=eq.true${account}&select=empleado_id,cargo,salario_dia_usd,horas_jornada`, { headers }),
     fetchConfigNomina(env, headers, operador.cuenta_id),
     fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?fecha=gte.${period.desde}&fecha=lte.${period.hasta}${account}&select=empleado_id,fecha,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia`, { headers }),
-    fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&select=empleado_id,bonos_usd,deducciones_usd,nota_bonos,nota_deducciones,pagado`, { headers }),
+    fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&select=empleado_id,bonos_usd,deducciones_usd,nota_bonos,nota_deducciones,comisiones_pos_usd,comisiones_despachos_ids,pagado`, { headers }),
   ])
   if (!configResponse.ok) return jsonError('Error al leer empleados', 500, request)
   if (!attendanceResponse.ok) return jsonError('Error al leer asistencia', 500, request)
@@ -103,8 +103,23 @@ export async function handleCalcularPeriodo(request, env) {
   const previousByEmployee = new Map(previous.map(row => [row.empleado_id, row]))
   const lines = employees.map(config => {
     const old = previousByEmployee.get(config.empleado_id) || {}
-    const calculation = calcularLineaNomina(byEmployee.get(config.empleado_id) || [], config, payrollConfig, Number(old.bonos_usd || 0), Number(old.deducciones_usd || 0))
-    return { periodo_id: periodoId, empleado_id: config.empleado_id, ...calculation, nota_bonos: old.nota_bonos || null, nota_deducciones: old.nota_deducciones || null, cuenta_id: operador.cuenta_id }
+    const calculation = calcularLineaNomina(
+      byEmployee.get(config.empleado_id) || [],
+      config,
+      payrollConfig,
+      Number(old.bonos_usd || 0),
+      Number(old.deducciones_usd || 0),
+      Number(old.comisiones_pos_usd || 0)
+    )
+    return {
+      periodo_id: periodoId,
+      empleado_id: config.empleado_id,
+      ...calculation,
+      nota_bonos: old.nota_bonos || null,
+      nota_deducciones: old.nota_deducciones || null,
+      comisiones_despachos_ids: old.comisiones_despachos_ids || [],
+      cuenta_id: operador.cuenta_id,
+    }
   })
   const paidIds = new Set(previous.filter(row => row.pagado).map(row => row.empleado_id))
   const activeIds = new Set(employees.map(employee => employee.empleado_id))

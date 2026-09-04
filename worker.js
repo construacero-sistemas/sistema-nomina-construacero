@@ -8,6 +8,7 @@ import {
   handleGetTasasSnapshots, handleCrearTasaSnapshot,
   handleGetPeriodos, handleCrearPeriodo, handleCalcularPeriodo, handleCerrarPeriodo, handleReabrirPeriodo, handleEliminarPeriodo,
   handleGetLineas, handleAjustarLinea, handlePagarLineas, handleRevertirPagoLinea,
+  handleListarPosVendedores, handlePreviewComisionesPos, handleAplicarComisionesPos,
 } from './server/handlers/nomina.js'
 import {
   handleSwitchOperator, handleSelectOperator, handleClearOperator, handleGetOperators, handleGetCurrentProfile,
@@ -118,6 +119,9 @@ const routes = new Map([
   ['POST /api/nomina/lineas/ajustar', handleAjustarLinea],
   ['POST /api/nomina/lineas/pagar', handlePagarLineas],
   ['POST /api/nomina/lineas/revertir-pago', handleRevertirPagoLinea],
+  ['GET /api/nomina/pos-vendedores', handleListarPosVendedores],
+  ['GET /api/nomina/comisiones-pos', handlePreviewComisionesPos],
+  ['POST /api/nomina/aplicar-comisiones-pos', handleAplicarComisionesPos],
 ])
 
 const MAX_BODY_BYTES = 256 * 1024
@@ -129,6 +133,8 @@ function egressCacheTtl(pathname) {
   if (pathname === '/api/rates') return 10 * 60 * 1000
   if (pathname === '/api/nomina/empleados') return 5 * 60 * 1000
   if (pathname === '/api/nomina/config-empleados') return 30 * 1000
+  if (pathname === '/api/nomina/pos-vendedores') return 5 * 60 * 1000
+  if (pathname === '/api/nomina/comisiones-pos') return 15 * 1000
   if (pathname === '/api/nomina/asistencia') return 15 * 1000
   if (pathname === '/api/nomina/marcaje/hoy') return 5 * 1000
   if (pathname.startsWith('/api/nomina/calendario/')) return 10 * 60 * 1000
