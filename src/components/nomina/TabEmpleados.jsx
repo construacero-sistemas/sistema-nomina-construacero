@@ -13,6 +13,7 @@ import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
 import RateSelector from './RateSelector.jsx'
 import EmpleadoConfigModal from './EmpleadoConfigModal'
 import ComisionPagoModal from './ComisionPagoModal.jsx'
+import { formatRangoHoras12 } from '../../utils/timeUtils'
 
 function fmt(n) {
   return (Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -265,7 +266,7 @@ function EmpleadoNominaCard({ config, esAdmin, mostrarMontos = true, onEditar, o
         </div>
         {!esVendedorRol && (
           <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-            <Clock size={11} />Jornada: {Number(config.horas_jornada) || 0}h ({String(config.hora_inicio || '08:00').slice(0, 5)}–{String(config.hora_fin || '17:00').slice(0, 5)})
+            <Clock size={11} />Jornada: {Number(config.horas_jornada) || 0}h ({formatRangoHoras12(config.hora_inicio || '08:00', config.hora_fin || '17:00')})
           </div>
         )}
       </div>

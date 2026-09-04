@@ -1,4 +1,4 @@
-﻿// src/components/nomina/MarcajeLogisticaPanel.jsx
+// src/components/nomina/MarcajeLogisticaPanel.jsx
 // Panel operativo de marcaje rápido en tiempo real para el día de hoy.
 import { useMemo, useState } from 'react'
 import { LogIn, LogOut, RefreshCw, Clock, CheckCircle2 } from 'lucide-react'
@@ -7,10 +7,11 @@ import useAuthStore from '../../../compat/store/useAuthStore.js'
 import {
   useConfigEmpleados, useMarcajeHoy, useMarcarEntrada, useMarcarSalida,
 } from '../../hooks/useNomina'
+import { formatHora12 } from '../../utils/timeUtils'
 
 function fmtHora(h) {
   if (!h) return ''
-  return String(h).slice(0, 5)
+  return formatHora12(h)
 }
 
 export default function MarcajeLogisticaPanel() {

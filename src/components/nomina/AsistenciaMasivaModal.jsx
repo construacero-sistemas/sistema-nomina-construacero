@@ -81,10 +81,11 @@ export default function AsistenciaMasivaModal({ fechaInicial, totalEmpleados, on
             <button
               type="button"
               onClick={() => aplicarPreset('08:00', '17:00')}
-              className="py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-800 text-xs font-bold transition-all text-left flex items-center justify-between"
+              className="py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-800 text-xs font-bold transition-all text-left flex items-center justify-between min-h-11"
+              style={{ touchAction: 'manipulation' }}
             >
               <div>
-                <span>08:00 – 17:00</span>
+                <span>08:00 AM – 05:00 PM</span>
                 <span className="block text-[10px] font-normal text-emerald-600">Estándar (8h)</span>
               </div>
               <Sparkles size={14} className="text-emerald-600" />
@@ -93,10 +94,11 @@ export default function AsistenciaMasivaModal({ fechaInicial, totalEmpleados, on
             <button
               type="button"
               onClick={() => aplicarPreset('08:00', '18:00')}
-              className="py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-800 text-xs font-bold transition-all text-left flex items-center justify-between"
+              className="py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-800 text-xs font-bold transition-all text-left flex items-center justify-between min-h-11"
+              style={{ touchAction: 'manipulation' }}
             >
               <div>
-                <span>08:00 – 18:00</span>
+                <span>08:00 AM – 06:00 PM</span>
                 <span className="block text-[10px] font-normal text-amber-600">+1h Extra (9h)</span>
               </div>
               <Clock size={14} className="text-amber-600" />

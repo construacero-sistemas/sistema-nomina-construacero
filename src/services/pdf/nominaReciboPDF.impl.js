@@ -8,6 +8,7 @@ import {
   C_PRIMARY, C_DARK, C_WHITE, C_GRAY, C_AMBER, C_EMERALD, C_RED,
   fmtUsd, fmtBs, fmtFecha, drawWatermark, drawPremiumHeader,
 } from '../../../compat/services/pdf/pdfShared.js'
+import { formatHora12 } from '../../utils/timeUtils.js'
 
 function fmtFechaVE(f) {
   if (!f) return '—'
@@ -140,7 +141,7 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
   doc.setFontSize(7.5)
   doc.setTextColor(71, 85, 105)
   doc.text(fmtFechaVE(linea.fecha_ingreso_snap || linea.empleado?.fecha_ingreso), MARGIN + 4, y + 20)
-  doc.text(`${String(linea.hora_inicio_snap || '08:00').slice(0, 5)} a ${String(linea.hora_fin_snap || '17:00').slice(0, 5)} (${Number(linea.horas_jornada_snap || 8)}h efectivas)`, MARGIN + 75, y + 20)
+  doc.text(`${formatHora12(linea.hora_inicio_snap || '08:00')} a ${formatHora12(linea.hora_fin_snap || '17:00')} (${Number(linea.horas_jornada_snap || 8)}h efectivas)`, MARGIN + 75, y + 20)
   doc.text(linea.pagado ? 'LIQUIDADO / PAGADO' : 'PENDIENTE DE PAGO', MARGIN + 130, y + 20)
 
   y += 28

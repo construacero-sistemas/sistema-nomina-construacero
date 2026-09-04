@@ -3098,3 +3098,30 @@ Al alcanzar los 7 toques (`TOQUES_REQUERIDOS`), el diálogo se renderizaba insta
 - `npm test`: 61 suites / 610 pruebas aprobadas (100%).
 - `npm run verify`: Compilación exitosa en 30.24s.
 
+---
+
+### Entrada #141 - 2026-09-04
+**Contexto:** El usuario solicitó cambiar de formato de 24 horas (militar) a formato de 12 horas (AM/PM) en toda la experiencia de usuario de asistencia y nómina, indicando específicamente los botones de atajos rápidos del modal de asistencia individual (`AsistenciaModal.jsx`) y preservando la consistencia en el resto del sistema.
+
+**Causa raíz identificada:**
+1. Los botones de atajos rápidos y presets mostraban etiquetas fijas en horario militar (`08:00 – 17:00`, `08:00 – 18:00`, `08:00 – 19:00`, `08:00 – 13:00`).
+2. En las fichas de empleados, panel de marcaje en tiempo real y recibos PDF se usaba corte directo de cadenas `slice(0, 5)` resultando en horas tipo `14:30` o `17:00` en lugar de `02:30 PM` o `05:00 PM`.
+
+**Acciones realizadas:**
+- **Utilidad centralizada de tiempo:**
+  - Creado `src/utils/timeUtils.js` con las funciones `formatHora12(hora24, opciones)` y `formatRangoHoras12(hInicio, hFin, separador, opciones)`, soportando cadenas con y sin segundos, medianoche (`12:00 AM`), mediodía (`12:00 PM`), padding opcional y manejo seguro de nulos.
+  - Creada la suite de pruebas unitarias `src/utils/__tests__/timeUtils.test.jsx` (10 pruebas unitarias aprobadas).
+- **Frontend y Modales (React + Tailwind):**
+  - `AsistenciaModal.jsx`: Atajos rápidos convertidos a `08:00 AM – 05:00 PM` (Estándar 8h), `08:00 AM – 01:00 PM` (Medio Sábado 5h) / `08:00 AM – 06:00 PM` (+1h Extra), y `08:00 AM – 07:00 PM` (+2h Extra). Se reforzó `min-h-11` y `touchAction: 'manipulation'` en todos los botones táctiles.
+  - `AsistenciaMasivaModal.jsx`: Botones de jornada predeterminada actualizados a `08:00 AM – 05:00 PM` y `08:00 AM – 06:00 PM` con `min-h-11` y `touchAction: 'manipulation'`.
+  - `TabEmpleados.jsx`: Ficha del empleado actualizada para renderizar horario asignado mediante `formatRangoHoras12` (`08:00 AM – 05:00 PM`).
+  - `EmpleadoConfigModal.jsx`: Botón de horario estándar actualizado a `Estándar 08:00 AM a 05:00 PM`.
+  - `MarcajeLogisticaPanel.jsx`: Horas de entrada y salida mostradas con `formatHora12` (`08:00 AM`, `05:00 PM`).
+- **Servicio de Recibos PDF:**
+  - `nominaReciboPDF.impl.js`: Fila de "HORARIO ASIGNADO" formateada con `formatHora12` (`08:00 AM a 05:00 PM (8h efectivas)`).
+
+**Verificación:**
+- `npm run test:responsive`: 34/34 pruebas deterministas aprobadas (100%).
+- `npm run verify`: 62 suites / 620 pruebas Vitest aprobadas (100%), lint limpio (0 errores), bundle size 370.7 kB (≤ 400 kB) y compilación Vite exitosa.
+
+

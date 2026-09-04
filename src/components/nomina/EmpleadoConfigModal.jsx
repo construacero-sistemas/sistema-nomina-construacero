@@ -434,7 +434,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
               className="text-[11px] font-bold text-primary hover:text-primary-hover flex items-center gap-1"
             >
               <Sparkles size={12} />
-              Estándar 8:00 a 17:00
+              Estándar 08:00 AM a 05:00 PM
             </button>
           </div>
 

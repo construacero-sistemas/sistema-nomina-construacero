@@ -136,18 +136,20 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
               <button
                 type="button"
                 onClick={() => aplicarPreset('08:00', '17:00')}
-                className="py-2 px-2 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-800 text-[11px] font-bold transition-all text-center"
+                className="py-2 px-2 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-800 text-[11px] font-bold transition-all text-center min-h-11 flex flex-col items-center justify-center"
+                style={{ touchAction: 'manipulation' }}
               >
-                08:00 – 17:00
+                08:00 AM – 05:00 PM
                 <span className="block text-[9px] font-normal text-emerald-600">Estándar (8h)</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => aplicarPreset('08:00', new Date(`${fecha}T12:00:00`).getDay() === 6 ? '13:00' : '18:00')}
-                className="py-2 px-2 rounded-xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-800 text-[11px] font-bold transition-all text-center"
+                className="py-2 px-2 rounded-xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-800 text-[11px] font-bold transition-all text-center min-h-11 flex flex-col items-center justify-center"
+                style={{ touchAction: 'manipulation' }}
               >
-                {new Date(`${fecha}T12:00:00`).getDay() === 6 ? '08:00 – 13:00' : '08:00 – 18:00'}
+                {new Date(`${fecha}T12:00:00`).getDay() === 6 ? '08:00 AM – 01:00 PM' : '08:00 AM – 06:00 PM'}
                 <span className="block text-[9px] font-normal text-amber-600">
                   {new Date(`${fecha}T12:00:00`).getDay() === 6 ? 'Medio Sábado (5h)' : '+1h Extra'}
                 </span>
@@ -156,16 +158,18 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
               <button
                 type="button"
                 onClick={() => aplicarPreset('08:00', '19:00')}
-                className="py-2 px-2 rounded-xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-800 text-[11px] font-bold transition-all text-center"
+                className="py-2 px-2 rounded-xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-800 text-[11px] font-bold transition-all text-center min-h-11 flex flex-col items-center justify-center"
+                style={{ touchAction: 'manipulation' }}
               >
-                08:00 – 19:00
+                08:00 AM – 07:00 PM
                 <span className="block text-[9px] font-normal text-amber-600">+2h Extra</span>
               </button>
 
               <button
                 type="button"
                 onClick={marcarAusenciaRapida}
-                className="py-2 px-2 rounded-xl bg-red-50 hover:bg-red-100/80 border border-red-200 text-red-700 text-[11px] font-bold transition-all text-center"
+                className="py-2 px-2 rounded-xl bg-red-50 hover:bg-red-100/80 border border-red-200 text-red-700 text-[11px] font-bold transition-all text-center min-h-11 flex flex-col items-center justify-center"
+                style={{ touchAction: 'manipulation' }}
               >
                 Falta / Ausencia
                 <span className="block text-[9px] font-normal text-red-500">Injustificada</span>
