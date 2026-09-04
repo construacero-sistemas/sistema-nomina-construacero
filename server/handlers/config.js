@@ -18,6 +18,10 @@ const PUBLIC_CONFIG_FIELDS = [
   'nomina_tipo_periodo',
   'nomina_horas_extra_max_semana',
   'nomina_v2_enabled',
+  'nomina_hora_inicio',
+  'nomina_hora_fin',
+  'nomina_horas_jornada',
+  'nomina_horas_descanso',
 ]
 
 export async function handleGetConfig(request, env) {
@@ -100,6 +104,40 @@ export async function handleUpdateConfig(request, env) {
     const value = Number(body.nomina_horas_extra_max_semana)
     if (!Number.isFinite(value) || value < 0) return jsonError('nomina_horas_extra_max_semana inválido', 400, request)
     fields.nomina_horas_extra_max_semana = value
+  }
+
+  const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/
+
+  if (body?.nomina_hora_inicio !== undefined) {
+    const raw = String(body.nomina_hora_inicio || '').trim()
+    if (!TIME_REGEX.test(raw)) {
+      return jsonError('nomina_hora_inicio inválida (formato HH:mm esperado)', 400, request)
+    }
+    fields.nomina_hora_inicio = raw.slice(0, 5)
+  }
+
+  if (body?.nomina_hora_fin !== undefined) {
+    const raw = String(body.nomina_hora_fin || '').trim()
+    if (!TIME_REGEX.test(raw)) {
+      return jsonError('nomina_hora_fin inválida (formato HH:mm esperado)', 400, request)
+    }
+    fields.nomina_hora_fin = raw.slice(0, 5)
+  }
+
+  if (body?.nomina_horas_jornada !== undefined) {
+    const value = Number(body.nomina_horas_jornada)
+    if (!Number.isFinite(value) || value <= 0 || value > 24) {
+      return jsonError('nomina_horas_jornada inválida (debe estar entre 1 y 24 horas)', 400, request)
+    }
+    fields.nomina_horas_jornada = Math.round(value * 100) / 100
+  }
+
+  if (body?.nomina_horas_descanso !== undefined) {
+    const value = Number(body.nomina_horas_descanso)
+    if (!Number.isFinite(value) || value < 0 || value > 12) {
+      return jsonError('nomina_horas_descanso inválida (debe estar entre 0 y 12 horas)', 400, request)
+    }
+    fields.nomina_horas_descanso = Math.round(value * 100) / 100
   }
 
   for (const strField of ['nombre_negocio', 'rif_negocio', 'logo_url', 'telefono_negocio', 'email_negocio']) {

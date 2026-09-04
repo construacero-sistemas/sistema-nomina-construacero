@@ -3124,4 +3124,42 @@ Al alcanzar los 7 toques (`TOQUES_REQUERIDOS`), el diálogo se renderizaba insta
 - `npm run test:responsive`: 34/34 pruebas deterministas aprobadas (100%).
 - `npm run verify`: 62 suites / 620 pruebas Vitest aprobadas (100%), lint limpio (0 errores), bundle size 370.7 kB (≤ 400 kB) y compilación Vite exitosa.
 
+---
+
+### Entrada #142 - 2026-09-04
+**Contexto:** El usuario solicitó hacer editable el "Horario General" en la sección de configuración de nómina ("Horario Laboral Estándar de la Empresa"), el cual se encontraba previamente fijo y no permitía personalizar hora de entrada, hora de salida, jornada efectiva o tiempo de descanso a nivel empresarial.
+
+**Causa raíz:**
+En `TabConfiguracion.jsx`, el componente `StandardScheduleCard` mostraba valores estáticos en texto para el horario general (`08:00 AM – 05:00 PM`) y jornada efectiva (`8.0 horas / día (+1h descanso)`), sin formulario de edición ni columnas dedicadas en la tabla `configuracion_negocio`.
+
+**Acciones realizadas:**
+- **Base de Datos (Supabase):**
+  - Creada y ejecutada la migración `supabase/migrations/235_configuracion_horario_general.sql`:
+    - `nomina_hora_inicio TEXT NOT NULL DEFAULT '08:00'`
+    - `nomina_hora_fin TEXT NOT NULL DEFAULT '17:00'`
+    - `nomina_horas_jornada NUMERIC(4,2) NOT NULL DEFAULT 8.00`
+    - `nomina_horas_descanso NUMERIC(4,2) NOT NULL DEFAULT 1.00`
+- **Backend (Cloudflare Worker):**
+  - En `server/handlers/config.js`:
+    - Campos agregados a `PUBLIC_CONFIG_FIELDS`.
+    - Validaciones implementadas en `handleUpdateConfig` para formato `HH:mm`, jornada entre 1 y 24 horas, y descanso entre 0 y 12 horas.
+  - En `server/handlers/__tests__/config.test.js`:
+    - Casos de prueba añadidos para persistencia y validaciones de horario general (5/5 pruebas aprobadas).
+- **Frontend y UI/UX (React + Tailwind):**
+  - Creado `src/components/nomina/HorarioGeneralModal.jsx` (224 líneas, $\le 600$ líneas):
+    - Modal accesible con `Modal` (bottom sheet en móvil en iOS Safari).
+    - Entradas para hora de entrada, salida, jornada efectiva y descanso.
+    - Vista previa en vivo con formato amigable de 12 horas (AM/PM) usando `timeUtils.js`.
+    - Preajustes frecuentes de un toque y botón de sincronización de horas calculadas.
+    - Touch targets $\ge 44\text{ px}$ (`min-h-11`) y `style={{ touchAction: 'manipulation' }}`.
+  - En `src/components/nomina/TabConfiguracion.jsx`:
+    - `StandardScheduleCard` actualizado para leer reactivamente `nomina_hora_inicio`, `nomina_hora_fin`, `nomina_horas_jornada` y `nomina_horas_descanso`.
+    - Botón *"Editar Horario"* agregado en la cabecera de la tarjeta con icono `Pencil`.
+  - Creada la suite `src/components/nomina/__tests__/HorarioGeneralModal.test.jsx` (3 pruebas unitarias aprobadas).
+
+**Verificación:**
+- `test:responsive`: 34/34 pruebas deterministas aprobadas (100%), 92 componentes JSX analizados sin desbordes ni problemas táctiles.
+- `npm run verify`: 63 suites / 625 pruebas aprobadas (100%), lint limpio (0 errores), bundle size 378.9 kB (presupuesto $\le 400\text{ kB}$) y build exitoso.
+
+
 

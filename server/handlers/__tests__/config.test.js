@@ -84,4 +84,54 @@ describe('config handler', () => {
     expect(status).toBe(400)
     expect(String(body.error)).toMatch(/nomina_tipo_periodo/i)
   })
+
+  it('actualiza el horario general estándar de la empresa', async () => {
+    mock = installFetchMock([
+      {
+        match: '/configuracion_negocio',
+        method: 'PATCH',
+        respond: [{
+          nomina_hora_inicio: '07:30',
+          nomina_hora_fin: '16:30',
+          nomina_horas_jornada: 8.0,
+          nomina_horas_descanso: 1.0,
+        }],
+      },
+    ])
+
+    const res = await handleUpdateConfig(
+      makeRequest({
+        nomina_hora_inicio: '07:30',
+        nomina_hora_fin: '16:30',
+        nomina_horas_jornada: 8,
+        nomina_horas_descanso: 1,
+      }),
+      ENV
+    )
+
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    expect(body.nomina_hora_inicio).toBe('07:30')
+    expect(body.nomina_hora_fin).toBe('16:30')
+    expect(body.nomina_horas_jornada).toBe(8.0)
+    expect(body.nomina_horas_descanso).toBe(1.0)
+  })
+
+  it('valida formato de horas y jornada inválida', async () => {
+    const res1 = await handleUpdateConfig(
+      makeRequest({ nomina_hora_inicio: 'hora-invalida' }),
+      ENV
+    )
+    const { status: s1, body: b1 } = await readResponse(res1)
+    expect(s1).toBe(400)
+    expect(String(b1.error)).toMatch(/nomina_hora_inicio/i)
+
+    const res2 = await handleUpdateConfig(
+      makeRequest({ nomina_horas_jornada: 25 }),
+      ENV
+    )
+    const { status: s2, body: b2 } = await readResponse(res2)
+    expect(s2).toBe(400)
+    expect(String(b2.error)).toMatch(/nomina_horas_jornada/i)
+  })
 })

@@ -1,7 +1,5 @@
-// src/components/nomina/TabConfiguracion.jsx
-// Configuración administrativa de calendario, recargos, conceptos y reglas.
 import { Children, useState } from 'react'
-import { DollarSign, Plus, ShieldCheck, Sparkles, Clock, CalendarDays, Lock } from 'lucide-react'
+import { DollarSign, Plus, ShieldCheck, Sparkles, Clock, CalendarDays, Lock, Pencil } from 'lucide-react'
 import { useCandados } from '../../config/candadosRuntime.js'
 import { useConfigNomina, useGuardarConfigNomina } from '../../hooks/useNomina.js'
 import {
@@ -16,6 +14,8 @@ import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import useTablistNav from '../../../compat/hooks/useTablistNav.js'
 import HolidaySummaryCard from './HolidaySummaryCard.jsx'
 import RetencionCard from './RetencionCard.jsx'
+import HorarioGeneralModal from './HorarioGeneralModal.jsx'
+import { formatRangoHoras12 } from '../../utils/timeUtils.js'
 
 const inputClass = 'w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50'
 const today = () => new Date().toISOString().slice(0, 10)
@@ -107,7 +107,13 @@ function StandardScheduleCard({ configNomina }) {
   const guardar = useGuardarConfigNomina()
   const loaded = configNomina.data?.config || configNomina.data || {}
   const [tipoPeriodo, setTipoPeriodo] = useState(loaded.nomina_tipo_periodo || 'semanal')
+  const [modalHorarioAbierto, setModalHorarioAbierto] = useState(false)
   const [error, setError] = useState('')
+
+  const horaInicio = loaded.nomina_hora_inicio || '08:00'
+  const horaFin = loaded.nomina_hora_fin || '17:00'
+  const horasJornada = loaded.nomina_horas_jornada != null ? Number(loaded.nomina_horas_jornada) : 8.0
+  const horasDescanso = loaded.nomina_horas_descanso != null ? Number(loaded.nomina_horas_descanso) : 1.0
 
   async function guardarPeriodoDefault(nuevoTipo) {
     setTipoPeriodo(nuevoTipo)
@@ -120,9 +126,9 @@ function StandardScheduleCard({ configNomina }) {
 
   return (
     <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+          <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
             <Sparkles size={18} />
           </div>
           <div>
@@ -130,6 +136,16 @@ function StandardScheduleCard({ configNomina }) {
             <p className="text-xs text-slate-400">Jornada habitual predeterminada para marcaje y cálculo</p>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setModalHorarioAbierto(true)}
+          className="px-3.5 py-2 rounded-xl border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all min-h-11"
+          style={{ touchAction: 'manipulation' }}
+        >
+          <Pencil size={13} className="text-primary" />
+          <span>Editar Horario</span>
+        </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -137,7 +153,7 @@ function StandardScheduleCard({ configNomina }) {
           <Clock size={20} className="text-primary shrink-0" />
           <div>
             <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">Horario General</span>
-            <span className="text-sm font-black text-slate-800">08:00 AM – 05:00 PM</span>
+            <span className="text-sm font-black text-slate-800">{formatRangoHoras12(horaInicio, horaFin)}</span>
           </div>
         </div>
 
@@ -145,7 +161,9 @@ function StandardScheduleCard({ configNomina }) {
           <CalendarDays size={20} className="text-emerald-600 shrink-0" />
           <div>
             <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">Jornada Efectiva</span>
-            <span className="text-sm font-black text-slate-800">8.0 horas / día (+1h descanso)</span>
+            <span className="text-sm font-black text-slate-800">
+              {horasJornada.toFixed(1)} horas / día (+{horasDescanso.toFixed(0)}h descanso)
+            </span>
           </div>
         </div>
 
@@ -174,6 +192,14 @@ function StandardScheduleCard({ configNomina }) {
       </div>
 
       {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
+
+      {modalHorarioAbierto && (
+        <HorarioGeneralModal
+          isOpen
+          onClose={() => setModalHorarioAbierto(false)}
+          configActual={loaded}
+        />
+      )}
     </section>
   )
 }
