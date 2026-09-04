@@ -6,6 +6,11 @@ import { registrarAuditoria } from '../lib/audit.js'
 import { requireAdmin } from '../lib/permissions.js'
 import { movementResponse } from '../lib/finanzasUtils.js'
 import { fetchDayPosDataFromDirectDb } from '../lib/posSyncHelper.js'
+import {
+  validarDistribucionMatematica,
+  validarCompatibilidadMonedas,
+  reconciliarTramosPrevios,
+} from '../lib/posSyncValidation.js'
 
 const MOVEMENT_SELECT = [
   'id', 'fecha', 'tipo', 'categoria', 'concepto', 'monto', 'moneda',
@@ -322,98 +327,61 @@ export async function handleSyncVentasPos(request, env) {
 
   // 3. Registrar o actualizar movimientos para cada día
   const distribucion = body.distribucion && typeof body.distribucion === 'object' ? body.distribucion : null
+
+  // Guardarraíles de validación estricta (Zero-Tolerance Mismatch & Compatibilidad de Moneda)
+  if (confirm && distribucion) {
+    const mathCheck = validarDistribucionMatematica(distribucion, consolidated.desglose_pagos, consolidated.despachos_detalle)
+    if (!mathCheck.ok) {
+      return jsonError(mathCheck.error, 400, request)
+    }
+
+    let cuentasCustodia = Array.isArray(body.cuentasCustodia) ? body.cuentasCustodia : null
+    if (!cuentasCustodia) {
+      try {
+        const cuentasRes = await fetch(
+          `${env.SUPABASE_URL}/rest/v1/cuentas_custodia?${accountFilter(context.operador.cuenta_id)}&activo=eq.true&select=id,nombre,moneda`,
+          { headers: serviceHeaders(env, 'return=minimal') }
+        )
+        if (cuentasRes && cuentasRes.ok) {
+          cuentasCustodia = await cuentasRes.json().catch(() => [])
+        }
+      } catch {
+        cuentasCustodia = []
+      }
+    }
+
+    if (cuentasCustodia && cuentasCustodia.length > 0) {
+      const monedaCheck = validarCompatibilidadMonedas(distribucion, cuentasCustodia)
+      if (!monedaCheck.ok) {
+        return jsonError(monedaCheck.error, 400, request)
+      }
+    }
+  }
+
   const resultados = []
 
   for (const { fecha, posData } of consolidated.dias) {
     const desglose = posData.desglose_pagos || {}
     const tasaBcv = Number(posData.tasa_bcv || consolidated.tasa_bcv || 1) || 1
 
-    const entries = [
-      {
-        clave: 'efectivo_usd',
-        subcuenta: 'Efectivo $',
-        cartera: 'USD',
-        monto: Number(desglose.efectivo_usd || 0),
-        moneda: 'USD',
-        tasa_ves: tasaBcv,
-        tasa_usd_ves: tasaBcv,
-        fuente_tasa: 'BCV',
-        concepto: `Ventas POS en Efectivo $ - ${fecha}`,
-        idempotency_key: `pos-vta-efectivo-usd-${fecha}`,
-      },
-      {
-        clave: 'zelle_usd',
-        subcuenta: 'Zelle',
-        cartera: 'USD',
-        monto: Number(desglose.zelle_usd || 0),
-        moneda: 'USD',
-        tasa_ves: tasaBcv,
-        tasa_usd_ves: tasaBcv,
-        fuente_tasa: 'BCV',
-        concepto: `Ventas POS en Zelle - ${fecha}`,
-        idempotency_key: `pos-vta-zelle-usd-${fecha}`,
-      },
-      {
-        clave: 'usdt_usd',
-        subcuenta: 'USDT',
-        cartera: 'USD',
-        monto: Number(desglose.usdt_usd || 0),
-        moneda: 'USDT',
-        tasa_ves: tasaBcv,
-        tasa_usd_ves: tasaBcv,
-        fuente_tasa: 'USDT',
-        concepto: `Ventas POS en USDT - ${fecha}`,
-        idempotency_key: `pos-vta-usdt-usd-${fecha}`,
-      },
-      {
-        clave: 'efectivo_ves',
-        subcuenta: 'Efectivo Bs',
-        cartera: 'VES',
-        monto: Number(desglose.efectivo_ves || 0),
-        moneda: 'VES',
-        tasa_ves: 1,
-        tasa_usd_ves: tasaBcv,
-        fuente_tasa: 'BCV',
-        concepto: `Ventas POS en Efectivo Bs - ${fecha}`,
-        idempotency_key: `pos-vta-efectivo-ves-${fecha}`,
-      },
-      {
-        clave: 'transferencia_ves',
-        subcuenta: 'Transferencia',
-        cartera: 'VES',
-        monto: Number(desglose.transferencia_ves || 0),
-        moneda: 'VES',
-        tasa_ves: 1,
-        tasa_usd_ves: tasaBcv,
-        fuente_tasa: 'BCV',
-        concepto: `Ventas POS en Transferencia Bancaria - ${fecha}`,
-        idempotency_key: `pos-vta-transferencia-ves-${fecha}`,
-      },
-      {
-        clave: 'pago_movil_ves',
-        subcuenta: 'Pago Móvil',
-        cartera: 'VES',
-        monto: Number(desglose.pago_movil_ves || 0),
-        moneda: 'VES',
-        tasa_ves: 1,
-        tasa_usd_ves: tasaBcv,
-        fuente_tasa: 'BCV',
-        concepto: `Ventas POS en Pago Móvil - ${fecha}`,
-        idempotency_key: `pos-vta-pagomovil-ves-${fecha}`,
-      },
-      {
-        clave: 'punto_venta_ves',
-        subcuenta: 'Punto de Venta',
-        cartera: 'VES',
-        monto: Number(desglose.punto_venta_ves || 0),
-        moneda: 'VES',
-        tasa_ves: 1,
-        tasa_usd_ves: tasaBcv,
-        fuente_tasa: 'BCV',
-        concepto: `Ventas POS en Punto de Venta - ${fecha}`,
-        idempotency_key: `pos-vta-puntoventa-ves-${fecha}`,
-      },
+    const METODOS_DEF = [
+      ['efectivo_usd', 'Efectivo $', 'USD', 'USD', tasaBcv, 'BCV', 'pos-vta-efectivo-usd'],
+      ['zelle_usd', 'Zelle', 'USD', 'USD', tasaBcv, 'BCV', 'pos-vta-zelle-usd'],
+      ['usdt_usd', 'USDT', 'USD', 'USDT', tasaBcv, 'USDT', 'pos-vta-usdt-usd'],
+      ['efectivo_ves', 'Efectivo Bs', 'VES', 'VES', 1, 'BCV', 'pos-vta-efectivo-ves'],
+      ['transferencia_ves', 'Transferencia', 'VES', 'VES', 1, 'BCV', 'pos-vta-transferencia-ves'],
+      ['pago_movil_ves', 'Pago Móvil', 'VES', 'VES', 1, 'BCV', 'pos-vta-pagomovil-ves'],
+      ['punto_venta_ves', 'Punto de Venta', 'VES', 'VES', 1, 'BCV', 'pos-vta-puntoventa-ves'],
+      ['otros_usd', 'Otros $', 'USD', 'USD', tasaBcv, 'BCV', 'pos-vta-otros-usd'],
     ]
+
+    const entries = METODOS_DEF.map(([clave, subcuenta, cartera, moneda, tasa_ves, fuente_tasa, prefix]) => ({
+      clave, subcuenta, cartera, moneda, tasa_ves, fuente_tasa,
+      tasa_usd_ves: tasaBcv,
+      monto: Number(desglose[clave] || 0),
+      concepto: `Ventas POS en ${subcuenta} - ${fecha}`,
+      idempotency_key: `${prefix}-${fecha}`,
+    }))
 
     // Fallback para monto lump-sum si desglose vacío
     const sumaDesglose = entries.reduce((s, e) => s + e.monto, 0)
@@ -434,6 +402,8 @@ export async function handleSyncVentasPos(request, env) {
 
       // Si el método se dividió entre múltiples cuentas bancarias/custodia
       if (cfg && Array.isArray(cfg.partes) && cfg.partes.length > 0) {
+        await reconciliarTramosPrevios(env, context.operador.cuenta_id, fecha, entry.clave, serviceHeaders(env), cfg.partes.length)
+
         let pIdx = 0
         for (const parte of cfg.partes) {
           pIdx += 1
@@ -470,9 +440,22 @@ export async function handleSyncVentasPos(request, env) {
         continue
       }
 
-      // Cuenta única o fallback sin configuración personalizada
+      // Cuenta única o fallback: limpiar tramos previos solo si se revierte desde división
+      if (cfg && (cfg.limpiarTramos || (cfg.dividido === false && Array.isArray(cfg.partes)))) {
+        await reconciliarTramosPrevios(env, context.operador.cuenta_id, fecha, entry.clave, serviceHeaders(env), 0)
+      }
+
       const cuentaOrigen = cfg ? (String(cfg.cuenta_origen || cfg.nombreCuenta || cfg.nombre || '').trim() || null) : null
-      const montoFinal = (cfg && cfg.monto != null) ? round2(cfg.monto) : entry.monto
+      let montoFinal = entry.monto
+      if (cfg && Array.isArray(cfg.excluidos) && cfg.excluidos.length > 0) {
+        const campoMonto = entry.moneda === 'VES' ? 'monto_ves' : 'monto_usd'
+        const sumaExcluidos = (posData.despachos_detalle || [])
+          .filter(d => d.metodo_clave === entry.clave && cfg.excluidos.includes(d.id))
+          .reduce((s, d) => s + Number(d[campoMonto] || 0), 0)
+        montoFinal = round2(Math.max(0, montoFinal - sumaExcluidos))
+      } else if (cfg && cfg.monto != null) {
+        montoFinal = round2(cfg.monto)
+      }
       if (montoFinal <= 0) continue
 
       const conceptoFinal = cuentaOrigen
@@ -550,6 +533,15 @@ export async function handleSyncVentasPos(request, env) {
   }
   totalSincronizadoUsd = round2(totalSincronizadoUsd)
 
+  const despachosExcluidos = []
+  if (distribucion) {
+    for (const cfg of Object.values(distribucion)) {
+      if (Array.isArray(cfg?.excluidos)) {
+        despachosExcluidos.push(...cfg.excluidos)
+      }
+    }
+  }
+
   registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
     usuarioId: context.operador.id,
     usuarioNombre: context.operador.nombre,
@@ -564,6 +556,7 @@ export async function handleSyncVentasPos(request, env) {
       hasta,
       total_ingresos_usd: totalSincronizadoUsd || consolidated.total_ingresos_usd,
       operaciones: resultados.length,
+      ...(despachosExcluidos.length > 0 ? { despachos_excluidos: despachosExcluidos } : {}),
     },
     ip: context.ip,
   }).catch(() => {})

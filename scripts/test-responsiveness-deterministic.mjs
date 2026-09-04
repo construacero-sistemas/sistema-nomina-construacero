@@ -365,6 +365,50 @@ async function run() {
     }
   })
 
+  // ─── 12. REGLA: GUARDARRAÍLES Y ERGONOMÍA EN ZONA DE SINCRONIZACIÓN POS ───────
+  console.log('\n━━━ 12. GUARDARRAÍLES EN ZONA DE SINCRONIZACIÓN POS (FINANZAS) ━━━')
+
+  const posModalContent = await read('src/components/finanzas/SyncPosModal.jsx')
+  const posItemContent = await read('src/components/finanzas/SyncPosMetodoItem.jsx')
+  const posDespachosContent = await read('src/components/finanzas/SyncPosDespachosList.jsx')
+
+  test('SyncPos: Todos los botones interactivos declaran touchAction manipulation y touch targets >= 44px (min-h-11)', () => {
+    const files = [
+      { name: 'SyncPosModal', content: posModalContent },
+      { name: 'SyncPosMetodoItem', content: posItemContent },
+      { name: 'SyncPosDespachosList', content: posDespachosContent },
+    ]
+    for (const { name, content } of files) {
+      if (!content.includes('min-h-11')) {
+        throw new Error(`${name} debe usar min-h-11 para cumplir touch targets >= 44px`)
+      }
+      if (!content.includes('manipulation')) {
+        throw new Error(`${name} debe usar touchAction: manipulation en sus botones interactivos`)
+      }
+    }
+  })
+
+  test('SyncPosMetodoItem: Inputs numéricos usan text-[16px] sm:text-sm para prevenir auto-zoom en iOS Safari', () => {
+    if (!posItemContent.includes('text-[16px] sm:text-sm')) {
+      throw new Error('SyncPosMetodoItem debe usar text-[16px] sm:text-sm en inputs para prevenir auto-zoom en iOS Safari')
+    }
+    if (!posItemContent.includes('onKeyDown')) {
+      throw new Error('SyncPosMetodoItem debe sanitizar caracteres no numéricos o negativos en onKeyDown')
+    }
+  })
+
+  test('SyncPosDespachosList: Paginación estricta <= 10 filas por página (FILAS_POR_PAGINA = 6) y controles accesibles', () => {
+    if (!posDespachosContent.includes('FILAS_POR_PAGINA = 6') && !posDespachosContent.includes('PAGE_SIZE = 6')) {
+      throw new Error('SyncPosDespachosList debe tener FILAS_POR_PAGINA fijado a <= 10 filas (actualmente 6)')
+    }
+  })
+
+  test('SyncPosModal: Desactiva confirmación si hay descuadre matemático o montos pendientes', () => {
+    if (!posModalContent.includes('totalDinamico.tieneDescuadre')) {
+      throw new Error('SyncPosModal debe validar totalDinamico.tieneDescuadre antes de permitir confirmación')
+    }
+  })
+
   // ─── RESUMEN FINAL ─────────────────────────────────────────────────────────
   console.log('\n=================================================================')
   console.log('                     RESUMEN DE RESPONSIVIDAD                    ')

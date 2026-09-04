@@ -171,6 +171,7 @@ export default function SyncPosMetodoItem({
       ...config,
       dividido: false,
       partes: [],
+      limpiarTramos: true,
       cuenta_origen: primeraCuenta,
     })
   }
@@ -395,6 +396,11 @@ export default function SyncPosMetodoItem({
                           min="0"
                           value={parte.monto === 0 ? '' : parte.monto}
                           onChange={e => handleUpdateParte(idx, 'monto', e.target.value)}
+                          onKeyDown={e => {
+                            if (['-', '+', 'e', 'E'].includes(e.key)) {
+                              e.preventDefault()
+                            }
+                          }}
                           placeholder="0.00"
                           className="min-h-11 w-full rounded-xl border border-slate-200 px-3 py-2 text-[16px] sm:text-sm font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                         />

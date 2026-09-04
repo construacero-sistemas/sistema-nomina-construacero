@@ -3006,6 +3006,39 @@ Al alcanzar los 7 toques (`TOQUES_REQUERIDOS`), el diálogo se renderizaba insta
 
 - **Refinamiento UI/UX (`SyncPosMetodoItem.jsx`):** Se dotó a cada método de pago de una paleta temática armónica (verde esmeralda para Efectivo $, morado para Zelle, azul para Bolívares, índigo para Pago Móvil, ámbar para USDT, etc.), botón-píldora interactivo para alternar el detalle de despachos directamente en la cabecera, etiquetas de tipo de cuenta amigables ("Caja física $", "Banco nacional" en vez de códigos internos técnicos), y reorganización ergonómica compacta sin filas vacías redundantes.
 
+---
+
+### Entrada #138 - 2026-09-03
+**Contexto:** Se construyó e integró una red completa de arneses y guardarraíles de seguridad (invariantes matemáticas, anti-poisoning de monedas, reconciliación automática anti-huérfanos, ergonomía táctil y auditoría forense) para la sincronización de ventas del POS hacia Finanzas, con verificación determinista automatizada.
+
+**Acciones realizadas:**
+- **Módulo de Invariantes y Guardarraíles (`server/lib/posSyncValidation.js`):**
+  - `validarDistribucionMatematica`: Valida matemáticamente que ningún tramo tenga monto ≤ 0 o NaN, que todas las partes tengan cuenta asignada, y que la suma de tramos divididos cuadre con el total efectivo neto (tolerancia estricta ≤ $0.01).
+  - `validarCompatibilidadMonedas`: Previene anti-poisoning de carteras (rechaza métodos VES en cuentas USD o métodos USD en cuentas VES).
+  - `reconciliarTramosPrevios`: Anula automáticamente tramos huérfanos generados en resincronizaciones previas (tanto tramos excedentes `p3`, `p4` como el asiento base único si se cambia a partes).
+- **Backend Integrado (`server/handlers/finanzas.sync.js`):**
+  - Se compactó la definición de métodos de 85 a 14 líneas manteniendo el archivo en 574 líneas (respeto a AGENT.md ≤ 600 líneas).
+  - Integradas las validaciones con retorno de HTTP 400 antes de mutar base de datos.
+  - Auditoría forense enriquecida con `despachos_excluidos` en `meta`.
+- **Frontend y Ergonomía (`SyncPosModal.jsx` y `SyncPosMetodoItem.jsx`):**
+  - Pre-cálculo reactivo del saldo faltante en "+ Agregar otra cuenta bancaria".
+  - Sanitización en `onKeyDown` bloqueando signos negativos (`-`), positivos (`+`) y exponentes (`e`, `E`).
+  - Bloqueo inmediato del botón de confirmación si hay descuadre matemático o tramo sin cuenta.
+- **Scanner Determinista (`scripts/test-responsiveness-deterministic.mjs`):**
+  - Añadida Regla 12 (4 nuevas pruebas) verificando touch targets ≥ 44 px (`min-h-11`), `touchAction: 'manipulation'`, inputs anti-zoom Safari iOS `text-[16px] sm:text-sm`, y paginación fija en 6 filas.
+- **Suites de Pruebas Unitarias:**
+  - `server/lib/__tests__/posSyncValidation.test.js`: 5 pruebas unitarias de guardarraíles aislados.
+  - `server/handlers/__tests__/finanzas.sync.guardrails.test.js`: 6 pruebas de integración HTTP (descuadre, montos negativos, falta de cuenta, incompatibilidad VES/USD, auditoría de excluidos).
+
+**Verificación:**
+- `npm run check:project`: OK (27 migraciones y 262 archivos inspeccionados).
+- `npm run test:responsive`: 34/34 pruebas deterministas aprobadas (100%).
+- `npm run test:bundle-size`: Chunk principal `369.9 kB` ≤ 400 kB.
+- `npm run lint`: 0 errores y 0 advertencias.
+- `npm test`: 59 suites / 595 pruebas aprobadas (100%).
+- `npm run verify`: Compilación exitosa en 31.01s.
+
+
 
 
 

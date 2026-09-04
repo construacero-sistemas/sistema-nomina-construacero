@@ -236,6 +236,11 @@ export default function SyncPosModal({ open, onClose }) {
         if (Math.abs(montoEfectivo - sumaPartes) > 0.01) {
           tieneDescuadre = true
         }
+        for (const p of cfg.partes) {
+          if (!p.cuenta_origen || Number(p.monto) <= 0) {
+            tieneDescuadre = true
+          }
+        }
       }
 
       if (m.moneda === 'VES') {
@@ -258,7 +263,7 @@ export default function SyncPosModal({ open, onClose }) {
 
   const handleConfirmarSync = async () => {
     try {
-      await ejecutarMutation.mutateAsync({ desde, hasta, confirm: true, distribucion })
+      await ejecutarMutation.mutateAsync({ desde, hasta, confirm: true, distribucion, cuentasCustodia: cuentas })
       onClose()
     } catch {
       // Manejado por toast de mutación
