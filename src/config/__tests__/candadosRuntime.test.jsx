@@ -158,4 +158,21 @@ describe('diálogo ComandoDesbloqueo', () => {
     })
     bloquearSesion()
   })
+
+  it('toques de más o clics en el fondo (backdrop) no cierran el diálogo', () => {
+    const { container } = render(<ComandoDesbloqueo />)
+    // Dar 10 toques en el logo (3 toques de más)
+    for (let i = 0; i < TOQUES_REQUERIDOS + 3; i += 1) {
+      fireEvent(window, new CustomEvent('logo-tap'))
+    }
+    // El diálogo debe estar visible
+    expect(screen.getByPlaceholderText('Código')).toBeInTheDocument()
+
+    // Clic en el backdrop no debe cerrar el diálogo
+    const backdrop = container.querySelector('.bg-slate-900\\/60')
+    if (backdrop) {
+      fireEvent.click(backdrop)
+    }
+    expect(screen.getByPlaceholderText('Código')).toBeInTheDocument()
+  })
 })

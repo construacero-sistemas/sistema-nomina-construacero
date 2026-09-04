@@ -2958,6 +2958,29 @@ Se conservan las entradas históricas anteriores de este documento, correspondie
 - `npm test`: 56 suites / 573 pruebas aprobadas (100%).
 - `npm run build`: Compilación exitosa en 52.83s.
 
+---
+
+### Entrada #136 - 2026-09-03
+**Contexto:** El usuario reportó que al tocar los clics rápidos sobre el logo para abrir el diálogo de desbloqueo de candados (`ComandoDesbloqueo`), si se daban clics adicionales por inercia o rapidez, el modal se cerraba de inmediato, impidiendo escribir el código.
+
+**Causa raíz:**
+Al alcanzar los 7 toques (`TOQUES_REQUERIDOS`), el diálogo se renderizaba instantáneamente con un fondo difuminado (`backdrop`) que ocupaba toda la pantalla (`fixed inset-0 z-[100]`). Los toques 8 en adelante caían sobre dicho backdrop, el cual ejecutaba `onClick={onClose}` cerrando el modal de inmediato.
+
+**Acciones realizadas:**
+- En `compat/components/ui/Modal.jsx`:
+  - Se añadió la propiedad `closeOnBackdrop = true` (por defecto `true` para preservar el comportamiento del resto de modales).
+  - Si `closeOnBackdrop` es `false`, el backdrop no asocia evento de cierre (`onClick={closeOnBackdrop ? onClose : undefined}`) y se desactiva el cierre por arrastre accidental (`dragY > 120 && closeOnBackdrop`).
+- En `src/components/ComandoDesbloqueo.jsx`:
+  - Se configuró `<Modal closeOnBackdrop={false} ... />`, garantizando que toques de más o clics fuera del diálogo nunca lo cierren. El modal solo se cierra voluntariamente mediante el botón "Cancelar", el botón "X" de la cabecera o la tecla `Escape`.
+  - Se protegió la función `abrir` con `setAbierto(prev => prev ? prev : ...)` para evitar reseteos de texto si entran eventos adicionales mientras ya está abierto.
+- En `src/config/__tests__/candadosRuntime.test.jsx`:
+  - Se agregó prueba unitaria verificando que toques de más (ej. 10 toques) y clics directos en el backdrop mantienen el diálogo abierto (11/11 pruebas aprobadas).
+
+**Verificación:**
+- `npm run test:responsive`: 30/30 pruebas aprobadas (100%).
+- `npm run lint`: 0 errores y 0 advertencias.
+- `npm test -- src/config/__tests__/candadosRuntime.test.jsx`: 11/11 pruebas aprobadas.
+
 
 
 

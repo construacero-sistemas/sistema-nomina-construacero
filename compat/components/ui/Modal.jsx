@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { X } from 'lucide-react';
 
-export const Modal = ({ isOpen, onClose, title, children, className = '' }) => {
+export const Modal = ({ isOpen, onClose, title, children, className = '', closeOnBackdrop = true }) => {
   const modalRef = useRef(null);
   const previousFocusRef = useRef(null);
 
@@ -77,9 +77,9 @@ export const Modal = ({ isOpen, onClose, title, children, className = '' }) => {
   const onDragEnd = useCallback(() => {
     if (!dragRef.current.active) return;
     dragRef.current.active = false;
-    if (dragY > 120) onClose();
+    if (dragY > 120 && closeOnBackdrop) onClose();
     setDragY(0);
-  }, [dragY, onClose]);
+  }, [dragY, onClose, closeOnBackdrop]);
 
   if (!isOpen) return null;
 
@@ -95,7 +95,7 @@ export const Modal = ({ isOpen, onClose, title, children, className = '' }) => {
       {/* Backdrop con desenfoque */}
       <div
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
+        onClick={closeOnBackdrop ? onClose : undefined}
         aria-hidden="true"
       />
 

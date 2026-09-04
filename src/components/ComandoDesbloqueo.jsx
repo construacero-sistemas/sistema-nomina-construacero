@@ -23,9 +23,12 @@ export default function ComandoDesbloqueo() {
   const candados = useCandados()
 
   const abrir = () => {
-    setCodigo('')
-    setError('')
-    setAbierto(true)
+    setAbierto(prev => {
+      if (prev) return prev
+      setCodigo('')
+      setError('')
+      return true
+    })
   }
 
   useComandoDesbloqueo(abrir)
@@ -48,7 +51,13 @@ export default function ComandoDesbloqueo() {
   }
 
   return (
-    <Modal isOpen={abierto} onClose={() => setAbierto(false)} title="Comando de candados" className="max-w-sm">
+    <Modal
+      isOpen={abierto}
+      onClose={() => setAbierto(false)}
+      title="Comando de candados"
+      className="max-w-sm"
+      closeOnBackdrop={false}
+    >
       {candados.cualquiera ? (
         <form onSubmit={confirmarDesbloqueo} className="space-y-4">
           <p className="text-sm text-slate-500 leading-relaxed">
