@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Clock, Trash2, Calendar, AlertCircle, Sparkles, UserX } from 'lucide-react'
 import { useRegistrarAsistencia, useEliminarAsistencia } from '../../hooks/useNomina'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
+import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 
 const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all font-mono'
 
@@ -92,7 +93,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
   return (
     <Modal
       isOpen onClose={onClose}
-      title={empleado?.empleado?.nombre || 'Registro de Asistencia'}
+      title={capitalizarPalabras(empleado?.empleado?.nombre) || 'Registro de Asistencia'}
       className="max-w-md">
       <div className="space-y-4">
         {/* Cabecera del día */}

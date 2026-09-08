@@ -1,7 +1,5 @@
-// src/components/nomina/EmpleadoConfigModal.jsx
-// Alta/edición intuitiva de la configuración salarial y de jornada de un empleado.
 import { useState, useMemo, useEffect } from 'react'
-import { RefreshCw, Clock, DollarSign, Calendar, Sparkles, ShoppingBag } from 'lucide-react'
+import { RefreshCw, Clock, DollarSign, Calendar, Sparkles, ShoppingBag, Trash2, AlertTriangle } from 'lucide-react'
 import {
   useNominaEmpleados,
   useCrearConfigEmpleado,
@@ -11,6 +9,7 @@ import {
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
+import EmpleadoBajaModal from './EmpleadoBajaModal.jsx'
 
 const inputCls = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
@@ -105,6 +104,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const [horaInicio, setHoraInicio] = useState(String(config?.hora_inicio ?? '08:00').slice(0, 5))
   const [horaFin, setHoraFin]       = useState(String(config?.hora_fin ?? '17:00').slice(0, 5))
   const [activo, setActivo]         = useState(config?.activo ?? true)
+  const [confirmandoBaja, setConfirmandoBaja] = useState(false)
   const [error, setError]           = useState('')
 
   // Cálculo del salario diario en USD según la modalidad elegida
@@ -203,6 +203,20 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
       onClose()
     } catch (err) {
       setError(err.message || 'Error al guardar')
+    }
+  }
+
+  async function ejecutarDarDeBaja() {
+    setError('')
+    try {
+      await actualizar.mutateAsync({
+        id: config.id,
+        activo: false,
+      })
+      onClose()
+    } catch (err) {
+      setError(err.message || 'Error al dar de baja al empleado')
+      setConfirmandoBaja(false)
     }
   }
 
@@ -510,25 +524,51 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
       </form>
 
       {/* Footer */}
-      <div className="flex justify-end gap-2 pt-3 mt-4 border-t border-slate-100">
-        <button
-          onClick={onClose}
-          type="button"
-          disabled={cargando}
-          style={{ touchAction: 'manipulation' }}
-          className="min-h-11 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 transition-colors"
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={guardar}
-          disabled={cargando}
-          style={{ touchAction: 'manipulation' }}
-          className="min-h-11 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-primary/20 transition-all active:scale-95"
-        >
-          {cargando ? 'Guardando...' : 'Guardar empleado'}
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-3 mt-4 border-t border-slate-100">
+        {esEdicion ? (
+          <button
+            type="button"
+            onClick={() => setConfirmandoBaja(true)}
+            disabled={cargando}
+            style={{ touchAction: 'manipulation' }}
+            className="min-h-11 px-3.5 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold transition-all flex items-center gap-1.5"
+            title="Dar de baja este trabajador de la nómina"
+          >
+            <Trash2 size={14} />
+            <span>Dar de baja</span>
+          </button>
+        ) : <div />}
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onClose}
+            type="button"
+            disabled={cargando}
+            style={{ touchAction: 'manipulation' }}
+            className="min-h-11 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={guardar}
+            disabled={cargando}
+            style={{ touchAction: 'manipulation' }}
+            className="min-h-11 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-primary/20 transition-all active:scale-95"
+          >
+            {cargando ? 'Guardando...' : 'Guardar empleado'}
+          </button>
+        </div>
       </div>
+
+      {confirmandoBaja && (
+        <EmpleadoBajaModal
+          isOpen
+          empleado={config}
+          onClose={() => setConfirmandoBaja(false)}
+          onConfirm={ejecutarDarDeBaja}
+          cargando={cargando}
+        />
+      )}
     </Modal>
   )
 }

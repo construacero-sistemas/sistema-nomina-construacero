@@ -14,6 +14,7 @@ import { useConfigNegocio } from '../../../compat/hooks/useConfigNegocio.js'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
 
 import { FORMAS_PAGO_OPCIONES } from '../../constants/formasPago.js'
+import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 
 const inputCls = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
@@ -36,7 +37,7 @@ export default function ComisionPagoModal({ empleadoInicial, onClose, onSuccess 
       })
       .map(c => ({
         id: c.empleado_id,
-        nombre: c.empleado?.nombre || 'Sin nombre',
+        nombre: capitalizarPalabras(c.empleado?.nombre) || 'Sin nombre',
         documento: c.empleado?.documento || '',
         cargo: c.cargo || 'Vendedor',
         config: c,

@@ -437,7 +437,7 @@ export default function FinanzasView() {
                   movimientos={movimientosFiltrados}
                   onAnular={movimiento => setAnular(movimiento)}
                   onRevertir={movimiento => revertirAnulacion.mutate({ id: movimiento.id })}
-                  tasaBcv={tasaActiva || usd}
+                  tasaBcv={tasaActiva}
                   tasaUsdt={usdt}
                 />
               </div>
@@ -524,6 +524,8 @@ export default function FinanzasView() {
                   movimientos={movimientosFiltrados}
                   onAnular={movimiento => setAnular(movimiento)}
                   onRevertir={movimiento => revertirAnulacion.mutate({ id: movimiento.id })}
+                  tasaBcv={tasaActiva}
+                  tasaUsdt={usdt}
                 />
               </div>
             )}

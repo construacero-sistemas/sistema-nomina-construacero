@@ -5,8 +5,6 @@ import { validateOperator, supaServiceHeaders } from '../lib/auth.js'
 import { registrarAuditoria } from '../lib/audit.js'
 import { requireAdmin } from '../lib/permissions.js'
 import {
-  DEFAULT_CATEGORIES,
-  normalizeCategory,
   normalizeMovement,
   normalizeReportQuery,
   movementResponse,
@@ -18,6 +16,8 @@ const MOVEMENT_SELECT = [
   'tasa_ves', 'monto_ves', 'fuente_tasa', 'observacion_tasa',
   'referencia', 'observaciones', 'estado', 'creado_en', 'anulado_en',
   'motivo_anulacion', 'metodo_pago', 'cuenta_origen', 'partes',
+  // tasa_usd_ves alimenta el contravalor USD del listado (migración 224).
+  'tasa_usd_ves',
 ].join(',')
 
 function adminContext(request, env) {
@@ -100,11 +100,20 @@ export async function handleGetFinanzasMovimientos(request, env) {
     url.searchParams.get('mostrarAnulados') === 'true' ? '' : 'estado=eq.activo',
   ].filter(Boolean).join('&')
 
-  const response = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?${parts}` +
-      `&select=${MOVEMENT_SELECT}&order=fecha.desc,creado_en.desc&limit=${filters.limit}&offset=${filters.offset}`,
-    { headers: serviceHeaders(env, 'return=minimal') },
-  )
+  const listUrl = `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?${parts}` +
+    `&select=${MOVEMENT_SELECT}&order=fecha.desc,creado_en.desc&limit=${filters.limit}&offset=${filters.offset}`
+  let response = await fetch(listUrl, { headers: serviceHeaders(env, 'return=minimal') })
+  if (!response.ok) {
+    // Retry defensivo: si la columna tasa_usd_ves (migración 224) aún no existe en
+    // alguna base, repetir sin ella para no dejar el listado caído.
+    const retrySelect = MOVEMENT_SELECT.replace(/,tasa_usd_ves/, '')
+    if (retrySelect !== MOVEMENT_SELECT) {
+      response = await fetch(
+        listUrl.replace(`select=${MOVEMENT_SELECT}`, `select=${retrySelect}`),
+        { headers: serviceHeaders(env, 'return=minimal') },
+      )
+    }
+  }
   if (!response.ok) return jsonError('No se pudieron cargar los movimientos', 500, request)
   const rows = await response.json()
   return json({
@@ -343,93 +352,13 @@ export async function handleRevertirAnulacionMovimiento(request, env) {
 // Baja LÓGICA (activo=false): la categoría deja de ofrecerse en nuevos
 // movimientos pero el historial conserva su nombre y se puede restaurar.
 // Las predeterminadas del sistema no se pueden eliminar (siempre aparecen).
-export async function handleEliminarFinanzasCategoria(request, env) {
-  const context = await adminContext(request, env)
-  if (context.error) return context.error
-  const parsed = await readBody(request)
-  if (parsed.error) return parsed.error
-
-  const id = String(parsed.body?.id || '').trim()
-  if (!isValidUuid(id)) return jsonError('id inválido', 400, request)
-
-  const lookup = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?id=eq.${queryValue(id)}` +
-      `&${accountFilter(context.operador.cuenta_id)}&select=id,nombre,activo&limit=1`,
-    { headers: serviceHeaders(env, 'return=minimal') },
-  )
-  if (!lookup.ok) return jsonError('No se pudo validar la categoría', 500, request)
-  const [row] = await lookup.json().catch(() => [])
-  if (!row) return jsonError('Categoría no encontrada', 404, request)
-  const esPredeterminada = DEFAULT_CATEGORIES.some(c => c.nombre.toLowerCase() === String(row.nombre).toLowerCase())
-  if (esPredeterminada) return jsonError('Las categorías predeterminadas no se pueden eliminar', 400, request)
-  if (!row.activo) return json({ ok: true, idempotente: true, id }, 200, request)
-
-  const response = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?id=eq.${queryValue(id)}` +
-      `&${accountFilter(context.operador.cuenta_id)}`,
-    {
-      method: 'PATCH',
-      headers: serviceHeaders(env),
-      body: JSON.stringify({ activo: false }),
-    },
-  )
-  if (!response.ok) return jsonError('No se pudo eliminar la categoría', 500, request)
-
-  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
-    usuarioId: context.operador.id,
-    usuarioNombre: context.operador.nombre,
-    usuarioRol: context.operador.rol,
-    cuentaId: context.operador.cuenta_id,
-    categoria: 'FINANZAS',
-    accion: 'CATEGORIA_ELIMINADA',
-    entidadTipo: 'finanzas_categorias',
-    entidadId: id,
-    meta: { logico: true, nombre: row.nombre },
-    ip: context.ip,
-  }).catch(() => {})
-
-  return json({ ok: true, id, nombre: row.nombre }, 200, request)
-}
-
-// POST /api/finanzas/categorias/restaurar
-// Reversibilidad: reactiva una categoría dada de baja (activo=false → true).
-export async function handleRestaurarFinanzasCategoria(request, env) {
-  const context = await adminContext(request, env)
-  if (context.error) return context.error
-  const parsed = await readBody(request)
-  if (parsed.error) return parsed.error
-
-  const id = String(parsed.body?.id || '').trim()
-  if (!isValidUuid(id)) return jsonError('id inválido', 400, request)
-
-  const response = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?id=eq.${queryValue(id)}` +
-      `&${accountFilter(context.operador.cuenta_id)}`,
-    {
-      method: 'PATCH',
-      headers: serviceHeaders(env),
-      body: JSON.stringify({ activo: true }),
-    },
-  )
-  if (!response.ok) return jsonError('No se pudo restaurar la categoría', 500, request)
-  const [row] = await response.json().catch(() => [])
-  if (!row) return jsonError('Categoría no encontrada', 404, request)
-
-  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
-    usuarioId: context.operador.id,
-    usuarioNombre: context.operador.nombre,
-    usuarioRol: context.operador.rol,
-    cuentaId: context.operador.cuenta_id,
-    categoria: 'FINANZAS',
-    accion: 'CATEGORIA_RESTAURADA',
-    entidadTipo: 'finanzas_categorias',
-    entidadId: id,
-    meta: { nombre: row.nombre },
-    ip: context.ip,
-  }).catch(() => {})
-
-  return json({ ok: true, categoria: row }, 200, request)
-}
+// Handlers de categorías extraídos a finanzas.categorias.js (guardrail de líneas).
+export {
+  handleEliminarFinanzasCategoria,
+  handleRestaurarFinanzasCategoria,
+  handleGetFinanzasCategorias,
+  handleCrearFinanzasCategoria,
+} from './finanzas.categorias.js'
 
 export async function handleGetFinanzasResumen(request, env) {
   const context = await adminContext(request, env)
@@ -457,93 +386,6 @@ export async function handleGetFinanzasResumen(request, env) {
   if (!response.ok) return jsonError('No se pudo calcular el resumen financiero', 500, request)
   const rows = await response.json()
   return json({ resumen: summarizeRows(rows), filtros: filters }, 200, request)
-}
-
-export async function handleGetFinanzasCategorias(request, env) {
-  const context = await adminContext(request, env)
-  if (context.error) return context.error
-  const response = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?${accountFilter(context.operador.cuenta_id)}` +
-      '&activo=eq.true&select=id,nombre,tipo,activo&order=nombre.asc&limit=100',
-    { headers: serviceHeaders(env, 'return=minimal') },
-  )
-  if (!response.ok) return jsonError('No se pudieron cargar las categorías', 500, request)
-  const stored = await response.json()
-  const names = new Set(stored.map(category => category.nombre.toLowerCase()))
-  const defaults = DEFAULT_CATEGORIES
-    .filter(category => !names.has(category.nombre.toLowerCase()))
-    .map(category => ({ ...category, id: null, activo: true, predeterminada: true }))
-
-  // Papelera: categorías dadas de baja, recuperables desde el gestor.
-  const eliminadasRes = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?${accountFilter(context.operador.cuenta_id)}` +
-      '&activo=eq.false&select=id,nombre,tipo,activo&order=nombre.asc&limit=50',
-    { headers: serviceHeaders(env, 'return=minimal') },
-  )
-  const eliminadas = eliminadasRes.ok ? await eliminadasRes.json() : []
-
-  // Conteo de movimientos históricos por categoría (Opción A: preservación contable)
-  const movsRes = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?${accountFilter(context.operador.cuenta_id)}` +
-      '&select=categoria',
-    { headers: serviceHeaders(env, 'return=minimal') },
-  )
-  const movRows = movsRes.ok ? await movsRes.json().catch(() => []) : []
-  const conteos = {}
-  if (Array.isArray(movRows)) {
-    for (const m of movRows) {
-      if (m.categoria) {
-        const k = String(m.categoria).toLowerCase().trim()
-        conteos[k] = (conteos[k] || 0) + 1
-      }
-    }
-  }
-
-  const mapConConteos = list => list.map(c => ({
-    ...c,
-    movimientos_count: conteos[String(c.nombre || '').toLowerCase().trim()] || 0,
-  }))
-
-  return json({
-    categorias: mapConConteos([...stored, ...defaults]),
-    eliminadas: mapConConteos(Array.isArray(eliminadas) ? eliminadas : []),
-  }, 200, request)
-}
-
-export async function handleCrearFinanzasCategoria(request, env) {
-  const context = await adminContext(request, env)
-  if (context.error) return context.error
-  const parsed = await readBody(request)
-  if (parsed.error) return parsed.error
-  let category
-  try {
-    category = normalizeCategory(parsed.body)
-  } catch (error) {
-    return jsonError(error.message || 'Categoría inválida', 400, request)
-  }
-
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_categorias`, {
-    method: 'POST',
-    headers: serviceHeaders(env),
-    body: JSON.stringify({
-      cuenta_id: context.operador.cuenta_id,
-      nombre: category.nombre,
-      tipo: category.tipo,
-      creado_por: context.operador.id,
-    }),
-  })
-  if (!response.ok) {
-    const detail = (await response.text()).toLowerCase()
-    return jsonError(detail.includes('unique') ? 'La categoría ya existe' : 'No se pudo crear la categoría', detail.includes('unique') ? 409 : 500, request)
-  }
-  const [row] = await response.json()
-  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
-    usuarioId: context.operador.id, usuarioNombre: context.operador.nombre,
-    usuarioRol: context.operador.rol, cuentaId: context.operador.cuenta_id,
-    categoria: 'FINANZAS', accion: 'CATEGORIA_CREADA', entidadTipo: 'finanzas_categorias',
-    entidadId: row?.id || null, meta: { tipo: category.tipo }, ip: context.ip,
-  }).catch(() => {})
-  return json({ ok: true, categoria: row }, 201, request)
 }
 
 // Re-asignación masiva: fija cuenta_origen (cuenta de custodia) en movimientos

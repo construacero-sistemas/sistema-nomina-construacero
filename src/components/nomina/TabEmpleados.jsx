@@ -3,17 +3,20 @@
 import { useState, useMemo } from 'react'
 import {
   Users, Plus, Pencil, DollarSign, Clock, Briefcase, Search,
-  AlertTriangle, CalendarDays, Sparkles, Filter
+  AlertTriangle, CalendarDays, Sparkles, Filter, Trash2
 } from 'lucide-react'
-import { useNominaEmpleados, useConfigEmpleados } from '../../hooks/useNomina'
+import { useNominaEmpleados, useConfigEmpleados, useActualizarConfigEmpleado } from '../../hooks/useNomina'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
 import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
+import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import RateSelector from './RateSelector.jsx'
 import EmpleadoConfigModal from './EmpleadoConfigModal'
 import ComisionPagoModal from './ComisionPagoModal.jsx'
+import EmpleadoBajaModal from './EmpleadoBajaModal.jsx'
 import { formatRangoHoras12 } from '../../utils/timeUtils'
+import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 
 function fmt(n) {
   return (Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -30,8 +33,10 @@ export default function TabEmpleados({ esAdmin }) {
   const { data: configs = [], isLoading, isError, refetch } = useConfigEmpleados()
   const { data: clientes = [] } = useNominaEmpleados({ enabled: esAdmin })
   const { fmtBs, shortLabelTasa } = useMonedaNomina()
+  const actualizarConfig = useActualizarConfigEmpleado()
   const [modal, setModal] = useState(null)
   const [modalComision, setModalComision] = useState(null)
+  const [empleadoParaBaja, setEmpleadoParaBaja] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('todos') // 'todos' | 'fijos' | 'vendedores'
 
@@ -199,6 +204,7 @@ export default function TabEmpleados({ esAdmin }) {
               mostrarMontos={esAdmin}
               onEditar={() => setModal({ modo: 'editar', config: c })}
               onPagarComision={() => setModalComision(c)}
+              onDarDeBaja={() => setEmpleadoParaBaja(c)}
             />
           ))}
         </div>
@@ -220,13 +226,30 @@ export default function TabEmpleados({ esAdmin }) {
           onSuccess={() => refetch()}
         />
       )}
+
+      {empleadoParaBaja && (
+        <EmpleadoBajaModal
+          isOpen
+          empleado={empleadoParaBaja}
+          onClose={() => setEmpleadoParaBaja(null)}
+          onConfirm={async () => {
+            try {
+              await actualizarConfig.mutateAsync({ id: empleadoParaBaja.id, activo: false })
+              setEmpleadoParaBaja(null)
+            } catch (err) {
+              console.error('Error al dar de baja al empleado:', err)
+            }
+          }}
+          cargando={actualizarConfig.isPending}
+        />
+      )}
     </div>
   )
 }
 
-function EmpleadoNominaCard({ config, esAdmin, mostrarMontos = true, onEditar, onPagarComision }) {
+function EmpleadoNominaCard({ config, esAdmin, mostrarMontos = true, onEditar, onPagarComision, onDarDeBaja }) {
   const { fmtBs } = useMonedaNomina()
-  const nombre = config.empleado?.nombre || 'Sin nombre'
+  const nombre = capitalizarPalabras(config.empleado?.nombre) || 'Sin nombre'
   const salarioDia = Number(config.salario_dia_usd) || 0
   const esVendedorRol = esVendedor(config)
   const tarifaHora = salarioDia / (Number(config.horas_jornada) || 8)
@@ -319,14 +342,26 @@ function EmpleadoNominaCard({ config, esAdmin, mostrarMontos = true, onEditar, o
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={onEditar}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-slate-500 hover:text-sky-700 hover:bg-sky-50 transition-colors"
-          >
-            <Pencil size={12} />
-            <span>Configurar</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onDarDeBaja}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+              title="Dar de baja de la nómina"
+            >
+              <Trash2 size={12} />
+              <span className="hidden sm:inline">Baja</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onEditar}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-slate-500 hover:text-sky-700 hover:bg-sky-50 transition-colors"
+            >
+              <Pencil size={12} />
+              <span>Configurar</span>
+            </button>
+          </div>
         </div>
       )}
     </article>

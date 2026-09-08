@@ -88,4 +88,19 @@ describe('MovimientoTable — reversibilidad de anulaciones', () => {
     expect(screen.getAllByText(/80\.481,00 VES/i).length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText(/146\.550,00 VES/i).length).toBeGreaterThanOrEqual(1)
   })
+
+  it('no muestra USD falso cuando el movimiento VES llega sin tasa (muestra —)', () => {
+    // Regresión: con tasa_usd_ves ausente y tasaBcv=0, el fallback `|| 1`
+    // dividía el monto entre 1 y mostraba "31697,66 USD" para 31.697,66 Bs.
+    const movVesSinTasa = mkMov({
+      id: 'm-ves-sin-tasa',
+      moneda: 'VES',
+      monto: 31697.66,
+      tasa_ves: 1,
+      tasa_usd_ves: null,
+    })
+    render(<MovimientoTable movimientos={[movVesSinTasa]} />)
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText(/31\.697,66 USD/i)).not.toBeInTheDocument()
+  })
 })

@@ -277,10 +277,26 @@ export async function fetchPosVendedores(env) {
       return { ok: false, error: `Error consultando vendedores del POS (${res.status})` }
     }
     const data = await res.json()
-    return { ok: true, vendedores: Array.isArray(data) ? data : [] }
+    // Solo roles que realmente venden y cobran comisión pueden vincularse a Nómina.
+    // administracion/desarrollador/logistica/jefe no generan comisiones, y
+    // vendedor_sin_comision (cuentas corporativas tipo EMPRESA) tampoco. Las
+    // cuentas E2E (temporales de prueba) nunca deben aparecer en producción.
+    const ROLES_VENDEDOR_POS = new Set(['vendedor', 'supervisor'])
+    const vendedores = (Array.isArray(data) ? data : []).filter(u =>
+      ROLES_VENDEDOR_POS.has(String(u?.rol || '')) && !esCuentaE2ePos(u),
+    )
+    return { ok: true, vendedores }
   } catch (err) {
     return { ok: false, error: err.message }
   }
+}
+
+/** Detecta cuentas temporales de pruebas E2E del POS (prefijo E2E + código E2E). */
+export function esCuentaE2ePos(usuario) {
+  if (!usuario) return false
+  const nombre = String(usuario.nombre || '')
+  const codigo = String(usuario.codigo || '')
+  return /^e2e\b/i.test(nombre) || /\(E2E\)/i.test(nombre) || /^E2E-/i.test(codigo)
 }
 
 export async function fetchComisionesLiberadasPos(env, { posVendedorIds = [], desde, hasta }) {

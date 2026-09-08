@@ -14,6 +14,7 @@ import LiquidacionModal from './LiquidacionModal'
 import PagarNominaModal from './PagarNominaModal'
 import ImportarComisionesPosModal from './ImportarComisionesPosModal.jsx'
 import { logClientError } from '../../../compat/utils/errorLogger.js'
+import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 
 function fmt(n) {
   return (Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -198,7 +199,7 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
                       <tr key={l.id} className={`transition-colors ${l.pagado ? 'bg-emerald-50/20 hover:bg-emerald-50/30' : 'hover:bg-slate-50/60'}`}>
                         <td className="px-3.5 py-2.5">
                           <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                            <span>{l.empleado?.nombre || '—'}</span>
+                            <span>{capitalizarPalabras(l.empleado?.nombre) || '—'}</span>
                             {l.pagado && (
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-black">
                                 <CheckCircle2 size={10} className="text-emerald-700" />

@@ -1,6 +1,7 @@
 // src/components/nomina/LiquidacionModal.jsx
 // Ajuste manual de bonos y deducciones sobre el recibo calculado de un empleado.
-import { useState, useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 import { useAjustarLinea } from '../../hooks/useNomina'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 
@@ -56,7 +57,7 @@ export default function LiquidacionModal({ linea, onClose }) {
   return (
     <Modal
       isOpen onClose={onClose}
-      title={`Ajustar pago: ${linea.empleado?.nombre ?? 'empleado'}`}
+      title={`Ajustar pago: ${capitalizarPalabras(linea.empleado?.nombre) || 'empleado'}`}
       className="max-w-md">
       <div className="space-y-4">
         {error && (

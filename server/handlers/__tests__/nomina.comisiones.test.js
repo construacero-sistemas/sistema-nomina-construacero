@@ -17,10 +17,14 @@ vi.mock('../../lib/audit.js', () => ({
 const mockFetchPosVendedores = vi.fn()
 const mockFetchComisionesLiberadasPos = vi.fn()
 
-vi.mock('../../lib/posSyncHelper.js', () => ({
-  fetchPosVendedores: (...args) => mockFetchPosVendedores(...args),
-  fetchComisionesLiberadasPos: (...args) => mockFetchComisionesLiberadasPos(...args),
-}))
+vi.mock('../../lib/posSyncHelper.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    fetchPosVendedores: (...args) => mockFetchPosVendedores(...args),
+    fetchComisionesLiberadasPos: (...args) => mockFetchComisionesLiberadasPos(...args),
+  }
+})
 
 const H = await import('../nomina.comisiones.js')
 let mock
@@ -58,6 +62,28 @@ describe('nómina — comisiones POS', () => {
       expect(Array.isArray(body)).toBe(true)
       expect(body).toHaveLength(1)
       expect(body[0].nombre).toBe('Carlos Vendedor')
+    })
+
+    it('excluye desarrolladores, roles no comerciales y cuentas E2E del listado', async () => {
+      // Regresión: el desplegable de vinculación mostraba "Desarrollador (D-Z63T)"
+      // y cuentas temporales E2E del POS. Solo roles comerciales pueden vincularse.
+      const { esCuentaE2ePos } = await import('../../lib/posSyncHelper.js')
+      const data = [
+        { id: 'u1', nombre: 'Desarrollador', rol: 'desarrollador', codigo: 'D-Z63T' },
+        { id: 'u2', nombre: 'E2E Vendedor Temporal', rol: 'vendedor', codigo: 'V-XAQ3' },
+        { id: 'u3', nombre: 'LOGISTICA', rol: 'logistica', codigo: 'L-9PWZ' },
+        { id: 'u4', nombre: 'ADMINISTRADOR', rol: 'administracion', codigo: 'A-RJZF' },
+        { id: 'u5', nombre: 'Edgar Ramírez', rol: 'vendedor', codigo: 'V-AZPZ' },
+        { id: 'u6', nombre: 'EMPRESA', rol: 'vendedor_sin_comision', codigo: 'V-JBUW' },
+        { id: 'u7', nombre: 'Niki Ramírez', rol: 'supervisor', codigo: 'S-GNC5' },
+      ]
+      const filtrados = data.filter(u =>
+        ['vendedor', 'supervisor'].includes(u.rol) && !esCuentaE2ePos(u),
+      )
+      expect(filtrados.map(u => u.nombre)).toEqual(['Edgar Ramírez', 'Niki Ramírez'])
+      // El helper de E2E detecta por nombre y por código.
+      expect(esCuentaE2ePos({ nombre: 'E2E Supervisor Temporal', codigo: 'S-W856' })).toBe(true)
+      expect(esCuentaE2ePos({ nombre: 'Vendedor Real', codigo: 'V-AZPZ' })).toBe(false)
     })
 
     it('retorna 502 si falla la conexión con el POS', async () => {
