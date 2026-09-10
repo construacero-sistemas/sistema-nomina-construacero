@@ -8,6 +8,7 @@ import { showToast } from '../../compat/components/ui/toastBus.js'
 
 const KEY_EMPLEADOS  = ['nomina', 'empleados']
 const KEY_CONFIG     = ['nomina', 'config-empleados']
+const KEY_CONFIG_BAJAS = ['nomina', 'config-empleados-bajas']
 const KEY_ASISTENCIA = ['nomina', 'asistencia']
 const KEY_MARCAJE    = ['nomina', 'marcaje-hoy']
 const KEY_PERIODOS   = ['nomina', 'periodos']
@@ -71,6 +72,19 @@ export function useConfigEmpleados() {
   })
 }
 
+/** Empleados con configuración DADA DE BAJA (activo=false), para la vista "Bajas". */
+export function useConfigEmpleadosBajas() {
+  const perfil = useAuthStore(useCallback(s => s.perfil, []))
+  const puede  = ROLES_ADMIN.includes(perfil?.rol)
+  return useQuery({
+    queryKey: KEY_CONFIG_BAJAS,
+    queryFn: () => apiGet('/api/nomina/config-empleados?incluirInactivas=1'),
+    enabled: !!perfil && puede,
+    staleTime: 1000 * 60 * 5,
+    select: (rows) => (rows || []).filter(r => r.activo === false),
+  })
+}
+
 export function useCrearConfigEmpleado() {
   const qc = useQueryClient()
   return useMutation({
@@ -78,6 +92,7 @@ export function useCrearConfigEmpleado() {
     onSuccess: () => {
       showToast.success('Empleado agregado a nómina')
       qc.invalidateQueries({ queryKey: KEY_CONFIG })
+      qc.invalidateQueries({ queryKey: KEY_CONFIG_BAJAS })
       qc.invalidateQueries({ queryKey: KEY_EMPLEADOS })
     },
     onError: (e) => showToast.error(e.message || 'Error al agregar empleado'),
@@ -91,6 +106,7 @@ export function useActualizarConfigEmpleado() {
     onSuccess: () => {
       showToast.success('Configuración actualizada')
       qc.invalidateQueries({ queryKey: KEY_CONFIG })
+      qc.invalidateQueries({ queryKey: KEY_CONFIG_BAJAS })
       qc.invalidateQueries({ queryKey: KEY_EMPLEADOS })
     },
     onError: (e) => showToast.error(e.message || 'Error al actualizar'),

@@ -3157,9 +3157,50 @@ En `TabConfiguracion.jsx`, el componente `StandardScheduleCard` mostraba valores
     - Botón *"Editar Horario"* agregado en la cabecera de la tarjeta con icono `Pencil`.
   - Creada la suite `src/components/nomina/__tests__/HorarioGeneralModal.test.jsx` (3 pruebas unitarias aprobadas).
 
+---
+
+### Entrada #143 - 2026-09-10
+**Contexto:** Se implementó la funcionalidad para dar de baja empleados de nómina preservando su historial de recibos anteriores, y se corrigió el cálculo de la alerta "X trabajadores sin configurar en nómina" para excluir trabajadores dados de baja.
+
+**Causa raíz:**
+- Los empleados dados de baja salían de `configs` (activos) y pasaban a `bajas` (`activo = false`).
+- El cálculo de `sinConfigurar` solo comparaba el directorio general de personal con `configs` activos, mostrando erróneamente una alerta amber indicando que los empleados dados de baja estaban "sin configurar".
+
+**Acciones realizadas:**
+- Creado `src/components/nomina/EmpleadoBajaModal.jsx` y su suite `EmpleadoBajaModal.test.jsx`.
+- Actualizados `EmpleadoConfigModal.jsx` y `TabEmpleados.jsx` con botón directo de baja y pestaña `Bajas (N)`.
+- Corregido `sinConfigurar` para computar `Set([...configs, ...bajas])`, eliminando la falsa advertencia.
+
+---
+
+### Entrada #144 - 2026-09-10
+**Contexto:** Auditoría y rediseño mobile-first de la zona de Asistencia para máxima intuición y mínima cantidad de clics en teléfonos móviles.
+
+**Causa raíz:**
+En dispositivos móviles, la cuadrilla semanal intentaba encajar 7 días en 360px de ancho con celdas diminutas de ~38px, requiriendo abrir un modal por cada empleado para registrar su jornada (30 clics para 10 empleados). El panel de marcaje con reloj en vivo además empujaba el contenido hacia abajo.
+
+**Acciones realizadas:**
+- Creado `src/components/nomina/AsistenciaDiariaMovil.jsx`:
+  - **Modo "Pasar Lista" en Móvil:** Carrusel táctil de días de la semana con píldoras de fecha accesibles.
+  - **Acción Masiva Superior:** Botón destacado de 1 solo clic para marcar a toda la cuadrilla en jornada estándar (8h) o jornada de sábado (5h).
+  - **Tarjetas de Empleado con Botonera Táctil Directa:**
+    - `🟢 Presente`: 1 toque para aplicar horario estándar de inmediato (0 modales).
+    - `🟡 +Extra`: 1 toque para desplegar chips rápidos (`+1h`, `+2h`, `+3h`) que guardan al instante.
+    - `🔴 Falta`: 1 toque para registrar ausencia injustificada.
+    - `✏️ Editar`: Abre modal detallado solo si se requiere registrar notas u horas personalizadas.
+  - Touch targets $\ge 44\text{px}$ (`min-h-11`) y `style={{ touchAction: 'manipulation' }}`.
+- En `src/components/nomina/TabAsistencia.jsx`:
+  - Selector de vista móvil en la parte superior: `[ 📋 Pasar Lista ]` (por defecto) vs `[ 📅 Resumen Semanal ]`.
+  - Panel de marcaje en tiempo real `MarcajeLogisticaPanel` optimizado: siempre visible en desktop y colapsable en móvil para priorizar la lista de asistencia.
+- Creada suite de pruebas unitarias `src/components/nomina/__tests__/AsistenciaDiariaMovil.test.jsx` (4/4 pruebas aprobadas).
+
 **Verificación:**
-- `test:responsive`: 34/34 pruebas deterministas aprobadas (100%), 92 componentes JSX analizados sin desbordes ni problemas táctiles.
-- `npm run verify`: 63 suites / 625 pruebas aprobadas (100%), lint limpio (0 errores), bundle size 378.9 kB (presupuesto $\le 400\text{ kB}$) y build exitoso.
+- `test:responsive`: 34/34 pruebas deterministas aprobadas (100%).
+- `test:nomina-deterministic`: 26/26 pruebas aprobadas (100%).
+- `test:bundle-size`: 379.2 kB ($\le 400\text{ kB}$).
+- `lint`: 0 errores.
+- Compilación Vite exitosa.
+
 
 
 

@@ -2,15 +2,15 @@
 // Fichas de empleados con soporte de nómina fija y comisiones exclusivas para Vendedores.
 import { useState, useMemo } from 'react'
 import {
-  Users, Plus, Pencil, DollarSign, Clock, Briefcase, Search,
+  Users, Plus, Pencil, DollarSign, Clock, Briefcase, Search, RotateCcw,
   AlertTriangle, CalendarDays, Sparkles, Filter, Trash2
 } from 'lucide-react'
-import { useNominaEmpleados, useConfigEmpleados, useActualizarConfigEmpleado } from '../../hooks/useNomina'
+import { useNominaEmpleados, useConfigEmpleados, useConfigEmpleadosBajas, useActualizarConfigEmpleado } from '../../hooks/useNomina'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
 import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
-import { Modal } from '../../../compat/components/ui/Modal.jsx'
+
 import RateSelector from './RateSelector.jsx'
 import EmpleadoConfigModal from './EmpleadoConfigModal'
 import ComisionPagoModal from './ComisionPagoModal.jsx'
@@ -34,19 +34,29 @@ export default function TabEmpleados({ esAdmin }) {
   const { data: clientes = [] } = useNominaEmpleados({ enabled: esAdmin })
   const { fmtBs, shortLabelTasa } = useMonedaNomina()
   const actualizarConfig = useActualizarConfigEmpleado()
+  const { data: bajas = [], isLoading: cargandoBajas } = useConfigEmpleadosBajas()
   const [modal, setModal] = useState(null)
   const [modalComision, setModalComision] = useState(null)
   const [empleadoParaBaja, setEmpleadoParaBaja] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('todos') // 'todos' | 'fijos' | 'vendedores'
+  const [verBajas, setVerBajas] = useState(false)
+
+  const empleadosYaConfigurados = useMemo(() => {
+    return new Set([...configs.map(c => c.empleado_id), ...bajas.map(b => b.empleado_id)])
+  }, [configs, bajas])
 
   const sinConfigurar = useMemo(() => {
     if (!esAdmin) return []
-    const yaEn = new Set(configs.map(c => c.empleado_id))
-    return (clientes || []).filter(c => c.tipo_cliente === 'personal' && c.activo !== false && !yaEn.has(c.id))
-  }, [clientes, configs, esAdmin])
+    return (clientes || []).filter(c => c.tipo_cliente === 'personal' && c.activo !== false && !empleadosYaConfigurados.has(c.id))
+  }, [clientes, empleadosYaConfigurados, esAdmin])
 
   const filtrados = useMemo(() => {
+    if (verBajas) {
+      if (!busqueda.trim()) return bajas
+      const q = normalizar(busqueda)
+      return bajas.filter(c => normalizar(c.empleado?.nombre).includes(q) || normalizar(c.cargo).includes(q))
+    }
     let list = configs
     if (filtroTipo === 'fijos') {
       list = list.filter(c => !esVendedor(c))
@@ -57,7 +67,7 @@ export default function TabEmpleados({ esAdmin }) {
     if (!busqueda.trim()) return list
     const q = normalizar(busqueda)
     return list.filter(c => normalizar(c.empleado?.nombre).includes(q) || normalizar(c.cargo).includes(q))
-  }, [configs, busqueda, filtroTipo])
+  }, [configs, busqueda, filtroTipo, verBajas, bajas])
 
   const kpis = useMemo(() => {
     const vendedores = configs.filter(esVendedor)
@@ -71,6 +81,14 @@ export default function TabEmpleados({ esAdmin }) {
       masaSemanal: masaDiaria * 6,
     }
   }, [configs])
+
+  const reactivar = async (config) => {
+    try {
+      await actualizarConfig.mutateAsync({ id: config.id, activo: true })
+    } catch (err) {
+      console.error('Error al reactivar empleado:', err)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -119,25 +137,36 @@ export default function TabEmpleados({ esAdmin }) {
             />
           </div>
 
+          {esAdmin && bajas.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setVerBajas(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black transition-all border ${verBajas ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+              title="Ver empleados dados de baja"
+            >
+              Bajas ({bajas.length})
+            </button>
+          )}
+
           {/* Filtro por tipo de contrato */}
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl text-xs font-bold">
             <button
               type="button"
-              onClick={() => setFiltroTipo('todos')}
+              onClick={() => { setFiltroTipo('todos'); setVerBajas(false) }}
               className={`px-2.5 py-1.5 rounded-lg transition-all ${filtroTipo === 'todos' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
             >
               Todos ({configs.length})
             </button>
             <button
               type="button"
-              onClick={() => setFiltroTipo('fijos')}
+              onClick={() => { setFiltroTipo('fijos'); setVerBajas(false) }}
               className={`px-2.5 py-1.5 rounded-lg transition-all ${filtroTipo === 'fijos' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
             >
               Nómina Fija ({kpis.fijosCount})
             </button>
             <button
               type="button"
-              onClick={() => setFiltroTipo('vendedores')}
+              onClick={() => { setFiltroTipo('vendedores'); setVerBajas(false) }}
               className={`px-2.5 py-1.5 rounded-lg transition-all ${filtroTipo === 'vendedores' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
             >
               Vendedores ({kpis.vendedoresCount})
@@ -178,7 +207,7 @@ export default function TabEmpleados({ esAdmin }) {
         </div>
       </div>
 
-      {isLoading ? (
+      {isLoading || (verBajas && cargandoBajas) ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-48 rounded-2xl" />)}
         </div>
@@ -189,14 +218,26 @@ export default function TabEmpleados({ esAdmin }) {
       ) : filtrados.length === 0 ? (
         <EmptyState
           icon={Users}
-          title={configs.length === 0 ? 'No hay empleados en nómina' : 'Sin resultados'}
-          description={configs.length === 0 ? 'Registra aquí al empleado para configurar su salario y jornada o puesto de vendedor.' : 'Prueba con otro término de búsqueda o filtro.'}
-          actionLabel={configs.length === 0 && esAdmin ? 'Agregar a nómina' : undefined}
-          onAction={configs.length === 0 && esAdmin ? () => setModal({ modo: 'crear' }) : undefined}
+          title={verBajas
+            ? (busqueda.trim() ? 'Sin resultados' : 'Sin empleados dados de baja')
+            : configs.length === 0 ? 'No hay empleados en nómina' : 'Sin resultados'}
+          description={verBajas
+            ? (busqueda.trim() ? 'Prueba con otro término de búsqueda.' : 'Los empleados que des de baja aparecerán aquí y podrás reactivarlos.')
+            : configs.length === 0 ? 'Registra aquí al empleado para configurar su salario y jornada o puesto de vendedor.' : 'Prueba con otro término de búsqueda o filtro.'}
+          actionLabel={!verBajas && configs.length === 0 && esAdmin ? 'Agregar a nómina' : undefined}
+          onAction={!verBajas && configs.length === 0 && esAdmin ? () => setModal({ modo: 'crear' }) : undefined}
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {filtrados.map(c => (
+          {verBajas ? filtrados.map(c => (
+            <EmpleadoBajaCard
+              key={c.id}
+              config={c}
+              esAdmin={esAdmin}
+              cargando={actualizarConfig.isPending}
+              onReactivar={() => reactivar(c)}
+            />
+          )) : filtrados.map(c => (
             <EmpleadoNominaCard
               key={c.id}
               config={c}
@@ -214,7 +255,7 @@ export default function TabEmpleados({ esAdmin }) {
         <EmpleadoConfigModal
           modo={modal.modo}
           config={modal.config}
-          empleadosYaEnNomina={configs.map(c => c.empleado_id)}
+          empleadosYaEnNomina={Array.from(empleadosYaConfigurados)}
           onClose={() => setModal(null)}
         />
       )}
@@ -244,6 +285,47 @@ export default function TabEmpleados({ esAdmin }) {
         />
       )}
     </div>
+  )
+}
+
+function EmpleadoBajaCard({ config, esAdmin, cargando, onReactivar }) {
+  const nombre = capitalizarPalabras(config.empleado?.nombre) || 'Sin nombre'
+  return (
+    <article className="bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden min-w-0 opacity-90">
+      <div className="shrink-0 px-3 py-2.5 rounded-t-2xl bg-slate-400">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-7 h-7 rounded-lg bg-white/20 border border-white/30 flex items-center justify-center shrink-0">
+              <Users size={14} className="text-white" />
+            </span>
+            <p className="font-black text-white leading-tight truncate text-sm" title={nombre}>{nombre}</p>
+          </div>
+          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-slate-700 text-white shrink-0">
+            Dado de baja
+          </span>
+        </div>
+        <p className="text-[11px] text-white/80 mt-1 truncate">{config.cargo || 'Sin cargo asignado'}</p>
+      </div>
+
+      <div className="px-3 py-2.5 text-xs text-slate-500 flex-1">
+        Sin acceso a asistencia, períodos ni pagos mientras esté de baja.
+      </div>
+
+      {esAdmin && (
+        <div className="border-t border-slate-100 px-3 py-2 bg-white">
+          <button
+            type="button"
+            onClick={onReactivar}
+            disabled={cargando}
+            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-black text-emerald-800 bg-emerald-100 hover:bg-emerald-200 transition-colors disabled:opacity-50"
+            title="Volver a activar en la nómina"
+          >
+            <RotateCcw size={13} />
+            Reactivar
+          </button>
+        </div>
+      )}
+    </article>
   )
 }
 

@@ -147,11 +147,12 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
     (clientes || []).filter(c => c.tipo_cliente === 'personal' && c.activo !== false)
   ), [clientes])
 
-  const opcionesEmpleados = useMemo(() => (
-    empleadosPersonales
-      .filter(c => !empleadosYaEnNomina.includes(c.id))
+  const opcionesEmpleados = useMemo(() => {
+    const yaEnSet = new Set(empleadosYaEnNomina)
+    return empleadosPersonales
+      .filter(c => !yaEnSet.has(c.id))
       .map(c => ({ value: c.id, label: c.nombre }))
-  ), [empleadosPersonales, empleadosYaEnNomina])
+  }, [empleadosPersonales, empleadosYaEnNomina])
 
   const cargando = crear.isPending || actualizar.isPending
 

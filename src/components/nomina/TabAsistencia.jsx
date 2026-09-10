@@ -1,7 +1,7 @@
 // src/components/nomina/TabAsistencia.jsx
 // Grilla semanal de asistencia visual e intuitiva con marcaje rápido masivo.
 import { useState, useMemo } from 'react'
-import { ChevronLeft, ChevronRight, CalendarClock, Users, Clock, CalendarPlus, Sparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarClock, Users, Clock, CalendarPlus, Sparkles, ChevronDown } from 'lucide-react'
 import { useConfigEmpleados, useAsistencia, useFeriados } from '../../hooks/useNomina'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
@@ -10,6 +10,7 @@ import HorizontalScroll from '../../../compat/components/ui/HorizontalScroll.jsx
 import AsistenciaModal from './AsistenciaModal'
 import AsistenciaMasivaModal from './AsistenciaMasivaModal'
 import MarcajeLogisticaPanel from './MarcajeLogisticaPanel'
+import AsistenciaDiariaMovil from './AsistenciaDiariaMovil'
 
 const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
@@ -34,6 +35,9 @@ export default function TabAsistencia({ esAdmin }) {
   const [inicioSemana, setInicioSemana] = useState(() => lunesDe(new Date()))
   const [modal, setModal]             = useState(null) // { empleado, fecha, registro }
   const [modalMasivo, setModalMasivo] = useState(null) // fecha
+  const [modoVistaMovil, setModoVistaMovil] = useState('diario') // 'diario' | 'semanal'
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(() => iso(new Date()))
+  const [verRelojMovil, setVerRelojMovil] = useState(false)
 
   // 7 días desde el lunes
   const dias = useMemo(() => {
@@ -79,6 +83,14 @@ export default function TabAsistencia({ esAdmin }) {
     const d = new Date(inicioSemana)
     d.setDate(d.getDate() + delta * 7)
     setInicioSemana(d)
+
+    const nuevoLunes = d
+    const nuevoDomingo = new Date(d)
+    nuevoDomingo.setDate(nuevoDomingo.getDate() + 6)
+    const fSel = new Date(`${fechaSeleccionada}T12:00:00`)
+    if (fSel < nuevoLunes || fSel > nuevoDomingo) {
+      setFechaSeleccionada(iso(nuevoLunes))
+    }
   }
 
   const esSemanaActual = iso(lunesDe(new Date())) === desde
@@ -86,7 +98,65 @@ export default function TabAsistencia({ esAdmin }) {
 
   return (
     <div className="space-y-4">
-      <MarcajeLogisticaPanel />
+      {/* Reloj operativo en vivo (en desktop siempre visible; en móvil colapsable para ahorrar espacio) */}
+      <div className="hidden md:block">
+        <MarcajeLogisticaPanel />
+      </div>
+
+      {esAdmin && (
+        <div className="block md:hidden">
+          <button
+            type="button"
+            onClick={() => setVerRelojMovil(v => !v)}
+            style={{ touchAction: 'manipulation' }}
+            className="w-full min-h-11 px-3.5 py-2.5 rounded-2xl border border-slate-200 bg-white text-slate-700 text-xs font-bold flex items-center justify-between shadow-2xs hover:bg-slate-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Clock size={15} className="text-primary" />
+              <span>Reloj en tiempo real (Entrada / Salida)</span>
+            </div>
+            <div className="flex items-center gap-1 text-slate-400 text-[11px]">
+              <span>{verRelojMovil ? 'Ocultar' : 'Abrir'}</span>
+              <ChevronDown size={14} className={`transition-transform duration-200 ${verRelojMovil ? 'rotate-180' : ''}`} />
+            </div>
+          </button>
+          {verRelojMovil && (
+            <div className="pt-2">
+              <MarcajeLogisticaPanel />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Selector de Modo en Móvil: Pasar Lista vs Resumen Semanal */}
+      <div className="flex md:hidden items-center gap-1 p-1 bg-slate-100 rounded-2xl">
+        <button
+          type="button"
+          onClick={() => setModoVistaMovil('diario')}
+          style={{ touchAction: 'manipulation' }}
+          className={`flex-1 min-h-11 py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+            modoVistaMovil === 'diario'
+              ? 'bg-white text-slate-900 shadow-xs'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Sparkles size={14} className={modoVistaMovil === 'diario' ? 'text-primary' : 'text-slate-400'} />
+          <span>Pasar Lista</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setModoVistaMovil('semanal')}
+          style={{ touchAction: 'manipulation' }}
+          className={`flex-1 min-h-11 py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+            modoVistaMovil === 'semanal'
+              ? 'bg-white text-slate-900 shadow-xs'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <CalendarClock size={14} className={modoVistaMovil === 'semanal' ? 'text-primary' : 'text-slate-400'} />
+          <span>Resumen Semanal</span>
+        </button>
+      </div>
 
       {/* KPIs de la semana */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -97,7 +167,7 @@ export default function TabAsistencia({ esAdmin }) {
       </div>
 
       {/* Barra de Navegación y Acciones Rápidas */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+      <div className={`${modoVistaMovil === 'diario' ? 'hidden md:flex' : 'flex'} flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5`}>
         {/* Navegación semanal */}
         <div className="flex items-center justify-between sm:justify-start gap-1.5 bg-white border border-slate-200 rounded-2xl p-1 shadow-xs">
           <button onClick={() => moverSemana(-1)} aria-label="Semana anterior"
@@ -157,71 +227,87 @@ export default function TabAsistencia({ esAdmin }) {
         />
       ) : (
         <>
-          {/* ═══ VISTA MÓVIL: Tarjetas por Empleado con 7 Días Fluidos (CERO SCROLL HORIZONTAL) ═══ */}
-          <div className="block md:hidden space-y-3">
-            {empleados.map(emp => {
-              const totalHoras = dias.reduce((s, d) => {
-                const r = indice.get(`${emp.empleado_id}|${iso(d)}`)
-                return s + Number(r?.horas_trabajadas || 0)
-              }, 0)
+          {/* ═══ VISTA MÓVIL: Modo Diario (Pasar Lista) o Modo Semanal ═══ */}
+          <div className="block md:hidden">
+            {modoVistaMovil === 'diario' ? (
+              <AsistenciaDiariaMovil
+                empleados={empleados}
+                registrosPorEmpleado={indice}
+                feriadoDelDia={feriadosPorFecha.get(fechaSeleccionada)}
+                fechaSeleccionada={fechaSeleccionada}
+                onCambiarFecha={setFechaSeleccionada}
+                diasSemana={dias}
+                onMoverSemana={moverSemana}
+                esAdmin={esAdmin}
+                onAbrirDetalle={setModal}
+              />
+            ) : (
+              <div className="space-y-3">
+                {empleados.map(emp => {
+                  const totalHoras = dias.reduce((s, d) => {
+                    const r = indice.get(`${emp.empleado_id}|${iso(d)}`)
+                    return s + Number(r?.horas_trabajadas || 0)
+                  }, 0)
 
-              return (
-                <div key={emp.id} className="bg-white border border-slate-200/90 rounded-2xl p-3 shadow-xs space-y-2.5">
-                  {/* Cabecera del Empleado */}
-                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                    <div className="min-w-0 flex-1">
-                      <h4 className="text-xs font-black text-slate-800 truncate">
-                        {emp.empleado?.nombre || '—'}
-                      </h4>
-                      <p className="text-[10px] text-slate-400 font-medium truncate">
-                        {emp.cargo || 'Personal'}
-                      </p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <span className="text-[9px] font-bold text-slate-400 block uppercase">Total</span>
-                      <span className="text-xs font-black text-primary bg-primary/10 px-2 py-0.5 rounded-lg inline-block">
-                        {totalHoras > 0 ? `${totalHoras.toFixed(1)}h` : '0h'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Cuadrícula de los 7 días (ajustada al 100% de la pantalla sin scroll) */}
-                  <div className="grid grid-cols-7 gap-1">
-                    {dias.map(d => {
-                      const fecha = iso(d)
-                      const reg = indice.get(`${emp.empleado_id}|${fecha}`)
-                      const esHoy = fecha === hoyIso
-                      const feriado = feriadosPorFecha.get(fecha)
-                      const finde = d.getDay() === 0 || d.getDay() === 6
-
-                      return (
-                        <div key={fecha} className="flex flex-col items-center gap-1 min-w-0">
-                          <div className={`text-center leading-none ${
-                            esHoy ? 'text-primary font-black' : finde ? 'text-amber-600 font-bold' : 'text-slate-500 font-bold'
-                          }`}>
-                            <span className="text-[9px] uppercase block">{DIAS[d.getDay()]}</span>
-                            <span className="text-[10px] block">{d.getDate()}</span>
-                          </div>
-                          <CeldaAsistencia
-                            registro={reg}
-                            feriado={feriado}
-                            esFinde={finde}
-                            esSabado={d.getDay() === 6}
-                            isMobile={true}
-                            onClick={() => setModal({
-                              empleado: emp,
-                              fecha,
-                              registro: reg,
-                              feriado,
-                            })}
-                          />
+                  return (
+                    <div key={emp.id} className="bg-white border border-slate-200/90 rounded-2xl p-3 shadow-xs space-y-2.5">
+                      {/* Cabecera del Empleado */}
+                      <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-xs font-black text-slate-800 truncate">
+                            {emp.empleado?.nombre || '—'}
+                          </h4>
+                          <p className="text-[10px] text-slate-400 font-medium truncate">
+                            {emp.cargo || 'Personal'}
+                          </p>
                         </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })}
+                        <div className="shrink-0 text-right">
+                          <span className="text-[9px] font-bold text-slate-400 block uppercase">Total</span>
+                          <span className="text-xs font-black text-primary bg-primary/10 px-2 py-0.5 rounded-lg inline-block">
+                            {totalHoras > 0 ? `${totalHoras.toFixed(1)}h` : '0h'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Cuadrícula de los 7 días (ajustada al 100% de la pantalla sin scroll) */}
+                      <div className="grid grid-cols-7 gap-1">
+                        {dias.map(d => {
+                          const fecha = iso(d)
+                          const reg = indice.get(`${emp.empleado_id}|${fecha}`)
+                          const esHoy = fecha === hoyIso
+                          const feriado = feriadosPorFecha.get(fecha)
+                          const finde = d.getDay() === 0 || d.getDay() === 6
+
+                          return (
+                            <div key={fecha} className="flex flex-col items-center gap-1 min-w-0">
+                              <div className={`text-center leading-none ${
+                                esHoy ? 'text-primary font-black' : finde ? 'text-amber-600 font-bold' : 'text-slate-500 font-bold'
+                              }`}>
+                                <span className="text-[9px] uppercase block">{DIAS[d.getDay()]}</span>
+                                <span className="text-[10px] block">{d.getDate()}</span>
+                              </div>
+                              <CeldaAsistencia
+                                registro={reg}
+                                feriado={feriado}
+                                esFinde={finde}
+                                esSabado={d.getDay() === 6}
+                                isMobile={true}
+                                onClick={() => setModal({
+                                  empleado: emp,
+                                  fecha,
+                                  registro: reg,
+                                  feriado,
+                                })}
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* ═══ VISTA DESKTOP: Tabla Matricial Completa ═══ */}
