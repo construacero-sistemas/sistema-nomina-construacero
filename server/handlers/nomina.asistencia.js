@@ -13,6 +13,7 @@ import {
   svcHeaders,
   tenantGuard,
   textoNominaValido,
+  fetchConfigNomina,
 } from './nomina.shared.js'
 
 export async function handleGetAsistencia(request, env) {
@@ -151,10 +152,27 @@ export async function handleMarcarSalida(request, env) {
   if (!existing.row?.hora_entrada) return jsonError('No existe una entrada marcada hoy', 409, request)
   if (existing.row.salida_idempotency_key === idempotencyKey.trim()) return json({ ok: true, idempotente: true, registro: existing.row }, 200, request)
   if (existing.row.hora_salida) return jsonError('El empleado ya tiene salida marcada hoy', 409, request)
-  if (String(existing.row.hora_entrada).slice(0, 5) === mark.hora.slice(0, 5)) return jsonError('La salida no puede ser igual a la entrada', 400, request)
+  const dow = new Date(`${mark.fecha}T12:00:00`).getDay()
+  const esSabado = dow === 6
+  let descanso = 0
+  if (!esSabado) {
+    const configNomina = await fetchConfigNomina(env, headers, operador.cuenta_id)
+    descanso = Number(configNomina?.nomina_horas_descanso != null ? configNomina.nomina_horas_descanso : 1.0)
+  }
   let calculation
-  try { calculation = calcularCamposAsistencia(mark.fecha, existing.row.hora_entrada, mark.hora, Number(config.horas_jornada) || 8, !!(existing.row.es_feriado || holiday.row), false) } catch (error) { return jsonError(error.message || 'Horas inválidas', 400, request) }
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?id=eq.${existing.row.id}${nominaTenantFilter(operador.cuenta_id)}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_feriado,es_ausencia,estado_marcaje,nota`, { method: 'PATCH', headers: { ...svcHeaders(env), Prefer: 'return=representation' }, body: JSON.stringify({ ...calculation, hora_salida: mark.hora, estado_marcaje: 'completo', salida_marcada_en: mark.marcadoEn, salida_por: operador.id, salida_idempotency_key: idempotencyKey.trim(), registrado_por: operador.id, nota: nota || existing.row.nota || null }) })
+  try {
+    calculation = calcularCamposAsistencia(
+      mark.fecha,
+      existing.row.hora_entrada,
+      mark.hora,
+      Number(config.horas_jornada) || 8,
+      !!(existing.row.es_feriado || holiday.row),
+      false,
+      descanso
+    )
+  } catch (error) { return jsonError(error.message || 'Horas inválidas', 400, request) }
+  const { horas_descanso: _hd, ...calcCampos } = calculation
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?id=eq.${existing.row.id}${nominaTenantFilter(operador.cuenta_id)}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_feriado,es_ausencia,estado_marcaje,nota`, { method: 'PATCH', headers: { ...svcHeaders(env), Prefer: 'return=representation' }, body: JSON.stringify({ ...calcCampos, hora_salida: mark.hora, estado_marcaje: 'completo', salida_marcada_en: mark.marcadoEn, salida_por: operador.id, salida_idempotency_key: idempotencyKey.trim(), registrado_por: operador.id, nota: nota || existing.row.nota || null }) })
   if (!response.ok) return jsonError('No se pudo registrar la salida', 409, request)
   const [registro] = await response.json()
   registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'MARCAR_SALIDA', entidadTipo: 'registro_asistencia', entidadId: existing.row.id, meta: { empleadoId, fecha: mark.fecha }, ip }).catch(() => {})

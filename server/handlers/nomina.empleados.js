@@ -40,12 +40,13 @@ export async function handleGetConfigEmpleados(request, env) {
   // incluirInactivas=1: incluye también los dados de baja (vista "Bajas" de la UI).
   // Sin el flag el listado queda limitado a activos, como siempre.
   const incluirInactivas = new URL(request.url).searchParams.get('incluirInactivas') === '1'
-  const filtroActivo = incluirInactivas ? '' : 'activo=eq.true&'
+  const tenantFilter = nominaTenantFilter(operador.cuenta_id)
+  const queryFilters = incluirInactivas ? tenantFilter.slice(1) : `activo=eq.true${tenantFilter}`
   const selectConfig = ROLES_NOMINA.includes(operador.rol)
     ? 'id,empleado_id,cargo,fecha_ingreso,salario_dia_usd,horas_jornada,hora_inicio,hora_fin,activo,pos_vendedor_id'
     : 'id,empleado_id,cargo,fecha_ingreso,horas_jornada,hora_inicio,hora_fin,activo,pos_vendedor_id'
   const response = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?${filtroActivo}${nominaTenantFilter(operador.cuenta_id)}` +
+    `${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?${queryFilters}` +
       `&select=${selectConfig},empleado:clientes!empleado_id(id,nombre,tipo_cliente)&order=empleado(nombre).asc&limit=500`,
     { headers },
   )

@@ -69,7 +69,8 @@ export async function fetchConfigNomina(env, headers, cuentaId) {
   try {
     const res = await fetch(`${env.SUPABASE_URL}/rest/v1/configuracion_negocio?limit=1${filtro}` +
       '&select=nomina_factor_hora_extra,nomina_factor_sabado,nomina_factor_feriado,' +
-      'nomina_monto_hora_extra_usd,nomina_monto_sabado_usd,nomina_monto_feriado_usd,nomina_feriado_modo,nomina_tipo_periodo', { headers })
+      'nomina_monto_hora_extra_usd,nomina_monto_sabado_usd,nomina_monto_feriado_usd,nomina_feriado_modo,nomina_tipo_periodo,' +
+      'nomina_horas_descanso,nomina_horas_jornada,nomina_hora_inicio,nomina_hora_fin', { headers })
     if (res.ok) {
       const [cfg] = await res.json()
       if (cfg) return cfg
@@ -80,5 +81,7 @@ export async function fetchConfigNomina(env, headers, cuentaId) {
   return {
     nomina_factor_hora_extra: 1.5, nomina_factor_sabado: 1.25, nomina_factor_feriado: 2.0,
     nomina_feriado_modo: 'factor',
+    nomina_horas_descanso: 1.0,
+    nomina_horas_jornada: 8.0,
   }
 }

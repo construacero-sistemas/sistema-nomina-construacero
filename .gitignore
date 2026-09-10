@@ -18,3 +18,6 @@ supabase/.temp/
 # Archivos locales que no pertenecen al repo
 Reporte_Ventas_*.pdf
 skills-lock.json
+*.mp4
+RESTAURAR_CONVERSACIONES.bat
+scripts/restaurar_conversaciones.py

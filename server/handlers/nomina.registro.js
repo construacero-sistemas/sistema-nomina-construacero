@@ -4,7 +4,7 @@ import { validateOperator } from '../lib/auth.js'
 import { registrarAuditoria } from '../lib/audit.js'
 import { calcularCamposAsistencia } from '../lib/nominaUtils.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
-import { ROLES_ADMIN, ROLES_VER, booleanNominaValido, fechaNominaValida, horasEntradaSalidaValidas, svcHeaders, tenantGuard, textoNominaValido } from './nomina.shared.js'
+import { ROLES_ADMIN, ROLES_VER, booleanNominaValido, fechaNominaValida, horasEntradaSalidaValidas, svcHeaders, tenantGuard, textoNominaValido, fetchConfigNomina } from './nomina.shared.js'
 import { validarFeriadoSolicitado } from './nomina.asistencia.js'
 
 async function periodForDate(env, headers, operador, fecha) {
@@ -23,7 +23,7 @@ export async function handleRegistrarAsistencia(request, env) {
   if (tenantError) return tenantError
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
-  const { empleadoId, fecha, horaEntrada, horaSalida, esFeriado, esAusencia, nota } = body || {}
+  const { empleadoId, fecha, horaEntrada, horaSalida, esFeriado, esAusencia, nota, horasDescanso } = body || {}
   if (!empleadoId || !isValidUuid(empleadoId)) return jsonError('empleadoId inválido', 400, request)
   if (!booleanNominaValido(esFeriado) || !booleanNominaValido(esAusencia)) return jsonError('esFeriado y esAusencia deben ser booleanos', 400, request)
   if (!fechaNominaValida(fecha)) return jsonError('fecha inválida (YYYY-MM-DD)', 400, request)
@@ -37,9 +37,51 @@ export async function handleRegistrarAsistencia(request, env) {
   const configResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?empleado_id=eq.${empleadoId}${nominaTenantFilter(operador.cuenta_id)}&select=horas_jornada&limit=1`, { headers })
   const [config] = configResponse.ok ? await configResponse.json() : []
   if (!config) return jsonError('El empleado no tiene configuración de nómina', 400, request)
+
+  let descanso = 0
+  if (horasDescanso !== undefined && horasDescanso !== null) {
+    const num = Number(horasDescanso)
+    if (!Number.isFinite(num) || num < 0 || num > 12) {
+      return jsonError('horasDescanso inválida (debe estar entre 0 y 12)', 400, request)
+    }
+    descanso = num
+  } else {
+    const dow = new Date(`${fecha}T12:00:00`).getDay()
+    const esSabado = dow === 6
+    if (!esSabado) {
+      const configNomina = await fetchConfigNomina(env, headers, operador.cuenta_id)
+      descanso = Number(configNomina?.nomina_horas_descanso != null ? configNomina.nomina_horas_descanso : 1.0)
+    }
+  }
+
   let calculation
-  try { calculation = calcularCamposAsistencia(fecha, horaEntrada || null, horaSalida || null, Number(config.horas_jornada) || 8, !!(holiday.row || esFeriado), !!esAusencia) } catch (error) { return jsonError(error.message || 'Horas inválidas', 400, request) }
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?on_conflict=empleado_id,fecha&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,nota`, { method: 'POST', headers: { ...svcHeaders(env), Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify({ empleado_id: empleadoId, fecha, hora_entrada: esAusencia ? null : horaEntrada || null, hora_salida: esAusencia ? null : horaSalida || null, ...calculation, nota: nota || null, registrado_por: operador.id, cuenta_id: operador.cuenta_id }) })
+  try {
+    calculation = calcularCamposAsistencia(
+      fecha,
+      horaEntrada || null,
+      horaSalida || null,
+      Number(config.horas_jornada) || 8,
+      !!(holiday.row || esFeriado),
+      !!esAusencia,
+      descanso
+    )
+  } catch (error) { return jsonError(error.message || 'Horas inválidas', 400, request) }
+
+  const { horas_descanso: _hd, ...calcCampos } = calculation
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?on_conflict=empleado_id,fecha&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,nota`, {
+    method: 'POST',
+    headers: { ...svcHeaders(env), Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify({
+      empleado_id: empleadoId,
+      fecha,
+      hora_entrada: esAusencia ? null : horaEntrada || null,
+      hora_salida: esAusencia ? null : horaSalida || null,
+      ...calcCampos,
+      nota: nota || null,
+      registrado_por: operador.id,
+      cuenta_id: operador.cuenta_id
+    })
+  })
   if (!response.ok) return jsonError('No se pudo registrar la asistencia', 500, request)
   const [row] = await response.json()
   return json({ ok: true, registro: row }, 200, request)
@@ -54,7 +96,7 @@ export async function handleRegistrarAsistenciaMasivo(request, env) {
   if (tenantError) return tenantError
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
-  const { fecha, horaEntrada, horaSalida, esFeriado, empleadoIds } = body || {}
+  const { fecha, horaEntrada, horaSalida, esFeriado, empleadoIds, horasDescanso } = body || {}
   if (!booleanNominaValido(esFeriado)) return jsonError('esFeriado inválido', 400, request)
   if (!fechaNominaValida(fecha)) return jsonError('fecha inválida (YYYY-MM-DD)', 400, request)
   if (!horasEntradaSalidaValidas(horaEntrada, horaSalida)) return jsonError('Debe indicar entrada y salida válidas (HH:MM)', 400, request)
@@ -65,13 +107,52 @@ export async function handleRegistrarAsistenciaMasivo(request, env) {
   const holiday = await validarFeriadoSolicitado(env, headers, operador, fecha, esFeriado)
   if (holiday.error) return jsonError('No se pudo consultar el calendario laboral', 500, request)
   if (esFeriado && !holiday.row) return jsonError('El feriado debe estar registrado en el calendario laboral', 400, request)
+
+  let descanso = 0
+  if (horasDescanso !== undefined && horasDescanso !== null) {
+    const num = Number(horasDescanso)
+    if (!Number.isFinite(num) || num < 0 || num > 12) {
+      return jsonError('horasDescanso inválida (debe estar entre 0 y 12)', 400, request)
+    }
+    descanso = num
+  } else {
+    const dow = new Date(`${fecha}T12:00:00`).getDay()
+    const esSabado = dow === 6
+    if (!esSabado) {
+      const configNomina = await fetchConfigNomina(env, headers, operador.cuenta_id)
+      descanso = Number(configNomina?.nomina_horas_descanso != null ? configNomina.nomina_horas_descanso : 1.0)
+    }
+  }
+
   const idsFilter = Array.isArray(empleadoIds) && empleadoIds.length ? `&empleado_id=in.(${empleadoIds.join(',')})` : ''
   const configResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?activo=eq.true${nominaTenantFilter(operador.cuenta_id)}${idsFilter}&select=empleado_id,horas_jornada`, { headers })
   if (!configResponse.ok) return jsonError('Error al leer empleados', 500, request)
   const employees = await configResponse.json()
   if (!employees.length) return jsonError('No hay empleados activos con configuración de nómina', 400, request)
   let rows
-  try { rows = employees.map(employee => ({ empleado_id: employee.empleado_id, fecha, hora_entrada: horaEntrada || null, hora_salida: horaSalida || null, ...calcularCamposAsistencia(fecha, horaEntrada || null, horaSalida || null, Number(employee.horas_jornada) || 8, !!(holiday.row || esFeriado), false), registrado_por: operador.id, cuenta_id: operador.cuenta_id })) } catch (error) { return jsonError(error.message || 'Horas inválidas', 400, request) }
+  try {
+    rows = employees.map(employee => {
+      const calc = calcularCamposAsistencia(
+        fecha,
+        horaEntrada || null,
+        horaSalida || null,
+        Number(employee.horas_jornada) || 8,
+        !!(holiday.row || esFeriado),
+        false,
+        descanso
+      )
+      const { horas_descanso: _hd, ...calcCampos } = calc
+      return {
+        empleado_id: employee.empleado_id,
+        fecha,
+        hora_entrada: horaEntrada || null,
+        hora_salida: horaSalida || null,
+        ...calcCampos,
+        registrado_por: operador.id,
+        cuenta_id: operador.cuenta_id
+      }
+    })
+  } catch (error) { return jsonError(error.message || 'Horas inválidas', 400, request) }
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?on_conflict=empleado_id,fecha`, { method: 'POST', headers: svcHeaders(env, 'resolution=merge-duplicates,return=minimal'), body: JSON.stringify(rows) })
   if (!response.ok) return jsonError('No se pudo registrar la asistencia masiva', 500, request)
   registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'ASISTENCIA_MASIVA', entidadTipo: 'registro_asistencia', entidadId: null, meta: { fecha, empleados: rows.length, hora_entrada: horaEntrada, hora_salida: horaSalida }, ip }).catch(() => {})

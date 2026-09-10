@@ -265,6 +265,7 @@ export default function AsistenciaDiariaMovil({
           const esFalta = !!reg?.es_ausencia
           const horasExt = Number(reg?.horas_extra || 0)
           const horasTrab = Number(reg?.horas_trabajadas || 0)
+          const horasNorm = Number(reg?.horas_normales || Math.max(0, horasTrab - horasExt))
           const expandido = expandidoExtra === emp.empleado_id
 
           return (
@@ -294,7 +295,7 @@ export default function AsistenciaDiariaMovil({
                   </div>
                 </div>
 
-                {/* Badge de Estado Actual */}
+                {/* Badge de Estado Actual con Desglose Claro */}
                 <div className="shrink-0 text-right">
                   {esFalta ? (
                     <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black bg-red-100 text-red-700 border border-red-200">
@@ -302,15 +303,26 @@ export default function AsistenciaDiariaMovil({
                     </span>
                   ) : esPresente ? (
                     <div className="flex flex-col items-end">
-                      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        <Check size={10} /> {horasTrab.toFixed(1)}h
-                        {horasExt > 0 && (
-                          <span className="text-amber-700 font-black">+{horasExt.toFixed(1)}h</span>
-                        )}
-                      </span>
+                      {horasExt > 0 ? (
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                            <Check size={10} className="text-emerald-700" />
+                            <span>{horasNorm.toFixed(1)}h</span>
+                            <span className="text-amber-800 font-black">+{horasExt.toFixed(1)}h extra</span>
+                          </span>
+                          <span className="text-[9px] text-amber-800/90 font-bold">
+                            Total: {horasTrab.toFixed(1)}h efectivas
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          <Check size={10} /> {horasTrab.toFixed(1)}h
+                        </span>
+                      )}
                       {reg.hora_entrada && reg.hora_salida && (
                         <span className="text-[9px] text-slate-400 font-medium mt-0.5">
                           {formatRangoHoras12(reg.hora_entrada, reg.hora_salida)}
+                          {horasExt > 0 ? ' · extra continua' : ''}
                         </span>
                       )}
                     </div>
@@ -402,6 +414,9 @@ export default function AsistenciaDiariaMovil({
                   {/* Selector rápido de horas extra inline (1 toque) */}
                   {expandido && (
                     <div className="p-2 rounded-xl bg-amber-50/80 border border-amber-200 space-y-1.5 animate-fadeIn">
+                      <p className="text-[10px] text-amber-800 font-bold px-0.5">
+                        Horas extra unidas de forma continua a la salida:
+                      </p>
                       <div className="grid grid-cols-3 gap-1.5">
                         <button
                           type="button"

@@ -10,8 +10,9 @@
  * @param {number} horasJornada     - horas normales del día (ej. 8)
  * @param {boolean} esFeriado
  * @param {boolean} esAusencia      - forzado desde UI (sin horas)
+ * @param {number} horasDescanso    - horas de descanso/almuerzo a descontar (ej. 1, 0.5, 0)
  */
-export function calcularCamposAsistencia(fecha, horaEntrada, horaSalida, horasJornada, esFeriado = false, esAusencia = false) {
+export function calcularCamposAsistencia(fecha, horaEntrada, horaSalida, horasJornada, esFeriado = false, esAusencia = false, horasDescanso = 0) {
   const dow = new Date(`${fecha}T12:00:00`).getDay() // 0=dom,6=sab
   const esSabado  = dow === 6
   const esDomingo = dow === 0
@@ -23,6 +24,7 @@ export function calcularCamposAsistencia(fecha, horaEntrada, horaSalida, horasJo
       horas_trabajadas: 0,
       horas_normales:   0,
       horas_extra:      0,
+      horas_descanso:   0,
       es_sabado:        esSabado,
       es_domingo:       esDomingo,
       es_feriado:       esFeriadoEfectivo,
@@ -53,16 +55,20 @@ export function calcularCamposAsistencia(fecha, horaEntrada, horaSalida, horasJo
   // Si salida < entrada asumir que pasó medianoche (guardia nocturna)
   if (salMin < entMin) salMin += 24 * 60
 
-  const horasTrabajadas = Math.max(0, (salMin - entMin) / 60)
-  const jornadaNumero   = Number(horasJornada)
-  const jornada         = Number.isFinite(jornadaNumero) ? Math.max(0.01, jornadaNumero) : 8
-  const horasNormales   = Math.min(horasTrabajadas, jornada)
-  const horasExtra      = Math.max(0, horasTrabajadas - jornada)
+  const tiempoTranscurrido = Math.max(0, (salMin - entMin) / 60)
+  const descansoNumero     = Number(horasDescanso)
+  const descanso           = Number.isFinite(descansoNumero) && descansoNumero > 0 ? descansoNumero : 0
+  const horasTrabajadas    = Math.max(0, tiempoTranscurrido - descanso)
+  const jornadaNumero      = Number(horasJornada)
+  const jornada            = Number.isFinite(jornadaNumero) ? Math.max(0.01, jornadaNumero) : 8
+  const horasNormales      = Math.min(horasTrabajadas, jornada)
+  const horasExtra         = Math.max(0, horasTrabajadas - jornada)
 
   return {
     horas_trabajadas: round4(horasTrabajadas),
     horas_normales:   round4(horasNormales),
     horas_extra:      round4(horasExtra),
+    horas_descanso:   round4(descanso),
     es_sabado:        esSabado,
     es_domingo:       esDomingo,
     es_feriado:       esFeriadoEfectivo,

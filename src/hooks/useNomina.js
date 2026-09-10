@@ -61,12 +61,12 @@ export function useNominaEmpleados({ enabled = true } = {}) {
   })
 }
 
-export function useConfigEmpleados() {
+export function useConfigEmpleados({ incluirInactivas = false } = {}) {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
   const puede  = ROLES_VER.includes(perfil?.rol)
   return useQuery({
-    queryKey: KEY_CONFIG,
-    queryFn: () => apiGet('/api/nomina/config-empleados'),
+    queryKey: incluirInactivas ? [...KEY_CONFIG, { incluirInactivas: true }] : KEY_CONFIG,
+    queryFn: () => apiGet(incluirInactivas ? '/api/nomina/config-empleados?incluirInactivas=1' : '/api/nomina/config-empleados'),
     enabled: !!perfil && puede,
     staleTime: 1000 * 60 * 5,
   })

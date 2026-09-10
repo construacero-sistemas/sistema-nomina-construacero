@@ -1,10 +1,11 @@
 // src/components/nomina/AsistenciaModal.jsx
 // Registro y edición rápida e intuitiva de la asistencia diaria de un empleado.
 import { useState } from 'react'
-import { Clock, Trash2, Calendar, AlertCircle, Sparkles, UserX } from 'lucide-react'
+import { Clock, Trash2, Calendar, AlertCircle, Sparkles, UserX, Coffee } from 'lucide-react'
 import { useRegistrarAsistencia, useEliminarAsistencia } from '../../hooks/useNomina'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
+import { formatHora12 } from '../../utils/timeUtils.js'
 
 const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all font-mono'
 
@@ -15,11 +16,19 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
   const jornada = Number(empleado?.horas_jornada) || 8
   const puedeEditar = !!esAdmin
 
+  const dow = new Date(`${fecha}T12:00:00`).getDay()
+  const esSabado = dow === 6
+
   const [horaEntrada, setHoraEntrada] = useState(
     String(registro?.hora_entrada ?? empleado?.hora_inicio ?? '08:00').slice(0, 5)
   )
   const [horaSalida, setHoraSalida] = useState(
-    String(registro?.hora_salida ?? empleado?.hora_fin ?? '17:00').slice(0, 5)
+    String(registro?.hora_salida ?? empleado?.hora_fin ?? (esSabado ? '13:00' : '17:00')).slice(0, 5)
+  )
+  const [horasDescanso, setHorasDescanso] = useState(
+    registro?.horas_descanso != null
+      ? String(registro.horas_descanso)
+      : (esSabado ? '0' : '1')
   )
   const [esFeriado, setEsFeriado]   = useState(registro?.es_feriado ?? !!feriado)
   const [esAusencia, setEsAusencia] = useState(registro?.es_ausencia ?? false)
@@ -27,15 +36,20 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
   const [confirmandoBorrar, setConfirmandoBorrar] = useState(false)
   const [error, setError] = useState('')
 
-  // Preview dinámico de horas calculadas
+  // Preview dinámico de horas calculadas con descanso deducido
   const preview = (() => {
-    if (esAusencia || !horaEntrada || !horaSalida) return { total: 0, normales: 0, extra: 0 }
+    if (esAusencia || !horaEntrada || !horaSalida) return { permanencia: 0, descanso: 0, total: 0, normales: 0, extra: 0 }
     const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0) }
     let sal = toMin(horaSalida)
     const ent = toMin(horaEntrada)
     if (sal <= ent) sal += 24 * 60
-    const total = Math.max(0, (sal - ent) / 60)
+    const permanencia = Math.max(0, (sal - ent) / 60)
+    const descNum = Number(horasDescanso)
+    const descanso = Number.isFinite(descNum) && descNum >= 0 ? descNum : 0
+    const total = Math.max(0, permanencia - descanso)
     return {
+      permanencia,
+      descanso,
       total,
       normales: Math.min(total, jornada),
       extra: Math.max(0, total - jornada),
@@ -48,10 +62,11 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
 
   const cargando = registrar.isPending || eliminar.isPending
 
-  function aplicarPreset(entrada, salida) {
+  function aplicarPreset(entrada, salida, descanso = esSabado ? '0' : '1') {
     setEsAusencia(false)
     setHoraEntrada(entrada)
     setHoraSalida(salida)
+    setHorasDescanso(descanso)
   }
 
   function marcarAusenciaRapida() {
@@ -73,6 +88,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
         horaEntrada: esAusencia ? null : horaEntrada,
         horaSalida:  esAusencia ? null : horaSalida,
         esFeriado, esAusencia,
+        horasDescanso: Number(horasDescanso) || 0,
         nota: nota || undefined,
       })
       onClose()
@@ -202,43 +218,90 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
             </label>
           </div>
 
-          {/* Horas */}
+          {/* Horas y Descanso */}
           {!esAusencia && (
-            <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                  <Clock size={13} className="text-slate-400" />
-                  Hora de Entrada
-                </label>
-                <input type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)}
-                  className={inputCls} disabled={cargando || !puedeEditar} />
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Clock size={13} className="text-slate-400" />
+                    Hora de Entrada
+                  </label>
+                  <input type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)}
+                    className={inputCls} disabled={cargando || !puedeEditar} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Clock size={13} className="text-slate-400" />
+                    Hora de Salida
+                  </label>
+                  <input type="time" value={horaSalida} onChange={e => setHoraSalida(e.target.value)}
+                    className={inputCls} disabled={cargando || !puedeEditar} />
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                  <Clock size={13} className="text-slate-400" />
-                  Hora de Salida
-                </label>
-                <input type="time" value={horaSalida} onChange={e => setHoraSalida(e.target.value)}
-                  className={inputCls} disabled={cargando || !puedeEditar} />
+
+              {/* Selector de Descanso / Hora Libre */}
+              <div className="pt-1.5 border-t border-slate-200/80 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Coffee size={13} className="text-slate-400" />
+                    Descanso / Hora Libre
+                  </label>
+                  <span className="text-[11px] font-bold text-slate-600 font-mono">
+                    {Number(horasDescanso) === 0 ? 'Sin descanso (0h)' : `${Number(horasDescanso)}h`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { label: '0h', val: '0' },
+                    { label: '30 min', val: '0.5' },
+                    { label: '45 min', val: '0.75' },
+                    { label: '1 hora', val: '1' },
+                  ].map(chip => (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      onClick={() => setHorasDescanso(chip.val)}
+                      disabled={cargando || !puedeEditar}
+                      className={`py-1.5 px-1 rounded-xl text-[11px] font-bold transition-all text-center min-h-9 ${
+                        String(horasDescanso) === chip.val
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                      } disabled:opacity-50`}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
 
           {/* Preview interactivo de Horas */}
           {!esAusencia && preview.total > 0 && (
-            <div className="grid grid-cols-3 gap-2">
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 text-center">
-                <span className="text-[10px] text-slate-400 font-bold block">Trabajadas</span>
-                <span className="text-sm font-black text-slate-800">{preview.total.toFixed(1)}h</span>
+            <div className="space-y-2">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 text-center">
+                  <span className="text-[10px] text-slate-400 font-bold block">
+                    {preview.descanso > 0 ? `${preview.permanencia.toFixed(1)}h − ${preview.descanso.toFixed(1)}h` : 'Estancia'}
+                  </span>
+                  <span className="text-sm font-black text-slate-800">{preview.total.toFixed(1)}h efec.</span>
+                </div>
+                <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-2 text-center">
+                  <span className="text-[10px] text-emerald-700 font-bold block">Normales</span>
+                  <span className="text-sm font-black text-emerald-800">{preview.normales.toFixed(1)}h</span>
+                </div>
+                <div className={`border rounded-xl p-2 text-center ${preview.extra > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
+                  <span className="text-[10px] font-bold block">Horas Extra</span>
+                  <span className="text-sm font-black">{preview.extra > 0 ? `+${preview.extra.toFixed(1)}h` : '0.0h'}</span>
+                </div>
               </div>
-              <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-2 text-center">
-                <span className="text-[10px] text-emerald-700 font-bold block">Normales</span>
-                <span className="text-sm font-black text-emerald-800">{preview.normales.toFixed(1)}h</span>
-              </div>
-              <div className={`border rounded-xl p-2 text-center ${preview.extra > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
-                <span className="text-[10px] font-bold block">Horas Extra</span>
-                <span className="text-sm font-black">{preview.extra > 0 ? `+${preview.extra.toFixed(1)}h` : '0.0h'}</span>
-              </div>
+
+              {preview.extra > 0 && (
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-medium leading-relaxed">
+                  La salida hasta las <strong>{formatHora12(horaSalida)}</strong> incluye <strong>+{preview.extra.toFixed(1)}h extra</strong> continuas unidas al horario habitual.
+                </div>
+              )}
             </div>
           )}
 

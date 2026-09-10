@@ -61,6 +61,8 @@ describe('bajas de empleados — listar y reactivar', () => {
 
     expect(res.status).toBe(200)
     expect(mock.calls[0].url).not.toContain('activo=eq.true')
+    expect(mock.calls[0].url).not.toContain('?&')
+    expect(mock.calls[0].url).toContain('cuenta_id=eq.')
     expect(res.body).toHaveLength(1)
     expect(res.body[0].activo).toBe(false)
     expect(res.body[0].empleado.nombre).toBe('Luis Baja')

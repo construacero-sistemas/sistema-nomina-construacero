@@ -5,7 +5,7 @@ import {
   Users, Plus, Pencil, DollarSign, Clock, Briefcase, Search, RotateCcw,
   AlertTriangle, CalendarDays, Sparkles, Filter, Trash2
 } from 'lucide-react'
-import { useNominaEmpleados, useConfigEmpleados, useConfigEmpleadosBajas, useActualizarConfigEmpleado } from '../../hooks/useNomina'
+import { useNominaEmpleados, useConfigEmpleados, useActualizarConfigEmpleado } from '../../hooks/useNomina'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
@@ -30,11 +30,10 @@ function esVendedor(config) {
 }
 
 export default function TabEmpleados({ esAdmin }) {
-  const { data: configs = [], isLoading, isError, refetch } = useConfigEmpleados()
+  const { data: allConfigs = [], isLoading, isError, refetch } = useConfigEmpleados({ incluirInactivas: true })
   const { data: clientes = [] } = useNominaEmpleados({ enabled: esAdmin })
   const { fmtBs, shortLabelTasa } = useMonedaNomina()
   const actualizarConfig = useActualizarConfigEmpleado()
-  const { data: bajas = [], isLoading: cargandoBajas } = useConfigEmpleadosBajas()
   const [modal, setModal] = useState(null)
   const [modalComision, setModalComision] = useState(null)
   const [empleadoParaBaja, setEmpleadoParaBaja] = useState(null)
@@ -42,9 +41,12 @@ export default function TabEmpleados({ esAdmin }) {
   const [filtroTipo, setFiltroTipo] = useState('todos') // 'todos' | 'fijos' | 'vendedores'
   const [verBajas, setVerBajas] = useState(false)
 
+  const configs = useMemo(() => (allConfigs || []).filter(c => c.activo !== false), [allConfigs])
+  const bajas   = useMemo(() => (allConfigs || []).filter(c => c.activo === false), [allConfigs])
+
   const empleadosYaConfigurados = useMemo(() => {
-    return new Set([...configs.map(c => c.empleado_id), ...bajas.map(b => b.empleado_id)])
-  }, [configs, bajas])
+    return new Set((allConfigs || []).map(c => c.empleado_id))
+  }, [allConfigs])
 
   const sinConfigurar = useMemo(() => {
     if (!esAdmin) return []
@@ -207,7 +209,7 @@ export default function TabEmpleados({ esAdmin }) {
         </div>
       </div>
 
-      {isLoading || (verBajas && cargandoBajas) ? (
+      {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-48 rounded-2xl" />)}
         </div>

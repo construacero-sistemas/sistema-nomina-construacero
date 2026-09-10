@@ -3201,6 +3201,72 @@ En dispositivos móviles, la cuadrilla semanal intentaba encajar 7 días en 360p
 - `lint`: 0 errores.
 - Compilación Vite exitosa.
 
+---
+
+### Entrada #145 - 2026-09-10
+**Contexto:** Corrección del cálculo de horas efectivas en asistencia deduciendo el tiempo de descanso/hora libre (configurable en fracciones < 1h como 30m, 45m o 0h) y presentación transparente de horas extra unidas de forma continua al horario habitual.
+
+**Causa raíz:**
+- Al registrar asistencia entre las 08:00 AM y 05:00 PM (17:00), el cálculo matemático anterior hacía directamente `salida - entrada` computando 9.0 horas brutas. Al contrastar contra una jornada base de 8h, el sistema asignaba erróneamente 8h normales + 1h extra (`9.0h +1.0h`), pues no deducía la hora libre de almuerzo/descanso.
+- En la interfaz no era explícito cómo el descanso y las horas extras se integraban al horario continuo, ni se disponía de controles rápidos para pausas menores a 1 hora (ej. 30 o 45 minutos).
+
+**Acciones realizadas:**
+- **Base de Datos (Supabase):**
+  - Creada la migración `supabase/migrations/236_asistencia_horas_descanso.sql` para añadir la columna opcional `horas_descanso NUMERIC(4,2) DEFAULT NULL` a `registro_asistencia`.
+- **Motor de Cálculo y Backend:**
+  - En `server/lib/nominaUtils.js` (`calcularCamposAsistencia`):
+    - Parámetro `horasDescanso` integrado: deduce el descanso del tiempo transcurrido continuo para obtener las horas efectivas netas de trabajo.
+    - Preserva compatibilidad hacia atrás cuando no se provee descanso (0h).
+  - En `server/handlers/nomina.shared.js`: `fetchConfigNomina` actualizado para consultar `nomina_horas_descanso` de `configuracion_negocio`.
+  - En `server/handlers/nomina.registro.js` y `server/handlers/nomina.asistencia.js`:
+    - Adopción reactiva de `nomina_horas_descanso` para días hábiles (lunes a viernes) y 0h para sábados continuos de 5h.
+    - Soporte para recibir `horasDescanso` específica desde la petición.
+- **Frontend y UI/UX (React + Tailwind):**
+  - En `src/components/nomina/HorarioGeneralModal.jsx`:
+    - Chips táctiles de descanso: `0h (Sin descanso)`, `30 min (0.5h)`, `45 min (0.75h)`, `1h (1.0h)`.
+    - Resumen explicativo de estancia, descanso, jornada normal y extras unidas continuamente.
+  - En `src/components/nomina/AsistenciaModal.jsx`:
+    - Selector táctil de descanso/hora libre diario para ajustes puntuales.
+    - Preview interactivo con desglose de permanencia, descanso deducido, horas efectivas normales y extras.
+  - En `src/components/nomina/AsistenciaDiariaMovil.jsx`:
+    - Píldora de estado corregida: muestra `✓ 8.0h` en jornadas estándar normales (0 extras).
+    - Cuando hay extras continuas, desglosa con claridad: `✓ 8.0h + 1.0h extra` (Total 9.0h efectivas) y leyenda de horario continuo.
+    - Selector rápido de horas extra con subtítulo descriptivo de salida continua extendida.
+
+### Entrada #146 - 2026-09-10
+**Contexto:** Corrección definitiva de la falsa alarma "2 trabajadores sin configurar en nómina" en la vista de personal y unificación atómica de la carga de configuraciones y bajas.
+
+**Causa raíz:**
+- `TabEmpleados.jsx` disparaba dos queries separadas de React Query (`useConfigEmpleados` para activos y `useConfigEmpleadosBajas` para inactivas). Debido a una condición de carrera, `bajas` iniciaba como array vacío (`[]`), provocando que el conjunto `empleadosYaConfigurados` excluyera temporal o permanentemente a los trabajadores dados de baja (`jose` y `Luis Ramírez`). Al contrastar contra los 6 registros de personas activas en `clientes`, el cálculo matemático evaluaba erróneamente $6 - 4 = 2$ trabajadores sin configurar.
+- En el backend (`server/handlers/nomina.empleados.js`), cuando `incluirInactivas=1` estaba presente, `filtroActivo` se concatenaba vacío contra `nominaTenantFilter`, generando una URL malformada con leading ampersand (`?&cuenta_id=...`).
+
+**Acciones realizadas:**
+- **Backend (`server/handlers/nomina.empleados.js`):**
+  - Limpieza de query string en `handleGetConfigEmpleados`: genera `?cuenta_id=eq...` cuando `incluirInactivas=1` y `?activo=eq.true&cuenta_id=eq...` por defecto, eliminando cualquier `?&` inválido.
+  - Actualizadas las aserciones de prueba en `server/handlers/__tests__/nomina.bajas.test.js` para asegurar URLs estrictamente limpias sin `?&`.
+- **Hook de Nómina (`src/hooks/useNomina.js`):**
+  - `useConfigEmpleados` ahora admite el parámetro opcional `{ incluirInactivas = false }`, gestionando la clave de caché extendida `[...KEY_CONFIG, { incluirInactivas: true }]` para que cualquier mutación invalide el conjunto de forma atómica.
+- **Frontend y UI/UX (`src/components/nomina/TabEmpleados.jsx`):**
+  - Unificada la carga a una única petición: `useConfigEmpleados({ incluirInactivas: true })`.
+  - Derivación síncrona sin condiciones de carrera:
+    - `configs`: filtrado reactivo de activos (`activo !== false`).
+    - `bajas`: filtrado reactivo de bajas (`activo === false`).
+    - `empleadosYaConfigurados`: `Set` unificado con todos los IDs configurados (`allConfigs.map(c => c.empleado_id)`).
+    - `sinConfigurar`: evalúa limpiamente a 0 cuando todos los empleados cuentan con ficha en nómina.
+  - El botón `Bajas (2)` aparece de inmediato en la barra superior junto al buscador y filtros de nómina.
+- **Pruebas Automatizadas:**
+  - Creado `src/components/nomina/__tests__/TabEmpleados.test.jsx` con cobertura para:
+    - Ocultamiento correcto de alerta cuando todos los empleados (activos o bajas) tienen configuración.
+    - Activación de alerta únicamente cuando existe personal en `clientes` sin configuración.
+    - Conmutación a la vista de Bajas y ejecución de reactivación.
+
+**Verificación:**
+- `npm test`: 67/67 suites aprobadas (645 pruebas unitarias e integrales exitosas).
+- `node scripts/test-nomina-deterministic.mjs`: 26/26 pruebas aprobadas (100% deterministas).
+- `npm run build`: Compilación Vite client exitosa.
+- `npm run lint`: 0 errores.
+
+
 
 
 

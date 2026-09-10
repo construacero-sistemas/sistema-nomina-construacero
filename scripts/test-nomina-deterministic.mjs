@@ -505,7 +505,9 @@ async function runAllTests() {
     assertEqual(res.status, 200, 'Status de salida marcada')
     const body = await res.json()
     assertEqual(body.registro.estado_marcaje, 'completo', 'Estado marcaje completo')
-    assertEqual(body.registro.horas_trabajadas, 9, 'Horas trabajadas calculadas')
+    assertEqual(body.registro.horas_trabajadas, 8, 'Horas trabajadas calculadas (8h efectivas descontando 1h de descanso)')
+    assertEqual(body.registro.horas_normales, 8, 'Horas normales efectivas')
+    assertEqual(body.registro.horas_extra, 0, 'Cero horas extras')
   })
 
   await test('Marcar asistencia masiva para toda la plantilla (8 a 5)', async () => {

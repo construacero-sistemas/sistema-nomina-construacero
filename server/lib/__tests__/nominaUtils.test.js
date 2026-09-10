@@ -46,6 +46,49 @@ describe('calcularCamposAsistencia — jornada normal', () => {
   })
 })
 
+describe('calcularCamposAsistencia — descuento de hora libre / descanso', () => {
+  it('08:00–17:00 con 1h descanso resulta en 8h efectivas sin extras', () => {
+    const r = calcularCamposAsistencia(LUNES, '08:00', '17:00', 8, false, false, 1.0)
+    expect(r.horas_trabajadas).toBe(8)
+    expect(r.horas_normales).toBe(8)
+    expect(r.horas_extra).toBe(0)
+    expect(r.horas_descanso).toBe(1)
+  })
+
+  it('08:00–18:00 con 1h descanso resulta en 9h efectivas: 8h normales + 1h extra continua', () => {
+    const r = calcularCamposAsistencia(LUNES, '08:00', '18:00', 8, false, false, 1.0)
+    expect(r.horas_trabajadas).toBe(9)
+    expect(r.horas_normales).toBe(8)
+    expect(r.horas_extra).toBe(1)
+    expect(r.horas_descanso).toBe(1)
+  })
+
+  it('08:00–16:30 con 30 min (0.5h) descanso resulta en 8h normales', () => {
+    const r = calcularCamposAsistencia(LUNES, '08:00', '16:30', 8, false, false, 0.5)
+    expect(r.horas_trabajadas).toBe(8)
+    expect(r.horas_normales).toBe(8)
+    expect(r.horas_extra).toBe(0)
+    expect(r.horas_descanso).toBe(0.5)
+  })
+
+  it('08:00–16:45 con 45 min (0.75h) descanso resulta en 8h normales', () => {
+    const r = calcularCamposAsistencia(LUNES, '08:00', '16:45', 8, false, false, 0.75)
+    expect(r.horas_trabajadas).toBe(8)
+    expect(r.horas_normales).toBe(8)
+    expect(r.horas_extra).toBe(0)
+    expect(r.horas_descanso).toBe(0.75)
+  })
+
+  it('Sábado 08:00–13:00 con 0h descanso resulta en 5h normales', () => {
+    const r = calcularCamposAsistencia(SABADO, '08:00', '13:00', 8, false, false, 0)
+    expect(r.horas_trabajadas).toBe(5)
+    expect(r.horas_normales).toBe(5)
+    expect(r.horas_extra).toBe(0)
+    expect(r.horas_descanso).toBe(0)
+    expect(r.es_sabado).toBe(true)
+  })
+})
+
 describe('calcularCamposAsistencia — turno nocturno', () => {
   it('22:00–06:00 cruza medianoche: 8h, no negativo', () => {
     const r = calcularCamposAsistencia(LUNES, '22:00', '06:00', 8)

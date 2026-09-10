@@ -214,7 +214,7 @@ export default function HorarioGeneralModal({ isOpen, onClose, configActual = {}
               </label>
               <input
                 type="number"
-                step="0.5"
+                step="0.25"
                 min="0"
                 max="12"
                 value={horasDescanso}
@@ -223,19 +223,53 @@ export default function HorarioGeneralModal({ isOpen, onClose, configActual = {}
                 disabled={guardar.isPending}
                 required
               />
+              {/* Chips rápidos de descanso (< 1h y 1h) */}
+              <div className="flex flex-wrap gap-1 pt-1">
+                {[
+                  { label: '0h', val: 0 },
+                  { label: '30 min', val: 0.5 },
+                  { label: '45 min', val: 0.75 },
+                  { label: '1h', val: 1.0 },
+                ].map(chip => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    onClick={() => setHorasDescanso(String(chip.val))}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
+                      Number(horasDescanso) === chip.val
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-slate-200/70 text-slate-700 hover:bg-slate-300'
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
           {calculoTiempo.transcurrido > 0 && Math.abs(Number(horasJornada) - calculoTiempo.efectivaSugerida) > 0.05 && (
-            <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-              <span>Sugerido según horas: <strong>{calculoTiempo.efectivaSugerida.toFixed(1)}h</strong></span>
-              <button
-                type="button"
-                onClick={sincronizarConCalculo}
-                className="font-bold text-amber-800 underline hover:text-amber-950 text-[11px]"
-              >
-                Ajustar a {calculoTiempo.efectivaSugerida.toFixed(1)}h
-              </button>
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span>
+                  Sugerido según horas: <strong>{calculoTiempo.efectivaSugerida.toFixed(1)}h</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={sincronizarConCalculo}
+                  className="font-bold text-amber-800 underline hover:text-amber-950 text-[11px]"
+                >
+                  Ajustar a {calculoTiempo.efectivaSugerida.toFixed(1)}h
+                </button>
+              </div>
+              <p className="text-[10px] text-amber-800 leading-snug">
+                {calculoTiempo.transcurrido.toFixed(1)}h de estancia − {Number(horasDescanso) || 0}h descanso = {calculoTiempo.efectivaSugerida.toFixed(1)}h efectivas.
+                {calculoTiempo.efectivaSugerida > Number(horasJornada) && (
+                  <strong className="block mt-0.5 text-amber-900">
+                    Incluye {(calculoTiempo.efectivaSugerida - Number(horasJornada)).toFixed(1)}h extra unida al turno regular de {Number(horasJornada)}h.
+                  </strong>
+                )}
+              </p>
             </div>
           )}
 
