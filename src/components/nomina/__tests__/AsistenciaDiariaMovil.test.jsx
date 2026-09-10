@@ -7,6 +7,7 @@ import AsistenciaDiariaMovil from '../AsistenciaDiariaMovil.jsx'
 
 const mockRegistrarMutate = vi.fn().mockResolvedValue({ ok: true })
 const mockMasivoMutate = vi.fn().mockResolvedValue({ ok: true })
+const mockEliminarMutate = vi.fn().mockResolvedValue({ ok: true })
 
 vi.mock('../../../hooks/useNomina.js', () => ({
   useRegistrarAsistencia: () => ({
@@ -15,6 +16,10 @@ vi.mock('../../../hooks/useNomina.js', () => ({
   }),
   useRegistrarAsistenciaMasivo: () => ({
     mutateAsync: mockMasivoMutate,
+    isPending: false,
+  }),
+  useEliminarAsistencia: () => ({
+    mutateAsync: mockEliminarMutate,
     isPending: false,
   }),
 }))

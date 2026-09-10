@@ -10,8 +10,10 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  RotateCcw,
+  Trash2,
 } from 'lucide-react'
-import { useRegistrarAsistencia, useRegistrarAsistenciaMasivo } from '../../hooks/useNomina'
+import { useRegistrarAsistencia, useRegistrarAsistenciaMasivo, useEliminarAsistencia } from '../../hooks/useNomina'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 import { formatRangoHoras12 } from '../../utils/timeUtils.js'
 
@@ -34,6 +36,7 @@ export default function AsistenciaDiariaMovil({
 }) {
   const registrar = useRegistrarAsistencia()
   const registrarMasivo = useRegistrarAsistenciaMasivo()
+  const eliminar = useEliminarAsistencia()
   const [expandidoExtra, setExpandidoExtra] = useState(null)
   const [cargandoEmpId, setCargandoEmpId] = useState(null)
 
@@ -398,40 +401,77 @@ export default function AsistenciaDiariaMovil({
 
                   {/* Selector rápido de horas extra inline (1 toque) */}
                   {expandido && (
-                    <div className="p-2 rounded-xl bg-amber-50/80 border border-amber-200 grid grid-cols-3 gap-1.5 animate-fadeIn">
-                      <button
-                        type="button"
-                        onClick={() => handleMarcarExtra(emp, 1)}
-                        style={{ touchAction: 'manipulation' }}
-                        className="min-h-11 py-1.5 px-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-black text-center shadow-xs"
-                      >
-                        +1h Extra
-                        <span className="block text-[9px] font-normal opacity-90">
-                          {esSabado ? 'hasta 02:00 PM' : 'hasta 06:00 PM'}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleMarcarExtra(emp, 2)}
-                        style={{ touchAction: 'manipulation' }}
-                        className="min-h-11 py-1.5 px-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-black text-center shadow-xs"
-                      >
-                        +2h Extra
-                        <span className="block text-[9px] font-normal opacity-90">
-                          {esSabado ? 'hasta 03:00 PM' : 'hasta 07:00 PM'}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleMarcarExtra(emp, 3)}
-                        style={{ touchAction: 'manipulation' }}
-                        className="min-h-11 py-1.5 px-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-black text-center shadow-xs"
-                      >
-                        +3h Extra
-                        <span className="block text-[9px] font-normal opacity-90">
-                          {esSabado ? 'hasta 04:00 PM' : 'hasta 08:00 PM'}
-                        </span>
-                      </button>
+                    <div className="p-2 rounded-xl bg-amber-50/80 border border-amber-200 space-y-1.5 animate-fadeIn">
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleMarcarExtra(emp, 1)}
+                          style={{ touchAction: 'manipulation' }}
+                          className={`min-h-11 py-1.5 px-2 rounded-lg text-[11px] font-black text-center shadow-xs transition-all active:scale-95 ${
+                            horasExt === 1 ? 'bg-amber-600 text-white ring-2 ring-amber-400' : 'bg-amber-500 hover:bg-amber-600 text-white'
+                          }`}
+                        >
+                          +1h Extra
+                          <span className="block text-[9px] font-normal opacity-90">
+                            {esSabado ? 'hasta 02:00 PM' : 'hasta 06:00 PM'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMarcarExtra(emp, 2)}
+                          style={{ touchAction: 'manipulation' }}
+                          className={`min-h-11 py-1.5 px-2 rounded-lg text-[11px] font-black text-center shadow-xs transition-all active:scale-95 ${
+                            horasExt === 2 ? 'bg-amber-600 text-white ring-2 ring-amber-400' : 'bg-amber-500 hover:bg-amber-600 text-white'
+                          }`}
+                        >
+                          +2h Extra
+                          <span className="block text-[9px] font-normal opacity-90">
+                            {esSabado ? 'hasta 03:00 PM' : 'hasta 07:00 PM'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMarcarExtra(emp, 3)}
+                          style={{ touchAction: 'manipulation' }}
+                          className={`min-h-11 py-1.5 px-2 rounded-lg text-[11px] font-black text-center shadow-xs transition-all active:scale-95 ${
+                            horasExt === 3 ? 'bg-amber-600 text-white ring-2 ring-amber-400' : 'bg-amber-500 hover:bg-amber-600 text-white'
+                          }`}
+                        >
+                          +3h Extra
+                          <span className="block text-[9px] font-normal opacity-90">
+                            {esSabado ? 'hasta 04:00 PM' : 'hasta 08:00 PM'}
+                          </span>
+                        </button>
+                      </div>
+
+                      {horasExt > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleMarcarPresente(emp)}
+                          style={{ touchAction: 'manipulation' }}
+                          className="w-full min-h-11 py-1.5 px-3 rounded-lg bg-white hover:bg-slate-50 border border-amber-300 text-amber-900 text-xs font-bold text-center flex items-center justify-center gap-1.5 shadow-2xs transition-all active:scale-95"
+                        >
+                          <RotateCcw size={13} />
+                          <span>Quitar horas extra (volver a {esSabado ? '5h' : '8h'} normal)</span>
+                        </button>
+                      )}
+
+                      {reg && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (reg?.id) {
+                              await eliminar.mutateAsync(reg.id)
+                              setExpandidoExtra(null)
+                            }
+                          }}
+                          style={{ touchAction: 'manipulation' }}
+                          className="w-full min-h-11 py-1 px-3 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold text-center flex items-center justify-center gap-1.5 border border-red-200 transition-all active:scale-95"
+                        >
+                          <Trash2 size={13} />
+                          <span>Desmarcar día (eliminar registro)</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
