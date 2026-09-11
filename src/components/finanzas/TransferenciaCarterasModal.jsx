@@ -18,6 +18,7 @@ import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import { useCrearMovimiento } from '../../hooks/useFinanzas.js'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
+import { normalizarMontoInput } from './formatos.js'
 
 function formatMoney(amount) {
   return Number(amount || 0).toLocaleString('es-VE', {
@@ -407,15 +408,15 @@ export default function TransferenciaCarterasModal({
 
             <div className="relative">
               <input
-                type="number"
-                min="0.01"
-                max={saldoDisponibleOrigen > 0 ? saldoDisponibleOrigen : undefined}
-                step="0.01"
+                type="text"
                 inputMode="decimal"
                 value={montoOrigen}
                 onChange={e => {
-                  setMontoOrigen(e.target.value)
-                  setError('')
+                  const normalizado = normalizarMontoInput(e.target.value)
+                  if (normalizado !== null) {
+                    setMontoOrigen(normalizado)
+                    setError('')
+                  }
                 }}
                 placeholder="0.00"
                 className={`w-full h-11 pl-3.5 pr-24 rounded-xl border bg-white text-base font-black text-slate-900 focus:outline-none focus:ring-2 focus:border-primary disabled:opacity-50 ${
@@ -457,11 +458,13 @@ export default function TransferenciaCarterasModal({
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-500 font-bold">Tasa aplicada (Bs/$):</span>
                 <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={tasaPersonalizada}
-                  onChange={e => setTasaPersonalizada(e.target.value)}
+                  onChange={e => {
+                    const normalizado = normalizarMontoInput(e.target.value)
+                    if (normalizado !== null) setTasaPersonalizada(normalizado)
+                  }}
                   placeholder={`Oficial: ${tasaSugerida.toFixed(2)}`}
                   className="w-32 h-8 px-2 text-right rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-800"
                   disabled={isLoading}

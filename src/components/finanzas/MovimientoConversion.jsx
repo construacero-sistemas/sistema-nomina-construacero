@@ -3,6 +3,7 @@
 // formulario de movimiento. Extraída de MovimientoForm para mantener el límite
 // de 600 líneas por archivo del guardrail.
 import { ChevronUp, SlidersHorizontal, Sparkles } from 'lucide-react'
+import { normalizarMontoInput } from './formatos.js'
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString('es-VE', {
@@ -123,12 +124,13 @@ export default function MovimientoConversion({
           <div className="space-y-1">
             <label className="block text-[11px] font-bold text-slate-600">Tasa personalizada (Bs/$):</label>
             <input
-              type="number"
-              min="0.01"
-              step="0.01"
+              type="text"
               inputMode="decimal"
               value={tasaManual}
-              onChange={e => setTasaManual(e.target.value)}
+              onChange={e => {
+                const normalizado = normalizarMontoInput(e.target.value)
+                if (normalizado !== null) setTasaManual(normalizado)
+              }}
               placeholder={`Ej: ${formatNumber(usd)}`}
               className="w-full h-11 px-3 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
               disabled={disabled}

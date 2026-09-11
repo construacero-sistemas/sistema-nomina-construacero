@@ -1,6 +1,8 @@
 // src/components/finanzas/formatos.js
 // Formateadores compartidos del módulo de finanzas (número, USD, fecha corta).
 
+export { normalizarMontoInput } from '../../utils/montoUtils.js'
+
 export function formatNumber(value) {
   return Number(value || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }

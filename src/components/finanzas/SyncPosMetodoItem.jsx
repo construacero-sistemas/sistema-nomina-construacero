@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import SyncPosDespachosList from './SyncPosDespachosList.jsx'
+import { normalizarMontoInput } from './formatos.js'
 
 function round2(num) {
   return Math.round((Number(num) || 0) * 100) / 100
@@ -379,11 +380,13 @@ export default function SyncPosMetodoItem({
                           {moneda === 'VES' ? 'Bs.' : '$'}
                         </span>
                         <input
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          type="text"
+                          inputMode="decimal"
                           value={parte.monto === 0 ? '' : parte.monto}
-                          onChange={e => handleUpdateParte(idx, 'monto', e.target.value)}
+                          onChange={e => {
+                            const normalizado = normalizarMontoInput(e.target.value)
+                            if (normalizado !== null) handleUpdateParte(idx, 'monto', normalizado)
+                          }}
                           onKeyDown={e => {
                             if (['-', '+', 'e', 'E'].includes(e.key)) {
                               e.preventDefault()

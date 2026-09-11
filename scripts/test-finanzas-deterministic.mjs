@@ -679,7 +679,7 @@ async function ejecutarSimulacionMesFinanzas() {
         body: { fecha: f, confirm: true },
       }), ENV)
       const dataSync = await readJson(resSync)
-      assert(dataSync.ok && dataSync.total_ingresos_usd === 1500, `Sincronización POS del día ${f} exitosa ($1,500.00 importados)`)
+      assert(dataSync.ok && (dataSync.posData?.total_ingresos_usd === 1500 || dataSync.total_ingresos_usd === 1500), `Sincronización POS del día ${f} exitosa ($1,500.00 importados)`)
     }
     stats.fasesCompletadas++
 

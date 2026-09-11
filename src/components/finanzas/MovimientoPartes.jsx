@@ -3,6 +3,7 @@
 // (partes), cada uno con su monto y referencia, sin salir del formulario.
 import { useState } from 'react'
 import { Divide, Plus, Trash2, X, Check } from 'lucide-react'
+import { normalizarMontoInput } from './formatos.js'
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString('es-VE', {
@@ -97,12 +98,13 @@ export default function MovimientoPartes({
             <div key={index} className="flex items-center gap-2">
               <span className="w-6 shrink-0 text-center text-[11px] font-black text-slate-400">{index + 1}</span>
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
-                min="0.01"
-                step="0.01"
                 value={parte.monto}
-                onChange={e => actualizar(index, 'monto', e.target.value)}
+                onChange={e => {
+                  const normalizado = normalizarMontoInput(e.target.value)
+                  if (normalizado !== null) actualizar(index, 'monto', normalizado)
+                }}
                 placeholder="Monto"
                 disabled={disabled}
                 className="w-28 min-w-0 h-11 rounded-xl border border-slate-200 bg-white px-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"

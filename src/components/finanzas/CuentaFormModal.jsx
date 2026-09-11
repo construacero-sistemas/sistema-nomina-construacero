@@ -14,6 +14,7 @@ import {
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import { BANCOS_VENEZUELA, PLATAFORMAS_CRIPTO, PLATAFORMAS_ZELLE_USD, capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
+import { normalizarMontoInput } from './formatos.js'
 
 const TIPOS_CUENTA = [
   { value: 'banco_ves',    label: 'Banco Nacional (Bolívares Bs)',      moneda: 'VES', cartera: 'VES', subcuentaId: 'Banco en Bolívares' },
@@ -220,11 +221,13 @@ export default function CuentaFormModal({
                 {tipoConfig.moneda === 'VES' ? 'Bs' : '$'}
               </span>
               <input
-                type="number"
-                step="0.01"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 value={saldoInicial}
-                onChange={e => setSaldoInicial(e.target.value)}
+                onChange={e => {
+                  const normalizado = normalizarMontoInput(e.target.value)
+                  if (normalizado !== null) setSaldoInicial(normalizado)
+                }}
                 placeholder="0.00"
                 className="w-full h-11 pl-9 pr-3.5 rounded-xl border border-amber-200 bg-white text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
               />

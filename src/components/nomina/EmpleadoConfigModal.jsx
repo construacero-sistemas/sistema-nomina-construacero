@@ -10,6 +10,7 @@ import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import EmpleadoBajaModal from './EmpleadoBajaModal.jsx'
+import { normalizarMontoInput } from '../../utils/montoUtils.js'
 
 const inputCls = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
@@ -384,8 +385,13 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
                   {modalidad === 'dia' ? 'Monto por día (USD) *' : modalidad === 'semana' ? 'Monto por semana (USD) *' : 'Monto mensual (USD) *'}
                 </span>
                 <input
-                  type="number" min="0" step="0.01" value={montoInput}
-                  onChange={e => setMontoInput(e.target.value)}
+                  type="text"
+                  inputMode="decimal"
+                  value={montoInput}
+                  onChange={e => {
+                    const normalizado = normalizarMontoInput(e.target.value)
+                    if (normalizado !== null) setMontoInput(normalizado)
+                  }}
                   placeholder={modalidad === 'dia' ? 'Ej: 30.00' : modalidad === 'semana' ? 'Ej: 180.00' : 'Ej: 600.00'}
                   className={inputCls} disabled={cargando}
                 />

@@ -20,7 +20,7 @@ import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
 import { FORMAS_PAGO_OPCIONES } from '../../constants/formasPago.js'
-import { formatNumber } from './formatos.js'
+import { formatNumber, normalizarMontoInput } from './formatos.js'
 import { isoToday as today } from './fechasRapidas.js'
 import { getCuentasCompatibles } from './cuentasCompatibles.js'
 import { capitalizarPalabras, capitalizarTexto } from '../../utils/cuentasCustodiaUtils.js'
@@ -349,12 +349,16 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
               </label>
               <div className="relative">
                 <input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
+                  type="text"
                   inputMode="decimal"
                   value={monto}
-                  onChange={e => setMonto(e.target.value)}
+                  onChange={e => {
+                    const normalizado = normalizarMontoInput(e.target.value)
+                    if (normalizado !== null) {
+                      setMonto(normalizado)
+                      if (error) setError('')
+                    }
+                  }}
                   className="w-full h-11 pl-3.5 pr-14 rounded-xl border border-slate-200 bg-white text-lg font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50"
                   placeholder="0.00"
                   disabled={disabled}

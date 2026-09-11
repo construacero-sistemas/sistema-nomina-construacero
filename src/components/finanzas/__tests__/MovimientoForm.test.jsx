@@ -248,4 +248,34 @@ describe('MovimientoForm', () => {
     expect(payload.cuenta_id).toBe('c-caja-usd')
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
+
+  it('permite ingresar montos con coma (teclado español de iPhone) y los normaliza a número decimal', async () => {
+    const user = userEvent.setup()
+    const { onClose } = renderForm()
+    await user.click(screen.getByRole('button', { name: /egreso/i }))
+    const concepto = screen.getByPlaceholderText(/pago de flete/i)
+    await user.type(concepto, 'Pago con coma decimal')
+    await pickCategory(user, 'Sueldos')
+
+    const montoInput = screen.getByPlaceholderText('0.00')
+    // Simular escritura con coma (ej. 125,50)
+    await user.type(montoInput, '125,50')
+    expect(montoInput.value).toBe('125.50')
+
+    const form = screen.getByRole('dialog').querySelector('form')
+    if (form) fireEvent.submit(form)
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1))
+    const payload = mutateAsync.mock.calls[0][0]
+    expect(payload.monto).toBe(125.5)
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+  })
+
+  it('permite iniciar el monto directamente con punto o coma (.5 -> 0.5)', async () => {
+    const user = userEvent.setup()
+    renderForm()
+    const montoInput = screen.getByPlaceholderText('0.00')
+    await user.type(montoInput, ',75')
+    expect(montoInput.value).toBe('0.75')
+  })
 })
