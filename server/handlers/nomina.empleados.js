@@ -2,6 +2,8 @@
 import { json, jsonError, isValidUuid } from '../lib/utils.js'
 import { validateOperator } from '../lib/auth.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
+import { registrarAuditoria } from '../lib/audit.js'
+import { clearEgressCache } from '../lib/egressCache.js'
 import {
   ROLES_ADMIN,
   ROLES_NOMINA,
@@ -10,6 +12,7 @@ import {
   fechaNominaValida,
   horaNominaValida,
   montoNominaValido,
+  svcHeaders,
   tenantGuard,
   textoNominaValido,
 } from './nomina.shared.js'
@@ -166,3 +169,108 @@ export async function handleActualizarConfigEmpleado(request, env) {
   if (!row) return jsonError('Configuración no encontrada', 404, request)
   return json({ ok: true, config: row }, 200, request)
 }
+
+export async function handleEliminarConfigEmpleado(request, env) {
+  const v = await validateOperator(request, env)
+  if (v.error) return v.error
+  const { operador } = v
+  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const tenantError = tenantGuard(operador, request)
+  if (tenantError) return tenantError
+
+  let body = {}
+  try {
+    body = await request.json()
+  } catch {
+    const url = new URL(request.url)
+    body = { id: url.searchParams.get('id') }
+  }
+
+  const id = body?.id?.trim?.() || body?.id
+  if (!id || !isValidUuid(id)) return jsonError('id inválido', 400, request)
+
+  const tenantFilter = nominaTenantFilter(operador.cuenta_id)
+  const serviceHeaders = svcHeaders(env, 'return=representation')
+
+  // 1. Obtener la configuración del empleado para conocer su empleado_id
+  const configRes = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?id=eq.${id}${tenantFilter}&select=id,empleado_id,cargo,cuenta_id&limit=1`,
+    { headers: serviceHeaders },
+  )
+  if (!configRes.ok) return jsonError('Error al consultar configuración de empleado', 500, request)
+  const [config] = await configRes.json()
+  if (!config) return jsonError('Configuración de empleado no encontrada', 404, request)
+
+  const empleadoId = config.empleado_id
+
+  // 2. Guardarraíl de integridad: Verificar si tiene registros históricos (asistencia, recibos, comisiones)
+  const [asistenciaRes, recibosRes, comisionesRes] = await Promise.all([
+    fetch(
+      `${env.SUPABASE_URL}/rest/v1/registro_asistencia?empleado_id=eq.${empleadoId}${tenantFilter}&select=id&limit=1`,
+      { headers: serviceHeaders },
+    ),
+    fetch(
+      `${env.SUPABASE_URL}/rest/v1/nomina_lineas?empleado_id=eq.${empleadoId}${tenantFilter}&select=id&limit=1`,
+      { headers: serviceHeaders },
+    ),
+    fetch(
+      `${env.SUPABASE_URL}/rest/v1/nomina_comisiones?empleado_id=eq.${empleadoId}${tenantFilter}&select=id&limit=1`,
+      { headers: serviceHeaders },
+    ),
+  ])
+
+  const asistencias = asistenciaRes.ok ? await asistenciaRes.json().catch(() => []) : []
+  const recibos = recibosRes.ok ? await recibosRes.json().catch(() => []) : []
+  const comisiones = comisionesRes.ok ? await comisionesRes.json().catch(() => []) : []
+
+  const tieneHistorial = (asistencias && asistencias.length > 0) ||
+                         (recibos && recibos.length > 0) ||
+                         (comisiones && comisiones.length > 0)
+
+  if (tieneHistorial) {
+    return jsonError(
+      'No se puede eliminar por completo a este trabajador porque cuenta con recibos de nómina, comisiones o asistencias registradas en el historial contable. Debe permanecer como "Dado de baja" para preservar la integridad de los balances.',
+      409,
+      request,
+    )
+  }
+
+  // 3. Empleado limpio sin historial: proceder con la eliminación segura
+  // Eliminar horarios personalizados si tuviera
+  await fetch(
+    `${env.SUPABASE_URL}/rest/v1/nomina_horarios?empleado_id=eq.${empleadoId}${tenantFilter}`,
+    { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') },
+  ).catch(() => {})
+
+  // Eliminar configuración de nómina
+  const deleteRes = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?id=eq.${id}${tenantFilter}`,
+    { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') },
+  )
+  if (!deleteRes.ok) return jsonError('No se pudo eliminar la configuración del empleado', 500, request)
+
+  // Intentar limpiar cliente personal si fue creado exclusivamente para nómina
+  if (empleadoId) {
+    await fetch(
+      `${env.SUPABASE_URL}/rest/v1/clientes?id=eq.${empleadoId}&tipo_cliente=eq.personal${tenantFilter}`,
+      { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') },
+    ).catch(() => {})
+  }
+
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), {
+    usuarioId: operador.id,
+    usuarioNombre: operador.nombre,
+    usuarioRol: operador.rol,
+    cuentaId: operador.cuenta_id,
+    categoria: 'NOMINA',
+    accion: 'EMPLEADO_ELIMINADO_DEFINITIVAMENTE',
+    entidadTipo: 'nomina_config_empleado',
+    entidadId: id,
+    meta: { empleado_id: empleadoId, cargo: config.cargo },
+  }).catch(() => {})
+
+  clearEgressCache()
+
+  return json({ ok: true, eliminado: true, id }, 200, request)
+}
+

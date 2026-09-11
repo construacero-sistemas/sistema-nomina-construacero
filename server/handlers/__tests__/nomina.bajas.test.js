@@ -100,4 +100,84 @@ describe('bajas de empleados — listar y reactivar', () => {
 
     expect(res.status).toBe(404)
   })
+
+  describe('eliminación definitiva de empleados (segura)', () => {
+    it('bloquea (409) la eliminación si el empleado tiene marcajes en registro_asistencia', async () => {
+      operadorActual = OPERADORES.administracion
+      mock = installFetchMock([
+        { match: '/nomina_config_empleado', respond: [{ id: IDS.config, empleado_id: IDS.empleado, cargo: 'Chofer' }] },
+        { match: '/registro_asistencia', respond: [{ id: 'asist-1' }] },
+        { match: '/nomina_lineas', respond: [] },
+        { match: '/nomina_comisiones', respond: [] },
+      ])
+
+      const res = await readResponse(await H.handleEliminarConfigEmpleado(makeRequest({
+        id: IDS.config,
+      }, { url: 'http://worker.test/api/nomina/config-empleado/eliminar' }), ENV))
+
+      expect(res.status).toBe(409)
+      expect(res.body.error).toContain('historial contable')
+    })
+
+    it('bloquea (409) la eliminación si el empleado tiene recibos en nomina_lineas', async () => {
+      operadorActual = OPERADORES.administracion
+      mock = installFetchMock([
+        { match: '/nomina_config_empleado', respond: [{ id: IDS.config, empleado_id: IDS.empleado, cargo: 'Vendedor' }] },
+        { match: '/registro_asistencia', respond: [] },
+        { match: '/nomina_lineas', respond: [{ id: 'recibo-1' }] },
+        { match: '/nomina_comisiones', respond: [] },
+      ])
+
+      const res = await readResponse(await H.handleEliminarConfigEmpleado(makeRequest({
+        id: IDS.config,
+      }, { url: 'http://worker.test/api/nomina/config-empleado/eliminar' }), ENV))
+
+      expect(res.status).toBe(409)
+      expect(res.body.error).toContain('historial contable')
+    })
+
+    it('elimina exitosamente (200) al empleado si está completamente limpio de historial', async () => {
+      operadorActual = OPERADORES.administracion
+      mock = installFetchMock([
+        { match: '/nomina_config_empleado', respond: [{ id: IDS.config, empleado_id: IDS.empleado, cargo: 'Prueba' }] },
+        { match: '/registro_asistencia', respond: [] },
+        { match: '/nomina_lineas', respond: [] },
+        { match: '/nomina_comisiones', respond: [] },
+        { match: '/nomina_horarios', method: 'DELETE', respond: [] },
+        { match: '/nomina_config_empleado', method: 'DELETE', respond: [] },
+        { match: '/clientes', method: 'DELETE', respond: [] },
+      ])
+
+      const res = await readResponse(await H.handleEliminarConfigEmpleado(makeRequest({
+        id: IDS.config,
+      }, { url: 'http://worker.test/api/nomina/config-empleado/eliminar' }), ENV))
+
+      expect(res.status).toBe(200)
+      expect(res.body.ok).toBe(true)
+      expect(res.body.eliminado).toBe(true)
+      expect(mock.calls.some(c => c.method === 'DELETE' && c.url.includes('/nomina_config_empleado'))).toBe(true)
+    })
+
+    it('rechaza con 400 si el id no es UUID válido', async () => {
+      operadorActual = OPERADORES.administracion
+      const res = await readResponse(await H.handleEliminarConfigEmpleado(makeRequest({
+        id: 'invalido',
+      }), ENV))
+      expect(res.status).toBe(400)
+    })
+
+    it('rechaza con 404 si la configuración de empleado no existe', async () => {
+      operadorActual = OPERADORES.administracion
+      mock = installFetchMock([
+        { match: '/nomina_config_empleado', respond: [] },
+      ])
+
+      const res = await readResponse(await H.handleEliminarConfigEmpleado(makeRequest({
+        id: IDS.config,
+      }), ENV))
+
+      expect(res.status).toBe(404)
+    })
+  })
 })
+

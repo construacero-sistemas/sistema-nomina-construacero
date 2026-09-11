@@ -8,6 +8,7 @@ import TabEmpleados from '../TabEmpleados.jsx'
 let mockAllConfigs = []
 let mockClientes = []
 const mockActualizarMutate = vi.fn().mockResolvedValue({ ok: true })
+const mockEliminarMutate = vi.fn().mockResolvedValue({ ok: true })
 
 vi.mock('../../../hooks/useNomina', () => ({
   useConfigEmpleados: () => ({
@@ -22,6 +23,10 @@ vi.mock('../../../hooks/useNomina', () => ({
   }),
   useActualizarConfigEmpleado: () => ({
     mutateAsync: mockActualizarMutate,
+    isPending: false,
+  }),
+  useEliminarConfigEmpleado: () => ({
+    mutateAsync: mockEliminarMutate,
     isPending: false,
   }),
   usePosVendedores: () => ({ data: [] }),
@@ -125,5 +130,38 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
 
     fireEvent.click(btnReactivar)
     expect(mockActualizarMutate).toHaveBeenCalledWith({ id: 'cfg-2', activo: true })
+  })
+
+  it('al hacer clic en Eliminar en Bajas abre el modal de confirmación y llama a eliminarConfig', async () => {
+    mockClientes = [
+      { id: 'emp-1', nombre: 'Alejandra Hidalgo', tipo_cliente: 'personal', activo: true },
+      { id: 'emp-2', nombre: 'Jose Chofer', tipo_cliente: 'personal', activo: true },
+    ]
+
+    mockAllConfigs = [
+      { id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Admin', salario_dia_usd: 15, horas_jornada: 8, activo: true, empleado: mockClientes[0] },
+      { id: 'cfg-2', empleado_id: 'emp-2', cargo: 'Chofer', salario_dia_usd: 12, horas_jornada: 8, activo: false, empleado: mockClientes[1] },
+    ]
+
+    renderTab(true)
+
+    const btnBajas = screen.getByRole('button', { name: /Bajas \(1\)/i })
+    fireEvent.click(btnBajas)
+
+    // Botón eliminar debe estar presente
+    const btnEliminar = screen.getByRole('button', { name: /Eliminar/i })
+    expect(btnEliminar).toBeTruthy()
+
+    // Clic en eliminar abre el modal
+    fireEvent.click(btnEliminar)
+
+    // El modal de confirmación debe mostrar el título y el botón definitivo
+    expect(screen.getByText(/Eliminar trabajador definitivamente/i)).toBeTruthy()
+    expect(screen.getByText(/¿Eliminar permanentemente a Jose Chofer\?/i)).toBeTruthy()
+
+    const btnConfirmar = screen.getByRole('button', { name: /Eliminar definitivamente/i })
+    fireEvent.click(btnConfirmar)
+
+    expect(mockEliminarMutate).toHaveBeenCalledWith({ id: 'cfg-2' })
   })
 })

@@ -5,7 +5,7 @@ import {
   Users, Plus, Pencil, DollarSign, Clock, Briefcase, Search, RotateCcw,
   AlertTriangle, CalendarDays, Sparkles, Filter, Trash2
 } from 'lucide-react'
-import { useNominaEmpleados, useConfigEmpleados, useActualizarConfigEmpleado } from '../../hooks/useNomina'
+import { useNominaEmpleados, useConfigEmpleados, useActualizarConfigEmpleado, useEliminarConfigEmpleado } from '../../hooks/useNomina'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
@@ -15,6 +15,7 @@ import RateSelector from './RateSelector.jsx'
 import EmpleadoConfigModal from './EmpleadoConfigModal'
 import ComisionPagoModal from './ComisionPagoModal.jsx'
 import EmpleadoBajaModal from './EmpleadoBajaModal.jsx'
+import EmpleadoEliminarModal from './EmpleadoEliminarModal.jsx'
 import { formatRangoHoras12 } from '../../utils/timeUtils'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 
@@ -34,9 +35,11 @@ export default function TabEmpleados({ esAdmin }) {
   const { data: clientes = [] } = useNominaEmpleados({ enabled: esAdmin })
   const { fmtBs, shortLabelTasa } = useMonedaNomina()
   const actualizarConfig = useActualizarConfigEmpleado()
+  const eliminarConfig = useEliminarConfigEmpleado()
   const [modal, setModal] = useState(null)
   const [modalComision, setModalComision] = useState(null)
   const [empleadoParaBaja, setEmpleadoParaBaja] = useState(null)
+  const [empleadoParaEliminar, setEmpleadoParaEliminar] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('todos') // 'todos' | 'fijos' | 'vendedores'
   const [verBajas, setVerBajas] = useState(false)
@@ -236,8 +239,9 @@ export default function TabEmpleados({ esAdmin }) {
               key={c.id}
               config={c}
               esAdmin={esAdmin}
-              cargando={actualizarConfig.isPending}
+              cargando={actualizarConfig.isPending || eliminarConfig.isPending}
               onReactivar={() => reactivar(c)}
+              onEliminar={() => setEmpleadoParaEliminar(c)}
             />
           )) : filtrados.map(c => (
             <EmpleadoNominaCard
@@ -286,11 +290,28 @@ export default function TabEmpleados({ esAdmin }) {
           cargando={actualizarConfig.isPending}
         />
       )}
+
+      {empleadoParaEliminar && (
+        <EmpleadoEliminarModal
+          isOpen
+          empleado={empleadoParaEliminar}
+          onClose={() => setEmpleadoParaEliminar(null)}
+          onConfirm={async () => {
+            try {
+              await eliminarConfig.mutateAsync({ id: empleadoParaEliminar.id })
+              setEmpleadoParaEliminar(null)
+            } catch (err) {
+              console.error('Error al eliminar empleado:', err)
+            }
+          }}
+          cargando={eliminarConfig.isPending}
+        />
+      )}
     </div>
   )
 }
 
-function EmpleadoBajaCard({ config, esAdmin, cargando, onReactivar }) {
+function EmpleadoBajaCard({ config, esAdmin, cargando, onReactivar, onEliminar }) {
   const nombre = capitalizarPalabras(config.empleado?.nombre) || 'Sin nombre'
   return (
     <article className="bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden min-w-0 opacity-90">
@@ -314,16 +335,28 @@ function EmpleadoBajaCard({ config, esAdmin, cargando, onReactivar }) {
       </div>
 
       {esAdmin && (
-        <div className="border-t border-slate-100 px-3 py-2 bg-white">
+        <div className="border-t border-slate-100 px-3 py-2 bg-white flex items-center gap-2">
           <button
             type="button"
             onClick={onReactivar}
             disabled={cargando}
-            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-black text-emerald-800 bg-emerald-100 hover:bg-emerald-200 transition-colors disabled:opacity-50"
+            style={{ touchAction: 'manipulation' }}
+            className="flex-1 min-h-11 inline-flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 transition-colors disabled:opacity-50 cursor-pointer"
             title="Volver a activar en la nómina"
           >
-            <RotateCcw size={13} />
-            Reactivar
+            <RotateCcw size={14} />
+            <span>Reactivar</span>
+          </button>
+          <button
+            type="button"
+            onClick={onEliminar}
+            disabled={cargando}
+            style={{ touchAction: 'manipulation' }}
+            className="min-h-11 px-3 py-2 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-1.5 cursor-pointer"
+            title="Eliminar definitivamente de la nómina si no tiene historial"
+          >
+            <Trash2 size={14} />
+            <span>Eliminar</span>
           </button>
         </div>
       )}

@@ -1,5 +1,5 @@
 import {
-  handleGetEmpleados, handleGetConfigEmpleados, handleCrearConfigEmpleado, handleActualizarConfigEmpleado,
+  handleGetEmpleados, handleGetConfigEmpleados, handleCrearConfigEmpleado, handleActualizarConfigEmpleado, handleEliminarConfigEmpleado,
   handleGetAsistencia, handleRegistrarAsistencia, handleRegistrarAsistenciaMasivo, handleEliminarAsistencia,
   handleGetMarcajeHoy, handleMarcarEntrada, handleMarcarSalida,
   handleGetFeriados, handleCrearFeriado, handleEliminarFeriado, handleGetHorarios, handleCrearHorario,
@@ -91,6 +91,8 @@ const routes = new Map([
   ['GET /api/nomina/config-empleados', handleGetConfigEmpleados],
   ['POST /api/nomina/config-empleado/crear', handleCrearConfigEmpleado],
   ['POST /api/nomina/config-empleado/actualizar', handleActualizarConfigEmpleado],
+  ['POST /api/nomina/config-empleado/eliminar', handleEliminarConfigEmpleado],
+  ['DELETE /api/nomina/config-empleados', handleEliminarConfigEmpleado],
   ['GET /api/nomina/asistencia', handleGetAsistencia],
   ['POST /api/nomina/asistencia/registrar', handleRegistrarAsistencia],
   ['POST /api/nomina/asistencia/registrar-masivo', handleRegistrarAsistenciaMasivo],

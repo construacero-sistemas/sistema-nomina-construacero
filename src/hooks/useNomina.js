@@ -113,6 +113,20 @@ export function useActualizarConfigEmpleado() {
   })
 }
 
+export function useEliminarConfigEmpleado() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id }) => apiPost('/api/nomina/config-empleado/eliminar', { id }),
+    onSuccess: () => {
+      showToast.success('Empleado eliminado por completo de la nómina')
+      qc.invalidateQueries({ queryKey: KEY_CONFIG })
+      qc.invalidateQueries({ queryKey: KEY_CONFIG_BAJAS })
+      qc.invalidateQueries({ queryKey: KEY_EMPLEADOS })
+    },
+    onError: (e) => showToast.error(e.message || 'No se pudo eliminar al empleado'),
+  })
+}
+
 // ─── Asistencia ────────────────────────────────────────────────────────────────
 
 export function useAsistencia({ desde = null, hasta = null, empleadoId = null } = {}) {

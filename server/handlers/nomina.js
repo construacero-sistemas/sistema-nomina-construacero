@@ -6,6 +6,7 @@ export {
   handleGetConfigEmpleados,
   handleCrearConfigEmpleado,
   handleActualizarConfigEmpleado,
+  handleEliminarConfigEmpleado,
 } from './nomina.empleados.js'
 
 export {
