@@ -69,7 +69,7 @@ export default function MovimientoConversion({
             <button
               type="button"
               onClick={abrirSelector}
-              className="inline-flex items-center gap-1 px-3 h-9 shrink-0 rounded-lg bg-slate-200/80 hover:bg-slate-300 text-[11px] font-black text-slate-700 transition-all cursor-pointer active:scale-95"
+              className="inline-flex items-center gap-1 px-3 min-h-11 shrink-0 rounded-lg bg-slate-200/80 hover:bg-slate-300 text-[11px] font-black text-slate-700 transition-all cursor-pointer active:scale-95"
               title="Elegir o personalizar tasa de cambio"
               style={{ touchAction: 'manipulation' }}
             >
@@ -84,7 +84,7 @@ export default function MovimientoConversion({
               <button
                 type="button"
                 onClick={() => { usarBcv(); setTasaManual('') }}
-                className={`px-2.5 h-8 rounded-lg text-[11px] font-black transition-all cursor-pointer ${modoTasa === 'bcv' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-2.5 min-h-11 rounded-lg text-[11px] font-black transition-all cursor-pointer ${modoTasa === 'bcv' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 BCV ({formatNumber(usd)})
               </button>
@@ -92,7 +92,7 @@ export default function MovimientoConversion({
                 <button
                   type="button"
                   onClick={() => { usarUsdt(); setTasaManual('') }}
-                  className={`px-2.5 h-8 rounded-lg text-[11px] font-black transition-all cursor-pointer ${modoTasa === 'usdt' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                  className={`px-2.5 min-h-11 rounded-lg text-[11px] font-black transition-all cursor-pointer ${modoTasa === 'usdt' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
                 >
                   USDT ({formatNumber(usdt)})
                 </button>
@@ -100,7 +100,7 @@ export default function MovimientoConversion({
               <button
                 type="button"
                 onClick={() => { usarManual(); setTasaManual('') }}
-                className={`px-2.5 h-8 rounded-lg text-[11px] font-black transition-all cursor-pointer ${modoTasa === 'manual' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`px-2.5 min-h-11 rounded-lg text-[11px] font-black transition-all cursor-pointer ${modoTasa === 'manual' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 Manual
               </button>

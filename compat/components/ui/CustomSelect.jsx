@@ -1,576 +1,188 @@
-// src/components/ui/CustomSelect.jsx
-// Selector personalizado con búsqueda — reemplaza el control nativo
 import { useState, useEffect, useRef, useMemo, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { Search, ChevronDown, X, Check, Plus } from 'lucide-react'
-
-// Búsqueda difusa extraída a módulo puro (reuso y testeable).
 import { normalizar, matchScore } from './selectMatching.js'
+import { OverlayContext, useOverlay } from './useOverlay.js'
+import { useOverlayPosition } from './useOverlayPosition.js'
 
-/**
- * @param {object} props
- * @param {Array<{value: string, label: string, sub?: string, icon?: React.ComponentType}>} props.options
- * @param {string} props.value - valor seleccionado
- * @param {(value: string) => void} props.onChange
- * @param {string} [props.placeholder] - texto cuando no hay selección
- * @param {boolean} [props.searchable] - mostrar buscador (default: true si >5 opciones)
- * @param {boolean} [props.clearable] - permitir limpiar (default: false)
- * @param {boolean} [props.creatable] - permitir crear nuevas opciones escribiendo (default: false)
- * @param {string} [props.createLabel] - texto para la opción de crear (default: 'Crear')
- * @param {boolean} [props.disabled]
- * @param {React.ComponentType} [props.icon] - icono del trigger
- * @param {{label: string, icon: React.ComponentType, title?: string, onSelect: (option: object) => void}} [props.rowAction]
- * Acción opcional por fila (ej. eliminar la categoría): botón aparte dentro de la
- * opción; dispara rowAction.onSelect(opt) sin seleccionar el valor.
- */
-export default function CustomSelect({
-  options = [],
-  value,
-  onChange,
-  placeholder = 'Seleccionar...',
-  searchable,
-  clearable = false,
-  creatable = false,
-  createLabel = 'Crear',
-  createMaxLength = null,
-  disabled = false,
-  icon: TriggerIcon,
-  showSubInTrigger = true,
-  rowAction,
-}) {
+export default function CustomSelect({ options = [], value, onChange, placeholder = 'Seleccionar...', searchable,
+  clearable = false, creatable = false, createLabel = 'Crear', createMaxLength = null, disabled = false,
+  icon: TriggerIcon, showSubInTrigger = true, rowAction, id, 'aria-label': ariaLabel, 'aria-labelledby': labelledBy }) {
   const [abierto, setAbierto] = useState(false)
   const [busqueda, setBusqueda] = useState('')
-  const [openUp, setOpenUp] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
-  const [portalPos, setPortalPos] = useState({ top: 0, left: 0, width: 0 })
   const [showInlineCreate, setShowInlineCreate] = useState(false)
   const [newValueText, setNewValueText] = useState('')
-  const ref = useRef(null)
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const triggerRef = useRef(null)
   const dropdownRef = useRef(null)
   const searchRef = useRef(null)
-  // Navegación por teclado: flechas mueven la opción activa, Enter elige, Escape cierra.
-  const [activeIndex, setActiveIndex] = useState(-1)
-  const listboxId = useId().replace(/:/g, '')
-
+  const listRef = useRef(null)
+  const inlineRef = useRef(null)
+  const uid = useId()
+  const listboxId = `${uid}-list`
+  const dialogId = `${uid}-dialog`
   const showSearch = searchable ?? (creatable || options.length > 5)
+  const { isMobile, position, mobileStyle } = useOverlayPosition({ open: abierto, anchorRef: triggerRef, panelRef: dropdownRef })
 
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768)
-    checkMobile()
-    window.addEventListener('resize', checkMobile)
-    return () => window.removeEventListener('resize', checkMobile)
-  }, [])
+  function close() {
+    setAbierto(false)
+    setBusqueda('')
+    setShowInlineCreate(false)
+    setNewValueText('')
+    setActiveIndex(-1)
+  }
+  const overlay = useOverlay({ open: abierto, panelRef: dropdownRef, onRequestClose: close, modal: isMobile,
+    returnFocusRef: triggerRef, initialFocusRef: showSearch ? searchRef : listRef, dismissOnOutside: !isMobile })
 
-  // Cerrar al hacer click/touch fuera en Desktop. En móvil lo maneja el backdrop.
-  useEffect(() => {
-    function handleOutside(e) {
-      if (isMobile) return
-      const inTrigger = ref.current && ref.current.contains(e.target)
-      const inDropdown = dropdownRef.current && dropdownRef.current.contains(e.target)
-      if (!inTrigger && !inDropdown) setAbierto(false)
-    }
-    if (abierto) {
-      document.addEventListener('mousedown', handleOutside)
-      document.addEventListener('touchstart', handleOutside, { passive: true })
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleOutside)
-      document.removeEventListener('touchstart', handleOutside)
-    }
-  }, [abierto, isMobile])
-
-  // Calcular posición del dropdown portal en desktop
-  useEffect(() => {
-    if (!abierto || !ref.current) return
-
-    if (!isMobile) {
-      const rect = ref.current.getBoundingClientRect()
-      const viewH = window.visualViewport?.height || window.innerHeight
-      const spaceBelow = viewH - rect.bottom
-      const goUp = spaceBelow < 280
-      setOpenUp(goUp)
-      setPortalPos({
-        top: goUp ? rect.top : rect.bottom + 6,
-        left: rect.left,
-        width: rect.width,
-        goUp,
-      })
-    }
-
-    if (showSearch && searchRef.current && !isMobile) {
-      requestAnimationFrame(() => searchRef.current?.focus())
-    }
-  }, [abierto, showSearch, isMobile])
-
-  const seleccionada = options.find(o => o.value === value)
-  
-  // Persistencia de etiqueta para evitar "parpadeo" durante refetchs en entornos lentos.
-  // Patrón "adjust state during render" (documentado por React): se ajusta el estado
-  // durante el propio render cuando cambian las entradas, sin useEffect ni refs en render.
-  const [lastLabel, setLastLabel] = useState(null) // { value, label } | null
+  const seleccionada = options.find(option => option.value === value)
+  const [lastLabel, setLastLabel] = useState(null)
   if (seleccionada) {
     const label = seleccionada.selectedLabel || seleccionada.label
-    if (!lastLabel || lastLabel.value !== value || lastLabel.label !== label) {
-      setLastLabel({ value, label })
-    }
-  } else if (!value && lastLabel) {
-    // Sin value y sin opción seleccionada → limpiar. Si hay value pero no hay
-    // seleccionada → refetch en curso, NO limpiar.
-    setLastLabel(null)
-  }
-  // Etiqueta conocida solo si corresponde al value actual (evita mostrar labels de otro value).
-  const lastKnownLabel = lastLabel && lastLabel.value === value ? lastLabel.label : null
-
-  // Si el valor actual no está en options (refetch en curso), usar el último label conocido.
-  const seleccionadaLabel = seleccionada
-    ? (seleccionada.selectedLabel || seleccionada.label)
-    : (value && lastKnownLabel ? lastKnownLabel : (creatable && value ? value : null))
+    if (!lastLabel || lastLabel.value !== value || lastLabel.label !== label) setLastLabel({ value, label })
+  } else if (!value && lastLabel) setLastLabel(null)
+  const seleccionadaLabel = seleccionada?.selectedLabel || seleccionada?.label ||
+    (value && lastLabel?.value === value ? lastLabel.label : (creatable && value ? value : null))
   const filtradas = useMemo(() => {
     if (!busqueda.trim()) return options
-    const q = busqueda.trim()
-    return options
-      .map(o => ({ ...o, _score: Math.max(matchScore(o.label, q), matchScore(o.sub ?? '', q)) }))
-      .filter(o => o._score > 0)
-      .sort((a, b) => b._score - a._score)
+    return options.map(option => ({ ...option, _score: Math.max(matchScore(option.label, busqueda.trim()), matchScore(option.sub ?? '', busqueda.trim())) }))
+      .filter(option => option._score > 0).sort((a, b) => b._score - a._score)
   }, [options, busqueda])
-
-  // Índice efectivo de la opción activa: lo fija el teclado/ratón (activeIndex);
-  // si aún nadie navegó, parte de la opción seleccionada (o de la primera).
-  const opcionActiva = activeIndex >= 0
-    ? Math.min(activeIndex, filtradas.length)
-    : (abierto ? Math.max(filtradas.findIndex(o => o.value === value), filtradas.length > 0 ? 0 : -1) : -1)
-
-  // Mantener la opción activa visible mientras se navega con flechas.
-  useEffect(() => {
-    if (!abierto || opcionActiva < 0 || isMobile) return
-    document.getElementById(`${listboxId}-opt-${opcionActiva}`)?.scrollIntoView({ block: 'nearest' })
-  }, [opcionActiva, abierto, isMobile, listboxId])
-
-  // Mostrar opción "Crear" cuando hay texto que no coincide exactamente
-  const puedeCrear = creatable && busqueda.trim() &&
-    !options.some(o => normalizar(o.label) === normalizar(busqueda.trim())) &&
+  const opcionActiva = filtradas.length ? (activeIndex >= 0 ? Math.min(activeIndex, filtradas.length - 1)
+    : Math.max(0, filtradas.findIndex(option => option.value === value))) : -1
+  const activeId = opcionActiva >= 0 ? `${listboxId}-opt-${opcionActiva}` : undefined
+  const puedeCrear = creatable && busqueda.trim() && !options.some(option => normalizar(option.label) === normalizar(busqueda.trim())) &&
     (!createMaxLength || busqueda.trim().length <= createMaxLength)
 
-  function elegir(val) {
-    onChange(val)
-    setBusqueda('')
-    setShowInlineCreate(false)
-    setNewValueText('')
-    setActiveIndex(-1)
-    setAbierto(false)
-  }
+  useEffect(() => {
+    if (abierto && activeId) document.getElementById(activeId)?.scrollIntoView?.({ block: 'nearest' })
+  }, [abierto, activeId])
+  useEffect(() => { if (showInlineCreate) inlineRef.current?.focus() }, [showInlineCreate])
 
-  function limpiar(e) {
-    e.stopPropagation()
-    onChange('')
-    setBusqueda('')
-    setShowInlineCreate(false)
-    setNewValueText('')
-    setActiveIndex(-1)
-  }
-
-  function toggle() {
+  function elegir(nextValue) {
     if (disabled) return
-    setAbierto(!abierto)
-    setActiveIndex(-1)
-    if (abierto) {
-      setBusqueda('')
-      setShowInlineCreate(false)
-      setNewValueText('')
-    }
+    onChange?.(nextValue)
+    close()
   }
-
-  function navegarTeclado(e) {
+  function crear(text) {
+    const next = text.trim()
+    if (!next || (createMaxLength && next.length > createMaxLength)) return
+    elegir(next)
+  }
+  function navegarTeclado(event) {
+    if (event.isComposing) return
     if (!abierto) {
-      // Enter/ArrowDown abren; Space lo maneja el click nativo del botón.
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
-        e.preventDefault()
-        toggle()
+      if (['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key) && !disabled) {
+        event.preventDefault()
+        setAbierto(true)
       }
       return
     }
-    const total = filtradas.length + (puedeCrear ? 1 : 0)
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setActiveIndex(total === 0 ? -1 : Math.min((opcionActiva < 0 ? -1 : opcionActiva) + 1, total - 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setActiveIndex(Math.max((opcionActiva < 0 ? 0 : opcionActiva) - 1, 0))
-    } else if (e.key === 'Enter') {
-      if (opcionActiva < 0) return
-      e.preventDefault()
-      if (opcionActiva >= filtradas.length && puedeCrear) elegir(busqueda.trim())
-      else if (filtradas[opcionActiva]) elegir(filtradas[opcionActiva].value)
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      setAbierto(false)
-      setBusqueda('')
-      setShowInlineCreate(false)
-      setNewValueText('')
-      setActiveIndex(-1)
-      ref.current?.querySelector('button')?.focus()
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault()
+      if (!filtradas.length) return
+      if (event.key === 'Home') setActiveIndex(0)
+      else if (event.key === 'End') setActiveIndex(filtradas.length - 1)
+      else setActiveIndex(Math.max(0, Math.min(filtradas.length - 1, opcionActiva + (event.key === 'ArrowDown' ? 1 : -1))))
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      if (opcionActiva >= 0) elegir(filtradas[opcionActiva].value)
+      else if (puedeCrear) crear(busqueda)
     }
   }
 
   return (
-    <div ref={ref} className="relative">
-      {/* Trigger */}
-      <div className="flex items-center gap-1">
-      <button
-        type="button"
-        onClick={toggle}
-        onKeyDown={navegarTeclado}
-        disabled={disabled}
-        role="combobox"
-        aria-haspopup="listbox"
-        aria-expanded={abierto}
-        aria-controls={abierto ? listboxId : undefined}
-        aria-activedescendant={abierto && opcionActiva >= 0 ? `${listboxId}-opt-${opcionActiva}` : undefined}
-        className={`${clearable && seleccionadaLabel && !disabled ? 'flex-1' : 'w-full'} flex items-center gap-2.5 px-3.5 py-2.5 min-h-11 rounded-xl border text-left transition-all text-sm ${
-          disabled ? 'opacity-50 cursor-not-allowed bg-slate-100 border-slate-200' :
-          abierto
-            ? 'border-primary ring-1 ring-primary/30 bg-white'
-            : seleccionada
-              ? 'border-slate-200 bg-white hover:border-slate-300'
-              : 'border-slate-200 bg-slate-50 hover:border-slate-300'
-        }`}
-      >
-        {(() => {
-          const IconComp = TriggerIcon || seleccionada?.icon
-          return IconComp ? (
-            <IconComp size={16} className={seleccionadaLabel ? 'text-primary shrink-0' : 'text-slate-400 shrink-0'} />
-          ) : null
-        })()}
-        <span className={`flex-1 truncate ${seleccionadaLabel ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>
-          {seleccionadaLabel || placeholder}
-        </span>
-        {showSubInTrigger && seleccionada?.sub && (
-          <span className="text-xs text-slate-400 truncate max-w-[120px] hidden sm:inline">{seleccionada.sub}</span>
-        )}
-        <ChevronDown size={15} className={`text-slate-400 transition-transform shrink-0 ${abierto ? 'rotate-180' : ''}`} />
-      </button>
-      {clearable && seleccionadaLabel && !disabled && (
-        <button type="button" onClick={limpiar}
-          aria-label="Limpiar selección"
-          className="shrink-0 rounded-xl border border-slate-200 bg-white p-2.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors">
-          <X size={15} aria-hidden="true" />
+    <div className="relative min-w-0 max-w-full">
+      <div className="flex items-stretch gap-1 min-w-0">
+        <button ref={triggerRef} id={id} type="button" disabled={disabled}
+          onClick={() => { if (abierto) overlay.requestClose('trigger'); else setAbierto(true) }}
+          onKeyDown={navegarTeclado} role="combobox" aria-haspopup="dialog" aria-expanded={abierto}
+          aria-controls={abierto ? dialogId : undefined} aria-label={ariaLabel || placeholder} aria-labelledby={labelledBy}
+          className={`min-h-11 min-w-0 flex-1 flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border text-left text-base sm:text-sm transition-colors ${disabled ? 'cursor-not-allowed bg-slate-100 border-slate-300 text-slate-600' : abierto ? 'border-primary bg-white ring-1 ring-primary/30' : 'border-slate-300 bg-white hover:border-slate-500'}`}>
+          {(() => { const Icon = TriggerIcon || seleccionada?.icon; return Icon ? <Icon size={18} aria-hidden="true" className="text-slate-600 shrink-0" /> : null })()}
+          <span className={`min-w-0 flex-1 break-words ${seleccionadaLabel ? 'text-slate-800 font-medium' : 'text-slate-600'}`}>{seleccionadaLabel || placeholder}</span>
+          {showSubInTrigger && seleccionada?.sub && <span className="text-xs text-slate-600 break-words max-w-[120px] hidden sm:inline">{seleccionada.sub}</span>}
+          <ChevronDown size={18} aria-hidden="true" className={`text-slate-600 shrink-0 ${abierto ? 'rotate-180' : ''}`} />
         </button>
-      )}
+        {clearable && seleccionadaLabel && !disabled && <button type="button" aria-label="Limpiar selección"
+          onClick={() => { onChange?.(''); setBusqueda(''); setActiveIndex(-1); triggerRef.current?.focus() }}
+          className="min-h-11 min-w-11 shrink-0 rounded-xl border border-slate-300 bg-white p-2.5 text-slate-600 hover:bg-slate-100">
+          <X size={18} aria-hidden="true" />
+        </button>}
       </div>
-
-      {/* Dropdown / Bottom Sheet */}
-      {abierto && (
-        isMobile ? createPortal(
-          <div className="fixed inset-0 z-[9999] bg-white flex flex-col h-[100dvh] animate-in slide-in-from-bottom-8 fade-in duration-200 ease-out" style={{ isolation: 'isolate' }}>
-            {/* Header del modal */}
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-              <span className="font-semibold text-slate-800 text-lg">{placeholder}</span>
-              <button type="button" onClick={() => setAbierto(false)} className="inline-flex items-center gap-1.5 px-3 py-2 -mr-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-bold transition-colors" aria-label="Cerrar opciones">
-                <X size={20} aria-hidden="true" /> Cerrar
+      {abierto && createPortal(
+        <OverlayContext.Provider value={overlay.overlayId}>
+          <div ref={dropdownRef} id={dialogId} role="dialog" aria-modal={isMobile || undefined} aria-label={placeholder} tabIndex={-1}
+            data-overlay-id={overlay.overlayId}
+            className={`ui-select-sheet bg-white flex flex-col min-w-0 overflow-hidden border border-slate-300 shadow-2xl ${isMobile ? 'rounded-t-3xl' : 'rounded-2xl p-1.5'}`}
+            style={{ ...(isMobile ? mobileStyle : position), zIndex: overlay.zIndex }}>
+            <div className={`ui-overlay-header flex items-center justify-between gap-2 shrink-0 border-b border-slate-200 ${isMobile ? 'px-4 py-3' : 'px-2 py-1'}`}>
+              <h3 className="min-w-0 break-words font-semibold text-slate-800">{placeholder}</h3>
+              <button type="button" onClick={() => overlay.requestClose('close-button')} aria-label="Cerrar opciones"
+                className="min-h-11 min-w-11 shrink-0 inline-flex items-center justify-center p-2 rounded-xl text-slate-700 hover:bg-slate-100">
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
-            
-            <div className="flex flex-col flex-1 min-h-0 bg-slate-50/30">
-              {/* Buscador estático arriba */}
-              {showSearch && (
-                <div className="p-4 border-b border-slate-100 shrink-0 bg-white">
-                  <div className="relative">
-                    <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                    <input
-                      ref={searchRef}
-                      type="text"
-                      inputMode="search"
-                      autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="off"
-                      spellCheck={false}
-                      role="combobox"
-                      aria-controls={listboxId}
-                      aria-activedescendant={opcionActiva >= 0 ? `${listboxId}-opt-${opcionActiva}` : undefined}
-                      onKeyDown={navegarTeclado}
-                      value={busqueda}
-                      onChange={e => { setBusqueda(e.target.value); setActiveIndex(-1) }}
-                      maxLength={createMaxLength || undefined}
-                      placeholder="Buscar..."
-                      className="w-full pl-11 pr-4 py-3.5 text-[16px] border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-slate-400 transition-shadow"
-                    />
-                  </div>
-                </div>
-              )}
-              
-              {/* Lista amigable con scroll */}
-              <div id={listboxId} className="overflow-y-auto p-3 pb-8 overscroll-contain flex-1" role="listbox" aria-label={placeholder}>
-                  {filtradas.length === 0 && !puedeCrear ? (
-                    <p className="text-base text-slate-400 text-center py-8">
-                      {busqueda ? 'Sin resultados' : 'Sin opciones'}
-                    </p>
-                  ) : (
-                    <div className="space-y-1">
-                      {filtradas.map((opt, index) => {
-                        const isSelected = opt.value === value
-                        const OptIcon = opt.icon
-                        return (
-                          <button
-                            key={opt.value}
-                            id={`${listboxId}-opt-${index}`}
-                            type="button"
-                            role="option"
-                            aria-selected={isSelected}
-                            onClick={() => elegir(opt.value)}
-                            className={`w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-xl transition-colors ${
-                              isSelected
-                                ? 'bg-primary/10 text-primary font-medium'
-                                : 'active:bg-slate-100 text-slate-700'
-                            }`}
-                          >
-                            {OptIcon && <OptIcon size={18} className={isSelected ? 'text-primary shrink-0' : 'text-slate-400 shrink-0'} />}
-                            <div className="flex-1 min-w-0">
-                              <div className="text-base whitespace-normal break-words leading-tight">{opt.label}</div>
-                              {opt.sub && <div className="text-[13px] text-slate-400 truncate mt-0.5">{opt.sub}</div>}
-                            </div>
-                            {isSelected && <Check size={18} className="text-primary shrink-0" />}
-                            {rowAction && !opt.noAction && (
-                              <span
-                                role="button"
-                                tabIndex={0}
-                                aria-label={`${rowAction.label} ${opt.label}`}
-                                title={rowAction.title}
-                                onClick={e => { e.stopPropagation(); rowAction.onSelect(opt) }}
-                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); rowAction.onSelect(opt) } }}
-                                className="shrink-0 rounded-lg p-2 -mr-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 active:bg-rose-100 cursor-pointer transition-colors"
-                              >
-                                <rowAction.icon size={16} aria-hidden="true" />
-                              </span>
-                            )}
-                          </button>
-                        )
-                      })}
-                      {puedeCrear && (
-                        <button
-                          type="button"
-                          onClick={() => elegir(busqueda.trim())}
-                          className="w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-xl transition-colors active:bg-emerald-50 text-emerald-700 mt-2 border border-emerald-100/50 bg-emerald-50/30"
-                        >
-                          <Plus size={18} className="text-emerald-500 shrink-0" />
-                          <div className="flex-1 truncate text-base">{createLabel} "<span className="font-bold">{busqueda.trim()}</span>"</div>
-                          {createMaxLength && <span className="text-xs text-emerald-500/70 shrink-0">{busqueda.trim().length}/{createMaxLength}</span>}
-                        </button>
-                      )}
-                      {creatable && (
-                        showInlineCreate ? (
-                          <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex gap-2 items-center mt-2 rounded-xl border border-indigo-100 animate-in fade-in zoom-in-95 duration-150">
-                            <input
-                              type="text"
-                              className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary bg-white text-slate-800"
-                              placeholder={createLabel ? `${createLabel}...` : "Escribir..."}
-                              value={newValueText}
-                              onChange={e => setNewValueText(e.target.value)}
-                              autoFocus
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (newValueText.trim()) {
-                                  elegir(newValueText.trim());
-                                }
-                              }}
-                              className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:scale-95 transition-all shadow-sm"
-                            >
-                              Agregar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShowInlineCreate(false);
-                                setNewValueText('');
-                              }}
-                              className="p-2 text-slate-500 hover:bg-slate-200 active:bg-slate-300 rounded-lg transition-colors"
-                            >
-                              <X size={18} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setShowInlineCreate(true)}
-                            className="w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-xl transition-colors active:bg-indigo-50 text-indigo-700 mt-2 border border-indigo-100/50 bg-indigo-50/30 font-bold"
-                          >
-                            <Plus size={18} className="text-indigo-500 shrink-0" />
-                            <div className="flex-1 truncate text-base">{createLabel ? `+ ${createLabel}` : "+ Crear nuevo"}</div>
-                          </button>
-                        )
-                      )}
-                    </div>
-                  )}
-                </div>
+            {showSearch && <div className="p-3 shrink-0 border-b border-slate-200">
+              <div className="relative">
+                <Search size={18} aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+                <input ref={searchRef} type="text" inputMode="search" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                  role="combobox" aria-label={`Buscar: ${placeholder}`} aria-expanded="true" aria-autocomplete="list" aria-haspopup="listbox"
+                  aria-controls={listboxId} aria-activedescendant={activeId} onKeyDown={navegarTeclado}
+                  value={busqueda} onChange={event => { setBusqueda(event.target.value); setActiveIndex(-1) }}
+                  maxLength={createMaxLength || undefined} placeholder="Buscar..."
+                  className="min-h-11 w-full min-w-0 pl-10 pr-3 py-2 text-[16px] border border-slate-300 rounded-xl bg-slate-50 text-slate-800 placeholder:text-slate-600" />
               </div>
-            </div>,
-            document.body
-        ) : createPortal(
-          <div
-            ref={dropdownRef}
-            id={listboxId}
-            role="listbox"
-            aria-label={placeholder}
-            onKeyDown={navegarTeclado}
-            className="bg-white rounded-2xl border border-slate-200/90 shadow-2xl shadow-slate-900/10 overflow-hidden p-1.5"
-            style={{
-              position: 'fixed',
-              zIndex: 9999,
-              left: portalPos.left,
-              width: portalPos.width,
-              ...(portalPos.goUp
-                ? { bottom: `calc(100vh - ${portalPos.top}px + 6px)` }
-                : { top: portalPos.top }),
-            }}
-          >
-            {/* Buscador Desktop */}
-            {showSearch && (
-              <div className="p-1.5 border-b border-slate-100 mb-1">
-                <div className="relative">
-                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  <input
-                    ref={searchRef}
-                    type="text"
-                    inputMode="search"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    role="combobox"
-                    aria-controls={listboxId}
-                    aria-activedescendant={opcionActiva >= 0 ? `${listboxId}-opt-${opcionActiva}` : undefined}
-                    onKeyDown={navegarTeclado}
-                    value={busqueda}
-                    onChange={e => { setBusqueda(e.target.value); setActiveIndex(-1) }}
-                    maxLength={createMaxLength || undefined}
-                    placeholder="Buscar..."
-                    className="w-full pl-7 pr-3 py-1.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-slate-400"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Lista Desktop */}
-            <div className="max-h-56 overflow-y-auto p-0.5 space-y-0.5 overscroll-contain">
-              {filtradas.length === 0 && !puedeCrear ? (
-                <p className="text-sm text-slate-400 text-center py-4">
-                  {busqueda ? 'Sin resultados' : 'Sin opciones'}
-                </p>
-              ) : (
-                <>
-                  {filtradas.map((opt, index) => {
-                    const isSelected = opt.value === value
-                    const OptIcon = opt.icon
-                    return (
-                      <button
-                        key={opt.value}
-                        id={`${listboxId}-opt-${index}`}
-                        type="button"
-                        role="option"
-                        aria-selected={isSelected}
-                        onClick={() => elegir(opt.value)}
-                        onMouseEnter={() => setActiveIndex(index)}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-all rounded-xl ${
-                          isSelected
-                            ? 'bg-primary/10 text-primary font-bold'
-                            : index === opcionActiva
-                              ? 'bg-slate-100 text-slate-900 font-semibold'
-                              : 'hover:bg-slate-50 text-slate-700 font-medium'
-                        }`}
-                      >
-                        {OptIcon && <OptIcon size={14} className={isSelected ? 'text-primary shrink-0' : 'text-slate-400 shrink-0'} />}
-                        <span className="flex-1 whitespace-normal break-words leading-tight py-0.5">{opt.label}</span>
-                        {opt.sub && <span className="text-xs text-slate-400 truncate max-w-[140px]">{opt.sub}</span>}
-                        {isSelected && <Check size={14} className="text-primary shrink-0" />}
-                        {rowAction && !opt.noAction && (
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            aria-label={`${rowAction.label} ${opt.label}`}
-                            title={rowAction.title}
-                            onClick={e => { e.stopPropagation(); rowAction.onSelect(opt) }}
-                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); rowAction.onSelect(opt) } }}
-                            className="shrink-0 rounded-lg p-1.5 -mr-0.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 active:bg-rose-100 cursor-pointer transition-colors"
-                          >
-                            <rowAction.icon size={14} aria-hidden="true" />
-                          </span>
-                        )}
-                      </button>
-                    )
-                  })}
-                  {puedeCrear && (
-                    <button
-                      type="button"
-                      id={`${listboxId}-opt-${filtradas.length}`}
-                      onClick={() => elegir(busqueda.trim())}
-                      onMouseEnter={() => setActiveIndex(filtradas.length)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-all rounded-xl mt-1 border border-emerald-100/60 ${
-                        opcionActiva === filtradas.length ? 'bg-emerald-100 text-emerald-800' : 'hover:bg-emerald-50 text-emerald-700 font-semibold'
-                      }`}
-                    >
-                      <Plus size={14} className="text-emerald-500 shrink-0" />
-                      <span className="flex-1 truncate">{createLabel} "<span className="font-bold">{busqueda.trim()}</span>"</span>
-                      {createMaxLength && <span className="text-xs text-emerald-500/70 shrink-0">{busqueda.trim().length}/{createMaxLength}</span>}
+            </div>}
+            <div className="overflow-y-auto overscroll-contain flex-1 min-h-0 p-2">
+              {!filtradas.length && <p role="status" className="text-sm text-slate-600 text-center py-4">{busqueda ? 'Sin resultados' : 'Sin opciones'}</p>}
+              <div ref={listRef} id={listboxId} role="listbox" aria-label={placeholder}
+                tabIndex={showSearch ? -1 : 0} aria-activedescendant={!showSearch ? activeId : undefined}
+                onKeyDown={event => { if (event.target === event.currentTarget) navegarTeclado(event) }} className="space-y-1 rounded-xl">
+                {filtradas.map((option, index) => {
+                  const selected = option.value === value
+                  const Icon = option.icon
+                  return <div key={option.value} role="presentation" className="flex gap-1 items-stretch min-w-0">
+                    <button type="button" id={`${listboxId}-opt-${index}`} role="option" aria-selected={selected}
+                      tabIndex={-1} onClick={() => elegir(option.value)} onMouseEnter={() => setActiveIndex(index)}
+                      className={`min-h-11 min-w-0 flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl text-left ${selected ? 'bg-slate-800 text-white font-semibold' : index === opcionActiva ? 'bg-slate-100 text-slate-900' : 'text-slate-700 hover:bg-slate-50'}`}>
+                      {Icon && <Icon size={18} aria-hidden="true" className="shrink-0" />}
+                      <span className="min-w-0 flex-1 break-words"><span className="block text-base sm:text-sm">{option.label}</span>
+                        {option.sub && <span className={`block text-xs mt-0.5 ${selected ? 'text-slate-100' : 'text-slate-600'}`}>{option.sub}</span>}
+                      </span>
+                      {selected && <Check size={18} aria-hidden="true" className="shrink-0" />}
                     </button>
-                  )}
-                  {creatable && (
-                    showInlineCreate ? (
-                      <div className="p-2 border-t border-slate-100 bg-slate-50/50 flex gap-1.5 items-center shrink-0 animate-in fade-in zoom-in-95 duration-150">
-                        <input
-                          type="text"
-                          className="flex-1 px-2.5 py-1 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white text-slate-800"
-                          placeholder={createLabel ? `${createLabel}...` : "Escribir..."}
-                          value={newValueText}
-                          onChange={e => setNewValueText(e.target.value)}
-                          autoFocus
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              if (newValueText.trim()) elegir(newValueText.trim());
-                            }
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (newValueText.trim()) {
-                              elegir(newValueText.trim());
-                            }
-                          }}
-                          className="px-2.5 py-1 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all active:scale-95 shrink-0 animate-pulse"
-                        >
-                          OK
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowInlineCreate(false);
-                            setNewValueText('');
-                          }}
-                          className="p-1 text-slate-500 hover:bg-slate-200 active:bg-slate-300 rounded-lg transition-colors shrink-0"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setShowInlineCreate(true)}
-                        className="w-full flex items-center gap-2 px-3.5 py-2 text-left text-xs font-bold text-indigo-600 hover:bg-indigo-50 border-t border-slate-100 shrink-0"
-                      >
-                        <Plus size={13} className="text-indigo-500 shrink-0" />
-                        <span className="flex-1 truncate">{createLabel ? `+ ${createLabel}` : "+ Crear nuevo"}</span>
-                      </button>
-                    )
-                  )}
-                </>
-              )}
+                    {rowAction && !option.noAction && <button type="button" aria-label={`${rowAction.label} ${option.label}`} title={rowAction.title}
+                      onClick={() => { rowAction.onSelect(option); close() }}
+                      className="min-h-11 min-w-11 shrink-0 rounded-xl p-2 text-rose-700 hover:bg-rose-50">
+                      {rowAction.icon ? <rowAction.icon size={18} aria-hidden="true" /> : rowAction.label}
+                    </button>}
+                  </div>
+                })}
+              </div>
             </div>
-          </div>,
-          document.body
-        )
-      )}
+            <div className="ui-overlay-footer shrink-0 border-t border-slate-200 px-3 pt-2 text-slate-700">
+              {puedeCrear && <button type="button" onClick={() => crear(busqueda)}
+                className="min-h-11 w-full flex items-center gap-2 rounded-xl px-3 py-2 text-left bg-emerald-50 text-emerald-800">
+                <Plus size={18} aria-hidden="true" className="shrink-0" /><span className="min-w-0 break-words">{createLabel} "{busqueda.trim()}"</span>
+              </button>}
+              {creatable && (showInlineCreate ? <div className="flex flex-wrap gap-2 items-center py-2">
+                <input ref={inlineRef} type="text" aria-label={createLabel} value={newValueText} maxLength={createMaxLength || undefined}
+                  onChange={event => setNewValueText(event.target.value)}
+                  onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); crear(newValueText) } }}
+                  placeholder={`${createLabel}...`} className="min-h-11 min-w-0 w-full px-3 py-2 text-[16px] border border-slate-300 rounded-xl bg-white text-slate-800" />
+                <button type="button" onClick={() => crear(newValueText)} disabled={!newValueText.trim()}
+                  className="min-h-11 px-4 py-2 rounded-xl bg-indigo-700 text-white disabled:bg-slate-600">Agregar</button>
+                <button type="button" onClick={() => { setShowInlineCreate(false); setNewValueText('') }} aria-label="Cancelar creación"
+                  className="min-h-11 min-w-11 p-2 rounded-xl text-slate-700 hover:bg-slate-100"><X size={18} aria-hidden="true" /></button>
+              </div> : <button type="button" onClick={() => setShowInlineCreate(true)}
+                className="min-h-11 w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-indigo-800 hover:bg-indigo-50">
+                <Plus size={18} aria-hidden="true" className="shrink-0" /><span className="break-words">{createLabel}</span>
+              </button>)}
+              {isMobile && <button type="button" onClick={() => overlay.requestClose('close-button')}
+                className="min-h-11 w-full px-3 py-2 mt-1 rounded-xl border border-slate-300 font-semibold text-slate-700">Cerrar</button>}
+            </div>
+          </div>
+        </OverlayContext.Provider>, document.body)}
     </div>
   )
 }

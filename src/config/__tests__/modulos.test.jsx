@@ -2,6 +2,7 @@
 // Test del interruptor único del lanzamiento por fases (src/config/modulos.js).
 // Verifica el CABLEADO: coherencia entre el flag, las secciones heredadas y la
 // ruta por defecto, sea cual sea el estado actual del candado.
+// @vitest-environment node
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 

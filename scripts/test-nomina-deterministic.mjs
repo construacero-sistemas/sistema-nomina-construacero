@@ -1,8 +1,11 @@
 // scripts/test-nomina-deterministic.mjs
-// Suite de pruebas deterministas e integrales de extremo a extremo para el sistema de Nómina.
+// Pruebas deterministas de cálculo y transporte de handlers con fixtures sintéticos.
+// La integridad SQL se comprueba por separado; esto no acredita producción.
 // Ejecutable directamente mediante: node scripts/test-nomina-deterministic.mjs
 
-import { calcularCamposAsistencia, calcularLineaNomina } from '../server/lib/nominaUtils.js'
+import { randomUUID } from 'node:crypto'
+import { payrollRpcFixture } from './deterministic-payroll-rpc.mjs'
+import { calcularCamposAsistencia } from '../server/lib/nominaUtils.js'
 import * as H from '../server/handlers/nomina.js'
 import * as F from '../server/handlers/finanzas.js'
 
@@ -18,6 +21,7 @@ const ENV = {
 
 const IDS = {
   cuenta: '00000000-0000-4000-8000-000000000001',
+  custodia: '00000000-0000-4000-8000-000000000002',
   operador: '10000000-0000-4000-8000-000000000001',
   empleado1: '20000000-0000-4000-8000-000000000001',
   empleado2: '20000000-0000-4000-8000-000000000002',
@@ -75,6 +79,8 @@ class InMemoryDatabase {
     ]
     this.finanzas_movimientos = []
     this.finanzas_categorias = []
+    this.rpcOperations = new Map()
+    this.rpcAssignments = []
     this.config = {
       nombre_negocio: 'Construacero Carabobo C.A.',
       rif_negocio: 'J-50115913-0',
@@ -92,6 +98,10 @@ class InMemoryDatabase {
     const params = u.searchParams
     const body = init.body ? JSON.parse(init.body) : null
     const idFilter = extractIdFilter(params)
+
+    if (pathname === '/rest/v1/rpc/finanzas_operar' && method === 'POST') {
+      return jsonResponse(payrollRpcFixture(this, body, IDS))
+    }
 
     // Autenticación de Supabase Auth
     if (pathname.includes('/auth/v1/user')) {
@@ -164,10 +174,14 @@ class InMemoryDatabase {
         let res = this.nomina_periodos
         if (idFilter?.type === 'eq') res = res.filter(p => p.id === idFilter.value)
         if (idFilter?.type === 'in') res = res.filter(p => idFilter.values.includes(p.id))
+        const startsBefore = params.get('desde')?.replace('lte.', '')
+        const endsAfter = params.get('hasta')?.replace('gte.', '')
+        if (startsBefore) res = res.filter(p => p.desde <= startsBefore)
+        if (endsAfter) res = res.filter(p => p.hasta >= endsAfter)
         return jsonResponse(res)
       }
       if (method === 'POST') {
-        const row = { id: IDS.periodo, ...body }
+        const row = { id: this.nomina_periodos.length ? randomUUID() : IDS.periodo, ...body }
         this.nomina_periodos.push(row)
         return jsonResponse([row], 201)
       }
@@ -189,10 +203,13 @@ class InMemoryDatabase {
     if (pathname.includes('/rest/v1/registro_asistencia')) {
       if (method === 'GET') {
         const empEq = params.get('empleado_id')?.replace('eq.', '')
-        const fechaEq = params.get('fecha')?.replace('eq.', '')
         let res = this.registro_asistencia
         if (empEq) res = res.filter(r => r.empleado_id === empEq)
-        if (fechaEq) res = res.filter(r => r.fecha === fechaEq)
+        for (const filter of params.getAll('fecha')) {
+          if (filter.startsWith('eq.')) res = res.filter(r => r.fecha === filter.slice(3))
+          else if (filter.startsWith('gte.')) res = res.filter(r => r.fecha >= filter.slice(4))
+          else if (filter.startsWith('lte.')) res = res.filter(r => r.fecha <= filter.slice(4))
+        }
         return jsonResponse(res)
       }
       if (method === 'POST') {
@@ -267,6 +284,10 @@ class InMemoryDatabase {
       }
       if (method === 'DELETE') {
         const perEq = params.get('periodo_id')?.replace('eq.', '')
+        const ids = this.nomina_lineas.filter(l => l.periodo_id === perEq).map(l => l.id)
+        if (this.rpcAssignments.some(a => ids.includes(a.lineaId))) {
+          return jsonResponse({ code: '23503', message: 'Receipt history is retained' }, 409)
+        }
         if (perEq) this.nomina_lineas = this.nomina_lineas.filter(l => l.periodo_id !== perEq)
         return jsonResponse([], 200)
       }
@@ -331,6 +352,16 @@ function jsonResponse(data, status = 200) {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
+}
+
+// Transport fixture: explicit metadata follows the same contract as the UI.
+function paymentBody(lineaIds, referencia) {
+  return { operationId: randomUUID(), lineaIds, referencia, cuentaCustodiaId: IDS.custodia,
+    metodoPago: 'Efectivo $', tasaBcv: '40.50', tasaUsdVes: '40.50', fuenteTasa: 'BCV',
+    observacionTasa: 'Tasa sintética de la prueba' }
+}
+function reversalBody(lineaId) {
+  return { operationId: randomUUID(), lineaId, motivo: 'Reversión de pago de nómina' }
 }
 
 function makeRequest(body, method = 'POST', url = 'http://localhost/api/nomina') {
@@ -576,10 +607,7 @@ async function runAllTests() {
 
   await test('Registrar pago de recibos con tasa BCV y referencia', async () => {
     const linea = db.nomina_lineas[0]
-    const req = makeRequest({
-      lineaIds: [linea.id],
-      referencia: 'REF-BCV-987654',
-    })
+    const req = makeRequest(paymentBody([linea.id], 'REF-BCV-987654'))
     const res = await H.handlePagarLineas(req, ENV)
     assertEqual(res.status, 200, 'Status de pago exitoso')
     const body = await res.json()
@@ -597,7 +625,7 @@ async function runAllTests() {
 
   await test('Revertir pago de recibo', async () => {
     const linea = db.nomina_lineas[0]
-    const req = makeRequest({ lineaId: linea.id })
+    const req = makeRequest(reversalBody(linea.id))
     const res = await H.handleRevertirPagoLinea(req, ENV)
     assertEqual(res.status, 200, 'Status de reversión')
     const lineaActualizada = db.nomina_lineas.find(l => l.id === linea.id)
@@ -612,12 +640,21 @@ async function runAllTests() {
     assertEqual(periodo.estado, 'abierto', 'Estado abierto')
   })
 
-  await test('Eliminar período limpio sin pagos', async () => {
-    const req = makeRequest({ periodoId: IDS.periodo })
-    const res = await H.handleEliminarPeriodo(req, ENV)
+  await test('Conservar período con historial aunque su pago esté revertido', async () => {
+    const before = db.nomina_lineas.length
+    const res = await H.handleEliminarPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
+    assertEqual(res.status, 409, 'El historial impide eliminar los recibos')
+    assertEqual(db.nomina_lineas.length, before, 'No desaparecen recibos')
+    assert(db.nomina_periodos.some(p => p.id === IDS.periodo), 'Se conserva el período')
+  })
+
+  await test('Eliminar período limpio sin historial de pagos', async () => {
+    const create = await H.handleCrearPeriodo(makeRequest({ nombre: 'Período limpio', desde: '2026-08-24', hasta: '2026-08-29', tipo: 'semanal' }), ENV)
+    assertEqual(create.status, 201, 'Creación de período sin historial')
+    const { periodo } = await create.json()
+    const res = await H.handleEliminarPeriodo(makeRequest({ periodoId: periodo.id }), ENV)
     assertEqual(res.status, 200, 'Status de eliminación exitosa')
-    const periodo = db.nomina_periodos.find(p => p.id === IDS.periodo)
-    assert(!periodo, 'El período debe ser eliminado de la base de datos')
+    assert(!db.nomina_periodos.some(p => p.id === periodo.id), 'Sólo se elimina el período limpio')
   })
 
   // ── SECCIÓN 6: MONEDA PRINCIPAL (USD) Y SECUNDARIA (BS CON TASAS) ───────────
@@ -682,12 +719,7 @@ async function runAllTests() {
     const lineas = db.nomina_lineas.filter(l => l.periodo_id === periodoId)
 
     // 2. Registrar pago con tasa BCV
-    const payRes = await H.handlePagarLineas(makeRequest({
-      lineaIds: [lineas[0].id],
-      referencia: 'TRANSFERENCIA-BNC-882299',
-      tasaBcv: 40.50,
-      fuenteTasa: 'BCV',
-    }), ENV)
+    const payRes = await H.handlePagarLineas(makeRequest(paymentBody([lineas[0].id], 'TRANSFERENCIA-BNC-882299')), ENV)
     assertEqual(payRes.status, 200, 'Status de pago de nómina')
 
     // 3. Verificar que se haya insertado el egreso en finanzas_movimientos
@@ -706,7 +738,7 @@ async function runAllTests() {
     const linea = db.nomina_lineas.find(l => l.referencia_pago === 'TRANSFERENCIA-BNC-882299' && l.pagado)
     assert(linea, 'Debe existir la línea pagada')
 
-    const revRes = await H.handleRevertirPagoLinea(makeRequest({ lineaId: linea.id }), ENV)
+    const revRes = await H.handleRevertirPagoLinea(makeRequest(reversalBody(linea.id)), ENV)
     assertEqual(revRes.status, 200, 'Status de reversión')
 
     // Verificar que el movimiento financiero se haya marcado como anulado
@@ -762,7 +794,7 @@ async function runAllTests() {
     })
     process.exit(1)
   } else {
-    console.log(`\n\x1b[1m\x1b[32m[✔] TODOS LOS FLUJOS DE NÓMINA FUNCIONAN DE FORMA DETERMINISTA Y EXACTA.\x1b[0m\n`)
+    console.log(`\nPruebas de cálculo y transporte aprobadas con datos sintéticos. Integridad SQL y producción se verifican por separado.\n`)
     process.exit(0)
   }
 }

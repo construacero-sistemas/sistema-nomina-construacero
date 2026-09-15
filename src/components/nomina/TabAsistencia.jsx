@@ -51,9 +51,9 @@ export default function TabAsistencia({ esAdmin }) {
   const desde = iso(dias[0])
   const hasta = iso(dias[6])
 
-  const { data: empleados = [], isLoading: empCargando } = useConfigEmpleados()
-  const { data: registros = [], isLoading: asisCargando } = useAsistencia({ desde, hasta })
-  const { data: feriados = [], isLoading: feriadosCargando } = useFeriados(desde, hasta)
+  const { data: empleados = [], isLoading: empCargando, isError: empError, refetch: retryEmpleados } = useConfigEmpleados()
+  const { data: registros = [], isLoading: asisCargando, isError: asisError, refetch: retryAsistencia } = useAsistencia({ desde, hasta })
+  const { data: feriados = [], isLoading: feriadosCargando, isError: feriadosError, refetch: retryFeriados } = useFeriados(desde, hasta)
 
   const feriadosPorFecha = useMemo(
     () => new Map(feriados.map(f => [f.fecha, f])),
@@ -95,6 +95,11 @@ export default function TabAsistencia({ esAdmin }) {
 
   const esSemanaActual = iso(lunesDe(new Date())) === desde
   const hoyIso = iso(new Date())
+
+  if (empError || asisError || feriadosError) return <div role="alert" className="p-4 rounded-2xl border border-rose-200 bg-rose-50 text-rose-800 space-y-3">
+    <p>No se pudo comprobar la asistencia, la plantilla o los feriados. No se muestran ausencias ni totales en cero como si fueran datos confirmados.</p>
+    <button type="button" onClick={() => { retryEmpleados(); retryAsistencia(); retryFeriados() }} className="min-h-11 px-4 py-2 rounded-xl border border-rose-300 bg-white font-bold">Volver a intentar</button>
+  </div>
 
   return (
     <div className="space-y-4">

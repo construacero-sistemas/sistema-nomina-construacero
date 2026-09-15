@@ -1,4 +1,7 @@
 import { lazy, Suspense, useEffect, useCallback, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { OverlayContext, useOverlay } from '../compat/components/ui/useOverlay.js'
+import { useOverlayPosition } from '../compat/components/ui/useOverlayPosition.js'
 import {
   ChevronRight, Landmark, Lock, LogOut, Menu, PanelLeftClose,
   PanelLeftOpen, Settings2, TrendingUp, User, Wallet, X
@@ -61,14 +64,8 @@ function Loading() {
 
   function recargarAplicacion() {
     useAuthStore.setState({ initialized: true, _cargandoPerfil: false, _initializing: false })
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(registrations => {
-        registrations.forEach(registration => registration.unregister())
-      })
-      caches.keys().then(names => {
-        names.forEach(name => caches.delete(name))
-      })
-    }
+    // No borrar registros/cachés de otras aplicaciones ni forzar una versión
+    // mientras otra pestaña confirma una operación financiera.
     window.location.reload()
   }
 
@@ -284,20 +281,45 @@ function Protected() {
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
   const user = useAuthStore(useCallback(state => state.user, []))
   const loadingProfile = useAuthStore(useCallback(state => state._cargandoPerfil, []))
-  if (!initialized || (user && !perfil && loadingProfile)) return <Loading />
-  if (!perfil || perfil.rol !== 'administracion') return <Navigate to="/login" replace />
-  return <Outlet />
+  const status = useAuthStore(state => state.authStatus)
+  const generation = useAuthStore(state => state.sessionGeneration)
+  if (!initialized) return <Loading />
+  if (user && (!perfil || loadingProfile && status !== 'authenticated')) return <LoginPage />
+  if (!perfil || perfil.rol !== 'administracion' || status !== 'authenticated') return <Navigate to="/login" replace />
+  return <Outlet key={`${user?.id}:${generation}`} />
 }
 
 function Public() {
   const initialized = useAuthStore(useCallback(state => state.initialized, []))
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
+  const status = useAuthStore(state => state.authStatus)
   if (!initialized) return <Loading />
-  if (perfil) return <Navigate to={rutaPorDefecto()} replace />
+  if (perfil && status === 'authenticated') return <Navigate to={rutaPorDefecto()} replace />
   return <Outlet />
 }
 
 
+
+function MobileDrawerOverlay({ onClose, onLogout }) {
+  const panelRef = useRef(null)
+  const layerRef = useRef(null)
+  const { mobileStyle } = useOverlayPosition({ open: true, anchorRef: layerRef, panelRef })
+  const overlay = useOverlay({ open: true, panelRef, layerRef, onRequestClose: onClose })
+  useEffect(() => {
+    const resize = () => { if (window.innerWidth >= 768) onClose() }
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [onClose])
+  return createPortal(<OverlayContext.Provider value={overlay.overlayId}>
+    <div ref={layerRef} className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" style={{ ...mobileStyle, zIndex: overlay.zIndex }} onClick={e => { if (e.target === e.currentTarget) overlay.requestClose('backdrop') }}>
+      <aside ref={panelRef} role="dialog" aria-modal="true" aria-label="Menú principal" tabIndex={-1}
+        className="translate-x-0 h-full flex flex-col w-[85%] max-w-xs min-w-0 overflow-y-auto rounded-r-2xl bg-slate-900 text-white"
+        style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <MobileDrawerContent onClose={() => overlay.requestClose('close-button')} onLogout={onLogout} />
+      </aside>
+    </div>
+  </OverlayContext.Provider>, document.body)
+}
 
 function Shell() {
   const logout = useAuthStore(state => state.logout)
@@ -370,18 +392,12 @@ function Shell() {
         <RateHeader />
       </header>
 
-      {menuOpen && (
-        <div
-          className="md:hidden fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm"
-          onClick={() => setMenuOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+      {menuOpen && <MobileDrawerOverlay onClose={() => setMenuOpen(false)} onLogout={() => { setMenuOpen(false); setConfirmLogoutOpen(true) }} />}
 
       {/* Sidebar fijo en desktop y drawer completo en móvil */}
       <div className={`relative shrink-0 transition-all duration-300 ease-out ${sidebarCollapsed ? 'md:w-[72px]' : 'md:w-64'}`}>
         <aside
-          className={`fixed left-0 top-0 bottom-0 z-[200] flex flex-col overflow-hidden transition-all duration-300 ease-out ${
+          className={`fixed left-0 top-0 bottom-0 z-[200] hidden md:flex flex-col overflow-hidden transition-all duration-300 ease-out ${
             menuOpen ? 'translate-x-0' : '-translate-x-full'
           } ${sidebarCollapsed ? 'md:w-[72px]' : 'md:w-64'} w-[85%] max-w-xs rounded-br-2xl rounded-tr-2xl md:inset-y-0 md:top-auto md:bottom-auto md:rounded-none md:translate-x-0 md:static md:z-auto md:h-[calc(100vh-3.5rem)] md:sticky md:top-14`}
           style={{
@@ -390,17 +406,6 @@ function Shell() {
             boxShadow: '4px 0 24px rgba(0,0,0,0.3)',
           }}
         >
-          {/* Vista móvil del Drawer */}
-          <div className="md:hidden h-full flex flex-col min-h-0">
-            <MobileDrawerContent
-              onClose={() => setMenuOpen(false)}
-              onLogout={() => {
-                setMenuOpen(false)
-                setConfirmLogoutOpen(true)
-              }}
-            />
-          </div>
-
           {/* Vista desktop de la Barra Lateral */}
           <div className="hidden md:flex relative flex-col md:h-full min-h-0">
             <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-[0.03]">
@@ -466,7 +471,7 @@ function Shell() {
 
         <button
           onClick={() => setSidebarCollapsed(value => !value)}
-          className="hidden md:flex absolute -right-3 top-14 w-6 h-6 rounded-full items-center justify-center transition-all hover:scale-110 z-50"
+          className="hidden md:flex absolute -right-3 top-14 min-w-11 min-h-11 rounded-full items-center justify-center transition-all hover:scale-110 z-50"
           style={{ background: '#0d1f3c', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 2px 8px rgba(0,0,0,0.4)', color: 'rgba(255,255,255,0.5)' }}
           title={sidebarCollapsed ? 'Expandir menú' : 'Colapsar menú'}
           aria-label={sidebarCollapsed ? 'Expandir menú' : 'Colapsar menú'}
@@ -477,14 +482,13 @@ function Shell() {
 
       <main
         ref={mainRef}
-        className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden flex flex-col pb-36 md:pb-8"
-        style={{ paddingBottom: 'calc(8.5rem + env(safe-area-inset-bottom, 0px))' }}
+        className="app-main-safe flex-1 min-w-0 overflow-y-auto overflow-x-hidden flex flex-col"
       >
         <div className="w-full flex flex-col flex-1 min-h-0">
           <Suspense fallback={<Loading />}>
             <Outlet />
           </Suspense>
-          <div className="h-16 shrink-0 md:hidden" aria-hidden="true" />
+          {/* El espacio del nav inferior se calcula una sola vez en app-main-safe. */}
         </div>
       </main>
 

@@ -1,7 +1,8 @@
 // src/hooks/useClientes.js
 // Queries y mutations para la tabla public.clientes
 // RLS se encarga del aislamiento: vendedor solo ve sus clientes
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
+import { useAccountQuery as useQuery, useAccountQueryClient as useQueryClient } from '../lib/accountQueries.js'
 import { useCallback } from 'react'
 import supabase from '../services/supabase/client'
 import useAuthStore from '../store/useAuthStore'

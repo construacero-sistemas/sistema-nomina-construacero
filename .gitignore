@@ -10,6 +10,7 @@ coverage/
 .wrangler/
 .vercel/
 .freebuff/
+.workbuddy-ai/
 .supabase/
 supabase/.temp/
 *.log
@@ -21,3 +22,6 @@ skills-lock.json
 *.mp4
 RESTAURAR_CONVERSACIONES.bat
 scripts/restaurar_conversaciones.py
+
+# Evidencias de auditoria/QA generadas localmente (informes HTML, capturas, ZIP)
+outputs/

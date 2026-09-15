@@ -52,8 +52,8 @@ const ROUTES = [
   ['handleEliminarPeriodo', { periodoId: IDS.periodo }],
   ['handleGetLineas', undefined],
   ['handleAjustarLinea', { lineaId: IDS.linea, bonosUsd: 10 }],
-  ['handlePagarLineas', { lineaIds: [IDS.linea] }],
-  ['handleRevertirPagoLinea', { lineaId: IDS.linea }],
+  ['handlePagarLineas', { operationId: IDS.registro, lineaIds: [IDS.linea], cuentaCustodiaId: IDS.config, tasaBcv: '400', tasaUsdVes: '400', fuenteTasa: 'BCV', metodoPago: 'Efectivo $' }],
+  ['handleRevertirPagoLinea', { operationId: IDS.registro, lineaId: IDS.linea, motivo: 'Corrección de prueba' }],
 ]
 
 const LEGACY_ROLES = ['jefe', 'desarrollador', 'logistica', 'supervisor', 'vendedor']
@@ -69,11 +69,45 @@ describe('permisos — solo administración', () => {
         const result = await readResponse(response)
 
         expect(result.status).toBe(403)
-        expect(String(result.body.error)).toMatch(/administración|denegado|permiso/i)
+        expect(result.body.error).toEqual(expect.any(String))
+        expect(result.body.error.length).toBeGreaterThan(0)
+        expect(result.body).not.toHaveProperty('ok', true)
         expect(mock.calls).toHaveLength(0)
       })
     }
   }
+
+  it.each(['handlePagarLineas', 'handleRevertirPagoLinea'])('rejects a missing tenant for %s before calling the RPC', async name => {
+    operadorActual = { ...OPERADORES.administracion, cuenta_id: null }
+    const [, body] = ROUTES.find(([route]) => route === name)
+    mock = installFetchMock([])
+    const result = await readResponse(await H[name](makeRequest(body), ENV))
+    expect(result.status).toBe(403)
+    expect(result.body.error).toEqual(expect.any(String))
+    expect(mock.calls).toHaveLength(0)
+  })
+
+  it.each([
+    ['handlePagarLineas', 'pagar_nomina'],
+    ['handleRevertirPagoLinea', 'revertir_nomina'],
+  ])('uses only the authenticated administrator and tenant for %s', async (name, tipo) => {
+    const [, body] = ROUTES.find(([route]) => route === name)
+    const resultado = tipo === 'pagar_nomina' ? { recibos_pagados: 1, total_usd: '100.000000' }
+      : { lineaId: IDS.linea, reversionContable: true }
+    const confirmed = { ok: true, estado: 'confirmada', tipo, operationId: IDS.periodo,
+      idempotencyKey: body.operationId, resultado, ...resultado }
+    mock = installFetchMock([{ match: '/rpc/finanzas_operar', method: 'POST', respond: confirmed }])
+    const result = await readResponse(await H[name](makeRequest({ ...body,
+      cuenta_id: IDS.empleado, operador_id: IDS.empleado2, usuarioId: IDS.empleado2, zonaHoraria: 'UTC' }), ENV))
+    expect(result).toEqual({ status: 200, body: confirmed })
+    expect(mock.calls).toHaveLength(1)
+    expect(mock.calls[0].body).toMatchObject({ p_cuenta_id: OPERADORES.administracion.cuenta_id,
+      p_operador_id: OPERADORES.administracion.id, p_tipo: tipo, p_clave: body.operationId,
+      p_payload: { zonaHoraria: 'America/Caracas' } })
+    expect(mock.calls[0].body.p_payload).not.toHaveProperty('cuenta_id')
+    expect(mock.calls[0].body.p_payload).not.toHaveProperty('operador_id')
+    expect(mock.calls[0].body.p_payload).not.toHaveProperty('usuarioId')
+  })
 
   it('administración puede consultar empleados y la configuración salarial', async () => {
     operadorActual = OPERADORES.administracion

@@ -96,21 +96,24 @@ export default function TabEmpleados({ esAdmin }) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className={`grid grid-cols-1 gap-3 ${esAdmin ? 'sm:grid-cols-4' : 'sm:grid-cols-2'}`}>
+    <div className="flex flex-col gap-4">
+      <details className="rounded-2xl border border-slate-200 bg-white p-3">
+        <summary className="min-h-11 flex items-center cursor-pointer text-sm font-bold text-slate-700">Resumen de plantilla · {kpis.total} empleados</summary>
+      <div className={`grid grid-cols-2 gap-3 pt-3 ${esAdmin ? 'sm:grid-cols-4' : 'sm:grid-cols-2'}`}>
         <KpiCard icon={Users} label="Total en plantilla" value={kpis.total} color="indigo" />
         <KpiCard icon={Briefcase} label="Nómina fija semanal" value={kpis.fijosCount} color="green" />
-        <KpiCard icon={Sparkles} label="Vendedores (Comisión)" value={kpis.vendedoresCount} subtext="Egresos directos" color="amber" />
+        <KpiCard icon={Sparkles} label="Vendedores (Comisión)" value={kpis.vendedoresCount} sub="Egresos directos" color="amber" />
         {esAdmin && (
           <KpiCard
             icon={DollarSign}
             label="Masa salarial fija / día"
             value={`$${fmt(kpis.masaDiaria)}`}
-            subtext={`~ ${fmtBs(kpis.masaDiaria)} (${shortLabelTasa})`}
+            sub={`~ ${fmtBs(kpis.masaDiaria)} (${shortLabelTasa})`}
             color="indigo"
           />
         )}
       </div>
+      </details>
 
       {sinConfigurar.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2.5">
@@ -138,7 +141,8 @@ export default function TabEmpleados({ esAdmin }) {
               value={busqueda}
               onChange={e => setBusqueda(e.target.value)}
               placeholder="Buscar empleado o cargo..."
-              className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              aria-label="Buscar empleado o cargo"
+              className="w-full min-h-11 pl-9 pr-3 py-2 rounded-xl border border-slate-300 bg-white text-base focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
             />
           </div>
 

@@ -132,7 +132,7 @@ export default function AsistenciaMasivaModal({ fechaInicial, totalEmpleados, on
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer pt-1">
+          <label className="min-h-11 flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer pt-1">
             <input type="checkbox" checked={esFeriado} onChange={e => setEsFeriado(e.target.checked)}
               disabled={cargando}
               className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-400" />

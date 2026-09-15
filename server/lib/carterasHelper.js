@@ -198,20 +198,15 @@ export function calcularSaldosCarteras(movimientos = [], tasaBcv = 1) {
 export function asignarMovimientoACuenta(mov = {}, cuentas = []) {
   if (!Array.isArray(cuentas) || cuentas.length === 0) return null
 
+  const explicit = mov.cuenta_custodia_id || mov.cuentaCustodiaId
+  if (explicit) return cuentas.find(c => c.id === explicit) || null
   const cuentaOrigen = String(mov.cuenta_origen || mov.cuentaOrigen || '').trim()
   if (!cuentaOrigen) return null
-
   const norm = String(cuentaOrigen).toLowerCase()
-  const match = cuentas.find(c => {
-    const id = String(c.id || '').toLowerCase()
-    const nombre = String(c.nombre || '').toLowerCase()
-    const banco = String(c.banco || '').toLowerCase()
-    return id === norm || nombre === norm || banco === norm ||
-      (c.nombre || '').toLowerCase().includes(norm) ||
-      (c.banco || '').toLowerCase().includes(norm)
-  })
-
-  return match || null
+  const matches = cuentas.filter(c => String(c.id || '').toLowerCase() === norm || String(c.nombre || '').trim().toLowerCase() === norm)
+  // El texto histórico ambiguo requiere conciliación: nunca elegir el primer
+  // banco por coincidencia parcial ni asignar el mismo movimiento dos veces.
+  return matches.length === 1 ? matches[0] : null
 }
 
 /**

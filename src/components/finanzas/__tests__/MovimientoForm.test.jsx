@@ -35,7 +35,7 @@ const CATEGORIAS = [
   { id: 'c3', nombre: 'General', tipo: 'ambos' },
 ]
 
-function renderForm(cuentas = []) {
+function renderForm(cuentas = [{ id: '10000000-0000-4000-8000-000000000001', nombre: 'Caja Efectivo $', tipo: 'efectivo_usd', moneda: 'USD', saldo: 500, saldoConfirmado: true, activo: true }]) {
   const onClose = vi.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(
@@ -193,7 +193,7 @@ describe('MovimientoForm', () => {
     const payload = mutateAsync.mock.calls[0][0]
     expect(payload.metodoPago).toBe('Banco en Bolívares')
     expect(payload.cuentaOrigen).toBe('Banesco')
-    expect(payload.cuenta_id).toBe('c-ban')
+    expect(payload.cuentaCustodiaId).toBe('c-ban')
     expect(payload.partes).toBeNull()
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
@@ -222,7 +222,7 @@ describe('MovimientoForm', () => {
     const payload = mutateAsync.mock.calls[0][0]
     expect(payload.metodoPago).toBe('USDT')
     expect(payload.cuentaOrigen).toBe('Binance Pay (USDT)')
-    expect(payload.cuenta_id).toBe('c-bin')
+    expect(payload.cuentaCustodiaId).toBe('c-bin')
   })
 
   it('en efectivo la asignación de caja es automática y no renderiza el selector secundario de cuenta', async () => {
@@ -245,7 +245,7 @@ describe('MovimientoForm', () => {
     const payload = mutateAsync.mock.calls[0][0]
     expect(payload.metodoPago).toBe('Efectivo $')
     expect(payload.cuentaOrigen).toBe('Caja Efectivo $')
-    expect(payload.cuenta_id).toBe('c-caja-usd')
+    expect(payload.cuentaCustodiaId).toBe('c-caja-usd')
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
 

@@ -33,44 +33,60 @@ describe('CustomSelect rowAction', () => {
   it('no muestra el botón de acción hasta abrir el dropdown', () => {
     renderSelect()
     expect(screen.queryByRole('button', { name: /eliminar ventas/i })).toBeNull()
-    fireEvent.click(screen.getByRole('combobox'))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Selecciona...' }))
     expect(screen.getByRole('button', { name: /eliminar ventas/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /eliminar sueldos/i })).toBeTruthy()
   })
 
   it('la opción marcada noAction no muestra el botón', () => {
     renderSelect()
-    fireEvent.click(screen.getByRole('combobox'))
+    fireEvent.click(screen.getByRole('combobox', { name: 'Selecciona...' }))
     expect(screen.queryByRole('button', { name: /eliminar \+ crear/i })).toBeNull()
   })
 
-  it('el click en la acción NO selecciona el valor ni cierra el dropdown', async () => {
+  it('la acción no selecciona el valor y cierra el dropdown para dar paso a la confirmación', async () => {
     const user = userEvent.setup()
     const { onSelect, onChange } = renderSelect()
-    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('combobox', { name: 'Selecciona...' }))
     await user.click(screen.getByRole('button', { name: /eliminar sueldos/i }))
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith(OPCIONES[1])
     expect(onChange).not.toHaveBeenCalled()
-    // El dropdown sigue abierto: el usuario puede seguir eligiendo categoría.
-    expect(screen.getByRole('button', { name: /eliminar ventas/i })).toBeTruthy()
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Selecciona...' })).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('elegir la opción normalmente sigue funcionando con rowAction presente', async () => {
     const user = userEvent.setup()
     const { onChange, onSelect } = renderSelect()
-    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('combobox', { name: 'Selecciona...' }))
     await user.click(screen.getByRole('option', { name: /ventas/i }))
     expect(onChange).toHaveBeenCalledWith('ventas')
     expect(onSelect).not.toHaveBeenCalled()
   })
 
-  it('la acción responde a Enter/Space para accesibilidad', () => {
-    const onSelect = vi.fn()
-    renderSelect({ onSelect })
-    fireEvent.click(screen.getByRole('combobox'))
+  it.each(['{Enter}', ' '])('la acción nativa responde a %s sin seleccionar la opción', async key => {
+    const user = userEvent.setup()
+    const { onSelect, onChange } = renderSelect()
+    await user.click(screen.getByRole('combobox', { name: 'Selecciona...' }))
     const btn = screen.getByRole('button', { name: /eliminar ventas/i })
-    fireEvent.keyDown(btn, { key: 'Enter' })
-    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(btn.tagName).toBe('BUTTON')
+    expect(btn.closest('[role="option"]')).toBeNull()
+    btn.focus()
+    await user.keyboard(key)
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(OPCIONES[0])
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  it('las opciones y acciones son controles hermanos con nombres independientes', async () => {
+    const user = userEvent.setup()
+    renderSelect()
+    await user.click(screen.getByRole('combobox', { name: 'Selecciona...' }))
+    const option = screen.getByRole('option', { name: 'Ventas' })
+    const action = screen.getByRole('button', { name: 'Eliminar Ventas' })
+    expect(option.parentElement).toBe(action.parentElement)
+    expect(option.querySelector('button, [role="button"], input, a')).toBeNull()
+    expect(option).toHaveAccessibleName('Ventas')
   })
 })

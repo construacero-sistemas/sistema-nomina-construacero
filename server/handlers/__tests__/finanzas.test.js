@@ -81,9 +81,9 @@ describe('finanzas — flujo crear, reportar y anular', () => {
 
   it('resume por RPC acotado al tenant y rango', async () => {
     mock = installFetchMock([
-      { match: '/rpc/finanzas_resumen', method: 'POST', respond: [
-        { tipo: 'egreso', categoria: 'Proveedores', total_ves: 120, movimientos: 1 },
-      ] },
+      { match: '/rpc/finanzas_resumen_consistente', method: 'POST', respond: { versionLibro: '7', rows: [
+        { tipo: 'egreso', categoria: 'Proveedores', total_ves: 120, total_usd: 1, movimientos: 1 },
+      ] } },
     ])
     const request = makeRequest(undefined, { url: 'http://worker.test/api/finanzas/reportes/resumen?desde=2026-08-01&hasta=2026-08-31&moneda=USD&tipo=egreso&categoria=Proveedores' })
     const response = await H.handleGetFinanzasResumen(request, ENV)
@@ -113,22 +113,21 @@ describe('finanzas — flujo crear, reportar y anular', () => {
 
   it('lista movimientos con rango, tenant, tipo, categoria, moneda y mostrarAnulados', async () => {
     mock = installFetchMock([
-      { match: '/finanzas_movimientos', method: 'GET', respond: [movement] },
+      { match: '/rpc/finanzas_movimientos_pagina', method: 'POST', respond: { movimientos: [movement], versionLibro: '7', paginacion: { total: 1, recibidos: 1, siguiente: null } } },
     ])
     const request = makeRequest(undefined, {
-      url: 'http://worker.test/api/finanzas/movimientos?desde=2026-08-01&hasta=2026-08-31&tipo=egreso&categoria=Proveedores&moneda=USD&mostrarAnulados=true&limit=50',
+      url: 'http://worker.test/api/finanzas/movimientos?desde=2026-08-01&hasta=2026-08-31&tipo=egreso&categoria=Proveedores&moneda=USD&mostrarAnulados=true&limit=50&cartera=USD&versionLibro=7',
     })
     const response = await H.handleGetFinanzasMovimientos(request, ENV)
     const result = await readResponse(response)
     expect(result.status).toBe(200)
     expect(result.body.movimientos).toHaveLength(1)
-    expect(mock.calls[0].url).toContain(`cuenta_id=eq.${OPERADORES.administracion.cuenta_id}`)
-    expect(mock.calls[0].url).toContain('tipo=eq.egreso')
-    expect(mock.calls[0].url).toContain('categoria=eq.Proveedores')
-    expect(mock.calls[0].url).toContain('moneda=eq.USD')
-    expect(mock.calls[0].url).not.toContain('estado=eq.activo') // when mostrarAnulados is true
-    expect(mock.calls[0].url).toContain('limit=50')
-    expect(mock.calls[0].url).not.toContain('select=*')
+    expect(mock.calls).toHaveLength(1)
+    expect(mock.calls[0].url).toBe(`${ENV.SUPABASE_URL}/rest/v1/rpc/finanzas_movimientos_pagina`)
+    expect(mock.calls[0].body).toEqual({ p_cuenta_id: OPERADORES.administracion.cuenta_id,
+      p_desde: '2026-08-01', p_hasta: '2026-08-31', p_tipo: 'egreso', p_categoria: 'Proveedores',
+      p_moneda: 'USD', p_cartera: 'USD', p_anulados: true, p_limite: 50, p_offset: 0, p_version: '7' })
+    expect(result.body.versionLibro).toBe('7')
   })
 
   it('rechaza rangos y paginación inválidos antes de consultar', async () => {

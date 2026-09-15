@@ -5,6 +5,7 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { inspectResponsiveJsx, hasMinimumTouchHeight } from './qa-responsive-rules.mjs'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 
@@ -36,8 +37,8 @@ async function walk(directory, output = []) {
   let entries
   try {
     entries = await readdir(absolute, { withFileTypes: true })
-  } catch {
-    return output
+  } catch (error) {
+    throw new Error(`Cannot inspect required source directory ${absolute}: ${error.message}`)
   }
 
   for (const entry of entries) {
@@ -56,7 +57,9 @@ async function run() {
 
   const allFiles = await walk('src')
   const compatFiles = await walk('compat')
-  const jsxFiles = [...allFiles, ...compatFiles].filter(f => f.endsWith('.jsx'))
+  // Test fixtures can intentionally contain prohibited UI; inspect production JSX only.
+  const jsxFiles = [...allFiles, ...compatFiles].filter(f => f.endsWith('.jsx') && !/(?:^|\/)__tests__\/|\.(?:test|spec)\.jsx$/.test(f))
+  const jsxReports = new Map(await Promise.all(jsxFiles.map(async file => [file, inspectResponsiveJsx(await read(file))])))
 
   // ─── 1. REGLA: CERO SCROLL HORIZONTAL EN PESTAÑAS Y CONTENEDORES ────────────
   console.log('━━━ 1. CERO SCROLL HORIZONTAL INVOLUNTARIO (FLEX-WRAP EN PESTAÑAS) ━━━')
@@ -66,6 +69,8 @@ async function run() {
   const holidayManager = await read('src/components/nomina/HolidayManager.jsx')
   const nominaApp = await read('src/NominaApp.jsx')
   const modal = await read('compat/components/ui/Modal.jsx')
+  const baseCss = await read('compat/styles/base.css')
+  const overlayPosition = await read('compat/components/ui/useOverlayPosition.js')
 
   test('NominaView: Pestañas principales usan flex-wrap y no fuerzan scroll horizontal', () => {
     if (nominaView.includes('overflow-x-auto') && !nominaView.includes('flex-wrap')) {
@@ -118,8 +123,10 @@ async function run() {
   })
 
   test('Modal Base: Modales respetan safe-area-inset-bottom para no tapar acciones en iPhone', () => {
-    if (!modal.includes('env(safe-area-inset-bottom)')) {
-      throw new Error('Modal.jsx debe incluir pb-[env(safe-area-inset-bottom)]')
+    if (!modal.includes('ui-overlay-footer') || !modal.includes('ui-overlay-body-safe') ||
+      !/\.ui-overlay-footer\s*\{[^}]*padding-bottom:[^}]*env\(safe-area-inset-bottom/.test(baseCss) ||
+      !/\.ui-overlay-body-safe\s*\{[^}]*padding-bottom:[^}]*env\(safe-area-inset-bottom/.test(baseCss)) {
+      throw new Error('Both modal footer and scroll body must apply their safe-area CSS rules')
     }
   })
 
@@ -133,8 +140,9 @@ async function run() {
   })
 
   test('Modal Base: Modal calcula altura máxima con max-h-[calc(100dvh-2rem)] o 100dvh', () => {
-    if (!modal.includes('100dvh')) {
-      throw new Error('Modal.jsx debe usar 100dvh en su restricción de alto máximo')
+    if (!modal.includes('mobileStyle') || !overlayPosition.includes('window.visualViewport') ||
+      !/\.ui-overlay-layer\s*\{[^}]*height:\s*100dvh/.test(baseCss) || !baseCss.includes('.ui-overlay-panel { max-height:')) {
+      throw new Error('Modal must combine the visual viewport with a dynamic-height fallback and a bounded panel')
     }
   })
 
@@ -153,9 +161,11 @@ async function run() {
     }
   })
 
-  test('HolidayManager: Botones de navegación de mes tienen tamaño accesible', () => {
-    if (!holidayManager.includes('p-2 rounded-xl')) {
-      throw new Error('Los botones de mes deben tener p-2 para fácil pulsación')
+  test('HolidayManager: month navigation buttons have a minimum 44px touch height', () => {
+    const navigation = jsxReports.get('src/components/nomina/HolidayManager.jsx').controls
+      .filter(control => /\b(?:prevMonth|nextMonth)\b/.test(control.onClick))
+    if (navigation.length !== 2 || !navigation.every(hasMinimumTouchHeight)) {
+      throw new Error('Both month navigation buttons must provide a minimum 44px touch height')
     }
   })
 
@@ -225,8 +235,8 @@ async function run() {
   console.log('\n━━━ 7. MODALES Y DIÁLOGOS RESPONSIVOS CON CONTENCIÓN DE PANTALLA ━━━')
 
   test('Modal Base: Restringe ancho máximo al 100vw menos margen seguro (max-w-[calc(100vw-1.5rem)])', () => {
-    if (!modal.includes('max-w-[calc(100vw-1.5rem)]')) {
-      throw new Error('Modal.jsx debe restringir ancho con max-w-[calc(100vw-1.5rem)]')
+    if (!modal.includes('ui-overlay-panel') || !baseCss.includes('width: min(100%, calc(100vw - 1.5rem))')) {
+      throw new Error('Modal must apply a bounded panel with viewport-safe maximum width')
     }
   })
 
@@ -257,23 +267,10 @@ async function run() {
   // ─── 8. REGLA: SCANNER AUTOMÁTICO EN TODOS LOS ARCHIVOS JSX (39 COMPONENTES) ─
   console.log('\n━━━ 8. SCANNER DETERMINISTA DE INTEGRIDAD RESPONSIVA (39 COMPONENTES) ━━━')
 
-  let forbiddenFixedPixelWidths = 0
-  let componentsChecked = 0
-
-  for (const file of jsxFiles) {
-    const content = await read(file)
-    componentsChecked++
-
-    // Buscar anchos fijos peligrosos sin breakpoints (ej. w-[800px], w-[1200px] fuera de contenedores decorativos pointer-events-none)
-    const matches = content.match(/\bw-\[(\d+)px\]/g) || []
-    for (const m of matches) {
-      const px = parseInt(m.replace(/\D/g, ''), 10)
-      if (px > 450 && !content.includes('pointer-events-none') && !content.includes('max-w-full') && !content.includes('overflow-x-auto') && !content.includes('HorizontalScroll')) {
-        forbiddenFixedPixelWidths++
-        console.warn(`     ⚠️  Alerta en ${file}: ${m} sin contención explícita`)
-      }
-    }
-  }
+  const componentsChecked = jsxFiles.length
+  const fixedWidthHits = [...jsxReports].flatMap(([file, report]) => report.fixedWidths.map(line => `${file}:${line}`))
+  const forbiddenFixedPixelWidths = fixedWidthHits.length
+  for (const hit of fixedWidthHits) console.warn(`  Uncontained fixed width: ${hit}`)
 
   test(`Scanner de ${componentsChecked} componentes JSX: 0 desbordes de ancho fijo rígido (>450px sin contención)`, () => {
     if (forbiddenFixedPixelWidths > 0) {
@@ -284,19 +281,8 @@ async function run() {
   // ─── 9. REGLA: SIN DIÁLOGOS NATIVOS NI GLIFOS UNICODE EN LA UI ──────────────
   console.log('\n━━━ 9. SIN DIÁLOGOS NATIVOS NI GLIFOS UNICODE GRÁFICOS ━━━')
 
-  let nativeDialogHits = []
-  let glyphHits = []
-  const GLYPH_BLACKLIST = ['⚠️', '✨', '🏢', '📍', '🏦', '📱', '💵', '🌐', '📋', '💳', '🎭', '👷', '⚔️']
-
-  for (const file of jsxFiles) {
-    const content = await read(file)
-    // Strip line comments to avoid false positives from commented-out code
-    const code = content.split('\n').filter(line => !line.trim().startsWith('//')).join('\n')
-    if (/(?<![.\w])(confirm|alert|prompt)\s*\(/.test(code)) nativeDialogHits.push(file)
-    for (const glyph of GLYPH_BLACKLIST) {
-      if (code.includes(glyph)) { glyphHits.push(`${file}: ${glyph}`); break }
-    }
-  }
+  const nativeDialogHits = [...jsxReports].flatMap(([file, report]) => report.nativeDialogs.map(line => `${file}:${line}`))
+  const glyphHits = [...jsxReports].flatMap(([file, report]) => report.glyphs.map(line => `${file}:${line}`))
 
   test(`Scanner de ${componentsChecked} componentes JSX: 0 diálogos nativos (confirm/alert/prompt)`, () => {
     if (nativeDialogHits.length > 0) {
@@ -313,21 +299,7 @@ async function run() {
   // ─── 10. REGLA: TOUCH TARGETS ≥ 44PX EN CONTROLES INTERACTIVOS ─────────────
   console.log('\n━━━ 10. TOUCH TARGETS ≥ 44PX EN BOTONES E INPUTS ━━━')
 
-  let undersizedControls = []
-  for (const file of jsxFiles) {
-    const content = await read(file)
-    const lines = content.split('\n')
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      // Detect a button/input opening tag on this line, then look at this line + next for h-9/h-10
-      const isOpeningTag = /<(button|input)\b/.test(line)
-      if (!isOpeningTag) continue
-      const context = line + (lines[i + 1] || '')
-      if (/\bh-(9|10)\b/.test(context)) {
-        undersizedControls.push(`${file}:${i + 1}`)
-      }
-    }
-  }
+  const undersizedControls = [...jsxReports].flatMap(([file, report]) => report.undersizedControls.map(line => `${file}:${line}`))
 
   test(`Scanner de ${componentsChecked} componentes JSX: 0 botones/inputs con altura < 44px (h-9/h-10)`, () => {
     if (undersizedControls.length > 0) {

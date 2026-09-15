@@ -23,21 +23,11 @@ jobs:
       - name: Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.22.2
 
-      # No se usan secretos del entorno para verificar el paquete. Las
-      # credenciales reales solo se agregan en el deploy del Worker/frontend.
-      - name: Instalar dependencias
+      # Verification requires no production credentials or networked database.
+      - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Verificar contrato y secretos
-        run: npm run check:project
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Pruebas
-        run: npm test -- --reporter=dot
-
-      - name: Build
-        run: npm run build
+      - name: Verify project, guards, tests, and fresh production bundle
+        run: npm run verify

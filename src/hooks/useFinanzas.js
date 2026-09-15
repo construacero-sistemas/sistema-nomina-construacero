@@ -1,7 +1,8 @@
 // src/hooks/useFinanzas.js
 // Acceso del frontend al libro financiero; todas las lecturas son acotadas.
 import { useCallback } from 'react'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
+import { useAccountQuery as useQuery, useAccountInfiniteQuery as useInfiniteQuery, useAccountQueryClient as useQueryClient } from '../../compat/lib/accountQueries.js'
 import useAuthStore from '../../compat/store/useAuthStore.js'
 import { authFetch } from '../../compat/services/authFetch.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
@@ -14,8 +15,8 @@ function puedeFinanzas(perfil) {
 }
 
 // authFetch refresca la sesión y reintenta automáticamente en 401.
-async function apiGet(path) {
-  const response = await authFetch(path)
+async function apiGet(path, signal) {
+  const response = await authFetch(path, { signal })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.error || `Error ${response.status}`)
   return payload
@@ -54,11 +55,13 @@ export function useFinanzasCategorias() {
   })
 }
 
-export function useFinanzasMovimientos({ desde, hasta, tipo = '', categoria = '', moneda = '', mostrarAnulados = false } = {}) {
+export function useFinanzasMovimientos({ desde, hasta, tipo = '', categoria = '', moneda = '', cartera = '', mostrarAnulados = false } = {}) {
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
   const pageSize = 50
-  const buildUrl = offset => {
+  const buildUrl = ({ offset = 0, versionLibro } = {}) => {
     const params = new URLSearchParams({ desde, hasta, limit: String(pageSize), offset: String(offset) })
+    if (versionLibro != null) params.set('versionLibro', versionLibro)
+    if (cartera) params.set('cartera', cartera)
     if (tipo) params.set('tipo', tipo)
     if (categoria) params.set('categoria', categoria)
     if (moneda) params.set('moneda', moneda)
@@ -66,27 +69,28 @@ export function useFinanzasMovimientos({ desde, hasta, tipo = '', categoria = ''
     return `/api/finanzas/movimientos?${params}`
   }
   return useInfiniteQuery({
-    queryKey: [...BASE_KEY, 'movimientos', desde, hasta, tipo, categoria, moneda, mostrarAnulados],
-    queryFn: ({ pageParam = 0 }) => apiGet(buildUrl(pageParam)),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) => {
-      const recibidos = lastPage?.paginacion?.recibidos ?? 0
-      return recibidos === pageSize ? allPages.length * pageSize : undefined
-    },
+    queryKey: [...BASE_KEY, 'movimientos', desde, hasta, tipo, categoria, moneda, cartera, mostrarAnulados],
+    queryFn: ({ pageParam, signal }) => apiGet(buildUrl(pageParam), signal),
+    initialPageParam: { offset: 0 },
+    getNextPageParam: lastPage => lastPage?.paginacion?.siguiente != null
+      ? { offset: lastPage.paginacion.siguiente, versionLibro: lastPage.versionLibro }
+      : undefined,
+    retry: false,
     enabled: puedeFinanzas(perfil) && Boolean(desde && hasta && desde <= hasta),
     staleTime: 1000 * 15,
   })
 }
 
-export function useFinanzasResumen({ desde, hasta, tipo = '', categoria = '', moneda = '' } = {}) {
+export function useFinanzasResumen({ desde, hasta, tipo = '', categoria = '', moneda = '', cartera = '' } = {}) {
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
   const params = new URLSearchParams({ desde, hasta })
   if (tipo) params.set('tipo', tipo)
   if (categoria) params.set('categoria', categoria)
   if (moneda) params.set('moneda', moneda)
+  if (cartera) params.set('cartera', cartera)
   return useQuery({
-    queryKey: [...BASE_KEY, 'resumen', desde, hasta, tipo, categoria, moneda],
-    queryFn: () => apiGet(`/api/finanzas/reportes/resumen?${params}`),
+    queryKey: [...BASE_KEY, 'resumen', desde, hasta, tipo, categoria, moneda, cartera],
+    queryFn: ({ signal }) => apiGet(`/api/finanzas/reportes/resumen?${params}`, signal),
     enabled: puedeFinanzas(perfil) && Boolean(desde && hasta && desde <= hasta),
     staleTime: 1000 * 30,
   })
@@ -162,8 +166,8 @@ export function useRestaurarCategoria() {
 export function useReasignarCuenta() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ ids, cuentaOrigen }) =>
-      apiPost('/api/finanzas/movimientos/reasignar-cuenta', { ids, cuenta_origen: cuentaOrigen }),
+    mutationFn: ({ ids, cuentaCustodiaId }) =>
+      apiPost('/api/finanzas/movimientos/reasignar-cuenta', { ids, cuentaCustodiaId }),
     onSuccess: data => {
       showToast.success(`Cuenta asignada a ${data?.actualizados ?? 0} movimiento(s)`)
       client.invalidateQueries({ queryKey: BASE_KEY })
@@ -195,14 +199,23 @@ export function usePreviewSyncPos() {
 export function useEjecutarSyncPos() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ fecha, desde, hasta, posUrl } = {}) =>
-      apiPost('/api/finanzas/sync-pos', { fecha, desde, hasta, posUrl, confirm: true }),
+    mutationFn: async ({ fecha, desde, hasta, posUrl, distribucion } = {}) => {
+      const data = await apiPost('/api/finanzas/sync-pos', { fecha, desde, hasta, posUrl, distribucion, confirm: true })
+      if (data?.ok !== true || data.synced !== true || !Array.isArray(data.resultados)) {
+        throw new Error('No se confirmó la sincronización. Revisa el estado antes de repetirla.')
+      }
+      return data
+    },
     onSuccess: async data => {
-      const monto = Number(data?.total_ingresos_usd || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-      const periodoTexto = data?.desde === data?.hasta ? (data?.desde || data?.fecha) : `${data?.desde} a ${data?.hasta}`
-      showToast.success(`Ventas de ${periodoTexto} sincronizadas con éxito (+$${monto} USD)`)
+      const total = data.total_ingresos_usd
+      const periodoTexto = data.desde === data.hasta ? (data.desde || data.fecha) : `${data.desde} a ${data.hasta}`
+      if (total == null || !Number.isFinite(Number(total)) || data.movimientos_sin_usd > 0) {
+        showToast.warning(`Movimientos de ${periodoTexto} guardados; valoración USD pendiente. No repitas la importación para corregir tasas.`)
+      } else {
+        const monto = Number(total).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        showToast.success(`Movimientos de ${periodoTexto} sincronizados. Total del conjunto: $${monto} USD (puede incluir actualizaciones).`)
+      }
       await client.invalidateQueries({ queryKey: BASE_KEY })
-      client.refetchQueries({ queryKey: BASE_KEY })
     },
     onError: error => showToast.error(error.message || 'No se pudo sincronizar con el POS'),
   })

@@ -4,6 +4,7 @@ import { json, jsonError, isValidUuid } from '../lib/utils.js'
 import { validateOperator, supaServiceHeaders } from '../lib/auth.js'
 import { registrarAuditoria } from '../lib/audit.js'
 import { requireAdmin } from '../lib/permissions.js'
+import { callFinancialRpc, financialErrorResponse } from '../lib/financialOperations.js'
 import {
   normalizeMovement,
   normalizeReportQuery,
@@ -17,7 +18,7 @@ const MOVEMENT_SELECT = [
   'referencia', 'observaciones', 'estado', 'creado_en', 'anulado_en',
   'motivo_anulacion', 'metodo_pago', 'cuenta_origen', 'partes',
   // tasa_usd_ves alimenta el contravalor USD del listado (migración 224).
-  'tasa_usd_ves',
+  'tasa_usd_ves', 'tasa_registrada_en', 'cuenta_custodia_id', 'operacion_id',
 ].join(',')
 
 function adminContext(request, env) {
@@ -90,37 +91,18 @@ export async function handleGetFinanzasMovimientos(request, env) {
     return jsonError(error.message || 'Filtros inválidos', 400, request)
   }
 
-  const parts = [
-    accountFilter(context.operador.cuenta_id),
-    `fecha=gte.${queryValue(filters.desde)}`,
-    `fecha=lte.${queryValue(filters.hasta)}`,
-    filters.tipo ? `tipo=eq.${queryValue(filters.tipo)}` : '',
-    filters.moneda ? `moneda=eq.${queryValue(filters.moneda)}` : '',
-    filters.categoria ? `categoria=eq.${queryValue(filters.categoria)}` : '',
-    url.searchParams.get('mostrarAnulados') === 'true' ? '' : 'estado=eq.activo',
-  ].filter(Boolean).join('&')
-
-  const listUrl = `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?${parts}` +
-    `&select=${MOVEMENT_SELECT}&order=fecha.desc,creado_en.desc&limit=${filters.limit}&offset=${filters.offset}`
-  let response = await fetch(listUrl, { headers: serviceHeaders(env, 'return=minimal') })
-  if (!response.ok) {
-    // Retry defensivo: si la columna tasa_usd_ves (migración 224) aún no existe en
-    // alguna base, repetir sin ella para no dejar el listado caído.
-    const retrySelect = MOVEMENT_SELECT.replace(/,tasa_usd_ves/, '')
-    if (retrySelect !== MOVEMENT_SELECT) {
-      response = await fetch(
-        listUrl.replace(`select=${MOVEMENT_SELECT}`, `select=${retrySelect}`),
-        { headers: serviceHeaders(env, 'return=minimal') },
-      )
-    }
+  try {
+    const result = await callFinancialRpc(env, 'finanzas_movimientos_pagina', {
+      p_cuenta_id: context.operador.cuenta_id, p_desde: filters.desde, p_hasta: filters.hasta,
+      p_tipo: filters.tipo, p_categoria: filters.categoria, p_moneda: filters.moneda,
+      p_cartera: url.searchParams.get('cartera') || null,
+      p_anulados: url.searchParams.get('mostrarAnulados') === 'true',
+      p_limite: filters.limit, p_offset: filters.offset, p_version: url.searchParams.get('versionLibro') || null,
+    })
+    return json({ ...result, movimientos: publicRows(result.movimientos), filtros: filters }, 200, request)
+  } catch (error) {
+    return financialErrorResponse(error, request)
   }
-  if (!response.ok) return jsonError('No se pudieron cargar los movimientos', 500, request)
-  const rows = await response.json()
-  return json({
-    movimientos: publicRows(rows),
-    paginacion: { limit: filters.limit, offset: filters.offset, recibidos: rows.length },
-    filtros: filters,
-  }, 200, request)
 }
 
 export async function handleCrearFinanzasMovimiento(request, env) {
@@ -136,6 +118,15 @@ export async function handleCrearFinanzasMovimiento(request, env) {
     return jsonError(error.message || 'Movimiento inválido', 400, request)
   }
 
+  const custodyId = parsed.body?.cuentaCustodiaId || parsed.body?.cuenta_custodia_id
+  if (custodyId != null && !isValidUuid(custodyId)) return jsonError('Cuenta de custodia inválida', 400, request)
+  if (custodyId) {
+    const custodyResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/cuentas_custodia?id=eq.${custodyId}&${accountFilter(context.operador.cuenta_id)}&activo=eq.true&select=id,nombre,moneda&limit=1`, { headers: serviceHeaders(env) })
+    if (!custodyResponse.ok) return jsonError('No se pudo comprobar la cuenta de custodia', 503, request)
+    const [custody] = await custodyResponse.json()
+    if (!custody || custody.moneda !== movement.moneda) return jsonError('La cuenta no existe o su moneda no corresponde al movimiento', 400, request)
+    movement.cuenta_origen = custody.nombre
+  }
   const existing = await readExistingByKey(env, context.operador.cuenta_id, movement.idempotency_key)
   if (existing.error) return jsonError('No se pudo comprobar la idempotencia', 500, request)
   if (existing.row) {
@@ -163,23 +154,14 @@ export async function handleCrearFinanzasMovimiento(request, env) {
     // Método de pago, cuenta de origen y tramos — solo si vienen definidos (columnas migración 226).
     ...(movement.metodo_pago ? { metodo_pago: movement.metodo_pago } : {}),
     ...(movement.cuenta_origen ? { cuenta_origen: movement.cuenta_origen } : {}),
+    ...(custodyId ? { cuenta_custodia_id: custodyId } : {}),
     ...(movement.partes ? { partes: movement.partes } : {}),
   }
 
-  // Si es en Bolívares y no vino tasa_usd_ves, recuperar la última tasa para no dejarla nula
-  if (payload.moneda === 'VES' && payload.tasa_usd_ves == null) {
-    try {
-      const snapRes = await fetch(
-        `${env.SUPABASE_URL}/rest/v1/nomina_tasas_snapshot?cuenta_id=eq.${encodeURIComponent(context.operador.cuenta_id)}&order=fecha.desc&limit=1&select=bcv`,
-        { headers: serviceHeaders(env, 'return=minimal') },
-      )
-      if (snapRes.ok) {
-        const [snap] = await snapRes.json().catch(() => [])
-        if (Number(snap?.bcv) > 0) payload.tasa_usd_ves = Number(snap.bcv)
-      }
-    } catch {
-      // Continuar con payload actual si falla el snapshot
-    }
+  // Una conversión desconocida permanece desconocida; no tomar una tasa de
+  // otro día ni fabricar paridad. Nuevos registros en custodia exigen snapshot.
+  if (custodyId && payload.moneda !== 'USD' && !(payload.tasa_usd_ves > 0)) {
+    return jsonError('Indica la tasa USD/VES aplicada a este movimiento.', 400, request)
   }
 
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos`, {
@@ -197,24 +179,12 @@ export async function handleCrearFinanzasMovimiento(request, env) {
       return jsonError('Movimiento duplicado', 409, request)
     }
 
-    // Fallback retry sin columnas aún no aplicadas (tasa_usd_ves migración 224 y
-    // metodo_pago / cuenta_origen / partes migración 226) si la base no las tiene.
-    const FALLBACK_KEYS = ['tasa_usd_ves', 'metodo_pago', 'cuenta_origen', 'partes']
-    if (FALLBACK_KEYS.some(key => payload[key] != null)) {
-      const fallbackPayload = { ...payload }
-      FALLBACK_KEYS.forEach(key => delete fallbackPayload[key])
-      const fallbackRes = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos`, {
-        method: 'POST',
-        headers: serviceHeaders(env),
-        body: JSON.stringify(fallbackPayload),
-      })
-      if (fallbackRes.ok) {
-        const [fbRow] = await fallbackRes.json()
-        return json({ ok: true, idempotente: false, movimiento: movementResponse(fbRow) }, 201, request)
-      }
+    // Nunca perder metadatos para conseguir una escritura aparente: ante
+    // esquema incompatible se requiere actualizar la base, no quitar campos.
+    if (/PGRST20[24]|42703|column.*does not exist/i.test(detail)) {
+      return json({ error: 'Es necesario actualizar la base antes de registrar movimientos.', code: 'FINANCIAL_UPDATE_REQUIRED' }, 503, request)
     }
-
-    return jsonError(detail || 'No se pudo registrar el movimiento', 500, request)
+    return jsonError('No se pudo registrar el movimiento. Conserva la operación y comprueba su estado.', 500, request)
   }
 
   const [row] = await response.json()
@@ -250,6 +220,7 @@ export async function handleAnularFinanzasMovimiento(request, env) {
   const current = await readMovement(env, context.operador.cuenta_id, id)
   if (current.error) return jsonError('No se pudo leer el movimiento', 500, request)
   if (!current.row) return jsonError('Movimiento no encontrado', 404, request)
+  if (current.row.operacion_id) return jsonError('Este movimiento pertenece a una operación vinculada. Gestiona su reversión desde el origen.', 409, request)
   if (current.row.estado === 'anulado') {
     return json({ ok: true, idempotente: true, movimiento: movementResponse(current.row) }, 200, request)
   }
@@ -306,6 +277,7 @@ export async function handleRevertirAnulacionMovimiento(request, env) {
   const current = await readMovement(env, context.operador.cuenta_id, id)
   if (current.error) return jsonError('No se pudo leer el movimiento', 500, request)
   if (!current.row) return jsonError('Movimiento no encontrado', 404, request)
+  if (current.row.operacion_id) return jsonError('Este movimiento pertenece a una operación vinculada. Gestiona su reversión desde el origen.', 409, request)
   if (current.row.estado === 'activo') {
     return json({ ok: true, idempotente: true, movimiento: movementResponse(current.row) }, 200, request)
   }
@@ -371,21 +343,15 @@ export async function handleGetFinanzasResumen(request, env) {
     return jsonError(error.message || 'Filtros inválidos', 400, request)
   }
 
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/finanzas_resumen`, {
-    method: 'POST',
-    headers: serviceHeaders(env, 'return=minimal'),
-    body: JSON.stringify({
-      p_cuenta_id: context.operador.cuenta_id,
-      p_desde: filters.desde,
-      p_hasta: filters.hasta,
-      p_moneda: filters.moneda,
-      p_tipo: filters.tipo,
-      p_categoria: filters.categoria,
-    }),
-  })
-  if (!response.ok) return jsonError('No se pudo calcular el resumen financiero', 500, request)
-  const rows = await response.json()
-  return json({ resumen: summarizeRows(rows), filtros: filters }, 200, request)
+  try {
+    const result = await callFinancialRpc(env, 'finanzas_resumen_consistente', {
+      p_cuenta_id: context.operador.cuenta_id, p_desde: filters.desde, p_hasta: filters.hasta,
+      p_moneda: filters.moneda, p_tipo: filters.tipo, p_categoria: filters.categoria,
+      p_cartera: url.searchParams.get('cartera') || null,
+    })
+    if (!Array.isArray(result.rows)) return jsonError('No se pudo verificar el resumen financiero', 503, request)
+    return json({ resumen: summarizeRows(result.rows), corte: result.corte, versionLibro: result.versionLibro, filtros: filters }, 200, request)
+  } catch (error) { return financialErrorResponse(error, request) }
 }
 
 // Re-asignación masiva: fija cuenta_origen (cuenta de custodia) en movimientos
@@ -397,38 +363,16 @@ export async function handleReasignarCuentaMovimientos(request, env) {
   const parsed = await readBody(request)
   if (parsed.error) return parsed.error
 
-  const ids = Array.isArray(parsed.body?.ids) ? parsed.body.ids.map(v => String(v).trim()).filter(Boolean) : []
-  const cuentaOrigen = String(parsed.body?.cuenta_origen || '').trim()
-
-  if (ids.length === 0) return jsonError('Debes indicar al menos un movimiento', 400, request)
-  if (ids.length > 100) return jsonError('Máximo 100 movimientos por lote', 400, request)
-  if (!ids.every(isValidUuid)) return jsonError('Hay ids de movimiento inválidos', 400, request)
-  if (!cuentaOrigen) return jsonError('cuenta_origen es obligatorio', 400, request)
-  if (cuentaOrigen.length > 120) return jsonError('cuenta_origen demasiado largo', 400, request)
-
-  const inList = `id=in.(${ids.map(queryValue).join(',')})`
-  const response = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?${inList}` +
-      `&${accountFilter(context.operador.cuenta_id)}&estado=eq.activo`,
-    {
-      method: 'PATCH',
-      headers: serviceHeaders(env),
-      body: JSON.stringify({ cuenta_origen: cuentaOrigen }),
-    },
-  )
-  if (!response.ok) return jsonError('No se pudo reasignar los movimientos', 500, request)
-  const updated = await response.json().catch(() => [])
-
-  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
-    usuarioId: context.operador.id, usuarioNombre: context.operador.nombre,
-    usuarioRol: context.operador.rol, cuentaId: context.operador.cuenta_id,
-    categoria: 'FINANZAS', accion: 'MOVIMIENTOS_REASIGNADOS', entidadTipo: 'finanzas_movimientos',
-    entidadId: null, meta: { total: ids.length, actualizados: Array.isArray(updated) ? updated.length : 0, cuenta_origen: cuentaOrigen },
-    ip: context.ip,
-  }).catch(() => {})
-
-  return json({
-    ok: true,
-    actualizados: Array.isArray(updated) ? updated.length : 0,
-  }, 200, request)
+  const ids = parsed.body?.ids
+  const custodyId = parsed.body?.cuentaCustodiaId
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 100 || !ids.every(isValidUuid)) return jsonError('Selecciona entre 1 y 100 movimientos con identificadores v\u00e1lidos', 400, request)
+  if (!isValidUuid(custodyId)) return jsonError('Selecciona una cuenta de custodia v\u00e1lida', 400, request)
+  try {
+    const result = await callFinancialRpc(env, 'finanzas_asignar_custodia', {
+      p_cuenta_id: context.operador.cuenta_id, p_operador_id: context.operador.id,
+      p_ids: [...new Set(ids.map(id => id.toLowerCase()))].sort(), p_custodia_id: custodyId.toLowerCase(), p_ip: context.ip || null,
+    })
+    if (result.ok !== true || result.cuentaCustodiaId !== custodyId.toLowerCase() || !Number.isInteger(result.actualizados)) return jsonError('No se pudo confirmar la asignaci\u00f3n. Actualiza el libro antes de repetirla.', 503, request)
+    return json(result, 200, request)
+  } catch (error) { return financialErrorResponse(error, request) }
 }

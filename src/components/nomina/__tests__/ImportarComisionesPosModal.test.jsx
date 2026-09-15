@@ -5,9 +5,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ImportarComisionesPosModal from '../ImportarComisionesPosModal.jsx'
 
-vi.mock('../../../../compat/services/supabase/client.js', () => ({
-  default: { auth: { getSession: async () => ({ data: { session: { access_token: 'test' } } }) } },
-}))
+vi.mock('../../../../compat/services/authFetch.js', async () => {
+  const { apiUrl } = await import('../../../../compat/services/apiBase.js')
+  return { authFetch: (path, options) => fetch(apiUrl(path), options) }
+})
 
 vi.mock('../../../../compat/services/apiBase.js', () => ({
   apiUrl: (p) => `https://worker.test${p}`,
@@ -15,9 +16,10 @@ vi.mock('../../../../compat/services/apiBase.js', () => ({
 }))
 
 vi.mock('../../../../compat/store/useAuthStore.js', () => {
-  const perfil = { id: 'admin-1', rol: 'administracion', nombre: 'Admin Test' }
-  const useAuthStore = vi.fn(selector => (selector ? selector({ perfil }) : { perfil }))
-  useAuthStore.getState = () => ({ perfil })
+  const perfil = { id: 'admin-1', rol: 'administracion', nombre: 'Admin Test', cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' }
+  const state = { perfil, user: { id: perfil.cuenta_id }, accountId: perfil.cuenta_id }
+  const useAuthStore = vi.fn(selector => (selector ? selector(state) : state))
+  useAuthStore.getState = () => state
   return { default: useAuthStore }
 })
 

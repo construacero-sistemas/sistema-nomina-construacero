@@ -140,6 +140,14 @@ describe('finanzasUtils — agregación y exposición', () => {
     ]))
   })
 
+  it('conserva el sello de tasa de la base y mantiene ausencias como null', () => {
+    const rateStamp = '2026-09-13T12:00:00Z'
+    expect(movementResponse({ ...validMovement, tasa_registrada_en: rateStamp }).tasa_registrada_en).toBe(rateStamp)
+    const legacy = movementResponse({ ...validMovement, tasa_usd_ves: 804.81, monto_ves: null })
+    expect(legacy.tasa_registrada_en).toBeNull()
+    expect(legacy.monto_ves).toBeNull()
+  })
+
   it('solo expone las columnas públicas de un movimiento', () => {
     const result = movementResponse({ ...validMovement, id: 'id', monto_ves: 1200, pin_hash: 'secret', cuenta_id: 'tenant' })
     expect(result).toMatchObject({ id: 'id', monto_ves: 1200 })

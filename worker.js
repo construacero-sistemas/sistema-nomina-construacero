@@ -27,6 +27,7 @@ import {
   handleRestaurarFinanzasCategoria,
 } from './server/handlers/finanzas.js'
 import { handleSyncVentasPos } from './server/handlers/finanzas.sync.js'
+import { handleCrearTransferencia, handleGetSaldos, handleGetOperacionEstado } from './server/handlers/finanzas.operaciones.js'
 import {
   handleGetCuentasCustodia,
   handleCrearCuentaCustodia,
@@ -67,6 +68,9 @@ const routes = new Map([
   ['POST /api/auth/clear-operator', handleClearOperator],
   ['GET /api/finanzas/movimientos', handleGetFinanzasMovimientos],
   ['POST /api/finanzas/movimientos/crear', handleCrearFinanzasMovimiento],
+  ['POST /api/finanzas/transferencias/crear', handleCrearTransferencia],
+  ['GET /api/finanzas/saldos', handleGetSaldos],
+  ['GET /api/operaciones/estado', handleGetOperacionEstado],
   ['POST /api/finanzas/movimientos/anular', handleAnularFinanzasMovimiento],
   ['POST /api/finanzas/movimientos/revertir-anulacion', handleRevertirAnulacionMovimiento],
   ['POST /api/finanzas/movimientos/reasignar-cuenta', handleReasignarCuentaMovimientos],
@@ -129,28 +133,10 @@ const routes = new Map([
 const MAX_BODY_BYTES = 256 * 1024
 
 function egressCacheTtl(pathname) {
-  if (pathname === '/api/auth/me') return 5 * 60 * 1000
-  if (pathname === '/api/auth/operators') return 5 * 60 * 1000
-  if (pathname === '/api/config') return 5 * 60 * 1000
-  if (pathname === '/api/rates') return 10 * 60 * 1000
-  if (pathname === '/api/nomina/empleados') return 5 * 60 * 1000
-  if (pathname === '/api/nomina/config-empleados') return 30 * 1000
-  if (pathname === '/api/nomina/pos-vendedores') return 5 * 60 * 1000
-  if (pathname === '/api/nomina/comisiones-pos') return 15 * 1000
-  if (pathname === '/api/nomina/asistencia') return 15 * 1000
-  if (pathname === '/api/nomina/marcaje/hoy') return 5 * 1000
-  if (pathname.startsWith('/api/nomina/calendario/')) return 10 * 60 * 1000
-  if (pathname === '/api/nomina/conceptos') return 10 * 60 * 1000
-  if (pathname === '/api/nomina/reglas-legales') return 10 * 60 * 1000
-  if (pathname === '/api/nomina/tasas-snapshots') return 10 * 60 * 1000
-  if (pathname === '/api/nomina/periodos') return 30 * 1000
-  if (pathname === '/api/nomina/lineas') return 30 * 1000
-  if (pathname === '/api/finanzas/movimientos') return 15 * 1000
-  if (pathname === '/api/finanzas/reportes/resumen') return 30 * 1000
-  if (pathname === '/api/finanzas/categorias') return 10 * 60 * 1000
-  if (pathname === '/api/finanzas/cuentas-custodia') return 10 * 60 * 1000
-  if (pathname === '/api/retencion' || pathname === '/api/retencion/uso') return 60 * 1000
-  return 0
+  // Solo datos públicos: una respuesta protegida nunca puede saltarse la
+  // validación de sesión/rol, aunque haya sido autorizada en una petición previa.
+  // React Query sigue evitando lecturas redundantes dentro de una sesión.
+  return pathname === '/api/rates' ? 10 * 60 * 1000 : 0
 }
 
 function allowedOrigins(env) {
@@ -172,7 +158,7 @@ function baseHeaders(request, env) {
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-    'Content-Security-Policy': "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://*.supabase.co https://*.supabase.in; font-src 'self' data:;",
+    'Content-Security-Policy': "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; connect-src 'self' https://*.supabase.co https://*.supabase.in wss://*.supabase.co wss://*.supabase.in; font-src 'self' data:; frame-src 'self' blob:;",
   }
   if (new URL(request.url).pathname.startsWith('/api/')) headers['Cache-Control'] = 'no-store'
   if (new URL(request.url).protocol === 'https:') {

@@ -118,8 +118,11 @@ describe('Worker E2E determinista', () => {
       if (target.includes('/rest/v1/finanzas_movimientos') && method === 'GET') {
         return supabaseResponse([movement])
       }
-      if (target.includes('/rest/v1/rpc/finanzas_resumen')) {
-        return supabaseResponse([{ tipo: 'egreso', categoria: 'Proveedores', total_ves: 12000, movimientos: 1 }])
+      if (target.includes('/rest/v1/rpc/finanzas_resumen_consistente')) {
+        return supabaseResponse({ versionLibro: '1', rows: [{ tipo: 'egreso', categoria: 'Proveedores', total_ves: 12000, total_usd: 100, movimientos: 1 }] })
+      }
+      if (target.includes('/rest/v1/rpc/finanzas_movimientos_pagina')) {
+        return supabaseResponse({ movimientos: [movement], versionLibro: '1', paginacion: { total: 1, recibidos: 1, siguiente: null } })
       }
       if (target.includes('/rest/v1/finanzas_movimientos') && method === 'PATCH') {
         return supabaseResponse([{ ...movement, estado: 'anulado', motivo_anulacion: 'Duplicado', anulado_en: '2026-08-18T13:00:00.000Z' }])
@@ -141,7 +144,7 @@ describe('Worker E2E determinista', () => {
     expect(created.status).toBe(201)
     expect((await created.json()).movimiento.monto_ves).toBe(12000)
 
-    const listed = await worker.fetch(request('/api/finanzas/movimientos?desde=2026-08-01&hasta=2026-08-31&offset=1', { headers: auth }), ENV)
+    const listed = await worker.fetch(request('/api/finanzas/movimientos?desde=2026-08-01&hasta=2026-08-31&offset=0', { headers: auth }), ENV)
     expect(listed.status).toBe(200)
     expect((await listed.json()).movimientos[0].concepto).toBe('Cemento')
 
@@ -164,6 +167,8 @@ describe('Worker E2E determinista', () => {
         expect(JSON.parse(init.body).p_cuenta_id).toBe(ACCOUNT_ID)
         expect(JSON.parse(init.body).p_tipo).toBe('egreso')
         expect(JSON.parse(init.body).p_categoria).toBe('Proveedores')
+      } else if (target.includes('/rpc/finanzas_movimientos_pagina')) {
+        expect(JSON.parse(init.body)).toMatchObject({ p_cuenta_id: ACCOUNT_ID, p_desde: '2026-08-01', p_hasta: '2026-08-31', p_offset: 0 })
       } else if (target.includes('/usuarios?') || target.includes('/finanzas_')) {
         if ((init.method || 'GET').toUpperCase() === 'POST') {
           expect(JSON.parse(init.body).cuenta_id).toBe(ACCOUNT_ID)

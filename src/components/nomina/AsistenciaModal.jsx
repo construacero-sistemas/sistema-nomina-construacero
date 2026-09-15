@@ -198,7 +198,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
         <form onSubmit={guardar} className="space-y-4 pt-1">
           {/* Opciones del día */}
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+            <label className="min-h-11 flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
               <input
                 type="checkbox" checked={esAusencia}
                 onChange={e => { setEsAusencia(e.target.checked); if (e.target.checked) setEsFeriado(false) }}
@@ -207,7 +207,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
               />
               Marcar como Ausencia / No asistió
             </label>
-            <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+            <label className="min-h-11 flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
               <input
                 type="checkbox" checked={esFeriado}
                 onChange={e => setEsFeriado(e.target.checked)}

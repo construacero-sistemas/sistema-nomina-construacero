@@ -87,7 +87,7 @@ export function HolidayFormModal({ initialDate, existingDates, onClose, onSubmit
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
+            className="min-w-11 min-h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
           >
             <X size={16} />
           </button>
@@ -98,7 +98,7 @@ export function HolidayFormModal({ initialDate, existingDates, onClose, onSubmit
           {initialDate ? (
             <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-500/[0.08] border border-amber-200/80">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black shrink-0">
+                <div className="min-w-11 min-h-11 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black shrink-0">
                   <Calendar size={16} />
                 </div>
                 <div>
@@ -303,7 +303,7 @@ export function BatchImportModal({ existingDates, onClose, onSubmit, pending }) 
               <p className="text-xs text-slate-400">Calendario de Ley de Venezuela · {year}</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center">
+          <button type="button" onClick={onClose} className="min-w-11 min-h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center">
             <X size={16} />
           </button>
         </div>

@@ -345,7 +345,7 @@ export default function ImportarComisionesPosModal({ periodo, onClose, onSuccess
                           return (
                             <label
                               key={desp.id}
-                              className={`flex items-center justify-between p-2.5 cursor-pointer hover:bg-slate-50 transition-colors ${
+                              className={`min-h-11 flex items-center justify-between p-2.5 cursor-pointer hover:bg-slate-50 transition-colors ${
                                 isChecked ? 'bg-sky-50/40' : ''
                               }`}
                             >

@@ -3,7 +3,7 @@
 // Tests del borrado seguro de cuentas de custodia: bloqueo con saldo, permitir
 // dejar el sistema SIN cuentas y estado vacío con restauración.
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 
 import CuentasCustodiaGrid from '../CuentasCustodiaGrid.jsx'
@@ -14,6 +14,8 @@ const mkCuenta = (overrides = {}) => ({
   moneda: 'VES',
   banco: 'Banesco',
   saldo: 0,
+  saldoConfirmado: true,
+  disponible: true,
   ...overrides,
 })
 
@@ -36,6 +38,13 @@ function renderGrid(cuentas, onEliminarCuenta = vi.fn(), extraProps = {}) {
 
 describe('CuentasCustodiaGrid — borrado seguro', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('declara 44px también para mover fondos en escritorio, sin depender del override móvil', () => {
+    renderGrid([mkCuenta()])
+    const mover = screen.getByRole('button', { name: 'Mover', exact: true })
+    expect(mover).toHaveClass('min-h-11')
+    expect(mover).not.toHaveClass('min-h-8')
+  })
 
   it('muestra el botón eliminar en cuentas normales (aunque sean predeterminadas)', () => {
     const cuenta = mkCuenta({ predeterminada: true })
@@ -66,6 +75,31 @@ describe('CuentasCustodiaGrid — borrado seguro', () => {
     // Botón de cierre del modal de bloqueo
     fireEvent.click(screen.getByRole('button', { name: /Entendido/i }))
     expect(onEliminar).not.toHaveBeenCalled()
+  })
+
+  it('vuelve a comprobar el saldo cuando cambia durante la confirmación', () => {
+    const onEliminar = vi.fn()
+    const cuenta = mkCuenta()
+    const view = renderGrid([cuenta], onEliminar)
+    fireEvent.click(screen.getByLabelText(/Eliminar cuenta Banesco/i))
+    expect(screen.getByRole('button', { name: 'Eliminar cuenta' })).toBeInTheDocument()
+    view.rerender(<CuentasCustodiaGrid cuentas={[{ ...cuenta, saldo: 25 }]} onEliminarCuenta={onEliminar} />)
+    expect(screen.queryByRole('button', { name: 'Eliminar cuenta' })).toBeNull()
+    expect(screen.getByText(/deja primero el saldo en 0/i)).toBeInTheDocument()
+    expect(onEliminar).not.toHaveBeenCalled()
+  })
+
+  it('conserva la confirmación tras error y evita doble envío pendiente', async () => {
+    let reject
+    const onEliminar = vi.fn(() => new Promise((_resolve, fail) => { reject = fail }))
+    renderGrid([mkCuenta()], onEliminar)
+    fireEvent.click(screen.getByLabelText(/Eliminar cuenta Banesco/i))
+    const confirm = screen.getByRole('button', { name: 'Eliminar cuenta' })
+    fireEvent.click(confirm); fireEvent.click(confirm)
+    expect(onEliminar).toHaveBeenCalledTimes(1)
+    await act(async () => { reject(new Error('No se confirmó la baja')) })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('No se confirmó la baja'))
+    expect(screen.getByRole('button', { name: 'Eliminar cuenta' })).toBeEnabled()
   })
 
   it('PERMITE eliminar la última cuenta (el sistema puede quedar sin cuentas)', () => {

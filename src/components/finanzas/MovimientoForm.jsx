@@ -67,6 +67,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
   const [categoriaAEliminar, setCategoriaAEliminar] = useState(null)
 
   const [error, setError] = useState('')
+  const [operationId] = useState(() => crypto.randomUUID())
 
   const crearCategoriaPending = crearCategoria.isPending
 
@@ -100,7 +101,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
     return cuentasCompatibles.map(c => ({
       value: c.id,
       label: c.nombre ? (c.banco && !c.nombre.toLowerCase().includes(c.banco.toLowerCase()) ? `${c.nombre} · ${c.banco}` : c.nombre) : (c.banco || 'Cuenta sin nombre'),
-      sub: `Saldo: ${c.moneda === 'VES' ? 'Bs.' : '$'}${formatNumber(c.saldo)} ${c.moneda}`,
+      sub: c.saldoConfirmado ? `Saldo: ${formatNumber(c.saldo)} ${c.moneda}` : 'Saldo pendiente de confirmar',
       saldo: c.saldo,
     }))
   }, [cuentasCompatibles])
@@ -216,11 +217,11 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
   const tasaEfectiva = useMemo(() => {
     if (modoTasa === 'manual') {
       const m = Number(tasaManual)
-      return m > 0 ? m : (usd > 0 ? usd : 1)
+      return m > 0 ? m : 0
     }
-    if (modoTasa === 'usdt') return usdt > 0 ? usdt : (usd > 0 ? usd : 1)
-    if (modoTasa === 'eur') return eur > 0 ? eur : (usd > 0 ? usd : 1)
-    return usd > 0 ? usd : 1
+    if (modoTasa === 'usdt') return usdt > 0 ? usdt : 0
+    if (modoTasa === 'eur') return eur > 0 ? eur : 0
+    return usd > 0 ? usd : 0
   }, [modoTasa, tasaManual, usd, usdt, eur])
 
   const montoNum = Number(monto) || 0
@@ -234,9 +235,10 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
 
   const equivalenteUsd = useMemo(() => {
     if (montoNum <= 0 || tasaEfectiva <= 0) return null
-    if (moneda === 'USD' || moneda === 'USDT') return montoNum
+    if (moneda === 'USD') return montoNum
+    if (moneda === 'USDT') return usd > 0 ? montoNum * tasaEfectiva / usd : null
     return montoNum / tasaEfectiva
-  }, [montoNum, moneda, tasaEfectiva])
+  }, [montoNum, moneda, tasaEfectiva, usd])
 
   function validate() {
     if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return 'Selecciona una fecha válida.'
@@ -249,7 +251,8 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
     if (modoTasa === 'manual' && !(Number(tasaManual) > 0)) {
       return 'Ingresa un valor válido para la tasa manual.'
     }
-    if (!esEfectivo) {
+    if (moneda === 'USDT' && !(usd > 0)) return 'Confirma también la tasa USD/VES para valorar el movimiento en USDT.'
+    {
       if (opcionesCuenta.length === 0) return `No tienes cuentas registradas para ${metodoPago}. Regístrala en Cuentas y Custodia.`
       if (!cuentaOrigen.trim()) return tipo === 'ingreso' ? 'Selecciona la cuenta de destino.' : 'Selecciona la cuenta de origen.'
     }
@@ -279,6 +282,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
 
     try {
       await crear.mutateAsync({
+        idempotencyKey: operationId,
         fecha,
         tipo,
         categoria: capitalizarTexto(categoria.trim()),
@@ -286,7 +290,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
         monto: montoNum,
         moneda,
         tasaVes: esVes ? 1 : tasaEfectiva,
-        tasaUsdVes: tasaEfectiva,
+        tasaUsdVes: moneda === 'USDT' ? usd : tasaEfectiva,
         fuenteTasa: esVes ? 'BCV' : fuenteTasaFinal,
         observacionTasa: modoTasa === 'manual'
           ? (observacionTasa.trim() || `Tasa manual fijada en ${tasaEfectiva.toFixed(2)} Bs/$`)
@@ -295,14 +299,14 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
         observaciones: null,
         metodoPago,
         cuentaOrigen: cuentaOrigenFinal ? capitalizarPalabras(cuentaOrigenFinal) : null,
-        cuenta_id: cuentaSeleccionada?.id || null,
+        cuentaCustodiaId: cuentaSeleccionada?.id || null,
         partes: partes.length > 0 ? partes.map(p => ({
           monto: Number(p.monto),
           moneda,
           referencia: p.referencia?.trim() || null,
           metodoPago,
           cuentaOrigen: cuentaOrigenFinal,
-          cuenta_id: cuentaSeleccionada?.id || null,
+          cuentaCustodiaId: cuentaSeleccionada?.id || null,
         })) : null,
       })
       onClose()
@@ -313,7 +317,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
 
   return (
     <Modal
-      isOpen
+      isOpen busy={disabled} dirty={Boolean(concepto || monto || referencia)}
       onClose={() => { if (!disabled) onClose() }}
       title="Nuevo movimiento financiero"
       className="sm:max-w-xl"

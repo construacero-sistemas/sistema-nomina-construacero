@@ -516,7 +516,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
 
         {/* Activo (solo al editar) */}
         {esEdicion && (
-          <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer pt-1">
+          <label className="min-h-11 flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer pt-1">
             <input
               type="checkbox" checked={activo} onChange={e => setActivo(e.target.checked)}
               disabled={cargando}

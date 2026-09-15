@@ -144,7 +144,10 @@ export async function handleCrearCuentaCustodia(request, env) {
     return jsonError(error.message || 'Cuenta inválida', 400, request)
   }
 
+  const requestedId = parsed.body?.id
+  if (requestedId != null && !isValidUuid(requestedId)) return jsonError('id de creación inválido', 400, request)
   const payload = {
+    ...(requestedId ? { id: requestedId.toLowerCase() } : {}),
     cuenta_id: operador.cuenta_id,
     codigo: cuenta.codigo,
     nombre: cuenta.nombre,
@@ -168,8 +171,17 @@ export async function handleCrearCuentaCustodia(request, env) {
   })
   if (!res.ok) {
     const detail = (await res.text()).toLowerCase()
-    const conflict = detail.includes('uq_cuentas_custodia_cuenta_nombre_activa') || detail.includes('unique')
-    return jsonError(conflict ? 'Ya existe una cuenta con ese nombre' : 'No se pudo crear la cuenta', conflict ? 409 : 500, request)
+    const conflict = detail.includes('unique') || detail.includes('23505')
+    if (conflict && requestedId) {
+      const previous = await fetch(`${env.SUPABASE_URL}/rest/v1/cuentas_custodia?id=eq.${requestedId}&${accountFilter(operador.cuenta_id)}&select=${SELECT}&limit=1`, { headers: svcHeaders(env) })
+      if (!previous.ok) return jsonError('No se pudo confirmar la creación de la cuenta. Conserva los datos y reintenta.', 503, request)
+      const [saved] = await previous.json()
+      const fields = ['nombre', 'tipo', 'cartera', 'moneda', 'banco', 'numero_cuenta', 'titular', 'identificacion', 'subcuenta_id']
+      if (saved && saved.activo && fields.every(key => (saved[key] ?? null) === (payload[key] ?? null))) {
+        return json({ ok: true, idempotente: true, cuenta: cuentaCustodiaResponse(saved) }, 200, request)
+      }
+    }
+    return jsonError(conflict ? 'La cuenta ya existe o los datos del reintento cambiaron. Revisa el catálogo.' : 'No se pudo crear la cuenta', conflict ? 409 : 500, request)
   }
   const [row] = await res.json()
   if (!row) return jsonError('No se pudo crear la cuenta', 500, request)

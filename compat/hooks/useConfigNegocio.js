@@ -10,7 +10,8 @@
 // llegan por dos vías compartidas: el broadcast de useActualizarConfig
 // (broadcastEntidad('config')) y el postgres_changes centralizado de
 // useRealtimeSync sobre configuracion_negocio.
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
+import { useAccountQuery as useQuery, useAccountQueryClient as useQueryClient } from '../lib/accountQueries.js'
 import supabase from '../services/supabase/client'
 import { apiUrl, getAuthHeaders } from '../services/apiBase'
 import { broadcastEntidad } from '../services/supabase/realtimeBus'

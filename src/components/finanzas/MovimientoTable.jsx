@@ -25,7 +25,7 @@ function date(value) {
 
 const OPCIONES_POR_PAGINA = [10, 25, 50, 100]
 
-export default function MovimientoTable({ movimientos = [], onAnular, onRevertir, tasaBcv = 0, tasaUsdt = 0 }) {
+export default function MovimientoTable({ movimientos = [], onAnular, onRevertir, tasaBcv = 0, tasaUsdt = 0, hasMore = false, onLoadMore, isLoadingMore = false, loadMoreError = '', totalServidor }) {
   const [pagina, setPagina] = useState(1)
   const [porPagina, setPorPagina] = useState(10)
 
@@ -53,7 +53,7 @@ export default function MovimientoTable({ movimientos = [], onAnular, onRevertir
             <p className="text-[11px] text-slate-400 font-medium">
               {totalRegistros === 0
                 ? '0 registros'
-                : `Mostrando ${inicio + 1} - ${fin} de ${totalRegistros} registro(s)`}
+                : `Mostrando ${inicio + 1} - ${fin} · ${totalRegistros} cargados${Number.isInteger(totalServidor) ? ` de ${totalServidor}` : hasMore ? ' (hay más registros)' : ''}`}
             </p>
           </div>
         </div>
@@ -128,6 +128,14 @@ export default function MovimientoTable({ movimientos = [], onAnular, onRevertir
         )}
       </div>
 
+      {(hasMore || loadMoreError) && <div className="p-3 border-t border-slate-200 bg-slate-50 space-y-2">
+        {loadMoreError && <p role="alert" className="text-sm text-rose-800">{loadMoreError} Si el libro cambió, actualiza el listado.</p>}
+        <button type="button" onClick={() => onLoadMore?.()} disabled={isLoadingMore || !onLoadMore}
+          className="w-full min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-primary disabled:opacity-60">
+          {isLoadingMore ? 'Cargando registros...' : loadMoreError ? 'Reintentar carga de registros' : 'Cargar más movimientos'}
+        </button>
+      </div>}
+
       {/* Barra de Paginación */}
       {totalPaginas > 1 && (
         <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3">
@@ -183,7 +191,7 @@ export default function MovimientoTable({ movimientos = [], onAnular, onRevertir
                       type="button"
                       onClick={() => setPagina(item)}
                       aria-current={paginaEfectiva === item ? 'page' : undefined}
-                      className={`min-w-[28px] h-7 px-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      className={`min-w-11 min-h-11 px-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                         paginaEfectiva === item
                           ? 'bg-primary text-white shadow-sm'
                           : 'text-slate-600 hover:bg-slate-200/70'
@@ -254,10 +262,10 @@ function DesktopRow({ item, onAnular, onRevertir, tasaBcv, tasaUsdt }) {
         <StateBadge state={item.estado} />
       </td>
       <td className="px-4 py-3 text-right whitespace-nowrap">
-        {activo ? (
+        {item.operacion_id ? <span className="text-xs text-slate-600">Gestionar desde su operación de origen</span> : activo ? (
           <button
             type="button"
-            onClick={() => onAnular(item)}
+            onClick={() => onAnular?.(item)}
             className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
             aria-label="Anular movimiento"
           >
@@ -306,10 +314,10 @@ function MobileRow({ item, onAnular, onRevertir, tasaBcv, tasaUsdt }) {
 
       <div className="mt-3 flex items-center justify-between gap-2 pt-1">
         <StateBadge state={item.estado} />
-        {activo ? (
+        {item.operacion_id ? <span className="text-xs text-slate-600">Gestionar desde su operación de origen</span> : activo ? (
           <button
             type="button"
-            onClick={() => onAnular(item)}
+            onClick={() => onAnular?.(item)}
             className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors cursor-pointer"
           >
             <Ban size={14} /> Anular

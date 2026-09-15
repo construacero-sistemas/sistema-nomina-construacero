@@ -145,7 +145,7 @@ export default function HolidayManager({ feriados, isEmbedded = false }) {
           <button
             type="button"
             onClick={() => setShowImport(true)}
-            className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white h-10 sm:h-9 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-xs active:scale-95"
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white min-h-11 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-xs active:scale-95"
           >
             <Download size={14} className="text-emerald-600" />
             <span>Importar</span>
@@ -156,7 +156,7 @@ export default function HolidayManager({ feriados, isEmbedded = false }) {
               setSelectedDate(todayStr)
               setShowForm(true)
             }}
-            className="flex items-center justify-center gap-1.5 rounded-xl bg-primary hover:bg-primary-hover h-10 sm:h-9 px-3 text-xs font-black text-white transition-colors shadow-md shadow-primary/20 active:scale-95"
+            className="flex items-center justify-center gap-1.5 rounded-xl bg-primary hover:bg-primary-hover min-h-11 px-3 text-xs font-black text-white transition-colors shadow-md shadow-primary/20 active:scale-95"
           >
             <Plus size={14} />
             <span>Nuevo Feriado</span>
@@ -180,7 +180,7 @@ export default function HolidayManager({ feriados, isEmbedded = false }) {
               <button
                 type="button"
                 onClick={prevMonth}
-                className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 transition-colors active:scale-95"
+                className="min-h-11 min-w-11 p-2 rounded-xl hover:bg-slate-100 text-slate-600 transition-colors active:scale-95"
                 aria-label="Mes anterior"
               >
                 <ChevronLeft size={18} />
@@ -188,7 +188,7 @@ export default function HolidayManager({ feriados, isEmbedded = false }) {
               <button
                 type="button"
                 onClick={nextMonth}
-                className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 transition-colors active:scale-95"
+                className="min-h-11 min-w-11 p-2 rounded-xl hover:bg-slate-100 text-slate-600 transition-colors active:scale-95"
                 aria-label="Mes siguiente"
               >
                 <ChevronRight size={18} />

@@ -16,6 +16,7 @@ const mkMov = (overrides = {}) => ({
   monto: 100,
   moneda: 'USD',
   monto_ves: 40000,
+  tasa_registrada_en: '2026-09-01T12:00:00Z',
   estado: 'activo',
   ...overrides,
 })
@@ -61,15 +62,16 @@ describe('MovimientoTable — reversibilidad de anulaciones', () => {
       id: 'm-ves',
       moneda: 'VES',
       monto: 31697.66,
+      monto_ves: 31697.66,
       tasa_usd_ves: 804.81,
       tasa_ves: 1,
     })
     render(<MovimientoTable movimientos={[movVes]} />)
     expect(screen.getAllByText(/39,39 USD/i).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText(/a 804,81 Bs\/\$/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/tasas guardadas/i).length).toBeGreaterThanOrEqual(1)
   })
 
-  it('muestra equivalente en VES para movimientos en USD y USDT', () => {
+  it('muestra USD como valor principal de USDT sin asumir paridad', () => {
     const movUsd = mkMov({
       id: 'm-usd',
       moneda: 'USD',
@@ -81,12 +83,21 @@ describe('MovimientoTable — reversibilidad de anulaciones', () => {
       id: 'm-usdt',
       moneda: 'USDT',
       monto: 150,
-      tasa_ves: 977,
-      monto_ves: 146550,
+      tasa_ves: 440,
+      tasa_usd_ves: 400,
+      monto_ves: 66000,
     })
     render(<MovimientoTable movimientos={[movUsd, movUsdt]} />)
     expect(screen.getAllByText(/80\.481,00 VES/i).length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText(/146\.550,00 VES/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/165,00 USD/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText(/^150,00 USD$/i)).not.toBeInTheDocument()
+  })
+
+  it.each(['VES', 'USDT'])('no acredita una tasa positiva heredada de %s por asignar custodia', moneda => {
+    renderTable([mkMov({ moneda, monto: 80481, monto_ves: 80481, tasa_ves: 1, tasa_usd_ves: 804.81,
+      tasa_registrada_en: null, cuenta_custodia_id: '10000000-0000-4000-8000-000000000001' })])
+    expect(screen.getAllByText('Sin tasa confirmada').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/^100,00 USD$/)).not.toBeInTheDocument()
   })
 
   it('no muestra USD falso cuando el movimiento VES llega sin tasa (muestra —)', () => {
@@ -100,7 +111,7 @@ describe('MovimientoTable — reversibilidad de anulaciones', () => {
       tasa_usd_ves: null,
     })
     render(<MovimientoTable movimientos={[movVesSinTasa]} />)
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('Sin tasa confirmada').length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText(/31\.697,66 USD/i)).not.toBeInTheDocument()
   })
 })

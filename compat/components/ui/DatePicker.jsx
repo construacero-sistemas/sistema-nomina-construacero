@@ -1,410 +1,187 @@
-// compat/components/ui/DatePicker.jsx
-// Selector de fecha interactivo con estética moderna, bordes redondeados y experiencia móvil optimizada.
-// Reemplaza el control nativo cuadrado de HTML5 por un calendario visual estilizado.
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useLayoutEffect, useRef, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { Calendar, ChevronLeft, ChevronRight, X, Sparkles } from 'lucide-react'
+import { OverlayContext, useOverlay } from './useOverlay.js'
+import { useOverlayPosition } from './useOverlayPosition.js'
 
-const MESES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-]
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+const DIAS_SEMANA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
-const DIAS_SEMANA = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa']
-
-function parseISO(str) {
-  if (!str || typeof str !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return null
-  const [y, m, d] = str.split('-').map(Number)
-  const date = new Date(y, m - 1, d)
-  return isNaN(date.getTime()) ? null : { y, m, d, date }
+function localDate(y, m, d) {
+  const date = new Date(0)
+  date.setHours(12, 0, 0, 0)
+  date.setFullYear(y, m - 1, d)
+  return date
+}
+function parseISO(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const [y, m, d] = value.split('-').map(Number)
+  const date = localDate(y, m, d)
+  return y > 0 && date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d ? date : null
+}
+function formatISO(date) {
+  return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+function addDays(date, amount) { return localDate(date.getFullYear(), date.getMonth() + 1, date.getDate() + amount) }
+function addMonths(date, amount) {
+  const first = localDate(date.getFullYear(), date.getMonth() + 1 + amount, 1)
+  return localDate(first.getFullYear(), first.getMonth() + 1, Math.min(date.getDate(), localDate(first.getFullYear(), first.getMonth() + 2, 0).getDate()))
 }
 
-function formatISO(y, m, d) {
-  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-}
-
-function formatDisplay(isoStr) {
-  const parsed = parseISO(isoStr)
-  if (!parsed) return ''
-  return `${String(parsed.d).padStart(2, '0')}/${String(parsed.m).padStart(2, '0')}/${parsed.y}`
-}
-
-export default function DatePicker({
-  value,
-  onChange,
-  placeholder = 'DD/MM/AAAA',
-  disabled = false,
-  className = '',
-  min,
-  max,
-  clearable = true,
-}) {
+export default function DatePicker({ value, onChange, placeholder = 'DD/MM/AAAA', disabled = false,
+  className = '', min, max, clearable = true, id, 'aria-label': ariaLabel, 'aria-labelledby': labelledBy }) {
   const [open, setOpen] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
-  const [portalPos, setPortalPos] = useState({ top: 0, left: 0, width: 280 })
-  const containerRef = useRef(null)
+  const triggerRef = useRef(null)
   const popoverRef = useRef(null)
+  const layerRef = useRef(null)
+  const focusRef = useRef(null)
+  const pendingFocus = useRef(false)
+  const uid = useId()
+  const parsedValue = parseISO(value)
+  const minISO = parseISO(min) ? min : '0001-01-01'
+  const maxISO = parseISO(max) ? max : '9999-12-31'
+  const todayISO = formatISO(new Date())
+  const withinRange = iso => Boolean(parseISO(iso)) && iso >= minISO && iso <= maxISO
+  const clamp = iso => iso < minISO ? minISO : iso > maxISO ? maxISO : iso
+  const initialISO = clamp(parsedValue ? value : todayISO)
+  const [activeISO, setActiveISO] = useState(initialISO)
+  const [viewISO, setViewISO] = useState(initialISO)
+  const view = parseISO(viewISO) || parseISO(initialISO)
+  const viewYear = view.getFullYear()
+  const viewMonth = view.getMonth() + 1
+  const { isMobile, position, mobileStyle } = useOverlayPosition({ open, anchorRef: triggerRef, panelRef: popoverRef, minWidth: 340, preferredHeight: 450 })
+  const overlay = useOverlay({ open, panelRef: popoverRef, layerRef, returnFocusRef: triggerRef, initialFocusRef: focusRef,
+    onRequestClose: () => setOpen(false), modal: isMobile, dismissOnOutside: !isMobile })
 
-  const parsedVal = useMemo(() => parseISO(value), [value])
-
-  const todayObj = useMemo(() => {
-    const n = new Date()
-    return { y: n.getFullYear(), m: n.getMonth() + 1, d: n.getDate() }
-  }, [])
-
-  // Mes y Año en vista en el calendario (derivado o navegado)
-  const [viewOverride, setViewOverride] = useState(null)
-
-  const viewYear = viewOverride?.y ?? parsedVal?.y ?? todayObj.y
-  const viewMonth = viewOverride?.m ?? parsedVal?.m ?? todayObj.m
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
-
-  // Posicionamiento inteligente del popover
-  useEffect(() => {
-    if (!open || isMobile) return
-    const updatePos = () => {
-      if (!containerRef.current) return
-      const rect = containerRef.current.getBoundingClientRect()
-      const popoverWidth = 300
-      const popoverHeight = 340
-
-      let top = rect.bottom + window.scrollY + 6
-      let left = rect.left + window.scrollX
-
-      // Si se desborda por la derecha
-      if (left + popoverWidth > window.innerWidth - 12) {
-        left = window.innerWidth - popoverWidth - 12
-      }
-      if (left < 12) left = 12
-
-      // Si se desborda por abajo, abrir hacia arriba
-      if (rect.bottom + popoverHeight > window.innerHeight && rect.top - popoverHeight > 0) {
-        top = rect.top + window.scrollY - popoverHeight - 6
-      }
-
-      setPortalPos({ top, left, width: popoverWidth })
+  useLayoutEffect(() => {
+    if (open && pendingFocus.current) {
+      focusRef.current?.focus({ preventScroll: true })
+      pendingFocus.current = false
     }
+  }, [open, activeISO, viewISO])
 
-    updatePos()
-    window.addEventListener('scroll', updatePos, true)
-    window.addEventListener('resize', updatePos)
-    return () => {
-      window.removeEventListener('scroll', updatePos, true)
-      window.removeEventListener('resize', updatePos)
-    }
-  }, [open, isMobile])
-
-  // Click outside para cerrar
-  useEffect(() => {
-    if (!open) return
-    function handleClickOutside(e) {
-      if (
-        containerRef.current && !containerRef.current.contains(e.target) &&
-        popoverRef.current && !popoverRef.current.contains(e.target)
-      ) {
-        setOpen(false)
-        setViewOverride(null)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('touchstart', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('touchstart', handleClickOutside)
-    }
-  }, [open])
-
-  // Matriz de días del mes
-  const gridDays = useMemo(() => {
-    const firstDayIndex = new Date(viewYear, viewMonth - 1, 1).getDay() // 0 = Domingo
-    const daysInCurrentMonth = new Date(viewYear, viewMonth, 0).getDate()
-    const daysInPrevMonth = new Date(viewYear, viewMonth - 1, 0).getDate()
-
-    const cells = []
-
-    // Días del mes anterior
-    for (let i = firstDayIndex - 1; i >= 0; i--) {
-      const d = daysInPrevMonth - i
-      const prevM = viewMonth === 1 ? 12 : viewMonth - 1
-      const prevY = viewMonth === 1 ? viewYear - 1 : viewYear
-      cells.push({
-        y: prevY,
-        m: prevM,
-        d,
-        iso: formatISO(prevY, prevM, d),
-        isCurrentMonth: false,
-      })
-    }
-
-    // Días del mes actual
-    for (let i = 1; i <= daysInCurrentMonth; i++) {
-      cells.push({
-        y: viewYear,
-        m: viewMonth,
-        d: i,
-        iso: formatISO(viewYear, viewMonth, i),
-        isCurrentMonth: true,
-      })
-    }
-
-    // Días del mes siguiente para completar cuadrícula (múltiplo de 7)
-    const remaining = (7 - (cells.length % 7)) % 7
-    for (let i = 1; i <= remaining; i++) {
-      const nextM = viewMonth === 12 ? 1 : viewMonth + 1
-      const nextY = viewMonth === 12 ? viewYear + 1 : viewYear
-      cells.push({
-        y: nextY,
-        m: nextM,
-        d: i,
-        iso: formatISO(nextY, nextM, i),
-        isCurrentMonth: false,
-      })
-    }
-
-    return cells
-  }, [viewYear, viewMonth])
-
-  function handlePrevMonth() {
-    if (viewMonth === 1) {
-      setViewOverride({ y: viewYear - 1, m: 12 })
-    } else {
-      setViewOverride({ y: viewYear, m: viewMonth - 1 })
-    }
+  function openCalendar() {
+    if (disabled) return
+    setViewISO(initialISO)
+    setActiveISO(initialISO)
+    setOpen(true)
   }
-
-  function handleNextMonth() {
-    if (viewMonth === 12) {
-      setViewOverride({ y: viewYear + 1, m: 1 })
-    } else {
-      setViewOverride({ y: viewYear, m: viewMonth + 1 })
-    }
-  }
-
-  function emitChange(newIso) {
-    if (typeof onChange === 'function') {
-      onChange(newIso)
-    }
+  function emitChange(iso) {
+    if (disabled || (iso && !withinRange(iso))) return
+    onChange?.(iso)
     setOpen(false)
-    setViewOverride(null)
   }
-
-  function selectDay(cell) {
-    emitChange(cell.iso)
+  function moveFocus(date) {
+    const iso = clamp(formatISO(date))
+    if (!withinRange(iso)) return
+    pendingFocus.current = true
+    setActiveISO(iso)
+    setViewISO(iso)
   }
-
-  function selectToday() {
-    const todayIso = formatISO(todayObj.y, todayObj.m, todayObj.d)
-    setViewOverride({ y: todayObj.y, m: todayObj.m })
-    emitChange(todayIso)
+  function navigateDay(event, date) {
+    let next
+    if (event.key === 'ArrowLeft') next = addDays(date, -1)
+    else if (event.key === 'ArrowRight') next = addDays(date, 1)
+    else if (event.key === 'ArrowUp') next = addDays(date, -7)
+    else if (event.key === 'ArrowDown') next = addDays(date, 7)
+    else if (event.key === 'Home') next = addDays(date, -date.getDay())
+    else if (event.key === 'End') next = addDays(date, 6 - date.getDay())
+    else if (event.key === 'PageUp') next = addMonths(date, event.shiftKey ? -12 : -1)
+    else if (event.key === 'PageDown') next = addMonths(date, event.shiftKey ? 12 : 1)
+    if (next) { event.preventDefault(); moveFocus(next) }
   }
-
-  function clearSelection(e) {
-    e.stopPropagation()
-    emitChange('')
+  function canViewMonth(amount) {
+    const next = addMonths(localDate(viewYear, viewMonth, 1), amount)
+    const first = formatISO(next)
+    const last = formatISO(localDate(next.getFullYear(), next.getMonth() + 2, 0))
+    return next.getFullYear() > 0 && next.getFullYear() <= 9999 && last >= minISO && first <= maxISO && minISO <= maxISO
   }
+  function navigateMonth(amount) {
+    if (!canViewMonth(amount)) return
+    const iso = clamp(formatISO(addMonths(parseISO(activeISO) || view, amount)))
+    setViewISO(iso)
+    setActiveISO(iso)
+  }
+  const first = localDate(viewYear, viewMonth, 1)
+  const start = addDays(first, -first.getDay())
+  const count = Math.ceil((first.getDay() + localDate(viewYear, viewMonth + 1, 0).getDate()) / 7) * 7
+  const gridDays = Array.from({ length: count }, (_, index) => addDays(start, index))
+  const displayText = parsedValue ? `${String(parsedValue.getDate()).padStart(2, '0')}/${String(parsedValue.getMonth() + 1).padStart(2, '0')}/${parsedValue.getFullYear()}` : ''
 
-  const displayText = parsedVal ? formatDisplay(value) : ''
-
-  const calendarContent = (
-    <div
-      ref={popoverRef}
-      className={`bg-white rounded-3xl border border-slate-200/90 shadow-2xl shadow-slate-900/15 p-4 text-slate-800 select-none ${
-        isMobile
-          ? 'w-full max-w-sm mx-auto'
-          : 'w-[304px]'
-      }`}
-      style={{ touchAction: 'manipulation' }}
-    >
-      {/* Cabecera del Mes & Navegación */}
-      <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
-        <button
-          type="button"
-          onClick={handlePrevMonth}
-          className="w-8 h-8 rounded-full hover:bg-slate-100 active:scale-95 flex items-center justify-center text-slate-600 transition-all"
-          aria-label="Mes anterior"
-        >
-          <ChevronLeft size={17} />
-        </button>
-
-        <div className="text-center">
-          <span className="text-xs font-black text-slate-800 tracking-wide block capitalize">
-            {MESES[viewMonth - 1]} {viewYear}
-          </span>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleNextMonth}
-          className="w-8 h-8 rounded-full hover:bg-slate-100 active:scale-95 flex items-center justify-center text-slate-600 transition-all"
-          aria-label="Mes siguiente"
-        >
-          <ChevronRight size={17} />
-        </button>
-      </div>
-
-      {/* Días de la Semana */}
-      <div className="grid grid-cols-7 gap-1 text-center mb-1">
-        {DIAS_SEMANA.map(d => (
-          <span key={d} className="text-[11px] font-bold text-slate-400 py-1">
-            {d}
-          </span>
-        ))}
-      </div>
-
-      {/* Cuadrícula de Días (Completamente Redondeados) */}
-      <div className="grid grid-cols-7 gap-1 text-center">
-        {gridDays.map((cell, idx) => {
-          const isSelected = value === cell.iso
-          const isToday = cell.iso === formatISO(todayObj.y, todayObj.m, todayObj.d)
-
-          let btnClass = 'w-9 h-9 mx-auto rounded-full flex items-center justify-center text-xs font-bold transition-all relative '
-
-          if (isSelected) {
-            btnClass += 'bg-primary text-white font-black shadow-md shadow-primary/30 scale-105 '
-          } else if (isToday) {
-            btnClass += 'bg-amber-100 text-amber-900 border border-amber-300 font-black hover:bg-amber-200 '
-          } else if (!cell.isCurrentMonth) {
-            btnClass += 'text-slate-300 hover:text-slate-500 hover:bg-slate-50 '
-          } else {
-            btnClass += 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 active:scale-95 '
-          }
-
-          return (
-            <button
-              key={`${cell.iso}-${idx}`}
-              type="button"
-              onClick={() => selectDay(cell)}
-              className={btnClass}
-            >
-              <span>{cell.d}</span>
-              {isToday && !isSelected && (
-                <span className="w-1 h-1 rounded-full bg-amber-500 absolute bottom-1" />
-              )}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Acciones Rápidas Inferiores */}
-      <div className="flex items-center justify-between pt-3 mt-3 border-t border-slate-100 text-xs">
-        {clearable && value ? (
-          <button
-            type="button"
-            onClick={clearSelection}
-            className="text-slate-400 hover:text-red-600 font-bold px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
-          >
-            Limpiar
-          </button>
-        ) : (
-          <span />
-        )}
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={selectToday}
-            className="text-primary hover:text-primary-hover font-black px-2.5 py-1 rounded-xl bg-primary/10 hover:bg-primary/20 transition-colors flex items-center gap-1"
-          >
-            <Sparkles size={12} />
-            <span>Hoy</span>
-          </button>
-          {isMobile && (
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="px-3 py-1 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50"
-            >
-              Cerrar
-            </button>
-          )}
-        </div>
-      </div>
+  return <div className={`relative w-full min-w-0 ${className}`}>
+    <div className="flex items-stretch gap-1 min-w-0">
+      <button ref={triggerRef} id={id} type="button" disabled={disabled} onClick={() => open ? overlay.requestClose('trigger') : openCalendar()}
+        aria-label={ariaLabel || `Fecha: ${displayText || placeholder}`} aria-labelledby={labelledBy}
+        aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? `${uid}-dialog` : undefined}
+        className={`min-h-11 min-w-0 flex-1 rounded-xl border px-3 py-2 flex items-center justify-between gap-2 text-base sm:text-sm text-left ${disabled ? 'cursor-not-allowed bg-slate-100 border-slate-300 text-slate-600' : open ? 'border-primary ring-2 ring-primary/20 bg-white text-slate-900' : 'border-slate-300 bg-slate-50 hover:bg-white text-slate-800'}`}>
+        <span className="min-w-0 break-words font-semibold">{displayText || placeholder}</span>
+        <Calendar size={18} aria-hidden="true" className="text-slate-600 shrink-0" />
+      </button>
+      {clearable && value && !disabled && <button type="button" onClick={() => emitChange('')} aria-label="Borrar fecha"
+        className="min-h-11 min-w-11 shrink-0 p-2 rounded-xl border border-slate-300 bg-white text-slate-600 hover:bg-slate-100">
+        <X size={18} aria-hidden="true" />
+      </button>}
     </div>
-  )
-
-  return (
-    <div ref={containerRef} className={`relative inline-block w-full ${className}`}>
-      {/* Botón Trigger del Input */}
-      <div
-        role="button"
-        tabIndex={disabled ? -1 : 0}
-        onClick={() => !disabled && setOpen(o => !o)}
-        onKeyDown={e => {
-          if ((e.key === 'Enter' || e.key === ' ') && !disabled) {
-            e.preventDefault()
-            setOpen(o => !o)
-          }
-        }}
-        className={`w-full h-11 rounded-xl border px-3 flex items-center justify-between text-xs transition-all cursor-pointer select-none ${
-          disabled
-            ? 'opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400'
-            : open
-            ? 'border-primary ring-2 ring-primary/20 bg-white text-slate-900 shadow-sm'
-            : 'border-slate-200 bg-slate-50 hover:bg-white text-slate-800'
-        }`}
-        style={{ touchAction: 'manipulation' }}
-      >
-        <span className={`font-semibold truncate ${!displayText ? 'text-slate-400' : 'text-slate-800'}`}>
-          {displayText || placeholder}
-        </span>
-
-        <div className="flex items-center gap-1 text-slate-400">
-          {clearable && value && !disabled && (
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={clearSelection}
-              className="p-1 hover:text-slate-600 rounded-full hover:bg-slate-200/50 transition-colors"
-              title="Borrar fecha"
-            >
-              <X size={13} />
-            </span>
-          )}
-          <Calendar size={15} className={open ? 'text-primary' : 'text-slate-400'} />
-        </div>
-      </div>
-
-      {/* Renderizado Popover / Portal */}
-      {open && (
-        isMobile ? (
-          createPortal(
-            <div
-              className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
-              onClick={() => setOpen(false)}
-            >
-              <div
-                className="w-full max-w-sm animate-in slide-in-from-bottom duration-200"
-                onClick={e => e.stopPropagation()}
-                style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-              >
-                {calendarContent}
+    {open && createPortal(<OverlayContext.Provider value={overlay.overlayId}>
+      <div ref={layerRef} data-overlay-id={overlay.overlayId}
+        className={isMobile ? 'ui-overlay-layer fixed inset-0 flex items-end justify-center p-3 bg-slate-900/60 backdrop-blur-sm' : 'fixed'}
+        style={{ ...(isMobile ? mobileStyle : position), zIndex: overlay.zIndex }}
+        onClick={event => { if (event.target === event.currentTarget) overlay.requestClose('backdrop') }}>
+        <div ref={popoverRef} role="dialog" id={`${uid}-dialog`} aria-modal={isMobile || undefined}
+          aria-label="Elegir fecha" aria-describedby={`${uid}-help`} tabIndex={-1}
+          className="date-picker-panel bg-white w-full max-w-sm min-w-0 rounded-3xl border border-slate-300 shadow-2xl text-slate-800 flex flex-col overflow-hidden"
+          style={{ maxHeight: isMobile ? '100%' : position.maxHeight }}>
+          <div className="ui-overlay-header flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-slate-200 shrink-0">
+            <h3 className="font-semibold">Elegir fecha</h3>
+            <button type="button" onClick={() => overlay.requestClose('close-button')} aria-label="Cerrar calendario"
+              className="min-h-11 min-w-11 p-2 rounded-xl text-slate-700 hover:bg-slate-100"><X size={20} aria-hidden="true" /></button>
+          </div>
+          <div className="min-h-0 overflow-y-auto overscroll-contain px-2 py-3">
+            <p id={`${uid}-help`} className="sr-only">Usa las flechas para elegir un día, Inicio y Fin para la semana, RePág y AvPág para cambiar de mes.</p>
+            <div className="flex items-center justify-between gap-1 mb-2">
+              <button type="button" onClick={() => navigateMonth(-1)} disabled={!canViewMonth(-1)} aria-label="Mes anterior"
+                className="min-h-11 min-w-11 shrink-0 p-2 rounded-full hover:bg-slate-100 inline-flex items-center justify-center text-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed">
+                <ChevronLeft size={20} aria-hidden="true" />
+              </button>
+              <h4 id={`${uid}-month`} aria-live="polite" className="min-w-0 break-words text-center text-sm font-bold">{MESES[viewMonth - 1]} {viewYear}</h4>
+              <button type="button" onClick={() => navigateMonth(1)} disabled={!canViewMonth(1)} aria-label="Mes siguiente"
+                className="min-h-11 min-w-11 shrink-0 p-2 rounded-full hover:bg-slate-100 inline-flex items-center justify-center text-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed">
+                <ChevronRight size={20} aria-hidden="true" />
+              </button>
+            </div>
+            <div role="grid" aria-labelledby={`${uid}-month`} className="date-picker-grid">
+              <div role="row" className="grid grid-cols-7 text-center">
+                {DIAS_SEMANA.map(day => <span key={day} role="columnheader" aria-label={day} className="text-xs font-semibold text-slate-600 py-2">{day.slice(0, 2)}</span>)}
               </div>
-            </div>,
-            document.body
-          )
-        ) : (
-          createPortal(
-            <div
-              style={{
-                position: 'absolute',
-                top: `${portalPos.top}px`,
-                left: `${portalPos.left}px`,
-                zIndex: 9999,
-              }}
-              className="animate-in fade-in zoom-in-95 duration-100"
-            >
-              {calendarContent}
-            </div>,
-            document.body
-          )
-        )
-      )}
-    </div>
-  )
+              {Array.from({ length: count / 7 }, (_, week) => <div key={week} role="row" className="grid grid-cols-7 text-center">
+                {gridDays.slice(week * 7, week * 7 + 7).map(date => {
+                  const iso = formatISO(date)
+                  const selected = iso === value
+                  const available = withinRange(iso)
+                  const isToday = iso === todayISO
+                  return <div key={iso} role="gridcell" aria-selected={selected} aria-disabled={!available || undefined} className="min-w-0">
+                    <button ref={iso === activeISO ? focusRef : undefined} type="button" disabled={!available}
+                      tabIndex={iso === activeISO && available ? 0 : -1} onClick={() => emitChange(iso)} onKeyDown={event => navigateDay(event, date)}
+                      aria-label={date.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                      aria-current={isToday ? 'date' : undefined} data-date={iso}
+                      className={`min-h-11 min-w-11 w-full rounded-full px-0 py-2 inline-flex items-center justify-center text-sm font-semibold ${selected ? 'bg-slate-800 text-white' : !available ? 'text-slate-500 bg-slate-50 cursor-not-allowed' : isToday ? 'bg-amber-100 text-amber-900 ring-1 ring-inset ring-amber-400' : date.getMonth() + 1 !== viewMonth ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-800 hover:bg-slate-100'}`}>
+                      {date.getDate()}
+                    </button>
+                  </div>
+                })}
+              </div>)}
+            </div>
+          </div>
+          <div className="ui-overlay-footer flex flex-wrap items-center justify-between gap-2 px-3 pt-2 border-t border-slate-200 shrink-0">
+            {clearable && value && <button type="button" onClick={() => emitChange('')} className="min-h-11 px-3 py-2 rounded-xl text-slate-700 hover:bg-slate-100">Limpiar</button>}
+            <button type="button" onClick={() => emitChange(todayISO)} disabled={!withinRange(todayISO)}
+              className="min-h-11 flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 text-slate-800 font-semibold disabled:text-slate-500 disabled:cursor-not-allowed">
+              <Sparkles size={16} aria-hidden="true" /><span>Hoy</span>
+            </button>
+            <button type="button" onClick={() => overlay.requestClose('close-button')} className="min-h-11 px-3 py-2 rounded-xl border border-slate-300 text-slate-700">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </OverlayContext.Provider>, document.body)}
+  </div>
 }

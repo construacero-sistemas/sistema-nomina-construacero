@@ -82,7 +82,7 @@ export function normalizeMovement(input = {}) {
   if (moneda === 'USD') {
     tasaUsdVes = tasaVes
   } else if (moneda === 'USDT') {
-    tasaUsdVes = tasaUsdInput != null && tasaUsdInput !== '' ? Number(tasaUsdInput) : (tasaVes > 1 ? tasaVes : 1)
+    tasaUsdVes = tasaUsdInput != null && tasaUsdInput !== '' ? Number(tasaUsdInput) : null
   } else if (tasaUsdInput != null && tasaUsdInput !== '') {
     tasaUsdVes = Number(tasaUsdInput)
   }
@@ -290,13 +290,17 @@ export function movementResponse(row) {
     moneda: row.moneda,
     tasa_ves: Number(row.tasa_ves),
     tasa_usd_ves: row.tasa_usd_ves == null ? null : Number(row.tasa_usd_ves),
-    monto_ves: Number(row.monto_ves),
+    tasa_registrada_en: row.tasa_registrada_en ?? null,
+    monto_ves: row.monto_ves == null ? null : Number(row.monto_ves),
     fuente_tasa: row.fuente_tasa,
     observacion_tasa: row.observacion_tasa,
     referencia: row.referencia,
     observaciones: row.observaciones,
     metodo_pago: row.metodo_pago ?? null,
     cuenta_origen: row.cuenta_origen ?? null,
+    cuenta_custodia_id: row.cuenta_custodia_id ?? null,
+    operacion_id: row.operacion_id ?? null,
+    origen_operacion: row.origen_operacion ?? null,
     partes: row.partes ? (typeof row.partes === 'string' ? JSON.parse(row.partes) : row.partes) : null,
     estado: row.estado,
     creado_en: row.creado_en,

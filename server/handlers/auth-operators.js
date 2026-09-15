@@ -210,7 +210,7 @@ export async function handleGetCurrentProfile(request, env) {
       ? 'No hay un usuario administrativo configurado'
       : 'La cuenta debe tener un único usuario administrativo activo', 403, request)
   }
-  return json({ profile: { ...operators[0], email: user.email ?? null } }, 200, request)
+  return json({ profile: { ...operators[0], cuenta_id: user.id, email: user.email ?? null } }, 200, request)
 }
 
 export async function handleGetOperators(request, env) {

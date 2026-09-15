@@ -29,6 +29,7 @@ const posClosureResponse = {
   cobros_cxc_usd: 500,
   devoluciones_usd: 0,
   total_ingresos_usd: 2000,
+  tasa_bcv: 50,
   desglose_pagos: {
     efectivo_usd: 1000,
     zelle_usd: 500,
@@ -45,6 +46,112 @@ const testEnv = {
 }
 
 describe('finanzas.sync — sincronización de ventas del POS hacia Carteras', () => {
+  const incoming = (extra = {}) => ({ ...posClosureResponse, cobros_cxc_usd: 0,
+    desglose_pagos: { efectivo_usd: 100 }, ...extra })
+  const writes = () => mock.calls.filter(call => call.method !== 'GET')
+  const stored = body => ({ id: IDS.linea, ...body, monto_ves: body.monto * body.tasa_ves,
+    tasa_registrada_en: '2026-08-30T12:00:00Z', estado: 'activo' })
+
+  it.each([null, undefined, 0, -1, 'NaN', 'Infinity', true, '', ' ', 1000001])('rechaza tasa diaria inválida %s sin escribir', async tasa_bcv => {
+    mock = installFetchMock([
+      { match: '/api/finanzas-sync/cierre-diario', respond: incoming({ tasa_bcv }) },
+      { match: 'idempotency_key=eq.', respond: [] },
+    ])
+    const result = await readResponse(await H.handleSyncVentasPos(makeRequest({ fecha: '2026-08-30', confirm: true }), testEnv))
+    expect(result.status).toBe(422)
+    expect(result.body.error).toMatch(/tasa.*cierre/)
+    expect(writes()).toHaveLength(0)
+  })
+
+  it('no toma una tasa de otro día ni escribe la primera fecha de un lote inválido', async () => {
+    mock = installFetchMock([
+      { match: '/api/finanzas-sync/cierre-diario', respond: url => incoming({ tasa_bcv: url.includes('2026-08-29') ? 50 : null }) },
+      { match: 'idempotency_key=eq.', respond: [] },
+    ])
+    const result = await readResponse(await H.handleSyncVentasPos(makeRequest({ desde: '2026-08-29', hasta: '2026-08-30', confirm: true }), testEnv))
+    expect(result.status).toBe(422)
+    expect(writes()).toHaveLength(0)
+  })
+
+  it('rechaza unidades USDT ambiguas antes de guardar otros métodos', async () => {
+    mock = installFetchMock([
+      { match: '/api/finanzas-sync/cierre-diario', respond: incoming({ desglose_pagos: { efectivo_usd: 100, usdt_usd: 25 } }) },
+      { match: 'idempotency_key=eq.', respond: [] },
+    ])
+    const result = await readResponse(await H.handleSyncVentasPos(makeRequest({ fecha: '2026-08-30', confirm: true }), testEnv))
+    expect(result.status).toBe(422)
+    expect(result.body.error).toMatch(/USDT.*USD/)
+    expect(writes()).toHaveLength(0)
+  })
+
+  it('calcula 10000 VES como 200 USD con el snapshot, no con la tasa nativa 1', async () => {
+    mock = installFetchMock([
+      { match: '/api/finanzas-sync/cierre-diario', respond: incoming({ desglose_pagos: { pago_movil_ves: 10000 } }) },
+      { match: 'idempotency_key=eq.', method: 'GET', respond: [] },
+      { match: '/finanzas_movimientos', method: 'POST', respond: (_url, init) => [stored(JSON.parse(init.body))] },
+    ])
+    const result = await readResponse(await H.handleSyncVentasPos(makeRequest({ fecha: '2026-08-30', confirm: true }), testEnv))
+    expect(result.status).toBe(200)
+    expect(result.body).toMatchObject({ total_ingresos_usd: 200, movimientos_sin_usd: 0 })
+    expect(result.body.resultados[0].movimiento).toMatchObject({ monto: 10000, tasa_ves: 1, tasa_usd_ves: 50 })
+  })
+
+  it('una respuesta guardada sin procedencia no fabrica el total del POS', async () => {
+    mock = installFetchMock([
+      { match: '/api/finanzas-sync/cierre-diario', respond: incoming({ desglose_pagos: { pago_movil_ves: 10000 } }) },
+      { match: 'idempotency_key=eq.', method: 'GET', respond: [] },
+      { match: '/finanzas_movimientos', method: 'POST', respond: (_url, init) => [{ ...stored(JSON.parse(init.body)), tasa_registrada_en: null }] },
+    ])
+    const result = await readResponse(await H.handleSyncVentasPos(makeRequest({ fecha: '2026-08-30', confirm: true }), testEnv))
+    expect(result.status).toBe(200)
+    expect(result.body).toMatchObject({ total_ingresos_usd: null, movimientos_sin_usd: 1 })
+  })
+
+  it('cero importado es cero aunque el POS tenga ventas desmarcadas', async () => {
+    mock = installFetchMock([
+      { match: '/api/finanzas-sync/cierre-diario', respond: incoming({ tasa_bcv: null }) },
+      { match: 'idempotency_key=eq.', method: 'GET', respond: [] },
+      { match: '/cuentas_custodia', method: 'GET', respond: [] },
+    ])
+    const result = await readResponse(await H.handleSyncVentasPos(makeRequest({ fecha: '2026-08-30', confirm: true, distribucion: { efectivo_usd: { activo: false } } }), testEnv))
+    expect(result.status).toBe(200)
+    expect(result.body.total_ingresos_usd).toBe(0)
+    expect(writes()).toHaveLength(0)
+  })
+
+  it.each(['POST', 'PATCH'])('fallo %s no provoca escritura degradada sin metadatos', async method => {
+    mock = installFetchMock([
+      { match: '/api/finanzas-sync/cierre-diario', respond: incoming() },
+      { match: 'idempotency_key=eq.', method: 'GET', respond: method === 'PATCH' ? [stored({ moneda: 'USD', monto: 100 })] : [] },
+      { match: '/finanzas_movimientos', method, respond: { __raw: { code: 'PGRST204' }, status: 400, ok: false } },
+    ])
+    const result = await readResponse(await H.handleSyncVentasPos(makeRequest({ fecha: '2026-08-30', confirm: true }), testEnv))
+    expect(result.status).toBe(500)
+    expect(writes()).toHaveLength(1)
+    expect(writes()[0].body).toMatchObject({ tasa_usd_ves: 50, metodo_pago: 'Efectivo $' })
+  })
+
+  it('no escribe cuando falla la consulta de idempotencia', async () => {
+    mock = installFetchMock([
+      { match: '/api/finanzas-sync/cierre-diario', respond: incoming() },
+      { match: 'idempotency_key=eq.', method: 'GET', respond: { __raw: {}, ok: false, status: 503 } },
+    ])
+    const result = await readResponse(await H.handleSyncVentasPos(makeRequest({ fecha: '2026-08-30', confirm: true }), testEnv))
+    expect(result.status).toBe(500)
+    expect(writes()).toHaveLength(0)
+  })
+
+  it('no afirma éxito si la base devuelve una lista vacía tras guardar', async () => {
+    mock = installFetchMock([
+      { match: '/api/finanzas-sync/cierre-diario', respond: incoming() },
+      { match: 'idempotency_key=eq.', method: 'GET', respond: [] },
+      { match: '/finanzas_movimientos', method: 'POST', respond: [] },
+    ])
+    const result = await readResponse(await H.handleSyncVentasPos(makeRequest({ fecha: '2026-08-30', confirm: true }), testEnv))
+    expect(result.status).toBe(500)
+    expect(result.body.error).toMatch(/respuesta no confirma/)
+    expect(writes()).toHaveLength(1)
+  })
   it('rechaza operadores sin rol de administración', async () => {
     operadorActual = OPERADORES.logistica
     mock = installFetchMock([])
@@ -83,7 +190,7 @@ describe('finanzas.sync — sincronización de ventas del POS hacia Carteras', (
         respond: (url, init) => {
           const body = JSON.parse(init.body)
           movimientosCreados.push(body)
-          return [{ id: IDS.linea, ...body, estado: 'activo' }]
+          return [{ id: IDS.linea, ...body, moneda: body.moneda || 'USD', monto_ves: body.monto * body.tasa_ves, tasa_registrada_en: '2026-08-30T12:00:00Z', estado: 'activo' }]
         },
       },
     ])
@@ -121,9 +228,9 @@ describe('finanzas.sync — sincronización de ventas del POS hacia Carteras', (
         match: 'idempotency_key=eq.',
         method: 'GET',
         respond: (url) => {
-          if (url.includes('pos-vta-efectivo-usd')) return [{ id: IDS.linea, monto: 1000, categoria: 'Ventas' }]
-          if (url.includes('pos-vta-zelle-usd')) return [{ id: IDS.concepto, monto: 500, categoria: 'Ventas' }]
-          if (url.includes('pos-cxc')) return [{ id: IDS.periodo, monto: 500, categoria: 'Cobros de clientes' }]
+          if (url.includes('pos-vta-efectivo-usd')) return [{ id: IDS.linea, monto: 1000, categoria: 'Ventas', moneda: 'USD', estado: 'activo' }]
+          if (url.includes('pos-vta-zelle-usd')) return [{ id: IDS.linea2, monto: 500, categoria: 'Ventas', moneda: 'USD', estado: 'activo' }]
+          if (url.includes('pos-cxc')) return [{ id: IDS.periodo, monto: 500, categoria: 'Cobros de clientes', moneda: 'USD', estado: 'activo' }]
           return []
         },
       },
@@ -133,7 +240,7 @@ describe('finanzas.sync — sincronización de ventas del POS hacia Carteras', (
         respond: (url, init) => {
           const body = JSON.parse(init.body)
           patches.push(body)
-          return [{ id: IDS.linea, ...body, estado: 'activo' }]
+          return [{ id: new URL(url).searchParams.get('id').slice(3), ...body, moneda: 'USD', monto_ves: body.monto * body.tasa_ves, tasa_registrada_en: '2026-08-30T12:00:00Z', estado: 'activo' }]
         },
       },
     ])
@@ -189,7 +296,7 @@ describe('finanzas.sync — sincronización de ventas del POS hacia Carteras', (
         respond: (url, init) => {
           const body = JSON.parse(init.body)
           creados.push(body)
-          return [{ id: IDS.linea, ...body, estado: 'activo' }]
+          return [{ id: IDS.linea, ...body, moneda: body.moneda || 'USD', monto_ves: body.monto * body.tasa_ves, tasa_registrada_en: '2026-08-30T12:00:00Z', estado: 'activo' }]
         },
       },
     ])
@@ -243,7 +350,7 @@ describe('finanzas.sync — sincronización de ventas del POS hacia Carteras', (
         respond: (url, init) => {
           const body = JSON.parse(init.body)
           creados.push(body)
-          return [{ id: IDS.linea, ...body, estado: 'activo' }]
+          return [{ id: IDS.linea, ...body, moneda: body.moneda || 'USD', monto_ves: body.monto * body.tasa_ves, tasa_registrada_en: '2026-08-30T12:00:00Z', estado: 'activo' }]
         },
       },
     ])

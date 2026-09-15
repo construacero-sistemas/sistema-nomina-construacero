@@ -9,7 +9,7 @@
     "dev:vite": "vite --config vite.config.js",
     "dev:api": "npm run check:local && wrangler dev --config wrangler.toml --port 8788 --local",
     "build": "vite build --config vite.config.js",
-    "test": "vitest run --config vitest.config.js",
+    "test": "node scripts/run-vitest.mjs",
     "lint": "eslint src api compat server --quiet",
     "check:project": "node scripts/check-project.mjs",
     "test:deterministic": "node scripts/test-nomina-deterministic.mjs && node scripts/test-finanzas-deterministic.mjs",
@@ -17,7 +17,9 @@
     "test:finanzas-deterministic": "node scripts/test-finanzas-deterministic.mjs",
     "test:responsive": "node scripts/test-responsiveness-deterministic.mjs",
     "test:bundle-size": "node scripts/test-bundle-size.mjs",
-    "verify": "npm run check:project && npm run test:responsive && npm run test:bundle-size && npm run lint && npm test && npm run build && npm run test:bundle-size"
+    "test:qa": "node --test scripts/qa-guards.test.mjs",
+    "test:db": "node scripts/test-db.mjs",
+    "verify": "npm run check:project && npm run test:qa && npm run test:responsive && npm run lint && npm run test:deterministic && npm test && npm run test:db && npm run build && npm run test:bundle-size"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
@@ -33,6 +35,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@eslint/js": "^9.39.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -46,6 +49,7 @@
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "jsdom": "^25.0.1",
+    "playwright-core": "1.58.2",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "vite": "^7.2.4",

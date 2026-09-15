@@ -1,12 +1,12 @@
 // scripts/test-finanzas-deterministic.mjs
-// Suite de pruebas deterministas e integrales de extremo a extremo para el módulo de Finanzas.
-// Simula un mes completo (30 días) de operaciones reales en todas las fases contables.
-// Ejecutable directamente mediante: node scripts/test-finanzas-deterministic.mjs
+// Deterministic handler/transport simulation with controlled in-memory fixtures.
+// This does not prove SQL transactions, database isolation, or production readiness.
+// Run only in the credential-free QA copy: node scripts/test-finanzas-deterministic.mjs
 
 import * as F from '../server/handlers/finanzas.js'
 import * as C from '../server/handlers/cuentasCustodia.js'
 import * as S from '../server/handlers/finanzas.sync.js'
-import { asignarMovimientoACuenta } from '../server/lib/carterasHelper.js'
+import { randomUUID } from 'node:crypto'
 
 // ─── Configuración de Entorno y Constantes ──────────────────────────────────
 const ENV = {
@@ -59,28 +59,46 @@ async function readJson(res) {
   }
 }
 
+const RATES = { usdVes: 73.5, usdtVes: 80 }
+const CUSTODY = {
+  cajaVes: '11111111-0000-4000-8000-000000000001',
+  cajaUsd: '11111111-0000-4000-8000-000000000002',
+  bnc: '11111111-0000-4000-8000-000000000003',
+  mercantil: '11111111-0000-4000-8000-000000000004',
+  binance: '11111111-0000-4000-8000-000000000005',
+  zelle: '11111111-0000-4000-8000-000000000006',
+}
+// Fixture lookup only, not production reconciliation or substring inference.
+const CUSTODY_BY_LABEL = new Map([
+  ['Caja Efectivo Bs', CUSTODY.cajaVes], ['Caja Efectivo $', CUSTODY.cajaUsd],
+  ['Banco BNC (Principal)', CUSTODY.bnc], ['Banco Mercantil', CUSTODY.mercantil],
+  ['Binance Pay (USDT)', CUSTODY.binance], ['Zelle Corporativo', CUSTODY.zelle],
+])
+const round6 = value => Math.round(value * 1e6) / 1e6
+const fixtureResponse = (data, status = 200) => Promise.resolve(new Response(JSON.stringify(data), {
+  status, headers: { 'Content-Type': 'application/json' },
+}))
+
 function crearMovBody(data) {
   const moneda = (data.moneda || 'USD').toUpperCase()
   const esVes = moneda === 'VES'
   const esUsdt = moneda === 'USDT'
-  const rand = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-  const idempotencyKey = data.idempotency_key || `key-op-mes-${rand}`
+  const custodyId = data.cuentaCustodiaId ?? (data.partes ? null : CUSTODY_BY_LABEL.get(data.cuenta_origen)) ?? null
+  if (data.cuenta_origen && !data.partes && !custodyId) throw new Error(`Unknown custody fixture: ${data.cuenta_origen}`)
   return {
-    fecha: data.fecha,
-    tipo: data.tipo,
-    categoria: data.categoria,
-    concepto: data.concepto,
-    monto: data.monto,
-    moneda,
-    monto_ves: data.monto_ves ?? (esVes ? data.monto : (data.monto * 73.5)),
-    tasa_ves: esVes ? 1 : (data.tasa_ves ?? 73.5),
+    fecha: data.fecha, tipo: data.tipo, categoria: data.categoria,
+    concepto: data.concepto, monto: data.monto, moneda,
+    tasa_ves: esVes ? 1 : (data.tasa_ves ?? (esUsdt ? RATES.usdtVes : RATES.usdVes)),
+    tasa_usd_ves: data.tasa_usd_ves ?? RATES.usdVes,
     fuente_tasa: esVes ? 'FIJA' : (data.fuente_tasa ?? (esUsdt ? 'USDT' : 'BCV')),
+    observacionTasa: data.observacionTasa ?? 'Synthetic rate snapshot for the August QA fixture',
     metodo_pago: data.metodo_pago ?? (esVes ? 'transferencia_ves' : (esUsdt ? 'cripto_usdt' : 'efectivo_usd')),
-    cuenta_origen: data.cuenta_origen,
+    cuentaCustodiaId: custodyId,
+    cuenta_origen: data.cuenta_origen ?? null,
     referencia: data.referencia ?? 'REF-OP-MES',
     observaciones: data.observaciones ?? null,
     partes: data.partes ?? null,
-    idempotencyKey,
+    idempotencyKey: data.idempotency_key || `key-op-mes-${randomUUID()}`,
   }
 }
 
@@ -127,6 +145,43 @@ class InMemoryFinanzasDb {
     this.finanzas_movimientos = []
     this.auditoria = []
     this.posClosures = new Map()
+    this.versions = new Map()
+  }
+
+  bumpVersion(accountId) {
+    this.versions.set(accountId, (this.versions.get(accountId) || 0) + 1)
+  }
+
+  filteredRows(params, includeVoided = false) {
+    return this.finanzas_movimientos.filter(row => row.cuenta_id === params.p_cuenta_id
+      && (!params.p_desde || row.fecha >= params.p_desde)
+      && (!params.p_hasta || row.fecha <= params.p_hasta)
+      && (!params.p_tipo || row.tipo === params.p_tipo)
+      && (!params.p_categoria || row.categoria === params.p_categoria)
+      && (!params.p_moneda || row.moneda === params.p_moneda)
+      && (!params.p_cartera || (params.p_cartera === 'VES' ? row.moneda === 'VES' : row.moneda !== 'VES'))
+      && (includeVoided || row.estado === 'activo'))
+  }
+
+  tableRows(rows, url) {
+    return rows.filter(row => [...url.searchParams].every(([field, value]) => {
+      if (['select', 'order', 'limit', 'offset'].includes(field)) return true
+      if (value.startsWith('eq.')) return String(row[field]) === value.slice(3)
+      if (value.startsWith('gte.')) return row[field] >= value.slice(4)
+      if (value.startsWith('lte.')) return row[field] <= value.slice(4)
+      if (value.startsWith('in.(')) return value.slice(4, -1).split(',').includes(String(row[field]))
+      throw new Error(`Unsupported fixture filter: ${field}=${value}`)
+    }))
+  }
+
+  generatedMovement(row, inserted = false) {
+    const hasSnapshot = Number(row.tasa_ves) > 0 && Number(row.tasa_usd_ves) > 0
+    return {
+      ...row,
+      monto_ves: row.moneda === 'VES' ? round6(Number(row.monto))
+        : Number(row.tasa_ves) > 0 ? round6(Number(row.monto) * Number(row.tasa_ves)) : null,
+      tasa_registrada_en: inserted ? (hasSnapshot ? '2026-08-31T12:00:00.000Z' : null) : row.tasa_registrada_en ?? null,
+    }
   }
 
   fetchHandler(url, init = {}) {
@@ -162,38 +217,60 @@ class InMemoryFinanzasDb {
       ]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     }
 
-    // 3. RPC finanzas_resumen
-    if (pathname.includes('/rest/v1/rpc/finanzas_resumen')) {
-      const pDesde = body?.p_desde
-      const pHasta = body?.p_hasta
-      const activeMovs = this.finanzas_movimientos.filter(m => {
-        if (m.estado === 'anulado') return false
-        if (pDesde && m.fecha < pDesde) return false
-        if (pHasta && m.fecha > pHasta) return false
-        return true
-      })
+    // Exact RPC transport contracts. SQL locking/atomicity is tested separately.
+    if (method === 'POST' && pathname === '/rest/v1/rpc/finanzas_movimientos_pagina') {
+      const versionLibro = String(this.versions.get(body.p_cuenta_id) || 0)
+      if (body.p_version != null && body.p_version !== versionLibro) return fixtureResponse({ code: 'PT409' }, 409)
+      const rows = this.filteredRows(body, body.p_anulados).sort((a, b) =>
+        b.fecha.localeCompare(a.fecha) || b.creado_en.localeCompare(a.creado_en) || b.id.localeCompare(a.id))
+      const offset = body.p_offset ?? 0
+      const limit = body.p_limite ?? 50
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0) return fixtureResponse({ code: 'PT400' }, 400)
+      const movimientos = rows.slice(offset, offset + limit)
+      return fixtureResponse({ movimientos, versionLibro, corte: '2026-08-31T12:00:00.000Z',
+        paginacion: { total: rows.length, limit, offset, recibidos: movimientos.length,
+          siguiente: offset + movimientos.length < rows.length ? offset + movimientos.length : null } })
+    }
+
+    if (method === 'POST' && pathname === '/rest/v1/rpc/finanzas_resumen_consistente') {
       const grouped = new Map()
-      for (const m of activeMovs) {
-        const key = `${m.tipo}:${m.categoria}`
-        const item = grouped.get(key) || {
-          tipo: m.tipo,
-          categoria: m.categoria,
-          total_ves: 0,
-          total_usd: 0,
-          movimientos: 0,
-          movimientos_sin_usd: 0,
-        }
-        const usd = Number(m.monto || 0)
-        const ves = Number(m.monto_ves || (usd * (m.tasa_ves || 73.5)))
-        item.total_usd += usd
-        item.total_ves += ves
-        item.movimientos += 1
+      for (const row of this.filteredRows(body).filter(item => item.origen_operacion !== 'traspaso')) {
+        const key = `${row.tipo}:${row.categoria}`
+        const item = grouped.get(key) || { tipo: row.tipo, categoria: row.categoria, total_ves: 0, total_usd: 0,
+          total_usd_puro: 0, total_usdt_puro: 0, total_ves_puro: 0, movimientos: 0, movimientos_sin_usd: 0 }
+        const knownUsd = row.moneda === 'USD' || (row.tasa_registrada_en != null && row.tasa_ves > 0 && row.tasa_usd_ves > 0)
+        item.total_ves += Number(row.monto_ves ?? 0)
+        if (knownUsd) item.total_usd += row.moneda === 'USD' ? Number(row.monto) : Number(row.monto_ves) / Number(row.tasa_usd_ves)
+        else item.movimientos_sin_usd++
+        if (row.moneda === 'USD') item.total_usd_puro += Number(row.monto)
+        if (row.moneda === 'USDT') item.total_usdt_puro += Number(row.monto)
+        if (row.moneda === 'VES') item.total_ves_puro += Number(row.monto)
+        item.movimientos++
         grouped.set(key, item)
       }
-      return Promise.resolve(new Response(JSON.stringify([...grouped.values()]), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }))
+      const rows = [...grouped.values()].map(row => Object.fromEntries(Object.entries(row)
+        .map(([key, value]) => [key, typeof value === 'number' ? round6(value) : value])))
+      return fixtureResponse({ rows, versionLibro: String(this.versions.get(body.p_cuenta_id) || 0), corte: '2026-08-31T12:00:00.000Z' })
+    }
+
+    if (method === 'POST' && pathname === '/rest/v1/rpc/finanzas_asignar_custodia') {
+      if (body.p_cuenta_id !== IDS.cuenta || body.p_operador_id !== IDS.operador) return fixtureResponse({ code: 'PT403' }, 403)
+      if (!Array.isArray(body.p_ids) || body.p_ids.length < 1 || body.p_ids.length > 100) return fixtureResponse({ code: 'PT400' }, 400)
+      const target = this.cuentas_custodia.find(row => row.id === body.p_custodia_id && row.cuenta_id === body.p_cuenta_id && row.activo)
+      if (!target) return fixtureResponse({ code: 'PT404' }, 404)
+      const ids = [...new Set(body.p_ids)]
+      const rows = this.finanzas_movimientos.filter(row => row.cuenta_id === body.p_cuenta_id && ids.includes(row.id))
+      if (rows.length !== ids.length) return fixtureResponse({ code: 'PT404' }, 404)
+      if (rows.some(row => row.estado !== 'activo' || row.operacion_id || row.moneda !== target.moneda
+        || (row.cuenta_custodia_id && row.cuenta_custodia_id !== target.id) || row.partes?.length)) return fixtureResponse({ code: 'PT409' }, 409)
+      const changed = rows.filter(row => !row.cuenta_custodia_id)
+      for (const row of changed) {
+        row.cuenta_custodia_id = target.id
+        row.cuenta_origen = target.nombre
+        this.bumpVersion(row.cuenta_id)
+      }
+      if (changed.length) this.auditoria.push({ cuenta_id: body.p_cuenta_id, accion: 'CUSTODIA_ASIGNADA', meta: { ids, actualizados: changed.length } })
+      return fixtureResponse({ ok: true, actualizados: changed.length, idempotente: changed.length === 0, cuentaCustodiaId: target.id })
     }
 
     // 4. Endpoint POS Externo Mock
@@ -223,40 +300,25 @@ class InMemoryFinanzasDb {
     // 4. Tabla cuentas_custodia
     if (pathname.includes('/rest/v1/cuentas_custodia')) {
       if (method === 'GET') {
-        const activoParam = u.searchParams.get('activo')
-        let rows = [...this.cuentas_custodia]
-        if (activoParam === 'eq.true') rows = rows.filter(c => c.activo)
-        else if (activoParam === 'eq.false') rows = rows.filter(c => !c.activo)
-        return Promise.resolve(new Response(JSON.stringify(rows), { status: 200 }))
+        const rows = this.tableRows(this.cuentas_custodia, u)
+        return fixtureResponse(rows.slice(0, Number(u.searchParams.get('limit') || rows.length)))
       }
       if (method === 'POST') {
-        const item = {
-          id: body.id || `cuenta-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          cuenta_id: IDS.cuenta,
-          ...body,
-          activo: body.activo !== false,
-          creado_en: new Date().toISOString(),
-        }
-        this.cuentas_custodia.push(item)
-        return Promise.resolve(new Response(JSON.stringify([item]), { status: 201 }))
+        const input = Array.isArray(body) ? body : [body]
+        if (input.some(item => !item.cuenta_id)) throw new Error('Custody INSERT omitted tenant')
+        if (input.some(item => item.id && this.cuentas_custodia.some(row => row.id === item.id))) return fixtureResponse({ code: '23505', message: 'unique custody id' }, 409)
+        const items = input.map(item => ({ ...item, id: item.id || randomUUID(), activo: item.activo !== false, creado_en: '2026-08-01T00:00:00.000Z' }))
+        this.cuentas_custodia.push(...items)
+        return fixtureResponse(items, 201)
       }
       if (method === 'PATCH') {
-        const idMatch = u.searchParams.get('id')?.replace('eq.', '')
-        const rows = this.cuentas_custodia.filter(c => !idMatch || c.id === idMatch)
+        const rows = this.tableRows(this.cuentas_custodia, u)
         for (const row of rows) Object.assign(row, body)
-        return Promise.resolve(new Response(JSON.stringify(rows), { status: 200 }))
+        return fixtureResponse(rows)
       }
       if (method === 'DELETE') {
-        const idMatch = u.searchParams.get('id')?.replace('eq.', '')
-        const deleted = []
-        this.cuentas_custodia = this.cuentas_custodia.filter(c => {
-          const match = (!idMatch || c.id === idMatch) && (!c.activo || c.activo === false)
-          if (match && !c.permanente) {
-            deleted.push(c)
-            return false
-          }
-          return true
-        })
+        const deleted = this.tableRows(this.cuentas_custodia, u).filter(row => !row.activo && !row.permanente)
+        this.cuentas_custodia = this.cuentas_custodia.filter(row => !deleted.includes(row))
         return Promise.resolve(new Response(JSON.stringify(deleted), { status: 200 }))
       }
     }
@@ -264,63 +326,43 @@ class InMemoryFinanzasDb {
     // 5. Tabla finanzas_categorias
     if (pathname.includes('/rest/v1/finanzas_categorias')) {
       if (method === 'GET') {
-        return Promise.resolve(new Response(JSON.stringify(this.finanzas_categorias), { status: 200 }))
+        return fixtureResponse(this.tableRows(this.finanzas_categorias, u))
       }
       if (method === 'POST') {
-        const cat = { id: `cat-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, cuenta_id: IDS.cuenta, ...body }
+        if (!body.cuenta_id) throw new Error('Category INSERT omitted tenant')
+        const cat = { id: randomUUID(), activo: true, ...body }
         this.finanzas_categorias.push(cat)
         return Promise.resolve(new Response(JSON.stringify([cat]), { status: 201 }))
       }
       if (method === 'PATCH') {
-        const id = u.searchParams.get('id')?.replace('eq.', '')
-        const row = this.finanzas_categorias.find(c => c.id === id)
-        if (row) Object.assign(row, body)
-        return Promise.resolve(new Response(JSON.stringify([row]), { status: 200 }))
+        const rows = this.tableRows(this.finanzas_categorias, u)
+        for (const row of rows) Object.assign(row, body)
+        return fixtureResponse(rows)
       }
     }
 
     // 6. Tabla finanzas_movimientos
     if (pathname.includes('/rest/v1/finanzas_movimientos')) {
       if (method === 'GET') {
-        let rows = [...this.finanzas_movimientos]
-        const idFilter = u.searchParams.get('id')
-        if (idFilter?.startsWith('eq.')) {
-          const id = idFilter.replace('eq.', '')
-          rows = rows.filter(m => m.id === id)
-        }
-        const desde = u.searchParams.get('fecha')?.replace('gte.', '')
-        const hasta = u.searchParams.get('fecha')?.replace('lte.', '')
-        if (desde) rows = rows.filter(m => m.fecha >= desde)
-        if (hasta) rows = rows.filter(m => m.fecha <= hasta)
-        const estado = u.searchParams.get('estado')?.replace('eq.', '')
-        if (estado) rows = rows.filter(m => m.estado === estado)
-        const key = u.searchParams.get('idempotency_key')?.replace('eq.', '')
-        if (key) rows = rows.filter(m => m.idempotency_key === key)
-        return Promise.resolve(new Response(JSON.stringify(rows), { status: 200 }))
+        const rows = this.tableRows(this.finanzas_movimientos, u)
+        return fixtureResponse(rows.slice(0, Number(u.searchParams.get('limit') || rows.length)))
       }
       if (method === 'POST') {
-        const mov = {
-          id: body.id || (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : '550e8400-e29b-41d4-a716-446655440000'),
-          cuenta_id: IDS.cuenta,
-          estado: 'activo',
-          creado_en: new Date().toISOString(),
-          ...body,
-        }
+        if (!body.cuenta_id) throw new Error('Movement INSERT omitted tenant')
+        if (this.finanzas_movimientos.some(row => row.cuenta_id === body.cuenta_id && row.idempotency_key === body.idempotency_key)) return fixtureResponse({ code: '23505', message: 'unique idempotency_key' }, 409)
+        const mov = this.generatedMovement({ id: body.id || randomUUID(), estado: 'activo', creado_en: '2026-08-31T12:00:00.000Z', ...body }, true)
         this.finanzas_movimientos.push(mov)
-        return Promise.resolve(new Response(JSON.stringify([mov]), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+        this.bumpVersion(mov.cuenta_id)
+        return fixtureResponse([mov], 201)
       }
       if (method === 'PATCH') {
-        const idFilter = u.searchParams.get('id')
-        let matched = []
-        if (idFilter?.startsWith('eq.')) {
-          const id = idFilter.replace('eq.', '')
-          matched = this.finanzas_movimientos.filter(m => m.id === id)
-        } else if (idFilter?.startsWith('in.(')) {
-          const ids = idFilter.slice(4, -1).split(',')
-          matched = this.finanzas_movimientos.filter(m => ids.includes(m.id))
+        const matched = this.tableRows(this.finanzas_movimientos, u)
+        for (const row of matched) {
+          const ratesChanged = ['tasa_ves', 'tasa_usd_ves'].some(key => Object.hasOwn(body, key) && body[key] !== row[key])
+          Object.assign(row, this.generatedMovement({ ...row, ...body, tasa_registrada_en: ratesChanged ? null : row.tasa_registrada_en }))
+          this.bumpVersion(row.cuenta_id)
         }
-        for (const m of matched) Object.assign(m, body)
-        return Promise.resolve(new Response(JSON.stringify(matched), { status: 200 }))
+        return fixtureResponse(matched)
       }
     }
 
@@ -330,7 +372,7 @@ class InMemoryFinanzasDb {
       return Promise.resolve(new Response(JSON.stringify([{ ok: true }]), { status: 201 }))
     }
 
-    return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    throw new Error(`Unexpected fixture request: ${method} ${u.origin}${pathname}`)
   }
 }
 
@@ -359,7 +401,11 @@ async function ejecutarSimulacionMesFinanzas() {
       console.error(`  [FAIL] ${mensaje}`)
       throw new Error(`Aserción fallida: ${mensaje}`)
     }
-    console.log(`  ✔ [PASS] ${mensaje}`)
+    console.log(`  [PASS] ${mensaje}`)
+  }
+
+  function assertMovementCount(expected, label) {
+    assert(db.finanzas_movimientos.length === expected, `${label}: ${expected} persisted fixture rows`)
   }
 
   try {
@@ -369,6 +415,7 @@ async function ejecutarSimulacionMesFinanzas() {
     const resBnc = await C.handleCrearCuentaCustodia(makeRequest('/api/finanzas/cuentas-custodia/crear', {
       method: 'POST',
       body: {
+        id: CUSTODY.bnc,
         nombre: 'Banco BNC (Principal)',
         tipo: 'banco_ves',
         moneda: 'VES',
@@ -386,6 +433,7 @@ async function ejecutarSimulacionMesFinanzas() {
     const resMercantil = await C.handleCrearCuentaCustodia(makeRequest('/api/finanzas/cuentas-custodia/crear', {
       method: 'POST',
       body: {
+        id: CUSTODY.mercantil,
         nombre: 'Banco Mercantil',
         tipo: 'banco_ves',
         moneda: 'VES',
@@ -402,6 +450,7 @@ async function ejecutarSimulacionMesFinanzas() {
     const resBinance = await C.handleCrearCuentaCustodia(makeRequest('/api/finanzas/cuentas-custodia/crear', {
       method: 'POST',
       body: {
+        id: CUSTODY.binance,
         nombre: 'Binance Pay (USDT)',
         tipo: 'cripto_usdt',
         moneda: 'USDT',
@@ -417,6 +466,7 @@ async function ejecutarSimulacionMesFinanzas() {
     const resZelle = await C.handleCrearCuentaCustodia(makeRequest('/api/finanzas/cuentas-custodia/crear', {
       method: 'POST',
       body: {
+        id: CUSTODY.zelle,
         nombre: 'Zelle Corporativo',
         tipo: 'zelle',
         moneda: 'USD',
@@ -431,7 +481,8 @@ async function ejecutarSimulacionMesFinanzas() {
 
     const resListCuentas = await C.handleGetCuentasCustodia(makeRequest('/api/finanzas/cuentas-custodia'), ENV)
     const listaCuentas = (await readJson(resListCuentas)).cuentas
-    assert(listaCuentas.length === 6, 'Total de 6 cuentas de custodia activas verificadas')
+    assert(resListCuentas.status === 200 && listaCuentas.length === 6, 'Six active custody fixtures are returned')
+    assert(Object.values(CUSTODY).every(id => listaCuentas.some(account => account.id === id)), 'Catalog preserves all six explicit custody UUIDs')
 
     // Saldos iniciales
     const saldosApertura = [
@@ -563,7 +614,13 @@ async function ejecutarSimulacionMesFinanzas() {
         referencia: 'SPLIT-VENTA-102',
       }),
     }), ENV)
-    assert(true, '5 transacciones multi-moneda registradas y validadas con éxito')
+    assertMovementCount(11, 'Opening plus five sales')
+    const split = db.finanzas_movimientos.find(row => row.referencia === 'SPLIT-VENTA-102')
+    assert(split?.partes?.length === 2 && !split.cuenta_custodia_id, 'Legacy split remains explicitly unassigned; its parts do not invent custody postings')
+    const cryptoSale = db.finanzas_movimientos.find(row => row.referencia === 'ORDER-BINANCE-4491')
+    assert(cryptoSale?.tasa_ves === RATES.usdtVes && cryptoSale.tasa_usd_ves === RATES.usdVes
+      && cryptoSale.fuente_tasa === 'USDT' && cryptoSale.tasa_registrada_en != null
+      && cryptoSale.monto_ves === 96000, 'USDT sale keeps distinct native and USD rate snapshots with provenance')
     stats.fasesCompletadas++
 
     // ━━━ FASE 4: Egresos y Gastos Operativos Ordinarios (Días 11-14) ━━━
@@ -612,7 +669,8 @@ async function ejecutarSimulacionMesFinanzas() {
         referencia: 'TRANS-MERC-441',
       }),
     }), ENV)
-    assert(true, 'Egresos operativos y guardrail de motivo ejecutados con éxito')
+    assertMovementCount(13, 'Two valid expenses; invalid concept adds no row')
+    assert(db.finanzas_movimientos.filter(row => row.tipo === 'egreso').length === 2, 'Both operating expenses persisted as expenses')
     stats.fasesCompletadas++
 
     // ━━━ FASE 5: Integración con Nómina - Pago de Salarios (Día 15) ━━━
@@ -628,7 +686,7 @@ async function ejecutarSimulacionMesFinanzas() {
         monto: 1450.00,
         moneda: 'USD',
         monto_ves: 106575.00,
-        cuenta_origen: 'Banco BNC (Principal)',
+        cuenta_origen: 'Caja Efectivo $',
         referencia: 'NOMINA-QUINCENA-1',
         idempotency_key: 'nomina-egreso-periodo-q1-2026-08',
       }),
@@ -641,13 +699,17 @@ async function ejecutarSimulacionMesFinanzas() {
         fecha: '2026-08-15',
         tipo: 'egreso',
         categoria: 'Nómina',
-        concepto: 'Pago de Nómina Quincenal - Período 2026-08-01 al 2026-08-15 (reintento)',
+        concepto: 'Pago de Nómina Quincenal - Período 2026-08-01 al 2026-08-15',
         monto: 1450.00,
         moneda: 'USD',
+        cuenta_origen: 'Caja Efectivo $',
         idempotency_key: 'nomina-egreso-periodo-q1-2026-08',
       }),
     }), ENV)
-    assert(resNominaDup.status === 200, 'Idempotencia de Nómina verificada: no se duplica el asiento contable')
+    const duplicatePayroll = await readJson(resNominaDup)
+    assert(resNominaDup.status === 200 && duplicatePayroll.idempotente === true, 'Legacy payroll entry replay is reported as idempotent')
+    assertMovementCount(14, 'Payroll replay creates no duplicate')
+    assert(db.finanzas_movimientos.filter(row => row.idempotency_key === 'nomina-egreso-periodo-q1-2026-08').length === 1, 'Exactly one historical payroll ledger entry exists')
     stats.fasesCompletadas++
 
     // ━━━ FASE 6: Sincronización Automática con Sistema POS (Días 16-20) ━━━
@@ -660,13 +722,15 @@ async function ejecutarSimulacionMesFinanzas() {
         fecha: f,
         origen: 'POS Construacero Cotizaciones',
         total_despachos: 6,
-        ventas_contado_usd: 1200,
+        tasa_bcv: RATES.usdVes,
+        ventas_contado_usd: 1500,
         cobros_cxc_usd: 300,
         devoluciones_usd: 0,
-        total_ingresos_usd: 1500,
+        total_ingresos_usd: 1800,
         desglose_pagos: {
           efectivo_usd: 800,
           zelle_usd: 400,
+          usdt_usd: 0,
           pago_movil_ves: 22050,
           transferencia_ves: 0,
           punto_venta_ves: 0,
@@ -679,12 +743,24 @@ async function ejecutarSimulacionMesFinanzas() {
         body: { fecha: f, confirm: true },
       }), ENV)
       const dataSync = await readJson(resSync)
-      assert(dataSync.ok && (dataSync.posData?.total_ingresos_usd === 1500 || dataSync.total_ingresos_usd === 1500), `Sincronización POS del día ${f} exitosa ($1,500.00 importados)`)
+      assert(resSync.status === 200 && dataSync.ok && dataSync.resultados?.length === 4, `POS ${f}: four payment/CxC rows persisted`)
+      const posRows = db.finanzas_movimientos.filter(row => row.fecha === f && row.idempotency_key?.startsWith('pos-'))
+      const posUsd = posRows.reduce((sum, row) => sum + (row.moneda === 'USD' ? row.monto : row.monto_ves / row.tasa_usd_ves), 0)
+      assert(posRows.length === 4 && Math.abs(posUsd - 1800) < 0.000001, `POS ${f}: four rows value $800 + $400 + Bs22050/73.5 + $300 CxC = $1800`)
+      assert(posRows.every(row => !row.cuenta_custodia_id && row.tasa_registrada_en && row.tasa_usd_ves === RATES.usdVes), 'Unclassified POS entries retain rate snapshots, not inferred custody')
+      assert(dataSync.total_ingresos_usd === 1800, `POS ${f}: reported USD total matches persisted valuation (received ${dataSync.total_ingresos_usd})`)
     }
     stats.fasesCompletadas++
 
-    // ━━━ FASE 7: Tesorería, Transferencias y Traspasos entre Cuentas (Días 21-24) ━━━
-    console.log('\n━━━ FASE 7: TRASPASOS DE TESORERÍA Y CAMBIO DE DIVISAS (DÍAS 21-24) ━━━')
+    assertMovementCount(26, 'Three POS days plus existing entries')
+    const beforePosReplay = db.finanzas_movimientos.length
+    const replayPos = await S.handleSyncVentasPos(makeRequest('/api/finanzas/sync-pos', { method: 'POST', body: { fecha: fechasPos[0], confirm: true } }), ENV)
+    const replayPosData = await readJson(replayPos)
+    assert(replayPos.status === 200 && replayPosData.resultados?.every(row => row.accion === 'actualizado'), 'POS replay updates the same four historical rows')
+    assertMovementCount(beforePosReplay, 'POS replay preserves row count')
+
+    // Historical pairs were separate writes, not an atomic transfer operation.
+    console.log('\nPHASE 7: LEGACY TRANSFER REPRESENTATION (NO SQL ATOMICITY CLAIM)')
 
     // Traspaso interbancario BNC -> Mercantil
     await F.handleCrearFinanzasMovimiento(makeRequest('/api/finanzas/movimientos', {
@@ -743,7 +819,14 @@ async function ejecutarSimulacionMesFinanzas() {
         referencia: 'FONDEO-BINANCE-88',
       }),
     }), ENV)
-    assert(true, 'Traspasos entre cuentas y fondeo de divisa completados con balance neutro')
+    assertMovementCount(30, 'Cuatro asientos de transferencias históricas separados')
+    const bankPair = db.finanzas_movimientos.filter(row => row.referencia === 'TRASPASO-INT-01')
+    assert(bankPair.length === 2 && bankPair.every(row => row.moneda === 'VES')
+      && bankPair.reduce((sum, row) => sum + (row.tipo === 'ingreso' ? row.monto : -row.monto), 0) === 0, 'Traspaso histórico VES: importes opuestos conservados')
+    const cryptoPair = db.finanzas_movimientos.filter(row => row.referencia === 'FONDEO-BINANCE-88')
+    assert(cryptoPair.length === 2 && cryptoPair.find(row => row.moneda === 'USD')?.monto === 1000
+      && cryptoPair.find(row => row.moneda === 'USDT')?.monto === 1000, 'Histórico USD/USDT conserva unidades, sin afirmar paridad ni atomicidad')
+    assert(cryptoPair.every(row => !row.operacion_id), 'Los asientos legacy no se hacen pasar por un traspaso RPC')
     stats.fasesCompletadas++
 
     // ━━━ FASE 8: Auditoría, Reasignaciones y Anulaciones (Días 25-28) ━━━
@@ -769,11 +852,17 @@ async function ejecutarSimulacionMesFinanzas() {
       method: 'POST',
       body: {
         ids: [movHuerfano.id],
-        cuenta_origen: 'Banco BNC (Principal)',
+        cuentaCustodiaId: CUSTODY.zelle,
       },
     }), ENV)
     const dataReasig = await readJson(resReasig)
-    assert(dataReasig.actualizados === 1, 'Movimiento reasignado exitosamente a Banco BNC')
+    assert(resReasig.status === 200 && dataReasig.actualizados === 1, 'Movimiento USD asignado a Zelle por UUID explícito')
+    const assigned = db.finanzas_movimientos.find(row => row.id === movHuerfano.id)
+    assert(assigned.cuenta_custodia_id === CUSTODY.zelle && assigned.moneda === 'USD', 'La asignación preserva la moneda y no usa tenant como custodia')
+    const retryAssignment = await F.handleReasignarCuentaMovimientos(makeRequest('/api/finanzas/movimientos/reasignar-cuenta', {
+      method: 'POST', body: { ids: [movHuerfano.id], cuentaCustodiaId: CUSTODY.zelle },
+    }), ENV)
+    assert((await readJson(retryAssignment)).actualizados === 0, 'La misma clasificación no duplica efectos')
 
     // 2. Anulación con motivo formal
     const resErr = await F.handleCrearFinanzasMovimiento(makeRequest('/api/finanzas/movimientos', {
@@ -829,21 +918,49 @@ async function ejecutarSimulacionMesFinanzas() {
     const flujoCajaNeto = resumen.ingresos_usd - resumen.egresos_usd
     assert(flujoCajaNeto > 0, `Flujo de Caja Neto POSITIVO (Superávit del mes): $${flujoCajaNeto.toFixed(2)}`)
 
-    // Saldos por cuenta
-    const resMovsMes = await F.handleGetFinanzasMovimientos(makeRequest('/api/finanzas/movimientos?desde=2026-08-01&hasta=2026-08-31'), ENV)
-    const todosMovs = (await readJson(resMovsMes)).movimientos
-    const movimientosActivos = todosMovs.filter(m => m.estado !== 'anulado')
+    // Recuperar todas las páginas del mismo libro, incluyendo el anulado.
+    const todosMovs = [], seen = new Set()
+    let offset = 0, version = null, pages = 0, total = null
+    do {
+      const params = new URLSearchParams({ desde: '2026-08-01', hasta: '2026-08-31', limit: '10', offset: String(offset), mostrarAnulados: 'true' })
+      if (version != null) params.set('versionLibro', version)
+      const response = await F.handleGetFinanzasMovimientos(makeRequest(`/api/finanzas/movimientos?${params}`), ENV)
+      const page = await readJson(response)
+      assert(response.status === 200 && Array.isArray(page.movimientos), 'Página de movimientos válida')
+      assert(version == null || page.versionLibro === version, 'Versión de libro estable entre páginas')
+      version = page.versionLibro; total = page.paginacion.total; pages++
+      for (const row of page.movimientos) {
+        assert(!seen.has(row.id), 'Sin duplicación de filas entre páginas')
+        seen.add(row.id); todosMovs.push(row)
+      }
+      const next = page.paginacion.siguiente
+      if (next == null) break
+      assert(next === offset + page.movimientos.length && next > offset, 'La paginación avanza sin omisiones')
+      offset = next
+    } while (pages <= 10)
+    assert(pages === 4 && todosMovs.length === 32 && todosMovs.length === total, 'Conjunto completo de 32 movimientos en cuatro páginas')
+    const movimientosActivos = todosMovs.filter(m => m.estado === 'activo')
+    assert(movimientosActivos.length === 31, 'Sólo el movimiento anulado queda fuera del flujo')
+    const amountUsd = row => row.moneda === 'USD' ? row.monto : row.monto_ves / row.tasa_usd_ves
+    const expectedIngresos = movimientosActivos.filter(row => row.tipo === 'ingreso').reduce((sum, row) => sum + amountUsd(row), 0)
+    const expectedEgresos = movimientosActivos.filter(row => row.tipo === 'egreso').reduce((sum, row) => sum + amountUsd(row), 0)
+    assert(Math.abs(resumen.ingresos_usd - expectedIngresos) < 0.00001 && Math.abs(resumen.egresos_usd - expectedEgresos) < 0.00001,
+      'Resumen USD coincide con los importes y tasas de todo el conjunto')
 
+    const sinCustodia = movimientosActivos.filter(row => !row.cuenta_custodia_id)
+    assert(sinCustodia.length === 13 && sinCustodia.filter(row => row.partes?.length).length === 1,
+      'Doce partidas POS y una partida dividida siguen sin custodia confirmada')
     const saldosCalculados = new Map()
     for (const mov of movimientosActivos) {
-      const c = asignarMovimientoACuenta(mov, listaCuentas)
-      if (!c) continue
+      if (!mov.cuenta_custodia_id) continue
+      const c = listaCuentas.find(account => account.id === mov.cuenta_custodia_id)
+      assert(c && c.moneda === mov.moneda, 'Cuenta exacta y moneda nativa coinciden')
       const prev = saldosCalculados.get(c.id) || { nombre: c.nombre, moneda: c.moneda, ingresos: 0, egresos: 0 }
-      const monto = (c.moneda === 'VES') ? (Number(mov.monto_ves) || Number(mov.monto) || 0) : Number(mov.monto || 0)
-      if (mov.tipo === 'ingreso') prev.ingresos += monto
-      else prev.egresos += monto
+      if (mov.tipo === 'ingreso') prev.ingresos += Number(mov.monto)
+      else prev.egresos += Number(mov.monto)
       saldosCalculados.set(c.id, prev)
     }
+    assert(saldosCalculados.size === 6, 'El cálculo comprueba las seis cuentas, no un conjunto vacío')
 
     console.log('\n  ┌─────────────────────────────┬──────────┬──────────────┬──────────────┬──────────────┐')
     console.log('  │ Cuenta de Custodia          │ Moneda   │ Entradas     │ Salidas      │ Saldo Final  │')
@@ -893,7 +1010,8 @@ async function ejecutarSimulacionMesFinanzas() {
     console.log(`  • Volumen de Ingresos del Mes:      $${stats.totalIngresosUsd.toLocaleString('es-VE', { minimumFractionDigits: 2 })}`)
     console.log(`  • Volumen de Egresos del Mes:       $${stats.totalEgresosUsd.toLocaleString('es-VE', { minimumFractionDigits: 2 })}`)
     console.log(`  • Flujo Operativo Neto (Superávit): $${(stats.totalIngresosUsd - stats.totalEgresosUsd).toLocaleString('es-VE', { minimumFractionDigits: 2 })}`)
-    console.log('  • Estado del Módulo de Finanzas:    100% OPERATIVO, SÓLIDO Y AUDITADO')
+    console.log('  Alcance: simulación de cálculo y transporte; no certifica SQL, concurrencia, POS real ni producción.')
+    console.log('  Las partidas sin custodia y transferencias históricas requieren conciliación independiente.')
     console.log('======================================================================\n')
 
     return stats

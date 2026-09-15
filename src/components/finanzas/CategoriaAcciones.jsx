@@ -2,6 +2,7 @@
 // Piezas de UI para gestionar categorías desde el formulario de movimientos:
 // panel inline de creación y diálogo de confirmación de borrado (baja lógica).
 import { Loader2, Trash2 } from 'lucide-react'
+import { Modal } from '../../../compat/components/ui/Modal.jsx'
 
 const inputClass = 'w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
@@ -60,38 +61,30 @@ export function CrearCategoriaPanel({ tipo, nombre, onNombre, onGuardar, onCance
 export function EliminarCategoriaDialog({ nombre, movimientosCount = 0, pending, onClose, onConfirm }) {
   const tieneMovimientos = movimientosCount > 0
   return (
-    <div
-      className="fixed inset-0 z-[310] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="eliminar-categoria-title"
-      onClick={e => { if (e.target === e.currentTarget && !pending) onClose() }}
-    >
-      <div className="relative w-full max-w-sm rounded-3xl border border-white/10 p-6 shadow-2xl text-center animate-in zoom-in-95 duration-150 overflow-hidden" style={{ background: 'linear-gradient(180deg, #0f1f38 0%, #0a1628 100%)' }}>
+    <Modal isOpen busy={pending} onClose={onClose}
+      title={tieneMovimientos ? `¿Archivar la categoría "${nombre}"?` : `¿Eliminar la categoría "${nombre}"?`}>
+      <div className="text-center text-slate-800">
         <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4 text-red-400">
           <Trash2 size={22} />
         </div>
-        <h3 id="eliminar-categoria-title" className="text-base font-black text-white">
-          {tieneMovimientos ? `¿Archivar la categoría "${nombre}"?` : `¿Eliminar la categoría "${nombre}"?`}
-        </h3>
-        <p className="mt-2 text-xs text-slate-300 leading-relaxed">
+        <p className="mt-2 text-xs text-slate-700 leading-relaxed">
           {tieneMovimientos ? (
             <>
-              Esta categoría tiene <strong className="text-amber-300 font-bold">{movimientosCount} movimiento(s)</strong> registrados. Al archivarla, <strong className="text-white">no se perderá ningún dato</strong>: tus movimientos pasados y reportes contables se conservarán 100% intactos. Solo dejará de ofrecerse para nuevos registros.
+              Esta categoría tiene <strong className="text-amber-900 font-bold">{movimientosCount} movimiento(s)</strong> registrados. Al archivarla, <strong className="text-slate-900">no se perderá ningún dato</strong>: tus movimientos pasados y reportes contables se conservarán 100% intactos. Solo dejará de ofrecerse para nuevos registros.
             </>
           ) : (
             <>
-              Los movimientos que la usan <strong className="text-white">no se pierden</strong>: conservan el nombre en el historial y el PDF. Solo deja de ofrecerse al registrar movimientos nuevos.
+              Los movimientos que la usan <strong className="text-slate-900">no se pierden</strong>: conservan el nombre en el historial y el PDF. Solo deja de ofrecerse al registrar movimientos nuevos.
             </>
           )}
         </p>
-        <p className="mt-3 text-[11px] text-emerald-300/90">Podrás restaurarla en cualquier momento desde "Gestionar categorías".</p>
+        <p className="mt-3 text-[11px] text-emerald-800">Podrás restaurarla en cualquier momento desde "Gestionar categorías".</p>
         <div className="mt-5 flex gap-2 justify-center">
           <button
             type="button"
             onClick={onClose}
             disabled={pending}
-            className="px-4 py-2.5 rounded-xl border border-white/15 text-xs font-bold text-slate-200 hover:bg-white/5 transition-colors cursor-pointer"
+            className="min-h-11 px-4 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
           >
             Cancelar
           </button>
@@ -112,7 +105,7 @@ export function EliminarCategoriaDialog({ nombre, movimientosCount = 0, pending,
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 

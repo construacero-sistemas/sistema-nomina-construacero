@@ -22,7 +22,7 @@ export default function PageHeader({ icon: Icon, title, subtitle, action }) {
         </div>
 
         {/* Texto */}
-        <div>
+        <div className="min-w-0 break-words">
           <h1 className="text-lg font-black text-slate-800 leading-tight tracking-tight">{title}</h1>
           {subtitle && (
             <p className="text-xs font-medium text-slate-400 mt-0.5">{subtitle}</p>

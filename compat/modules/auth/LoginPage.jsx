@@ -33,7 +33,7 @@ function GateStep() {
     setLoading(false)
     if (!result.ok) {
       setError(useAuthStore.getState().error || 'No se pudo abrir la cuenta. Verifica tus datos e inténtalo de nuevo.')
-      useAuthStore.getState().limpiarError()
+      // Keep the profile error for the recovery screen; login clears it on retry.
     }
   }
 
@@ -63,12 +63,35 @@ function GateStep() {
 export default function LoginPage() {
   const initialized = useAuthStore(state => state.initialized)
   const user = useAuthStore(state => state.user)
+  const status = useAuthStore(state => state.authStatus)
+  const error = useAuthStore(state => state.error)
+  const retryProfile = useAuthStore(state => state.retryProfile)
+  const logout = useAuthStore(state => state.logout)
+  const loadingProfile = useAuthStore(state => state._cargandoPerfil)
   useEffect(() => {
     const previous = document.body.style.backgroundColor
     document.body.style.backgroundColor = '#0a1628'
     return () => { document.body.style.backgroundColor = previous }
   }, [])
-  if (!initialized) return <div className="min-h-screen" style={{ background: '#0a1628' }} />
-  if (user) return <div className="min-h-screen" style={{ background: '#0a1628' }} />
+  if (!initialized || user || status === 'error') return (
+    <><DarkBackground /><main className="login-stage">
+      <section className="login-panel login-panel-ready w-full max-w-md space-y-4" aria-busy={loadingProfile}>
+        <h1 className="text-xl font-black text-white">{loadingProfile || !initialized ? 'Comprobando tu acceso' : 'No pudimos abrir tu cuenta'}</h1>
+        <p className="text-base text-slate-200" role={error ? 'alert' : 'status'}>
+          {error || 'Estamos verificando la sesión y los permisos de tu cuenta.'}
+        </p>
+        {user?.email && <p className="text-sm text-slate-300 break-all">{user.email}</p>}
+        <div className="flex flex-wrap gap-3">
+          <button type="button" onClick={() => retryProfile()} disabled={loadingProfile}
+            className="min-h-11 px-4 py-2 rounded-xl bg-amber-600 text-white font-bold disabled:opacity-60">
+            {loadingProfile ? 'Comprobando...' : 'Reintentar'}
+          </button>
+          <button type="button" onClick={() => logout()} className="min-h-11 px-4 py-2 rounded-xl bg-white/10 border border-white/30 text-white font-bold">
+            {user ? 'Cerrar sesión' : 'Volver al acceso'}
+          </button>
+        </div>
+      </section>
+    </main></>
+  )
   return <GateStep />
 }

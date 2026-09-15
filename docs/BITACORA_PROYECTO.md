@@ -6,6 +6,150 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Resultado de verificación local y entrega — 15/09/2026
+
+**Resultado:** la cadena completa `npm run verify` de `qa-oh6ye5` terminó con salida 0 después de las últimas correcciones. Se aprobaron **909 pruebas en 80 archivos**, con **1 todo preexistente** no contado como aprobado; 22 guardas de QA; 34 comprobaciones responsive estáticas; lint; 27 pruebas deterministas de nómina y 127 aserciones financieras; 28 comprobaciones SQL y 34 migraciones; compilación y presupuesto de carga.
+
+**Carga inicial:** 191,9 KiB gzip de JavaScript; 207,6 KiB gzip con CSS. No entran PDF ni html2canvas en la carga inicial.
+
+**Navegador:** `browser-static-mlqSpW` ejecutó 31 comprobaciones aprobadas sobre ese mismo build: 375×667, 390×844, 430×932, 1440×900 y formulario horizontal 844×390; historial de75filas, detalle paginado, traspaso único, foco/Escape, recuperación de perfil403/500conalerta y saldo503sinconfirmación. Se inspeccionaron las capturas; la emulación no es certificación de iPhone físico.
+
+**Integridad de entrega:** se cotejaron los 334 archivos de la copia; sin cambios posteriores en código/configuración ni alteraciones del snapshot. Lockfile consistente y diff sin errores de espacios. Informe generado en `outputs/cierre-local-i0umv8qi/`: `verificacion-local.html`, `verificacion-local.json` y `evidencias-locales.zip`. Los fallos anteriores se conservan como evidencia independiente.
+
+**Validación de la entrega:** `check-delivery.mjs` aprobó 6 comprobaciones: informe sin desbordes a 390 y 1440 px, tabla desplegable con los 29 hallazgos y el control SQL adicional, enlaces JSON/ZIP accesibles y las 8 capturas del informe decodificadas. Se inspeccionaron ambas capturas del informe. Evidencia en `validacion-entrega.json`, `reporte-390.png` y `reporte-1440.png`.
+
+**Límites:** no se hizo commit, push, deploy ni migración remota. No se han conciliado históricos reales. Concurrencia PostgreSQL multiconexión, backend/Auth desplegados, Safari/PWA/VoiceOver físicos, impresión y hosting siguen pendientes. POS no es una transacción atómica de lote; USDT ambiguo requiere contrato aprobado. Este es un cierre de validación local, no de los29hallazgos en producción.
+
+## Preparación de la entrega de evidencias — 15/09/2026
+
+**Objetivo:** entregar resultados comprobables del mismo código validado, separando QA local de aprobación productiva.
+
+**Archivos afectados:** `outputs/implementation-2026-09-13/assemble-verification.py`, `check-delivery.mjs`, supervisor de navegador y esta bitácora.
+
+**Comportamiento:** el informe HTML/JSON/ZIP se genera desde el log de `verify` y la revisión del mismo snapshot, exige que el inventario de 80 archivos de pruebas esté completo y compara los hashes del código. Conserva logs fallidos anteriores; no incluye credenciales, sesiones ni datos reales. La validación de entrega comprueba visualización móvil/escritorio, enlaces descargables, imágenes y la tabla de 29 hallazgos más el control SQL adicional.
+
+**Pruebas ejecutadas:** sintaxis de ambos generadores aprobada, rechazo de combinaciones de evidencia fallida/diferente aprobado, lockfile sin discrepancias ni enlaces locales y `git diff --check` sin errores. Los avisos de normalización LF/CRLF son informativos y no provocaron fallos.
+
+**Pendiente al preparar la entrega:** terminar la verificación y captura del ajuste de mensaje de perfil. El cierre definitivo se registra abajo sin reescribir la evidencia histórica. No hay autorización de despliegue, conciliación real ni certificación de dispositivos físicos.
+
+## Conservar el motivo del fallo de perfil — 15/09/2026
+
+**Objetivo:** evitar que la recuperación de acceso muestre texto de carga después de fallar el perfil.
+
+**Archivos afectados:** `compat/modules/auth/LoginPage.jsx` y el supervisor `outputs/implementation-2026-09-13/browser-verify.mjs`.
+
+**Cambio:** el formulario ya no borra el error global que necesita la pantalla de recuperación; un nuevo intento ya limpia el error al empezar. El navegador comprueba que, tras 403/500, se mantiene la alerta real y no el texto «Estamos verificando…».
+
+**Evidencia:** `qa-EQ6qzK` pasó la cadena con 909 pruebas, SQL y build; `browser-static-4EdCZd` pasó 31 comprobaciones. La inspección de sus capturas detectó el mensaje secundario incorrecto pese a existir los botones de recuperación. Se conserva esa evidencia y se exige repetir con la nueva comprobación antes de entregar. No se cambian permisos ni se usa una cuenta real.
+
+## Ajuste visual final de tesorería — 15/09/2026
+
+**Objetivo:** corregir el único incumplimiento detectado hasta el escritorio en la revisión renderizada final.
+
+**Archivos afectados:** `src/components/finanzas/CuentasCustodiaGrid.jsx` y `CuentasCustodiaGrid.test.jsx`.
+
+**Cambio:** el botón Mover usa `min-h-11` en lugar de `min-h-8`. Así conserva 44 px en escritorio sin depender de la regla CSS móvil. Se añade una regresión explícita y se mantiene la medición en navegador.
+
+**Evidencia anterior:** `qa-Hfj4vx` completó `npm run verify` con salida 0: 908 pruebas en 80 archivos y 1 todo; 22 guardas QA, 34 comprobaciones estáticas responsive, 27 deterministas de nómina, 127 de finanzas, 28 comprobaciones SQL y 34 migraciones. Compilación y presupuesto aprobados: JS inicial 191,9 KiB gzip, JS+CSS 207,6 KiB gzip. El navegador `browser-static-7SvG6t` aprobó login, tamaños móviles, historial completo de 75 filas, detalle paginado, traspaso, foco y formulario horizontal, pero falló correctamente por los dos botones Mover de escritorio a 32 px. Se conserva ese resultado.
+
+**Pendiente:** verificar este ajuste, completar la revisión renderizada de errores de saldo/perfil y entregar evidencias del mismo snapshot. No se certifica Safari físico ni producción.
+
+## Verificación final: arranque de workers — 14/09/2026
+
+**Objetivo:** resolver el bloqueo del ejecutor de pruebas sin omitir suites ni ocultar errores de proceso.
+
+**Archivo afectado:** `vitest.config.js`; supervisor y evidencias en `outputs/implementation-2026-09-13/`.
+
+**Cambio:** usar `threads` con un solo worker y aislamiento por archivo explícito, también en CI. No se cambian aserciones, plazos de las pruebas ni mecanismos de seguridad.
+
+**Pruebas previas:** `qa-RIpFK3` aprobó 877 pruebas en 78 archivos y conservó 1 todo, pero salió con error porque no arrancaron dos workers de `forks`. La ejecución enfocada `qa-xD3lO0` con `threads` aprobó sus 31 pruebas en 2 archivos, sin errores no controlados. Esto no convierte la ejecución fallida en exitosa; se conserva íntegra.
+
+**Corrección de herencia:** `qa-iulViV` seguía lanzando forks aunque el ajuste estuviera en la raíz: los proyectos inline de Vitest no heredaban ese campo. Se declaró `pool: threads` e `isolate: true` dentro de ambos proyectos, servidor y cliente; `scripts/qa-guards.test.mjs` comprueba la configuración efectiva de cada uno. Se conservó el fallo de tres arranques (854 aserciones aprobadas, 1 todo, salida no exitosa).
+
+**Pendientes:** repetir la cadena completa con esta configuración y revisar el build final en navegador. Sigue pendiente la aceptación en dispositivos físicos, concurrencia real y producción.
+
+## Cierre de regresiones de sesión y POS — 13/09/2026
+
+**Objetivo:** completar las correcciones locales y repetir la cadena de verificación sin datos ni credenciales reales.
+
+**Archivos afectados:** `compat/store/useAuthStore.js`, `compat/services/authFetch.js` y sus pruebas; `server/handlers/finanzas.sync.js` y dos suites POS; `src/hooks/useFinanzas.js` y `useFinanzas.sync.test.jsx`; `src/utils/confirmedBalances.js`, pruebas de cartera y `FinanzasFiltrosUI.jsx`; `scripts/test-finanzas-deterministic.mjs`; supervisor `outputs/implementation-2026-09-13/browser-verify.mjs`.
+
+**Cambios:** login tardío y consultas online ya no restauran una sesión descartada; se compara la identidad del SDK antes de enviar o renovar una solicitud y al cargar el perfil. POS exige tasas del día antes de empezar un lote, no inventa paridad USDT, no reintenta eliminando metadatos y no afirma éxito con una fila ausente. Total VES se convierte por su tasa USD/VES guardada; los totales desconocidos permanecen pendientes y cero ya no se sustituye por el total remoto. Se preserva la selección de métodos/tramos enviada por el formulario. La simulación comprueba páginas completas, UUID, partidas pendientes y conjuntos no vacíos en vez de aserciones incondicionales. El checkbox de filtros tiene caja táctil de 44 px. Los errores de revisión visual se conservan; las siguientes pruebas usan una compilación estática aislada.
+
+**Resultados comprobados antes del cierre integral:** `qa-AV2jlS`: 28 comprobaciones PostgreSQL embebidas y 34 migraciones aprobadas, incluyendo las ocho nuevas de procedencia/inactividad. `qa-QV1Yob`: 136 pruebas enfocadas aprobadas, incluidas 19 de overlays. `qa-X02wju`: 104 pruebas aprobadas, incluidas 42 de sesión/red y 33 de POS. `qa-skPCiR`: 27 casos deterministas de nómina aprobados. Estos resultados no sustituyen la verificación final de todas las modificaciones.
+
+**Límites:** sincronización POS no es una transacción atómica de lote ni certifica integración externa. USDT de POS exige aclarar unidades nativas antes de habilitarlo; históricos requieren conciliación autorizada. Safari/iPhone/PWA/VoiceOver físicos, PostgreSQL multiconexión y despliegue siguen fuera del alcance local. No se hizo commit, push ni deploy.
+
+## Continuación: procedencia histórica y recuperación de QA — 13/09/2026
+
+**Objetivo y alcance:** cerrar los dos defectos confirmados de la revisión financiera y las regresiones pendientes, sólo en código y pruebas locales. Sin commit, push, deploy, conciliación de datos reales ni migraciones remotas.
+
+**Archivos afectados:** `supabase/migrations/238_operaciones_financieras_atomicas.sql`, `239_finanzas_lecturas_consistentes.sql`, `scripts/test-db.mjs`; `server/handlers/finanzas.js`, `nomina.periodos.js`, `server/lib/finanzasUtils.js` y pruebas; `src/utils/financialValuation.js`, pruebas de listado/exportación/PDF; `CuentasCustodiaGrid.jsx` y pruebas; pruebas deterministas de nómina/finanzas y su fixture; supervisores de QA y revisión visual bajo `outputs/implementation-2026-09-13/`.
+
+**Comportamiento en validación:** sello de tasa creado por la base sólo al registrar nuevas tasas explícitas, nunca por asignar custodia ni mediante fechas enviadas por cliente; históricos preservados sin acreditar rellenos de 232. Cambiar una tasa invalida su sello. Lecturas y exportaciones no valoran esos históricos como confirmados. Las cuentas inactivas no admiten cambios del efecto contable sin restaurarse primero. La baja en interfaz vuelve a revisar el saldo y bloquea doble envío. Si la eliminación de recibos falla por historial retenido, el servidor no continúa borrando el período ni devuelve éxito.
+
+**Recuperación:** `test-nomina-deterministic.mjs` contenía bytes nulos; se conservó su estado anterior y se recuperó la versión de un snapshot de QA antes de migrar los contratos a RPC con UUID/método/tasa/motivo explícitos. Se mantiene cobertura de períodos sin historial y se añade conservación del historial revertido. Las simulaciones financieras dejan de usar aserciones incondicionales y tasas nativas sumadas como USD.
+
+**Evidencia anterior, no aprobación del código nuevo:** `qa-LBRceR` ejecutó 829 pruebas aprobadas y 1 todo en 78 archivos, pero terminó con error del proceso porque el worker de `overlays.regression.test.jsx` no arrancó. `qa-Gp09wp` aprobó 20 comprobaciones SQL y 34 migraciones antes de esta corrección. `qa-hHTeM6` compiló y aprobó presupuesto de bundle: 191,6 KiB gzip JS inicial, 207,3 KiB con CSS, sin PDF/html2canvas inicial. La primera revisión visual falló por navegación fría y no ejecutó escenarios; se conserva ese resultado y se cambia a servir la compilación estática aislada.
+
+**Pendientes:** verificar este código con las pruebas nuevas, ejecución completa y revisión visual renderizada. Concurrencia PostgreSQL multiconexión, Safari/PWA/VoiceOver físicos, política contable y autorización de producción no quedan cubiertos por las pruebas locales.
+
+## Integración y diagnóstico financiero — 13/09/2026
+
+**Objetivo:** continuar el plan aprobado y cerrar regresiones mediante copias locales de QA sin credenciales. Sin commit, push, despliegue ni migraciones remotas.
+
+**Archivos afectados:** `src/hooks/useFinancialOperation.js`, `useCustodySave.js`, `useCuentasCustodia.js`, `useFinanzas.js`; vistas, formularios y pruebas bajo `src/components/finanzas/` y `src/components/nomina/`; valoración histórica/PDF; componentes compartidos `Modal`, `Toast`, overlays y CSS; `compat/services/authFetch.js`; `server/handlers/finanzas.js`; migraciones nuevas 237–240; scripts de runner, guardas y verificación.
+
+**Comportamiento:** historial paginado separado del saldo completo; importes desconocidos no se convierten en cero; UUID de custodia separado del tenant; cuenta/apertura con confirmación y reintento sin duplicar; validación de la respuesta/clave de operaciones y protección de cambio de sesión; exportación completa por versión y tasas guardadas; confirmaciones con foco restaurado y bloqueo mientras guarda. Asignación manual explícita por RPC, con auditoría y sin backfill automático. Revisión de controles táctiles y safe areas.
+
+**Pruebas verificadas hasta este corte:** última suite general anterior: 820 aprobadas, 1 fallida y 1 todo (75 archivos); la comparación USD/USDT fallida fue corregida, sin atribuir aprobación a ese cambio hasta repetir. En copia `qa-s3AiHj`: guardrail de proyecto, 21 guardas QA, 34 comprobaciones estáticas responsive y lint aprobados; ejecución se detuvo en fixtures deterministas de nómina aún basados en el contrato anterior. En `qa-rlQEkj`: 34 migraciones compilaron; 19 comprobaciones SQL aprobaron antes de un fallo por igualdad exacta de tasas USDT tras redondeo. Se corrigieron el casteo de IP de auditoría en 240 y el uso de tasas explícitas en 238; nueva ejecución pendiente. Evidencias y snapshots en `outputs/implementation-2026-09-13/`.
+
+**Revisión independiente:** los intentos de `financial-core` se interrumpieron con errores del proveedor y red (400/500/502). El host HTTPS respondió 200 en una comprobación pública; eso no certifica el servicio de agentes ni determina la causa de la interrupción. Main asumió validación SQL y solicita recuperar el informe pendiente, sin duplicar el equipo.
+
+**Pendientes:** pasar todo `verify` con el código final, revisar capturas nuevas, actualizar contratos de pruebas deterministas y validar nuevas regresiones. PGlite prueba SQL secuencial, no concurrencia real ni Auth desplegada. iPhone/Safari/PWA/VoiceOver físicos, políticas contables, conciliación histórica y despliegue siguen siendo gates externos no completados.
+
+## Implementación local y recuperación de integración — 12/09/2026
+
+**Objetivo:** ejecutar el plan aprobado conservando históricos y sin acciones productivas. Los cambios se encuentran en validación, no certificados ni desplegados.
+
+**Archivos afectados:** sesión/red/cachés bajo `compat/`; componentes compartidos y vistas bajo `src/`; rutas y validadores financieros en `server/` y `worker.js`; migraciones locales 237–239; scripts/configuración de QA, PWA y hosting. Evidencia en `outputs/implementation-2026-09-12/`.
+
+**Comportamiento implementado en curso:** pago y reversión transaccional por recibo, traspasos con dos asientos y rollback, claves estables, saldos del libro completo, paginación y exportación por versión, sesión por cuenta sin restaurar perfiles administrativos del disco, overlays coordinados y calendario limitado. La cuenta y su apertura se confirman explícitamente; un fallo no debe aparentar éxito ni duplicar la cuenta en el reintento.
+
+**Pruebas iniciales:** 33 migraciones compiladas y 16 casos SQL aprobados en PostgreSQL embebido; guardas de QA aprobadas. La última suite general no está verde: contratos anteriores de pagos/saldos y regresiones de interfaz requieren ajustes. Build y lint anteriores aprobaron antes de los cambios más recientes; deben ejecutarse de nuevo. No se presenta esta evidencia como concurrencia multi-conexión, Safari físico o base desplegada.
+
+**Pendientes:** completar integración y regresiones, ejecutar verificación completa y revisión renderizada; diagnóstico histórico real, políticas contables, staging, iPhone/PWA/VoiceOver y autorización de despliegue siguen separados. Sin commit, push, deploy ni migraciones remotas.
+
+## Plan completo de corrección — 12/09/2026
+
+**Objetivo:** convertir los 29 hallazgos de la auditoría en un plan de implementación completo, sin ejecutar correcciones funcionales.
+
+**Archivos afectados:** `outputs/plan-fixeo-2026-09-12/plan-fixeo-completo.html`, `plan-fixeo-completo.md`, `backlog-fixeo.json`, `trazabilidad.json`, `validacion-plan.json`, validación visual y scripts de generación del plan; esta bitácora y memoria local del proyecto. Se conserva la auditoría original y `PLAN_IMPLEMENTACION.md` como antecedente histórico.
+
+**Contenido:** 20 paquetes FX-00 a FX-19, 8 fases, cobertura explícita de los 29 IDs, dependencias sin ciclos, archivos candidatos, responsables propuestos, acciones, pruebas, criterios de aceptación, permisos, diagnóstico histórico de solo lectura y activación/rollback. La vía móvil avanza en paralelo a finanzas con propiedad exclusiva de archivos compartidos. Todos los fixes permanecen pendientes de aprobación.
+
+**Revisión adicional:** un agente de planificación revisó dependencias e invariantes; sus observaciones se contrastaron con código local. Se añadió `SEC-DB-01` como comprobación separada: las migraciones 232/233 otorgan EXECUTE a authenticated sobre `finanzas_resumen` SECURITY DEFINER, filtrado por parámetro de cuenta sin validación explícita del tenant dentro de la función. Deben comprobarse grants, propietario y esquema efectivos en base autorizada. No se afirma que esté desplegado ni que haya ocurrido una fuga real; no se modifica el recuento original de 29 hallazgos.
+
+**Validación del plan:** 29/29 IDs con exactamente un paquete principal; 20 paquetes en 8 fases; ninguna dependencia desconocida o circular. HTML probado en Chromium a 390 y 1440 px sin desborde global, sin errores JS ni enlaces rotos; filtros, búsqueda, expansión y navegación a dependencias aprobados. Capturas inspeccionadas. No se ejecutó nuevamente la suite funcional: estas pruebas validan el documento, no los fixes propuestos.
+
+**Pendientes:** aprobación de implementación local; políticas de redondeo/tasas, sobregiros y offline; base desechable con dos tenants e iPhone físico/Safari/PWA/VoiceOver. Migraciones remotas, reparación histórica, commit, push y despliegue requieren autorización separada. Código funcional y datos reales sin cambios.
+
+## Auditoría E2E y móvil — 12/09/2026
+
+**Objetivo:** auditar errores y mejoras del proyecto, priorizando UI/UX móvil e iPhone, sin aplicar correcciones funcionales ni tocar datos reales.
+
+**Archivos afectados:** informe, backlog JSON, capturas, fixtures, pruebas forenses y logs bajo `outputs/audit-2026-09-12/`; esta bitácora y memoria local del proyecto. Código de aplicación, dependencias del proyecto y `dist/` sin cambios. Sin commit, push ni deploy.
+
+**Entrega:** `outputs/audit-2026-09-12/auditoria-e2e.html` (informe completo en español), `hallazgos.json` (backlog con evidencia y criterios de aceptación) y `evidencias-auditoria.zip` (70 archivos de evidencias, 2.289.951 bytes, integridad ZIP verificada; sin build compilado ni archivos de entorno). Informe validado a 390 y 1440 px, sin desborde global ni imágenes rotas, con filtros y enlaces locales comprobados.
+
+**Resultados:** 29 hallazgos priorizados (16 P1 y 13 P2). Se reprodujeron pérdida de tasa en el hook de pago, éxito de nómina ante HTTP 500 del asiento, reversión incorrecta de pagos agrupados, caché protegido antes de autenticación y fechas fuera de min/max. En Chromium se comprobó el límite efectivo de 50 movimientos sin cargar la siguiente página, saldos derivados incompletos, error de listado presentado como vacío, pantalla vacía tras denegación de perfil, cierre simultáneo de selector/formulario con Escape, controles de 28–36 px y campos de 14 px.
+
+**Pruebas:** guardrail de proyecto, lint y 34 comprobaciones estáticas responsivas aprobados. `npm run verify` falló al inicializar 68 suites; ejecución directa de Vitest con dos workers: 68 suites, 663 tests aprobados y 1 todo. Simulaciones deterministas: 26 aserciones nómina y 38 finanzas. Seis pruebas forenses aprobadas (aprobar significa reproducir el defecto, no corregirlo). Build aislado aprobado y bundle inicial `index` de 380,3 KiB dentro del presupuesto de 400 KiB; el HTML también precarga PDF, por lo que ese presupuesto no mide todo el coste inicial.
+
+**Validación visual:** UI real con API local sintética en Chromium a 375×667, 390×844, 430×932 y 1440×900, con capturas de nómina/finanzas y componentes. Sin desborde horizontal global en las vistas capturadas; no equivale a certificación de todas las pantallas. Auditoría de accesibilidad financiera: cuatro nodos de contraste, dos controles interactivos anidados y restricción de zoom.
+
+**Pendientes y límites:** aplicar correcciones y convertir pruebas forenses en regresiones del comportamiento correcto; verificar transacciones y migraciones en base desechable/staging; ejecutar Safari/iPhone físico, VoiceOver, teclado virtual y PWA instalada. WebKit en Windows quedó en pantalla vacía sin causa resuelta: no se atribuye a iOS. Los agentes especialistas no devolvieron resultados por errores del proveedor/cuota; revisión completada directamente. Las capturas usan datos sintéticos, no información real. El fixture inicial de resumen carecía de desgloses por moneda; sus ceros no se consideran defectos de la aplicación.
+
 ## 1–16. Historial previo
 
 Se conservan las entradas históricas anteriores de este documento, correspondientes a auditoría E2E, PIN, UI/UX, autenticación local, tasas, registro de empleados desde Nómina, PWA, reglas de responsividad, configuración general, notificaciones y documentación obligatoria.

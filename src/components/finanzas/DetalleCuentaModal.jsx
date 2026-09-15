@@ -1,282 +1,67 @@
-// src/components/finanzas/DetalleCuentaModal.jsx
-// Modal de inspección detallada de cuentas de custodia financiera
-import { useMemo } from 'react'
-import {
-  ArrowDownRight,
-  ArrowRightLeft,
-  ArrowUpRight,
-  Banknote,
-  Building2,
-  CreditCard,
-  DollarSign,
-  Smartphone,
-  Sparkles,
-} from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ArrowRightLeft, Wallet } from 'lucide-react'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import { asignarMovimientoACuenta, clasificarMovimientoEnCartera } from '../../utils/carterasHelper.js'
 
-function formatMoney(amount) {
-  return Number(amount || 0).toLocaleString('es-VE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-}
+const valid = value => value != null && Number.isFinite(Number(value))
+const money = value => valid(value) ? Number(value).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'Sin confirmar'
+const LOGICAL = ['Efectivo $', 'Zelle', 'USDT', 'Efectivo Bs', 'Banco en Bolívares']
 
-export default function DetalleCuentaModal({
-  open,
-  onClose,
-  cuenta,
-  movimientos = [],
-  cuentas = [],
-  tasaBcv = 1,
-  onOpenTransferencia,
-}) {
-  const esVes = cuenta?.moneda === 'VES' || cuenta?.carteraId === 'VES'
-  const tasa = Number(tasaBcv) > 0 ? Number(tasaBcv) : 1
-
-  // Filtrar los movimientos que corresponden a esta vista del detalle.
-  // - Si es una cuenta de custodia concreta (id real), se filtran por ASIGNACIÓN EXPLÍCITA
-  //   (cuenta_origen coincide con esta cuenta), sin doble conteo.
-  // - Si es una subcuenta lógica (ej. 'Banco en Bolívares'), se agrupan por subcuentaId,
-  //   que es el nivel que contabiliza todo el dinero.
-  const movimientosCuenta = useMemo(() => {
-    if (!cuenta) return []
-    // Una cuenta de custodia real tiene un id que no es el de una subcuenta lógica.
-    const esSubcuentaLogica = ['Efectivo $', 'Zelle', 'USDT', 'Efectivo Bs', 'Banco en Bolívares'].includes(cuenta.id)
-    return movimientos.filter(mov => {
-      if (mov.estado === 'anulado') return false
-      const { subcuentaId } = clasificarMovimientoEnCartera(mov)
-      if (esSubcuentaLogica) {
-        return subcuentaId === cuenta.id
-      }
-      // Cuenta de custodia real: asignación explícita contra las cuentas registradas.
-      return subcuentaId === cuenta.subcuentaId || Boolean(asignarMovimientoACuenta(mov, cuentas))
-    })
-  }, [movimientos, cuenta, cuentas])
-
-  // Desglose por canales/orígenes de fondos (útil para Banco en Bolívares)
-  const desgloseCanales = useMemo(() => {
-    if (!cuenta || (cuenta.id !== 'Banco en Bolívares' && cuenta.nombre !== 'Banco en Bolívares')) return null
-
-    const canales = {
-      'Punto de Venta': { nombre: 'Punto de Venta', icon: CreditCard, color: 'text-teal-600', bg: 'bg-teal-50', entradas: 0, salidas: 0 },
-      'Pago Móvil':     { nombre: 'Pago Móvil',     icon: Smartphone, color: 'text-indigo-600', bg: 'bg-indigo-50', entradas: 0, salidas: 0 },
-      'Transferencia':  { nombre: 'Transferencias', icon: Building2,  color: 'text-blue-600', bg: 'bg-blue-50', entradas: 0, salidas: 0 },
-    }
-
-    for (const mov of movimientosCuenta) {
-      const ref = String(mov.referencia || '').toLowerCase()
-      const concepto = String(mov.concepto || '').toLowerCase()
-      const monto = Number(mov.monto_ves) || Number(mov.monto) || 0
-      const esIngreso = mov.tipo === 'ingreso'
-
-      let canalKey = 'Transferencia'
-      if (ref.includes('punto') || concepto.includes('punto')) {
-        canalKey = 'Punto de Venta'
-      } else if (ref.includes('móvil') || ref.includes('movil') || concepto.includes('móvil') || concepto.includes('movil')) {
-        canalKey = 'Pago Móvil'
-      }
-
-      if (esIngreso) {
-        canales[canalKey].entradas += monto
-      } else {
-        canales[canalKey].salidas += monto
-      }
-    }
-
-    return Object.values(canales).map(c => ({
-      ...c,
-      neto: c.entradas - c.salidas,
-    }))
-  }, [movimientosCuenta, cuenta])
-
-  // Equivalencia en la otra divisa
-  const saldoEquivalente = useMemo(() => {
-    if (!cuenta) return 0
-    const s = Number(cuenta.saldo) || 0
-    if (esVes) {
-      return (s / tasa)
-    }
-    return (s * tasa)
-  }, [cuenta, esVes, tasa])
-
+export default function DetalleCuentaModal({ open, onClose, cuenta, movimientos = [], cuentas = [], tasaBcv = 0,
+  onOpenTransferencia, hasMore = false, onLoadMore, isLoadingMore = false, errorCarga = '' }) {
+  const [pagina, setPagina] = useState(1)
+  const rows = useMemo(() => movimientos.filter(m => {
+    if (!cuenta || m.estado === 'anulado') return false
+    if (LOGICAL.includes(cuenta.id)) return clasificarMovimientoEnCartera(m).subcuentaId === cuenta.id
+    return asignarMovimientoACuenta(m, cuentas)?.id === cuenta.id
+  }), [movimientos, cuenta, cuentas])
+  const pages = Math.max(1, Math.ceil(rows.length / 10))
+  const page = Math.min(pagina, pages)
+  const flujo = useMemo(() => {
+    const validRows = rows.every(m => valid(m.monto) && m.moneda === cuenta?.moneda)
+    if (!validRows || errorCarga) return null
+    return rows.reduce((a, m) => { a[m.tipo === 'ingreso' ? 'entradas' : 'salidas'] += Number(m.monto); return a }, { entradas: 0, salidas: 0 })
+  }, [rows, cuenta, errorCarga])
   if (!cuenta) return null
-
-  return (
-    <Modal
-      isOpen={open}
-      onClose={onClose}
-      title="Detalle de Cuenta de Custodia"
-      className="sm:max-w-xl"
-    >
-      <div className="space-y-4">
-        {/* Encabezado Hero de la Cuenta */}
-        <div className={`p-4 rounded-2xl border ${
-          esVes ? 'bg-blue-50/50 border-blue-200' : 'bg-emerald-50/50 border-emerald-200'
-        }`}>
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <div className="flex items-center gap-2.5">
-              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-sm ${
-                esVes ? 'bg-blue-600' : 'bg-emerald-600'
-              }`}>
-                {esVes ? <Building2 size={20} /> : <DollarSign size={20} />}
-              </div>
-              <div>
-                <span className={`text-[10px] font-black uppercase tracking-wider block ${
-                  esVes ? 'text-blue-700' : 'text-emerald-700'
-                }`}>
-                  {esVes ? 'Cartera en Bolívares (VES)' : 'Cartera en Dólares (USD)'}
-                </span>
-                <h3 className="text-base font-black text-slate-900">
-                  {cuenta.nombre || cuenta.id}
-                </h3>
-              </div>
-            </div>
-
-            <span className={`px-2.5 py-1 rounded-xl text-xs font-black shadow-xs ${
-              esVes ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'
-            }`}>
-              {cuenta.moneda}
-            </span>
-          </div>
-
-          {/* Saldo Principal */}
-          <div className="flex flex-wrap items-baseline justify-between gap-2 pt-2 border-t border-slate-200/80">
-            <div>
-              <span className="text-[11px] font-bold text-slate-500 block">Saldo disponible actual</span>
-              <span className="text-2xl font-black text-slate-900">
-                {esVes ? 'Bs. ' : '$'}{formatMoney(cuenta.saldo)}{' '}
-                <span className="text-xs font-bold text-slate-400">{cuenta.moneda}</span>
-              </span>
-            </div>
-
-            <div className="text-right text-xs font-bold text-slate-500">
-              <span className="flex items-center gap-1 text-slate-600 font-bold">
-                <Sparkles size={13} className="text-amber-500" />
-                ≈ {esVes ? `$${formatMoney(saldoEquivalente)} USD` : `Bs. ${formatMoney(saldoEquivalente)} VES`}
-              </span>
-              <span className="text-[10px] text-slate-400 font-normal">Tasa oficial: {formatMoney(tasa)} Bs/$</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Desglose por Canales (si aplica, p.ej. Banco en Bolívares) */}
-        {desgloseCanales && (
-          <div className="space-y-2">
-            <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider px-1">
-              Desglose de Fondos por Canal de Ingreso
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {desgloseCanales.map(canal => {
-                const Icon = canal.icon
-                return (
-                  <div key={canal.nombre} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 mb-1">
-                      <div className={`p-1 rounded-lg ${canal.bg} ${canal.color}`}>
-                        <Icon size={13} />
-                      </div>
-                      <span className="truncate">{canal.nombre}</span>
-                    </div>
-                    <span className="text-sm font-black text-slate-800 block truncate">
-                      Bs. {formatMoney(canal.neto)}
-                    </span>
-                    <span className="text-[10px] text-emerald-600 font-bold block truncate">
-                      +{formatMoney(canal.entradas)}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Resumen de Flujo de la Cuenta */}
-        <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shrink-0">
-              <ArrowDownRight size={15} />
-            </div>
-            <div className="min-w-0">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">Entradas</span>
-              <strong className="text-emerald-700 font-black break-words">
-                {esVes ? 'Bs. ' : '$'}{formatMoney(cuenta.ingresos)}
-              </strong>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center font-bold shrink-0">
-              <ArrowUpRight size={15} />
-            </div>
-            <div className="min-w-0">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">Salidas</span>
-              <strong className="text-rose-700 font-black break-words">
-                {esVes ? 'Bs. ' : '$'}{formatMoney(cuenta.egresos)}
-              </strong>
-            </div>
-          </div>
-        </div>
-
-        {/* Últimos Movimientos Registrados en esta Cuenta */}
-        <div className="space-y-2">
-          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider px-1 flex items-center justify-between">
-            <span>Últimos Movimientos de esta Cuenta</span>
-            <span className="text-[10px] text-slate-400 font-bold font-mono">
-              {movimientosCuenta.length} registros
-            </span>
-          </h4>
-
-          <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100 bg-white">
-            {movimientosCuenta.length === 0 ? (
-              <div className="p-4 text-center text-xs text-slate-400 font-medium">
-                No hay movimientos registrados para esta cuenta en el período consultado.
-              </div>
-            ) : (
-              movimientosCuenta.slice(0, 10).map(mov => {
-                const esIngreso = mov.tipo === 'ingreso'
-                return (
-                  <div key={mov.id} className="p-2.5 flex items-center justify-between gap-2 hover:bg-slate-50 transition-colors">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-800 truncate">{mov.concepto}</p>
-                      <p className="text-[10px] text-slate-400 flex items-center gap-1.5">
-                        <span>{mov.fecha}</span>
-                        {mov.referencia && <span>· {mov.referencia}</span>}
-                      </p>
-                    </div>
-
-                    <span className={`text-xs font-black shrink-0 ${
-                      esIngreso ? 'text-emerald-700' : 'text-rose-700'
-                    }`}>
-                      {esIngreso ? '+' : '-'}{esVes ? 'Bs. ' : '$'}{formatMoney(mov.monto)}
-                    </span>
-                  </div>
-                )
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Acciones del Footer */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-3 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={onOpenTransferencia}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
-            style={{ touchAction: 'manipulation' }}
-          >
-            <ArrowRightLeft size={14} className="text-primary" />
-            <span>Mover fondos desde esta cuenta</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-900 text-xs font-bold text-white hover:bg-slate-800 transition-colors cursor-pointer"
-          >
-            Cerrar
-          </button>
-        </div>
-      </div>
-    </Modal>
-  )
+  const confirmed = cuenta.saldoConfirmado === true && valid(cuenta.saldo)
+  const usdValue = confirmed && cuenta.moneda === 'USD' ? Number(cuenta.saldo)
+    : confirmed && cuenta.valoracionCompleta && valid(cuenta.valorUsd) ? Number(cuenta.valorUsd) : null
+  const ref = confirmed && cuenta.moneda === 'VES' && Number(tasaBcv) > 0 ? Number(cuenta.saldo) / Number(tasaBcv) : null
+  const available = confirmed && cuenta.disponible === true
+  return <Modal isOpen={open} onClose={onClose} title="Detalle de Cuenta de Custodia" className="sm:max-w-xl"
+    footer={<><button type="button" onClick={onClose} className="min-h-11 px-4 py-2 rounded-xl border border-slate-300">Cerrar</button>
+      <button type="button" disabled={!available || !onOpenTransferencia} onClick={onOpenTransferencia} className="min-h-11 px-4 py-2 rounded-xl bg-primary text-white font-bold inline-flex gap-2 items-center disabled:opacity-50"><ArrowRightLeft size={18} />Mover fondos desde esta cuenta</button></>}>
+    <div className="space-y-4">
+      <section aria-label="Saldo de la cuenta" className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">
+        <h4 className="font-bold text-slate-900 flex items-center gap-2"><Wallet size={20} />{cuenta.nombre || cuenta.id}</h4>
+        <p className="text-sm text-slate-700">{available ? 'Saldo confirmado disponible' : confirmed ? 'Saldo contable; no disponible para transferir' : 'Saldo pendiente de confirmar'}</p>
+        <p className="text-xl font-black text-slate-900 break-words">{usdValue == null ? 'Valoración USD pendiente' : `$${money(usdValue)} USD`}</p>
+        <p className="text-sm text-slate-700">Saldo nativo: <strong>{confirmed ? `${money(cuenta.saldo)} ${cuenta.moneda}` : 'Sin confirmar'}</strong></p>
+        {ref != null && <p className="text-xs text-slate-600">Referencia de consulta: ${money(ref)} USD a {money(tasaBcv)} Bs/USD. No sustituye la valoración contable histórica.</p>}
+        {!available && <p role="status" className="text-sm text-amber-900">Confirma el saldo y resuelve las partidas pendientes antes de mover fondos.</p>}
+      </section>
+      <section aria-label="Flujo de registros cargados" className="p-3 rounded-xl border border-slate-200 text-sm text-slate-700 space-y-1">
+        <h4 className="font-bold">Flujo de registros cargados</h4>
+        <p>Entradas: {flujo ? `${money(flujo.entradas)} ${cuenta.moneda}` : 'Sin confirmar'} · Salidas: {flujo ? `${money(flujo.salidas)} ${cuenta.moneda}` : 'Sin confirmar'}</p>
+        <p className="text-xs">Este subtotal sólo usa el historial cargado y sus filtros. No es el saldo completo de la cuenta.</p>
+      </section>
+      <section aria-label="Historial cargado de esta cuenta" className="space-y-2">
+        <p className="text-sm font-bold">{rows.length} registros de esta cuenta entre el historial cargado{hasMore ? '; puede haber más' : ''}.</p>
+        {errorCarga && <p role="alert" className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-800">{errorCarga}</p>}
+        {rows.length === 0 && !errorCarga && <p className="text-sm text-slate-600">No hay movimientos de esta cuenta entre los registros cargados con estos filtros.</p>}
+        <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200">
+          {rows.slice((page - 1) * 10, page * 10).map(m => <li key={m.id} className="p-3 flex flex-wrap items-start justify-between gap-2 text-sm">
+            <span className="min-w-0 flex-1 break-words text-slate-800">{m.concepto}<span className="block text-xs text-slate-600">{m.fecha} · {m.categoria}</span></span>
+            <strong className="text-slate-900 break-words">{m.tipo === 'ingreso' ? '+' : '-'}{money(m.monto)} {m.moneda}</strong>
+          </li>)}
+        </ul>
+        {pages > 1 && <nav aria-label="Páginas de movimientos de la cuenta" className="flex flex-wrap justify-between items-center gap-2">
+          <button type="button" disabled={page <= 1} onClick={() => setPagina(page - 1)} className="min-h-11 px-3 py-2 rounded-xl border border-slate-300 disabled:opacity-50">Anterior</button>
+          <span className="text-sm">Página {page} de {pages}</span>
+          <button type="button" disabled={page >= pages} onClick={() => setPagina(page + 1)} className="min-h-11 px-3 py-2 rounded-xl border border-slate-300 disabled:opacity-50">Siguiente</button>
+        </nav>}
+        {(hasMore || errorCarga) && onLoadMore && <button type="button" onClick={onLoadMore} disabled={isLoadingMore} className="w-full min-h-11 px-3 py-2 rounded-xl border border-slate-300 font-bold">{isLoadingMore ? 'Cargando...' : 'Cargar más historial'}</button>}
+      </section>
+    </div>
+  </Modal>
 }

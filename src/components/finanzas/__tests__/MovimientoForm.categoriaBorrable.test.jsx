@@ -38,7 +38,7 @@ function renderForm(props = {}) {
 }
 
 async function abrirSelectorCategoria(user) {
-  await user.click(screen.getByText(/selecciona una categor/i))
+  await user.click(screen.getByRole('combobox', { name: /selecciona una categor/i }))
   return await screen.findByRole('option', { name: /sueldos/i })
 }
 
@@ -68,6 +68,9 @@ describe('MovimientoForm — borrado de categoría desde el selector', () => {
     // (El formulario también es role=dialog: distinguir por su título.)
     const dialogo = await screen.findByRole('dialog', { name: /eliminar la categoría/i })
     expect(dialogo.textContent).toMatch(/sueldos/i)
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(dialogo.closest('[inert]')).toBeNull()
+    expect(dialogo).toContainElement(document.activeElement)
     expect(eliminarCategoriaMock).not.toHaveBeenCalled()
 
     await user.click(within(dialogo).getByRole('button', { name: /sí, eliminar/i }))
@@ -80,17 +83,17 @@ describe('MovimientoForm — borrado de categoría desde el selector', () => {
     // Seleccionar "Sueldos" primero
     const opcion = await abrirSelectorCategoria(user)
     await user.click(opcion)
-    expect(screen.getByText('Sueldos')).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: /selecciona una categor/i })).toHaveTextContent('Sueldos')
 
     // Abrir de nuevo y eliminarla
-    await user.click(screen.getByText('Sueldos'))
+    await user.click(screen.getByRole('combobox', { name: /selecciona una categor/i }))
     await user.click(screen.getByRole('button', { name: /eliminar sueldos/i }))
     const dialogo = await screen.findByRole('dialog', { name: /eliminar la categoría/i })
     await user.click(within(dialogo).getByRole('button', { name: /sí, eliminar/i }))
 
     await waitFor(() => expect(eliminarCategoriaMock).toHaveBeenCalled())
     // El trigger vuelve al placeholder (la categoría ya no existe)
-    await waitFor(() => expect(screen.getByText(/selecciona una categor/i)).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /selecciona una categor/i })).toBeTruthy())
   })
 
   it('cancelar cierra el diálogo sin llamar a la mutación', async () => {

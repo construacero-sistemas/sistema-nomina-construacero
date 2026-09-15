@@ -54,7 +54,7 @@ describe('validación de UUID', () => {
     { fn: 'handleReabrirPeriodo',           body: { periodoId: IDS.invalido },                     campo: /periodoId/i },
     { fn: 'handleEliminarPeriodo',          body: { periodoId: IDS.invalido },                     campo: /periodoId/i },
     { fn: 'handleAjustarLinea',             body: { lineaId: IDS.invalido },                       campo: /lineaId/i },
-    { fn: 'handleRevertirPagoLinea',        body: { lineaId: IDS.invalido },                       campo: /lineaId/i },
+    { fn: 'handleRevertirPagoLinea',        body: { operationId: IDS.registro, lineaId: IDS.invalido, motivo: 'Prueba de validación' },                       campo: /lineaId/i },
   ]
 
   for (const c of casos) {
@@ -78,17 +78,56 @@ describe('validación de UUID', () => {
 
   it('handlePagarLineas rechaza lista vacía de recibos', async () => {
     mock = installFetchMock([])
-    const res = await H.handlePagarLineas(makeRequest({ lineaIds: [] }), ENV)
+    const res = await H.handlePagarLineas(makeRequest({ operationId: IDS.registro, lineaIds: [] }), ENV)
     const { status, body } = await readResponse(res)
     expect(status).toBe(400)
-    expect(String(body.error)).toMatch(/no hay recibos/i)
+    expect(body.code).toBe('INVALID_OPERATION')
+    expect(String(body.error)).toMatch(/1 y 500 recibos/i)
+    expect(mock.calls).toHaveLength(0)
   })
 
-  it('handlePagarLineas descarta UUIDs inválidos y rechaza si no queda ninguno', async () => {
+  it.each([['abc', '123'], [IDS.linea, 'invalid']])('rejects the entire payment batch containing invalid IDs: %j', async (...lineaIds) => {
     mock = installFetchMock([])
-    const res = await H.handlePagarLineas(makeRequest({ lineaIds: ['abc', '123'] }), ENV)
-    const { status } = await readResponse(res)
+    const res = await H.handlePagarLineas(makeRequest({ operationId: IDS.registro, lineaIds }), ENV)
+    const { status, body } = await readResponse(res)
     expect(status).toBe(400)
+    expect(body).toMatchObject({ code: 'INVALID_OPERATION' })
+    expect(body.error).toContain('lineaIds')
+    expect(mock.calls).toHaveLength(0)
+  })
+})
+
+describe('atomic payment validation', () => {
+  const payment = { operationId: IDS.registro, lineaIds: [IDS.linea], cuentaCustodiaId: IDS.config,
+    tasaBcv: '400', tasaUsdVes: '400', fuenteTasa: 'BCV', metodoPago: 'Efectivo $' }
+
+  it.each([
+    ['missing key', { operationId: undefined }, 'OPERATION_KEY_REQUIRED'],
+    ['invalid key', { operationId: IDS.invalido }, 'INVALID_OPERATION'],
+    ['missing custody account', { cuentaCustodiaId: undefined }, 'INVALID_OPERATION'],
+    ['missing method', { metodoPago: '' }, 'INVALID_OPERATION'],
+    ['missing exchange rate', { tasaBcv: undefined }, 'INVALID_OPERATION'],
+    ['zero exchange rate', { tasaBcv: '0' }, 'INVALID_OPERATION'],
+    ['invalid USD valuation rate', { tasaUsdVes: '-1' }, 'INVALID_OPERATION'],
+    ['manual rate without observation', { fuenteTasa: 'MANUAL' }, 'INVALID_OPERATION'],
+    ['overlong reference', { referencia: 'x'.repeat(161) }, 'INVALID_OPERATION'],
+    ['non-text reference', { referencia: 123 }, 'INVALID_OPERATION'],
+    ['oversized receipt batch', { lineaIds: Array(501).fill(IDS.linea) }, 'INVALID_OPERATION'],
+  ])('rejects %s before calling the financial RPC', async (_scenario, patch, code) => {
+    mock = installFetchMock([])
+    const result = await readResponse(await H.handlePagarLineas(makeRequest({ ...payment, ...patch }), ENV))
+    expect(result.status).toBe(400)
+    expect(result.body).toMatchObject({ code })
+    expect(mock.calls).toHaveLength(0)
+  })
+
+  it.each([undefined, '', ' ', 'x'.repeat(301)])('rejects missing or invalid reversal reason %s', async motivo => {
+    mock = installFetchMock([])
+    const result = await readResponse(await H.handleRevertirPagoLinea(
+      makeRequest({ operationId: IDS.registro, lineaId: IDS.linea, motivo }), ENV))
+    expect(result.status).toBe(400)
+    expect(result.body).toMatchObject({ code: 'INVALID_OPERATION' })
+    expect(mock.calls).toHaveLength(0)
   })
 })
 

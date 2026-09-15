@@ -1,290 +1,98 @@
-// src/components/nomina/PagarNominaModal.jsx
-// Registro del pago de uno o varios recibos de nómina con conversión en tiempo real a Bolívares.
-// Regla: La moneda principal es SIEMPRE USD ($), y la secundaria es Bs, calculada con la tasa seleccionada.
-import { useState, useMemo } from 'react'
-import {
-  Wallet, DollarSign, ArrowRight, Check, RefreshCw, Landmark,
-  Building2, Smartphone, Banknote, Globe, CreditCard
-} from 'lucide-react'
-import { usePagarLineas } from '../../hooks/useNomina'
-import useMonedaNomina, { formatBs, formatUsd } from '../../hooks/useMonedaNomina.js'
+import { useMemo, useState } from 'react'
+import { Wallet, RefreshCw } from 'lucide-react'
+import { usePagarLineas } from '../../hooks/useNomina.js'
+import { useCuentasCustodia } from '../../hooks/useCuentasCustodia.js'
+import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
+import { formatUsd, formatBs } from '../../hooks/useMonedaNomina.js'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
+import { FORMAS_PAGO_OPCIONES } from '../../constants/formasPago.js'
+import { getCuentasCompatibles } from '../finanzas/cuentasCompatibles.js'
+import { normalizarMontoInput } from '../finanzas/formatos.js'
 
-const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50'
+const inputClass = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-base text-slate-800'
+const PAGE_SIZE = 8
 
 export default function PagarNominaModal({ lineas = [], periodo, onClose }) {
   const pagar = usePagarLineas()
-  const {
-    tipoTasa,
-    setTipoTasa,
-    tasaManual,
-    setTasaManual,
-    tasaActiva,
-    nombreTasa,
-    opcionesTasa,
-    tasasMercado,
-    aBs,
-    fmtBs,
-    loading: loadingTasas,
-    refresh: refreshTasas,
-  } = useMonedaNomina()
-
+  const { cuentas, cargando, error: cuentasError } = useCuentasCustodia()
+  const rates = useTasaCambioNomina()
+  const [metodoPago, setMetodoPago] = useState('Efectivo $')
+  const [cuentaId, setCuentaId] = useState('')
+  const [fuente, setFuente] = useState('BCV')
+  const [manual, setManual] = useState('')
   const [referencia, setReferencia] = useState('')
-  const [metodoPago, setMetodoPago] = useState('transferencia_bs')
+  const [observacion, setObservacion] = useState('')
   const [error, setError] = useState('')
-  const [manualInput, setManualInput] = useState(tasaManual > 0 ? String(tasaManual) : '')
-
-  const totalUsd = useMemo(
-    () => lineas.reduce((s, l) => s + Number(l.total_neto_usd || 0), 0),
-    [lineas]
-  )
-
-  const totalBs = useMemo(() => aBs(totalUsd), [aBs, totalUsd])
-
-  const individual = lineas.length === 1
-  const cargando = pagar.isPending
-
-  function handleSelectTasa(id) {
-    setTipoTasa(id)
-  }
-
-  function handleManualChange(val) {
-    setManualInput(val)
-    const num = parseFloat(val.replace(',', '.'))
-    if (num > 0) {
-      setTasaManual(num)
-    }
-  }
-
-  async function confirmar(e) {
-    if (e) e.preventDefault()
+  const [pagina, setPagina] = useState(1)
+  const totalUsd = useMemo(() => lineas.reduce((sum, line) => sum + Number(line.total_neto_usd || 0), 0), [lineas])
+  const compatibles = getCuentasCompatibles(metodoPago, cuentas)
+  const cuenta = compatibles.find(c => c.id === cuentaId) || (compatibles.length === 1 ? compatibles[0] : null)
+  const tasaUsdVes = fuente === 'MANUAL' ? Number(manual) : fuente === 'EURO' ? rates.eur : rates.usd
+  const tasaLiquidacion = cuenta?.moneda === 'USDT' ? rates.usdt : tasaUsdVes
+  const totalNativo = cuenta?.moneda === 'VES' ? totalUsd * tasaUsdVes : cuenta?.moneda === 'USDT'
+    ? (tasaLiquidacion > 0 ? totalUsd * tasaUsdVes / tasaLiquidacion : null) : totalUsd
+  const paginas = Math.max(1, Math.ceil(lineas.length / PAGE_SIZE))
+  const bloqueado = pagar.isPending || cargando || !cuenta || !(tasaUsdVes > 0) || !(tasaLiquidacion > 0) || !lineas.length
+  async function confirmar(event) {
+    event?.preventDefault()
+    if (bloqueado) return
+    if (fuente === 'MANUAL' && observacion.trim().length < 3) { setError('Describe el motivo de la tasa manual.'); return }
     setError('')
     try {
-      const refFinal = [
-        referencia.trim(),
-        `Tasa: ${tasaActiva.toFixed(2)} Bs/$ (${nombreTasa})`,
-        `Bs: ${formatBs(totalBs)}`,
-      ].filter(Boolean).join(' · ')
-
-      let fuente = 'BCV'
-      if (tipoTasa === 'bcv_eur') fuente = 'EURO'
-      if (tipoTasa === 'usdt') fuente = 'USDT'
-      if (tipoTasa === 'manual') fuente = 'MANUAL'
-
       await pagar.mutateAsync({
-        lineaIds: lineas.map(l => l.id),
-        referencia: refFinal || undefined,
-        tasaBcv: tasaActiva,
-        fuenteTasa: fuente,
+        lineaIds: lineas.map(l => l.id), referencia: referencia.trim() || null,
+        tasaBcv: String(tasaLiquidacion), tasaUsdVes: String(tasaUsdVes), fuenteTasa: fuente === 'MANUAL' ? 'MANUAL' : cuenta.moneda === 'USDT' ? 'USDT' : fuente,
+        observacionTasa: observacion.trim() || `Tasas confirmadas al pagar: USD/VES ${tasaUsdVes}; ${cuenta.moneda}/VES ${cuenta.moneda === 'VES' ? 1 : tasaLiquidacion}`,
+        metodoPago, cuentaCustodiaId: cuenta.id,
       })
       onClose()
-    } catch (err) {
-      setError(err.message || 'Error al registrar el pago')
-    }
+    } catch (e) { setError(e.message || 'No se confirmó el pago.') }
   }
-
-  return (
-    <Modal
-      isOpen onClose={onClose}
-      title={individual ? `Registrar pago de ${lineas[0].empleado?.nombre ?? 'empleado'}` : 'Registrar pagos de nómina'}
-      className="max-w-lg">
-      <div className="space-y-4">
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        {/* ═══ TARJETA DE RESUMEN PRINCIPAL (USD) Y SECUNDARIO (BS) ═══ */}
-        <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl p-4 shadow-lg border border-slate-700/60">
-          <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-            <span>{individual ? 'Monto a liquidar' : `${lineas.length} recibo(s) incluidos`}</span>
-            {periodo && <span className="text-amber-400 font-semibold">{periodo.nombre}</span>}
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 pt-1">
-            <div>
-              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
-                Moneda Principal (USD)
-              </span>
-              <span className="text-2xl font-black text-white tracking-tight">
-                {formatUsd(totalUsd)}
-              </span>
-            </div>
-
-            <div className="sm:text-right mt-2 sm:mt-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-700/80">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400 block">
-                Equivalente en Bolívares (Bs)
-              </span>
-              <span className="text-lg font-black text-amber-300 font-mono">
-                {formatBs(totalBs)}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* ═══ SELECTOR DE TASA DE CAMBIO ═══ */}
-        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-black text-slate-700 uppercase tracking-wider">
-              Tasa de Conversión para el Pago
-            </label>
-            <button
-              type="button"
-              onClick={() => refreshTasas()}
-              className="text-[11px] text-primary hover:underline flex items-center gap-1 font-bold"
-              title="Recargar tasas del día"
-            >
-              <RefreshCw size={11} className={loadingTasas ? 'animate-spin' : ''} />
-              Actualizar
-            </button>
-          </div>
-
-          {/* Botones de selección rápida */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-            {opcionesTasa.map(opt => {
-              const isSelected = tipoTasa === opt.id
-              let valor = 0
-              if (opt.id === 'bcv_usd') valor = tasasMercado.bcv_usd
-              if (opt.id === 'bcv_eur') valor = tasasMercado.bcv_eur
-              if (opt.id === 'usdt') valor = tasasMercado.usdt
-              if (opt.id === 'manual') valor = tasaManual
-
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => handleSelectTasa(opt.id)}
-                  className={`p-2 rounded-xl text-left border transition-all ${
-                    isSelected
-                      ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
-                      : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <span className={`text-[10px] font-black block uppercase truncate ${isSelected ? 'text-white' : 'text-slate-500'}`}>
-                    {opt.shortLabel}
-                  </span>
-                  <span className="text-xs font-bold font-mono block mt-0.5">
-                    {valor > 0 ? `${valor.toFixed(2)}` : (opt.id === 'manual' ? 'Definir' : '—')}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Campo de edición de tasa manual si está seleccionada */}
-          {tipoTasa === 'manual' && (
-            <div className="pt-2 border-t border-slate-200/80 animate-in fade-in">
-              <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                Ingresa la tasa acordada (Bs por cada $1 USD):
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  placeholder="Ej: 42.50"
-                  value={manualInput}
-                  onChange={e => handleManualChange(e.target.value)}
-                  className={inputCls}
-                  autoFocus
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Detalle de recibos incluidos (si son varios) */}
-        {!individual && (
-          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-              Recibos incluidos ({lineas.length})
-            </div>
-            <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
-              {lineas.map(l => (
-                <div key={l.id} className="flex justify-between items-center text-xs py-0.5">
-                  <span className="text-slate-700 font-medium truncate pr-2">{l.empleado?.nombre || '—'}</span>
-                  <span className="font-bold text-slate-800 shrink-0 font-mono">
-                    {formatUsd(l.total_neto_usd)}
-                    <span className="text-[10px] text-slate-400 font-normal ml-1">
-                      ({formatBs(aBs(l.total_neto_usd))})
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <form onSubmit={confirmar} className="space-y-3">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Método de pago</label>
-            <CustomSelect
-              value={metodoPago}
-              onChange={setMetodoPago}
-              options={[
-                { value: 'Transf. / Pago Móvil', label: 'Transferencia / Pago Móvil (Bs)', icon: Building2 },
-                { value: 'Efectivo $',          label: 'Efectivo en Dólares ($)',         icon: DollarSign },
-                { value: 'Efectivo Bs',         label: 'Efectivo en Bolívares (Bs)',        icon: Banknote },
-                { value: 'Zelle',               label: 'Zelle (USD)',                     icon: Globe },
-                { value: 'Punto de Venta',      label: 'Punto de Venta (Bs)',             icon: CreditCard },
-                { value: 'USDT',                label: 'USDT (Binance / Cripto)',          icon: Globe },
-                { value: 'Otro',                label: 'Otro método de pago',                icon: CreditCard },
-              ]}
-              disabled={cargando}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="block text-xs font-bold text-slate-700">Referencia o comprobante (opcional)</label>
-            <input
-              type="text"
-              value={referencia}
-              onChange={e => setReferencia(e.target.value)}
-              placeholder="Ej: BNC 987654 / Banesco / Pago Móvil"
-              className={inputCls}
-              disabled={cargando}
-            />
-          </div>
-        </form>
-
-        <div className="space-y-1.5">
-          <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-2.5 text-[11px] text-emerald-800 leading-relaxed flex items-center gap-2">
-            <Check size={14} className="text-emerald-600 shrink-0" />
-            <span>
-              Se registrará el pago a tasa <strong>{tasaActiva.toFixed(2)} Bs/$</strong> ({nombreTasa}).
-            </span>
-          </div>
-
-          <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-2.5 text-[11px] text-blue-900 leading-relaxed flex items-center gap-2">
-            <Landmark size={14} className="text-blue-600 shrink-0" />
-            <span>
-              Se creará automáticamente un registro de <strong>Egreso en Finanzas</strong> bajo la categoría <strong>Nómina</strong>.
-            </span>
-          </div>
-        </div>
+  const footer = <>
+    <button type="button" onClick={onClose} disabled={pagar.isPending} className="min-h-11 px-4 py-2 rounded-xl border border-slate-300 font-bold text-slate-700">Volver</button>
+    <button type="submit" form="pagar-nomina-form" disabled={bloqueado} className="min-h-11 flex-1 sm:flex-none px-4 py-2 rounded-xl bg-primary text-white font-bold disabled:opacity-50 inline-flex items-center justify-center gap-2">
+      <Wallet size={18} aria-hidden="true" />{pagar.isPending ? 'Confirmando...' : `Confirmar ${formatUsd(totalUsd)}`}
+    </button>
+  </>
+  return <Modal isOpen onClose={onClose} title="Registrar pago de nómina" className="sm:max-w-lg" busy={pagar.isPending} footer={footer}>
+    <form id="pagar-nomina-form" onSubmit={confirmar} className="space-y-4" aria-busy={pagar.isPending}>
+      {(error || cuentasError || pagar.error) && <p role="alert" className="p-3 rounded-xl bg-rose-50 text-rose-800 border border-rose-200">{error || cuentasError || pagar.error?.message}</p>}
+      <section className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+        <p className="text-sm font-semibold text-slate-600">{periodo?.nombre} · {lineas.length} recibo(s)</p>
+        <p className="text-2xl font-black text-slate-900">{formatUsd(totalUsd)}</p>
+        <p className="text-sm text-slate-700">{tasaUsdVes > 0 ? formatBs(totalUsd * tasaUsdVes) : 'Equivalencia pendiente de tasa'}</p>
+      </section>
+      <div><label id="metodo-nomina-label" className="block mb-1 text-sm font-bold">Método de pago</label>
+        <CustomSelect aria-labelledby="metodo-nomina-label" placeholder="Método de pago" value={metodoPago} disabled={pagar.isPending}
+          onChange={value => { setMetodoPago(value); setCuentaId('') }} options={FORMAS_PAGO_OPCIONES.filter(o => !o.soloIngreso)} />
       </div>
-
-      {/* Footer */}
-      <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-slate-100">
-        <button
-          onClick={onClose}
-          type="button"
-          disabled={cargando}
-          className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50"
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={confirmar}
-          disabled={cargando || lineas.length === 0 || !(tasaActiva > 0)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-xs font-black shadow-md shadow-primary/20"
-        >
-          <Wallet size={14} />
-          {cargando ? 'Guardando pago...' : `Confirmar Pago (${formatUsd(totalUsd)})`}
-        </button>
+      <div><label id="cuenta-nomina-label" className="block mb-1 text-sm font-bold">Cuenta de salida</label>
+        <CustomSelect aria-labelledby="cuenta-nomina-label" placeholder="Selecciona la cuenta de salida" value={cuenta?.id || ''} onChange={setCuentaId} disabled={pagar.isPending || cargando}
+          options={compatibles.map(c => ({ value: c.id, label: c.nombre, sub: c.moneda }))} />
+        {!cargando && compatibles.length === 0 && <p className="mt-1 text-sm text-amber-800">Registra una cuenta compatible en Tesorería antes de pagar.</p>}
       </div>
-    </Modal>
-  )
+      <div><label id="tasa-nomina-label" className="block mb-1 text-sm font-bold">Tasa aplicada a la obligación en USD</label>
+        <CustomSelect aria-labelledby="tasa-nomina-label" placeholder="Fuente de tasa" value={fuente} onChange={setFuente} disabled={pagar.isPending}
+          options={[{ value: 'BCV', label: 'BCV dólar' }, { value: 'EURO', label: 'Referencia euro acordada' }, { value: 'MANUAL', label: 'Manual acordada' }]} />
+        <p className="mt-2 text-sm">{tasaUsdVes > 0 ? `${tasaUsdVes.toLocaleString('es-VE')} Bs por USD` : 'No hay una tasa confirmada. Actualiza o indica una tasa manual.'}</p>
+        <button type="button" onClick={rates.refresh} disabled={pagar.isPending || rates.loading} className="min-h-11 inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 mt-2 text-sm font-bold"><RefreshCw size={16} />Actualizar tasas</button>
+      </div>
+      {fuente === 'MANUAL' && <>
+        <label className="block text-sm font-bold">Tasa manual Bs/USD<input type="text" inputMode="decimal" className={inputClass} value={manual} disabled={pagar.isPending}
+          onChange={e => { const n = normalizarMontoInput(e.target.value); if (n !== null) setManual(n) }} /></label>
+        <label className="block text-sm font-bold">Motivo de la tasa<input className={inputClass} value={observacion} maxLength={300} disabled={pagar.isPending} onChange={e => setObservacion(e.target.value)} /></label>
+      </>}
+      {cuenta && <p className="p-3 rounded-xl bg-blue-50 text-blue-900 text-sm">Salida de <strong>{cuenta.nombre}</strong>: {totalNativo == null ? 'Tasa pendiente' : `${totalNativo.toLocaleString('es-VE', { maximumFractionDigits: 6 })} ${cuenta.moneda}`}.
+        {cuenta.moneda === 'USDT' && ` Conversión con ${rates.usdt} Bs/USDT; no se presupone paridad con USD.`}
+      </p>}
+      <label className="block text-sm font-bold">Referencia (opcional)<input className={inputClass} value={referencia} maxLength={160} disabled={pagar.isPending} onChange={e => setReferencia(e.target.value)} /></label>
+      <section aria-label="Recibos incluidos" className="rounded-xl border border-slate-200 p-3">
+        {lineas.slice((Math.min(pagina, paginas) - 1) * PAGE_SIZE, Math.min(pagina, paginas) * PAGE_SIZE).map(l => <p key={l.id} className="flex justify-between gap-3 py-1 text-sm"><span className="min-w-0 break-words">{l.empleado?.nombre || 'Recibo'}</span><strong className="shrink-0">{formatUsd(l.total_neto_usd)}</strong></p>)}
+        {paginas > 1 && <div className="flex flex-wrap items-center gap-2 justify-between mt-3"><button type="button" disabled={pagina <= 1} onClick={() => setPagina(p => p - 1)} className="min-h-11 px-3 border rounded-xl">Anterior</button><span className="text-xs">{pagina} / {paginas}</span><button type="button" disabled={pagina >= paginas} onClick={() => setPagina(p => p + 1)} className="min-h-11 px-3 border rounded-xl">Siguiente</button></div>}
+      </section>
+      {pagar.operationId && <div className="p-3 rounded-xl border border-amber-300 bg-amber-50 text-sm text-amber-900"><p className="break-all">Clave de operación: {pagar.operationId}</p><button type="button" disabled={pagar.isPending} onClick={async () => { try { const r = await pagar.checkStatus(); if (r?.estado === 'confirmada') onClose() } catch (e) { setError(e.message) } }} className="min-h-11 mt-2 px-3 border border-amber-500 rounded-xl font-bold">Comprobar resultado</button></div>}
+      <p className="text-xs text-slate-600">El pago, los recibos y sus asientos se confirman juntos. Si se pierde la respuesta, conserva la misma operación y comprueba el resultado.</p>
+    </form>
+  </Modal>
 }

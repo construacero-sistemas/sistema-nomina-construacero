@@ -1,6 +1,6 @@
 // src/components/finanzas/FinanzasView.jsx
 // Libro financiero administrativo: ingresos, egresos, reportes y gestión por Carteras (USD & Bolívares).
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import {
   ArrowDownToLine,
   ArrowRightLeft,
@@ -37,7 +37,6 @@ import {
   useEliminarCategoria,
   useRestaurarCategoria,
   useCrearCategoria,
-  useCrearMovimiento,
 } from '../../hooks/useFinanzas.js'
 import { showToast } from '../../../compat/components/ui/toastBus.js'
 import { useCuentasCustodia } from '../../hooks/useCuentasCustodia.js'
@@ -57,7 +56,10 @@ import { exportarCsv } from './exportarMovimientosCsv.js'
 import { isoToday, monthStart, RANGOS_RAPIDOS, rangoRapidoActivo, aplicarRangoRapido as resolverRango } from './fechasRapidas.js'
 import { fechaCorta, formatNumber, formatUsd } from './formatos.js'
 import { logClientError } from '../../../compat/utils/errorLogger.js'
-import { calcularSaldosCarteras, clasificarMovimientoEnCartera, contarMovimientosSinCuenta } from '../../utils/carterasHelper.js'
+import { contarMovimientosSinCuenta } from '../../utils/carterasHelper.js'
+import { summarizeConfirmedBalances } from '../../utils/confirmedBalances.js'
+import { loadFinanceExport } from './exportData.js'
+import useCustodySave from '../../hooks/useCustodySave.js'
 
 // Export CSV: oculto por ahora (se reactiva poniendo true).
 const MOSTRAR_CSV = false
@@ -88,20 +90,23 @@ export default function FinanzasView() {
   const [anular, setAnular] = useState(null)
   const [reasignarOpen, setReasignarOpen] = useState(false)
   const [exportandoPdf, setExportandoPdf] = useState(false)
+  const [exportProgress, setExportProgress] = useState(null)
+  const [exportError, setExportError] = useState('')
+  const exportController = useRef(null)
+  useEffect(() => () => exportController.current?.abort(), [])
   const [categoriasOpen, setCategoriasOpen] = useState(false)
   const [cuentaTransferir, setCuentaTransferir] = useState(null)
 
   const { usd, usdt } = useTasaCambioNomina()
   const categorias = useFinanzasCategorias()
-  const movimientos = useFinanzasMovimientos({ desde, hasta, tipo, categoria, moneda, mostrarAnulados })
-  const resumen = useFinanzasResumen({ desde, hasta, tipo, categoria, moneda })
+  const movimientos = useFinanzasMovimientos({ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera, mostrarAnulados })
+  const resumen = useFinanzasResumen({ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera })
   const anularMutation = useAnularMovimiento()
   const revertirAnulacion = useRevertirAnulacion()
   const eliminarCategoriaM = useEliminarCategoria()
   const restaurarCategoriaM = useRestaurarCategoria()
   const crearCategoriaM = useCrearCategoria()
   const reasignarMutation = useReasignarCuenta()
-  const crearMovimiento = useCrearMovimiento()
 
   const categoriasVisibles = categorias.data?.categorias || []
   const categoriasEliminadas = categorias.data?.eliminadas || []
@@ -136,26 +141,24 @@ export default function FinanzasView() {
     descartarCuentaEliminada,
     vaciarPapelera,
     restaurarPredeterminadas,
-  } = useCuentasCustodia(movimientosList)
+    saldos: saldoSnapshot, saldosCargando, saldosError, error: cuentasError,
+    conciliacionPendiente, refetch: refrescarCuentas,
+  } = useCuentasCustodia()
 
-  // Saldos consolidados de las Carteras en vivo
-  const saldosCarteras = useMemo(() => {
-    return calcularSaldosCarteras(movimientosList, tasaActiva)
-  }, [movimientosList, tasaActiva])
+  const saldosCarteras = useMemo(() => saldosError ? null : summarizeConfirmedBalances(saldoSnapshot, tasaActiva), [saldoSnapshot, saldosError, tasaActiva])
 
   // Cuántos movimientos del período quedan sin cuenta de custodia explícita (auditable)
   const sinCuentaInfo = useMemo(() => {
-    return contarMovimientosSinCuenta(movimientosList, cuentas)
+    const activos = movimientosList.filter(m => m.estado !== 'anulado')
+    return { total: activos.length, sinCuenta: activos.filter(m => !m.cuenta_custodia_id && !m.cuentaCustodiaId).length }
   }, [movimientosList, cuentas])
 
-  // Filtrado de movimientos por Cartera activa (USD / VES / Todas)
-  const movimientosFiltrados = useMemo(() => {
-    if (!filtroCartera) return movimientosList
-    return movimientosList.filter(m => {
-      const { carteraId } = clasificarMovimientoEnCartera(m)
-      return carteraId === filtroCartera
-    })
-  }, [movimientosList, filtroCartera])
+  // El servidor filtra todas las páginas por cartera; no filtrar solo las filas cargadas.
+  const movimientosFiltrados = movimientosList
+  const totalServidor = movimientos.data?.pages?.[0]?.paginacion?.total
+  const pageKey = [desde, hasta, tipo, categoria, moneda, filtroCartera, mostrarAnulados].join('|')
+  const paginationProps = { hasMore: !!movimientos.hasNextPage, onLoadMore: () => movimientos.fetchNextPage(), isLoadingMore: !!movimientos.isFetchingNextPage,
+    loadMoreError: movimientos.isFetchNextPageError ? movimientos.error?.message : '', totalServidor, pageKey }
 
   const fechaValida = desde && hasta && desde <= hasta
   const chipActivo = rangoRapidoActivo(desde, hasta)
@@ -176,61 +179,38 @@ export default function FinanzasView() {
     setMostrarAnulados(false)
   }
 
-  const handleGuardarCuenta = async (cuentaData, saldoInicial = 0) => {
-    if (cuentaEditar) {
-      await editarCuenta(cuentaEditar.id, cuentaData)
-    } else {
-      const nueva = await agregarCuenta(cuentaData)
-      if (Number(saldoInicial) > 0) {
-        const METODOS = { banco_nacional: 'Banco en Bolívares', cripto_usdt: 'USDT', zelle: 'Zelle', efectivo_usd: 'Efectivo $' }
-        const metodoPagoSugerido = METODOS[cuentaData.tipo] || 'Efectivo Bs'
-
-        try {
-          await crearMovimiento.mutateAsync({
-            tipo: 'ingreso',
-            categoria: 'Saldo Inicial',
-            concepto: `Saldo inicial / Apertura de cuenta (${cuentaData.nombre})`,
-            monto: Number(saldoInicial),
-            moneda: cuentaData.moneda || 'USD',
-            tasaVes: cuentaData.moneda === 'VES' ? 1 : (usd > 0 ? usd : 1),
-            tasaUsdVes: usd > 0 ? usd : 1,
-            cuentaOrigen: cuentaData.nombre,
-            cuenta_id: nueva?.id || null,
-            metodoPago: metodoPagoSugerido,
-            fecha: isoToday(),
-            referencia: 'Apertura',
-          })
-          showToast.success(`Cuenta creada con saldo inicial de ${cuentaData.moneda === 'VES' ? 'Bs. ' : '$'}${saldoInicial}`)
-        } catch (err) {
-          logClientError({ mensaje: `Error registrando saldo inicial: ${err?.message || err}`, categoria: 'FINANZAS_SALDO_INICIAL' })
-        }
-      }
-    }
-  }
+  const guardarCuenta = useCustodySave({ agregarCuenta, editarCuenta, usd, usdt })
+  const handleGuardarCuenta = (campos, saldo, clave) => guardarCuenta(campos, saldo, clave, cuentaEditar?.id)
 
   // Reporte PDF del rango/filtros activos (resumen + detalle línea por línea).
   const handleExportarPdf = async (action = 'download') => {
-    setExportandoPdf(action)
+    if (exportController.current) return
+    // Reservar ventana dentro del gesto; no después de imports/red asíncronos.
+    const printWindow = action === 'print' ? window.open('', '_blank') : null
+    if (printWindow) { printWindow.opener = null; printWindow.document.title = 'Preparando reporte financiero' }
+    if (action === 'print' && !printWindow) {
+      setExportError('El navegador bloqueó la ventana. Usa Descargar PDF y ábrelo desde Archivos para imprimir.')
+      return
+    }
+    const controller = new AbortController()
+    exportController.current = controller
+    setExportandoPdf(action); setExportError(''); setExportProgress(null)
     try {
+      const dataset = await loadFinanceExport({ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera, mostrarAnulados }, { signal: controller.signal, onProgress: setExportProgress })
+      controller.signal.throwIfAborted()
+      if (dataset.summary.movimientos_sin_usd) throw new Error('Hay movimientos sin tasa histórica. Confirma esas tasas antes de emitir un reporte consolidado en USD.')
       const { generarFinanzasResumenPDF } = await import('../../services/pdf/finanzasResumenPDF.js')
-      await generarFinanzasResumenPDF({
-        movimientos: movimientosFiltrados,
-        resumen: {
-          ingresos_usd: summary?.ingresos_usd,
-          egresos_usd: summary?.egresos_usd,
-          balance_usd: summary?.balance_usd,
-          balance_ves: summary?.balance_ves,
-          tipoFiltro: tipo || '',
-        },
-        rango: { desde, hasta },
-        tasaActiva,
-        nombreTasa,
-        action,
-      })
+      controller.signal.throwIfAborted()
+      await generarFinanzasResumenPDF({ movimientos: dataset.rows, resumen: { ...dataset.summary, tipoFiltro: tipo || '' }, rango: { desde, hasta }, tasaActiva, nombreTasa, action, printWindow })
     } catch (error) {
-      logClientError({ mensaje: `Error exportando reporte financiero: ${error?.message || error}`, stack: error?.stack, categoria: 'FINANZAS_PDF' })
+      printWindow?.close()
+      if (error.name !== 'AbortError') {
+        setExportError(error.message || 'No se pudo generar el reporte completo.')
+        logClientError({ mensaje: `Error exportando reporte financiero: ${error?.message || error}`, categoria: 'FINANZAS_PDF' })
+      }
     } finally {
-      setExportandoPdf(null)
+      exportController.current = null
+      setExportandoPdf(null); setExportProgress(null)
     }
   }
 
@@ -246,7 +226,7 @@ export default function FinanzasView() {
   }
 
   return (
-    <div className="p-3 sm:p-4 md:p-5 lg:p-6 space-y-4 md:space-y-5 min-w-0 pb-12 md:pb-4">
+    <div className="p-3 sm:p-4 md:p-5 lg:p-6 space-y-4 md:space-y-5 min-w-0 pb-4">
       <PageHeader
         icon={Landmark}
         title="Finanzas y Tesorería"
@@ -383,8 +363,8 @@ export default function FinanzasView() {
 
             {/* Exportación del reporte del período filtrado */}
             <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[11px] text-slate-400 font-semibold">
-                El PDF refleja los filtros activos: {fechaCorta(desde)} – {fechaCorta(hasta)}{tipo ? ` · ${tipo === 'ingreso' ? 'ingresos' : 'egresos'}` : ''} · {movimientosFiltrados.length} movimiento(s)
+              <p className="text-xs text-slate-600 font-semibold">
+                El PDF recupera todos los registros de los filtros activos: {fechaCorta(desde)} – {fechaCorta(hasta)}{tipo ? ` · ${tipo === 'ingreso' ? 'ingresos' : 'egresos'}` : ''} · {totalServidor ?? 'total pendiente'} movimiento(s)
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -410,10 +390,12 @@ export default function FinanzasView() {
               </div>
             </div>
 
+            {exportError && <InlineError message={exportError} onRetry={() => handleExportarPdf('download')} />}
+            {exportandoPdf && <div role="status" className="flex flex-wrap gap-3 items-center text-sm text-slate-700"><span>{exportProgress ? `${exportProgress.loaded} de ${exportProgress.total} registros recuperados` : 'Preparando datos completos...'}</span><button type="button" onClick={() => exportController.current?.abort()} className="min-h-11 px-3 py-2 rounded-xl border border-slate-300">Cancelar preparación</button></div>}
             {!fechaValida && <p className="mt-2 text-xs font-semibold text-red-600" role="alert">El rango de fechas no es válido.</p>}
 
           {/* KPI Cards Globales del período */}
-          <ResumenPeriodoKpis summary={summary} loading={resumen.isLoading} moneda={moneda} onSelectMoneda={setMoneda} tasaActiva={tasaActiva} />
+          <ResumenPeriodoKpis summary={resumen.isError ? null : summary} loading={resumen.isLoading} moneda={moneda} onSelectMoneda={setMoneda} tasaActiva={tasaActiva} />
 
           {resumen.isError && <InlineError message="No se pudo cargar el resumen." onRetry={() => resumen.refetch()} />}
 
@@ -421,6 +403,8 @@ export default function FinanzasView() {
           <section aria-label="Movimientos financieros">
             {movimientos.isLoading ? (
               <div className="space-y-2"><Skeleton className="h-12 w-full rounded-xl" /><Skeleton className="h-12 w-full rounded-xl" /><Skeleton className="h-12 w-full rounded-xl" /></div>
+            ) : movimientos.isError && !movimientos.isFetchNextPageError ? (
+              <InlineError message={movimientos.error?.message || 'No se pudieron cargar los movimientos.'} onRetry={() => movimientos.refetch()} />
             ) : movimientosFiltrados.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-2xl p-8">
                 <EmptyState
@@ -433,7 +417,7 @@ export default function FinanzasView() {
               </div>
             ) : (
               <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-                <MovimientoTable
+                <MovimientoTable key={pageKey} {...paginationProps}
                   movimientos={movimientosFiltrados}
                   onAnular={movimiento => setAnular(movimiento)}
                   onRevertir={movimiento => revertirAnulacion.mutate({ id: movimiento.id })}
@@ -453,7 +437,7 @@ export default function FinanzasView() {
         <div className="space-y-5">
           {/* 1. Panel de Carteras Maestras en Vivo (Fichas Resumidas Macro) */}
           <CarterasHeader
-            saldos={saldosCarteras}
+            saldos={saldosCarteras} loading={saldosCargando} error={saldosError} conciliacionPendiente={conciliacionPendiente} onRetry={refrescarCuentas}
             filtroCartera={filtroCartera}
             sinCuenta={sinCuentaInfo}
             onReasignarSinCuenta={() => setReasignarOpen(true)}
@@ -464,6 +448,7 @@ export default function FinanzasView() {
             }}
           />
 
+          {cuentasError && <InlineError message={cuentasError} onRetry={refrescarCuentas} />}
           {/* 2. Zona Unificada de Cuentas Bancarias, Binance, Zelle y Cajas de Custodia */}
           <CuentasCustodiaGrid
             cuentas={cuentas}
@@ -508,6 +493,8 @@ export default function FinanzasView() {
 
             {movimientos.isLoading ? (
               <div className="space-y-2"><Skeleton className="h-12 w-full rounded-xl" /><Skeleton className="h-12 w-full rounded-xl" /></div>
+            ) : movimientos.isError && !movimientos.isFetchNextPageError ? (
+              <InlineError message={movimientos.error?.message || 'No se pudieron cargar los movimientos.'} onRetry={() => movimientos.refetch()} />
             ) : movimientosFiltrados.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-2xl p-8">
                 <EmptyState
@@ -520,7 +507,7 @@ export default function FinanzasView() {
               </div>
             ) : (
               <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-                <MovimientoTable
+                <MovimientoTable key={pageKey} {...paginationProps}
                   movimientos={movimientosFiltrados}
                   onAnular={movimiento => setAnular(movimiento)}
                   onRevertir={movimiento => revertirAnulacion.mutate({ id: movimiento.id })}
@@ -563,12 +550,16 @@ export default function FinanzasView() {
       {cuentaDetalle && (
         <DetalleCuentaModal
           open={Boolean(cuentaDetalle)}
-          cuenta={cuentaDetalle}
+          key={cuentaDetalle.id}
+          cuenta={cuentas.find(c => c.id === cuentaDetalle.id) || { ...cuentaDetalle, saldo: null, saldoConfirmado: false, disponible: false }}
+          hasMore={!!movimientos.hasNextPage} onLoadMore={() => movimientos.fetchNextPage()} isLoadingMore={!!movimientos.isFetchingNextPage}
+          errorCarga={movimientos.isError ? movimientos.error?.message || 'No se confirmó el historial.' : ''}
           onClose={() => setCuentaDetalle(null)}
           movimientos={movimientosList}
           cuentas={cuentas}
           tasaBcv={tasaActiva}
           onOpenTransferencia={() => {
+            setCuentaTransferir(cuentas.find(c => c.id === cuentaDetalle.id) || null)
             setCuentaDetalle(null)
             setTransferenciaOpen(true)
           }}
@@ -592,7 +583,7 @@ export default function FinanzasView() {
         movimientos={movimientosList}
         cuentas={cuentas}
         confirmando={reasignarMutation.isPending}
-        onConfirm={({ ids, cuentaOrigen }) => reasignarMutation.mutate({ ids, cuentaOrigen })}
+        onConfirm={fields => reasignarMutation.mutateAsync(fields)}
       />
     </div>
   )

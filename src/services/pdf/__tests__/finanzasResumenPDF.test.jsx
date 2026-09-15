@@ -3,7 +3,7 @@
 // Tests del generador de PDF financiero: totales, tachado de anulados,
 // nombre de archivo con rango y print. jsPDF se mockea para inspeccionar
 // las llamadas de dibujo sin generar un binario real.
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 const docStub = {
   setFont: vi.fn(),
@@ -24,7 +24,7 @@ const docStub = {
   setPage: vi.fn(),
   autoPrint: vi.fn(),
   save: vi.fn(),
-  output: vi.fn(() => 'blob:fake'),
+  output: vi.fn(() => new Blob(['PDF fixture'], { type: 'application/pdf' })),
   splitTextToSize: vi.fn((text) => (Array.isArray(text) ? text : [String(text)])),
   internal: { getNumberOfPages: vi.fn(() => 1), pageSize: { getWidth: () => 216, getHeight: () => 279 } },
   GState: vi.fn(),
@@ -45,8 +45,8 @@ vi.mock('../../../compat/services/pdf/watermarkBase64.js', () => ({
 import { generarFinanzasResumenPDFImpl } from '../finanzasResumenPDF.impl.js'
 
 const MOVIMIENTOS = [
-  { id: 'm1', fecha: '2026-09-01', tipo: 'ingreso', categoria: 'Ventas', concepto: 'Cobro cliente X', moneda: 'USD', monto: 100, estado: 'activo', cuenta_origen: 'Banco BNC' },
-  { id: 'm2', fecha: '2026-09-02', tipo: 'egreso', categoria: 'Servicios', concepto: 'Pago electricidad', moneda: 'VES', monto: 5000, monto_ves: 5000, estado: 'activo', cuenta_origen: 'Caja Efectivo Bs' },
+  { id: 'm1', fecha: '2026-09-01', tipo: 'ingreso', categoria: 'Ventas', concepto: 'Cobro cliente X', moneda: 'USD', monto: 100, tasa_ves: 804.81, tasa_usd_ves: 804.81, tasa_registrada_en: '2026-09-01T12:00:00Z', estado: 'activo', cuenta_origen: 'Banco BNC' },
+  { id: 'm2', fecha: '2026-09-02', tipo: 'egreso', categoria: 'Servicios', concepto: 'Pago electricidad', moneda: 'VES', monto: 5000, monto_ves: 5000, tasa_usd_ves: 804.81, tasa_registrada_en: '2026-09-01T12:00:00Z', estado: 'activo', cuenta_origen: 'Caja Efectivo Bs' },
   { id: 'm3', fecha: '2026-09-03', tipo: 'ingreso', categoria: 'Ventas', concepto: 'Cobro anulado', moneda: 'USD', monto: 999, estado: 'anulado' },
 ]
 
@@ -58,7 +58,10 @@ beforeEach(() => {
   }
   // jsPDF constructor recrea internal (getNumberOfPages se limpió con mockClear)
   docStub.internal.getNumberOfPages.mockReturnValue(1)
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fake')
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
 })
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('generarFinanzasResumenPDFImpl', () => {
   it('genera el PDF, guarda con nombre de rango y dibuja los KPIs', async () => {
@@ -78,6 +81,14 @@ describe('generarFinanzasResumenPDFImpl', () => {
     const textos = docStub.text.mock.calls.map(c => String(c[0]))
     expect(textos.some(t => t.includes('$100,00'))).toBe(true)
     expect(textos.some(t => t.includes('TOTALES'))).toBe(true)
+  })
+
+  it.each([null, undefined])('no exporta totales con tasa heredada sin procedencia (%s)', async tasa_registrada_en => {
+    await expect(generarFinanzasResumenPDFImpl({ movimientos: [
+      { ...MOVIMIENTOS[1], tasa_registrada_en, cuenta_custodia_id: '10000000-0000-4000-8000-000000000001' },
+    ], rango: { desde: '2026-09-01', hasta: '2026-09-30' } })).rejects.toThrow(/tasas históricas/)
+    expect(docStub.save).not.toHaveBeenCalled()
+    expect(docStub.output).not.toHaveBeenCalled()
   })
 
   it('marca los anulados con tachado y no los cuenta en ingresos activos', async () => {
@@ -108,8 +119,11 @@ describe('generarFinanzasResumenPDFImpl', () => {
     expect(docStub.save).toHaveBeenCalledWith('finanzas-2026-09-01_2026-09-30-egresos.pdf')
   })
 
-  it('action=print usa autoPrint + bloburl y no descarga', async () => {
+  it('action=print usa la ventana reservada y no descarga', async () => {
+    vi.useFakeTimers()
+    const printWindow = { closed: false, location: { replace: vi.fn() } }
     await generarFinanzasResumenPDFImpl({
+      printWindow,
       movimientos: MOVIMIENTOS,
       resumen: RESUMEN,
       rango: { desde: '2026-09-01', hasta: '2026-09-30' },
@@ -117,7 +131,12 @@ describe('generarFinanzasResumenPDFImpl', () => {
     })
 
     expect(docStub.autoPrint).toHaveBeenCalledTimes(1)
-    expect(docStub.output).toHaveBeenCalledWith('bloburl')
+    expect(docStub.output).toHaveBeenCalledWith('blob')
+    expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+    expect(printWindow.location.replace).toHaveBeenCalledWith('blob:fake')
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(120000)
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake')
     expect(docStub.save).not.toHaveBeenCalled()
   })
 
@@ -140,7 +159,7 @@ describe('generarFinanzasResumenPDFImpl', () => {
     expect(textos.some(t => t.includes('TOTAL SERVICIOS:'))).toBe(true)
   })
 
-  it('convierte montos en VES usando tasaActiva y preserva el concepto completo sin recortar', async () => {
+  it('usa la tasa histórica aunque cambie la tasa de consulta y conserva el concepto', async () => {
     await generarFinanzasResumenPDFImpl({
       movimientos: [
         {
@@ -152,13 +171,15 @@ describe('generarFinanzasResumenPDFImpl', () => {
           moneda: 'VES',
           monto: 31697.66,
           monto_ves: 31697.66,
+          tasa_usd_ves: 804.81,
+          tasa_registrada_en: '2026-09-03T12:00:00Z',
           estado: 'activo',
           cuenta_origen: 'Cuenta Venezuela',
         },
       ],
       resumen: {},
       rango: { desde: '2026-09-01', hasta: '2026-09-03' },
-      tasaActiva: 804.81,
+      tasaActiva: 999,
       nombreTasa: 'BCV Dólar',
       action: 'download',
     })
@@ -167,8 +188,8 @@ describe('generarFinanzasResumenPDFImpl', () => {
     // Convierte 31697.66 VES a $39,39 USD en vez de mostrar $31.697,66
     expect(textos.some(t => t.includes('$39,39'))).toBe(true)
     expect(textos.some(t => t.includes('$31.697,66'))).toBe(false)
-    // El subtítulo incluye la tasa activa
-    expect(textos.some(t => t.includes('Tasa Activa: 804,81 Bs/$ (BCV Dólar)'))).toBe(true)
+    // La cabecera identifica las tasas guardadas, no una nueva tasa.
+    expect(textos.some(t => t.includes('Tasas históricas guardadas'))).toBe(true)
     // SplitTextToSize fue llamado con el concepto completo
     expect(docStub.splitTextToSize).toHaveBeenCalledWith(
       expect.stringContaining('Saldo Inicial / Apertura de Cuenta (Cuenta Venezuela)'),

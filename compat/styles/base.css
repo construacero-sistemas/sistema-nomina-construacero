@@ -18,6 +18,11 @@
   input[type="number"] { -moz-appearance: textfield; }
 }
 
+:root { --bottom-navigation-height: 5.25rem; }
+.app-main-safe { padding-bottom: calc(var(--bottom-navigation-height) + env(safe-area-inset-bottom, 0px) + 0.75rem); }
+@media (min-width: 768px) { .app-main-safe { padding-bottom: 1rem; } }
+nav a { min-height: 44px; }
+
 .app-header-safe {
   height: calc(3rem + env(safe-area-inset-top, 0px));
   padding-top: env(safe-area-inset-top, 0px);
@@ -35,6 +40,52 @@
   .app-shell-safe {
     padding-top: 3.5rem;
   }
+}
+
+/* Minimum hit boxes grow with enlarged text instead of clipping it. */
+button, [role="button"], input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), select, textarea {
+  min-height: 44px;
+}
+button, [role="button"] { min-width: 44px; }
+button:focus-visible, [role="button"]:focus-visible, [tabindex]:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+.dark :focus-visible { outline-color: #93c5fd; }
+@media (max-width: 767px), (any-pointer: coarse) {
+  input:not([type="hidden"]), select, textarea, [contenteditable="true"] {
+    font-size: max(16px, 1rem) !important;
+  }
+  button, [role="button"], input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), select, textarea {
+    min-height: 44px !important;
+    height: auto !important;
+  }
+  button, [role="button"] { min-width: 44px; white-space: normal; overflow-wrap: anywhere; }
+}
+.ui-overlay-layer { max-width: 100%; height: 100dvh; overscroll-behavior: contain; }
+@media (min-width: 640px) { .ui-overlay-layer .ui-overlay-panel { width: min(100%, calc(100vw - 1.5rem)); } }
+.ui-overlay-panel { max-height: calc(100% - max(12px, env(safe-area-inset-top, 0px))); }
+.ui-overlay-panel, .ui-select-sheet, .date-picker-panel { overflow-wrap: anywhere; }
+.ui-overlay-panel button, .ui-select-sheet button, .date-picker-panel button { height: auto; }
+.ui-overlay-footer { padding-bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
+.ui-overlay-body-safe { padding-bottom: max(24px, env(safe-area-inset-bottom, 0px)); }
+.ui-select-sheet .ui-overlay-header { padding-top: max(12px, env(safe-area-inset-top, 0px)); }
+.ui-select-sheet { max-width: 100%; }
+@media (any-pointer: coarse) {
+  .ui-overlay-content, .ui-overlay-header, .ui-overlay-footer, .ui-select-sheet > div {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .date-picker-panel { padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
+}
+.date-picker-grid { width: 100%; }
+.date-picker-grid [role="row"] { grid-template-columns: repeat(7, minmax(44px, 1fr)); gap: 0; }
+.date-picker-grid button { line-height: 1.25; }
+@media (min-width: 640px) {
+  .ui-overlay-panel { max-height: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-overlay-layer *, .ui-select-sheet * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
 .custom-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,.2) rgba(0,0,0,.04); }

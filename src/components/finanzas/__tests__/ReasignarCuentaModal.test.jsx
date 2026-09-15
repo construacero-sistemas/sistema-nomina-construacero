@@ -1,100 +1,61 @@
-// @vitest-environment jsdom
-// src/components/finanzas/__tests__/ReasignarCuentaModal.test.jsx
-// Tests del flujo de re-asignación masiva de movimientos sin cuenta.
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import '@testing-library/jest-dom/vitest'
-
 import ReasignarCuentaModal from '../ReasignarCuentaModal.jsx'
-import { asignarMovimientoACuenta } from '../../../../server/lib/carterasHelper.js'
-
-vi.mock('../../../../compat/components/ui/Modal.jsx', async importOriginal => {
-  const actual = await importOriginal()
-  return { Modal: actual.Modal }
-})
-
-const CUENTAS = [
-  { id: 'c1', nombre: 'Banco BNC', banco: 'BNC', moneda: 'VES', subcuentaId: 'Banco en Bolívares' },
-  { id: 'c2', nombre: 'Caja Efectivo Bs', banco: '', moneda: 'VES', subcuentaId: 'Efectivo Bs' },
+const account = { id: '10000000-0000-4000-8000-000000000001', nombre: 'Caja USD', moneda: 'USD' }
+const rows = [
+  { id: 'one', concepto: 'Cemento', moneda: 'USD', monto: 50, tipo: 'egreso', fecha: '2026-09-01' },
+  { id: 'two', concepto: 'Venta', moneda: 'USD', monto: 100, tipo: 'ingreso', fecha: '2026-09-01', cuenta_origen: 'Caja USD' },
+  { id: 'ves', concepto: 'Otra moneda', moneda: 'VES', monto: 1000, tipo: 'ingreso' },
+  { id: 'known', concepto: 'Ya confirmado', moneda: 'USD', monto: 100, cuenta_custodia_id: account.id },
 ]
-
-const SIN_CUENTA = [
-  { id: 'm1', fecha: '2026-09-01', tipo: 'egreso', categoria: 'Proveedores', concepto: 'Cemento', monto: 50, moneda: 'USD' },
-  { id: 'm2', fecha: '2026-09-02', tipo: 'ingreso', categoria: 'Ventas', concepto: 'Venta mostrador', monto: 100, moneda: 'USD' },
-]
-
-const CON_CUENTA =
-  { id: 'm3', fecha: '2026-09-03', tipo: 'ingreso', categoria: 'Ventas', concepto: 'Con cuenta', monto: 10, moneda: 'USD', cuenta_origen: 'Banco BNC' }
-
-function setup(movimientos, props = {}) {
-  const onConfirm = vi.fn()
-  const onClose = vi.fn()
-  render(
-    <ReasignarCuentaModal
-      open
-      onClose={onClose}
-      movimientos={movimientos}
-      cuentas={CUENTAS}
-      onConfirm={onConfirm}
-      {...props}
-    />,
-  )
-  return { onConfirm, onClose }
+const mount = (extra = {}) => {
+  const onConfirm = vi.fn().mockResolvedValue({ ok: true }), onClose = vi.fn()
+  return { ...render(<ReasignarCuentaModal open movimientos={rows} cuentas={[account]} onConfirm={onConfirm} onClose={onClose} {...extra} />), onConfirm, onClose }
 }
-
-// Abre el CustomSelect de destino y elige la opción cuyo label coincida.
-// El dropdown se renderiza en un portal; la opción es un <button role="option">.
-async function pickCuenta(user, label) {
-  await user.click(screen.getByText(/selecciona una cuenta/i))
-  const opt = await screen.findByRole('option', { name: new RegExp(label, 'i') })
-  await user.click(opt)
+async function selectAccount() {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('combobox', { name: 'Cuenta de destino' }))
+  await user.click(screen.getByRole('option', { name: /Caja USD/ }))
 }
-
-describe('ReasignarCuentaModal', () => {
-  it('lista solo los movimientos activos sin cuenta asignada', () => {
-    setup([...SIN_CUENTA, CON_CUENTA])
-    expect(screen.getByText('Cemento')).toBeInTheDocument()
-    expect(screen.getByText('Venta mostrador')).toBeInTheDocument()
-    expect(screen.queryByText('Con cuenta')).not.toBeInTheDocument()
+describe('Explicit classification with confirmed completion', () => {
+  it('keeps legacy-name records pending until the UUID is confirmed', () => {
+    mount()
+    expect(screen.getByText('Venta')).toBeInTheDocument()
+    expect(screen.queryByText('Ya confirmado')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Asignar cuenta' })).toBeDisabled()
   })
-
-  it('muestra estado vacío cuando todo está clasificado', () => {
-    setup([CON_CUENTA])
-    expect(screen.getByText('Todo clasificado')).toBeInTheDocument()
-  })
-
-  it('no permite confirmar sin cuenta destino ni selección', () => {
-    const { onConfirm } = setup(SIN_CUENTA)
-    const boton = screen.getByRole('button', { name: 'Asignar cuenta' })
-    expect(boton).toBeDisabled()
-    expect(onConfirm).not.toHaveBeenCalled()
-  })
-
-  it('confirma con ids seleccionados y el nombre de la cuenta destino', async () => {
-    const user = userEvent.setup()
-    const { onConfirm } = setup(SIN_CUENTA)
-    await pickCuenta(user, 'Banco BNC')
-    fireEvent.click(screen.getByLabelText(/Venta mostrador/))
+  it('filters currency and submits UUIDs, not a legacy display name', async () => {
+    const { onConfirm, onClose } = mount(); await selectAccount()
+    expect(screen.queryByText('Otra moneda')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: /Venta/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Asignar cuenta' }))
-    await waitFor(() => {
-      expect(onConfirm).toHaveBeenCalledWith({ ids: ['m2'], cuentaOrigen: 'Banco BNC' })
-    })
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    expect(onConfirm).toHaveBeenCalledWith({ ids: ['two'], cuentaCustodiaId: account.id })
   })
-
-  it("'Seleccionar todos' marca todos los movimientos listados", async () => {
-    const user = userEvent.setup()
-    const { onConfirm } = setup(SIN_CUENTA)
-    await pickCuenta(user, 'Caja Efectivo Bs')
-    fireEvent.click(screen.getByRole('button', { name: 'Seleccionar todos' }))
+  it('selects compatible records and preserves selection on server failure', async () => {
+    const rejected = vi.fn().mockRejectedValue(new Error('No se pudo confirmar'))
+    const { onClose } = mount({ onConfirm: rejected }); await selectAccount()
+    fireEvent.click(screen.getByRole('button', { name: 'Seleccionar hasta 100 compatibles' }))
     fireEvent.click(screen.getByRole('button', { name: 'Asignar cuenta' }))
-    await waitFor(() => {
-      expect(onConfirm).toHaveBeenCalledWith({ ids: ['m1', 'm2'], cuentaOrigen: 'Caja Efectivo Bs' })
-    })
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo confirmar')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('checkbox', { name: /Venta/ })).toBeChecked()
+    expect(rejected).toHaveBeenCalledWith({ ids: ['one','two'], cuentaCustodiaId: account.id })
   })
-
-  it('asignarMovimientoACuenta coincide por nombre exacto de cuenta_origen', () => {
-    expect(asignarMovimientoACuenta({ cuenta_origen: 'Banco BNC' }, CUENTAS)?.id).toBe('c1')
-    expect(asignarMovimientoACuenta({ cuenta_origen: 'Banesco' }, CUENTAS)).toBeNull()
+  it('paginates loaded candidates and describes the limited scope of an empty result', async () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({ ...rows[0], id: String(i), concepto: `Candidate ${i}` }))
+    const view = mount({ movimientos: many })
+    expect(screen.getAllByRole('listitem')).toHaveLength(10)
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' })); fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    expect(screen.getByText('Candidate 24')).toBeInTheDocument()
+    view.rerender(<ReasignarCuentaModal open movimientos={[]} cuentas={[account]} />)
+    expect(screen.getByText(/Todo clasificado en los registros cargados/)).toBeInTheDocument()
+  })
+  it('does not allow closing while awaiting confirmation', async () => {
+    const { onClose } = mount({ confirmando: true })
+    await userEvent.setup().keyboard('{Escape}')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled()
   })
 })

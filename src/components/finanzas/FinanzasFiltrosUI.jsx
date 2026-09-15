@@ -76,7 +76,7 @@ export function FinanzasFiltrosSeccion({
             type="button"
             onClick={() => aplicarRangoRapido(rango.id)}
             aria-pressed={chipActivo === rango.id}
-            className={`px-3 h-8 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
+            className={`px-3 min-h-11 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
               chipActivo === rango.id
                 ? 'bg-primary text-white border-primary'
                 : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
@@ -89,8 +89,8 @@ export function FinanzasFiltrosSeccion({
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <FilterField label="Desde"><DatePicker value={desde} onChange={setDesde} /></FilterField>
-        <FilterField label="Hasta"><DatePicker value={hasta} onChange={setHasta} /></FilterField>
+        <FilterField label="Desde"><DatePicker value={desde} onChange={setDesde} clearable={false} aria-label="Fecha inicial del reporte" /></FilterField>
+        <FilterField label="Hasta"><DatePicker value={hasta} onChange={setHasta} clearable={false} aria-label="Fecha final del reporte" /></FilterField>
         <FilterField label="Tipo">
           <Choice
             value={tipo}
@@ -140,7 +140,7 @@ export function FinanzasFiltrosSeccion({
         </div>
       </div>
 
-      <label className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 cursor-pointer">
+      <label className="mt-3 min-h-11 w-full inline-flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer">
         <input
           type="checkbox"
           checked={mostrarAnulados}

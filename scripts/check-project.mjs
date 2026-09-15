@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { findExternalImports } from './qa-responsive-rules.mjs'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const failures = []
@@ -33,7 +34,7 @@ async function walk(directory, output = []) {
 
   for (const entry of entries) {
     const relativePath = join(directory, entry.name)
-    if (['node_modules', 'dist', 'coverage', '.git', '.freebuff', '.wrangler'].includes(entry.name)) continue
+    if (['node_modules', 'dist', 'coverage', '.git', '.freebuff', '.wrangler', 'outputs', '.workbuddy-ai'].includes(entry.name)) continue
     if (entry.isDirectory()) await walk(relativePath, output)
     else output.push(relativePath)
   }
@@ -250,9 +251,10 @@ for (const path of sourceFiles) {
   }
   // El paquete puede importar sus propios módulos internos, pero nunca debe
   // alcanzar el POS por rutas relativas al directorio padre.
-  if (/from\s+['"](?:\.\.\/)+(?:src|api|supabase)(?:\/|['"])/.test(text) ||
-      /import\(\s*['"](?:\.\.\/)+(?:src|api|supabase)(?:\/|['"])/.test(text)) {
-    fail(`Import fuera del repositorio detectado en ${path}`)
+  if (/\.(?:js|jsx|mjs)$/.test(path)) {
+    for (const specifier of findExternalImports(text, path, root)) {
+      fail(`Import fuera del repositorio detectado en ${path}: ${specifier}`)
+    }
   }
   if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text) ||
       /(?:sk_live_|sk_test_|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/.test(text)) {

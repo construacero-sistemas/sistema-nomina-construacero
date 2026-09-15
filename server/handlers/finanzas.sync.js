@@ -16,7 +16,7 @@ const MOVEMENT_SELECT = [
   'id', 'fecha', 'tipo', 'categoria', 'concepto', 'monto', 'moneda',
   'tasa_ves', 'monto_ves', 'fuente_tasa', 'observacion_tasa',
   'referencia', 'observaciones', 'estado', 'creado_en', 'anulado_en',
-  'motivo_anulacion', 'metodo_pago', 'cuenta_origen',
+  'motivo_anulacion', 'metodo_pago', 'cuenta_origen', 'tasa_usd_ves', 'tasa_registrada_en',
 ].join(',')
 
 function round2(num) {
@@ -54,108 +54,44 @@ async function readExistingByKey(env, accountId, key) {
     { headers: serviceHeaders(env, 'return=minimal') },
   )
   if (!response.ok) return { error: true, row: null }
-  const rows = await response.json().catch(() => [])
-  return { error: false, row: Array.isArray(rows) && rows.length > 0 ? rows[0] : null }
+  const rows = await response.json().catch(() => null)
+  if (!Array.isArray(rows)) return { error: true, row: null }
+  return { error: false, row: rows[0] || null }
 }
 
 async function saveSyncMovement(env, cuentaId, operadorId, movementData) {
   const existing = await readExistingByKey(env, cuentaId, movementData.idempotency_key)
-  if (existing.row) {
-    const patchBody = {
-      monto: movementData.monto,
-      tasa_ves: movementData.tasa_ves,
-      concepto: movementData.concepto,
-      referencia: movementData.referencia,
-      observaciones: movementData.observaciones,
-      ...(movementData.tasa_usd_ves != null ? { tasa_usd_ves: movementData.tasa_usd_ves } : {}),
-      ...(movementData.metodo_pago ? { metodo_pago: movementData.metodo_pago } : {}),
-      ...(movementData.cuenta_origen ? { cuenta_origen: movementData.cuenta_origen } : {}),
-    }
-    const patchRes = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?id=eq.${queryValue(existing.row.id)}&${accountFilter(cuentaId)}`,
-      {
-        method: 'PATCH',
-        headers: serviceHeaders(env),
-        body: JSON.stringify(patchBody),
-      }
-    )
-    if (!patchRes.ok) {
-      const fallbackRes = await fetch(
-        `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?id=eq.${queryValue(existing.row.id)}&${accountFilter(cuentaId)}`,
-        {
-          method: 'PATCH',
-          headers: serviceHeaders(env),
-          body: JSON.stringify({
-            monto: movementData.monto,
-            tasa_ves: movementData.tasa_ves,
-            observaciones: movementData.observaciones,
-          }),
-        }
-      )
-      if (fallbackRes.ok) {
-        const rows = await fallbackRes.json().catch(() => [])
-        return { ok: true, accion: 'actualizado', movimiento: movementResponse(rows?.[0] || existing.row) }
-      }
-      const errText = await patchRes.text().catch(() => '')
-      return { ok: false, error: errText }
-    }
-    const rows = await patchRes.json().catch(() => [])
-    return { ok: true, accion: 'actualizado', movimiento: movementResponse(rows?.[0] || existing.row) }
+  if (existing.error) return { ok: false, error: 'No se pudo comprobar la operación previa. No se escribió otro movimiento.' }
+  if (existing.row && (existing.row.estado !== 'activo' || existing.row.moneda !== movementData.moneda)) {
+    return { ok: false, error: 'El movimiento previo requiere conciliación. No se cambió su estado ni moneda.' }
   }
-
-  // Insertar nuevo movimiento
-  const basePayload = {
-    cuenta_id: cuentaId,
-    fecha: movementData.fecha,
-    tipo: movementData.tipo,
-    categoria: movementData.categoria,
-    concepto: movementData.concepto,
-    monto: movementData.monto,
-    moneda: movementData.moneda,
-    tasa_ves: movementData.tasa_ves,
-    ...(movementData.tasa_usd_ves != null ? { tasa_usd_ves: movementData.tasa_usd_ves } : {}),
-    fuente_tasa: movementData.fuente_tasa || 'BCV',
-    referencia: movementData.referencia,
-    observaciones: movementData.observaciones,
-    idempotency_key: movementData.idempotency_key,
-    creado_por: operadorId,
+  const fields = {
+    monto: movementData.monto, tasa_ves: movementData.tasa_ves, tasa_usd_ves: movementData.tasa_usd_ves,
+    concepto: movementData.concepto, referencia: movementData.referencia,
+    observaciones: movementData.observaciones, fuente_tasa: movementData.fuente_tasa,
     ...(movementData.metodo_pago ? { metodo_pago: movementData.metodo_pago } : {}),
     ...(movementData.cuenta_origen ? { cuenta_origen: movementData.cuenta_origen } : {}),
   }
-
-  const postRes = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos`, {
-    method: 'POST',
-    headers: serviceHeaders(env),
-    body: JSON.stringify(basePayload),
-  })
-
-  if (!postRes.ok) {
-    const errText = await postRes.text().catch(() => '')
-    const retryPayload = {
-      ...basePayload,
-      fuente_tasa: 'BCV',
-    }
-    delete retryPayload.tasa_usd_ves
-    delete retryPayload.metodo_pago
-    delete retryPayload.cuenta_origen
-
-    const retryRes = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos`, {
-      method: 'POST',
-      headers: serviceHeaders(env),
-      body: JSON.stringify(retryPayload),
-    })
-
-    if (retryRes.ok) {
-      const rows = await retryRes.json().catch(() => [])
-      return { ok: true, accion: 'creado', movimiento: movementResponse(rows?.[0] || retryPayload) }
-    }
-
-    const retryErrText = await retryRes.text().catch(() => '')
-    return { ok: false, error: retryErrText || errText }
+  const payload = existing.row ? fields : {
+    ...fields, cuenta_id: cuentaId, fecha: movementData.fecha, tipo: movementData.tipo,
+    categoria: movementData.categoria, moneda: movementData.moneda,
+    idempotency_key: movementData.idempotency_key, creado_por: operadorId,
   }
-
-  const rows = await postRes.json().catch(() => [])
-  return { ok: true, accion: 'creado', movimiento: movementResponse(rows?.[0] || basePayload) }
+  const suffix = existing.row ? `?id=eq.${queryValue(existing.row.id)}&${accountFilter(cuentaId)}&estado=eq.activo` : ''
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_movimientos${suffix}`, {
+    method: existing.row ? 'PATCH' : 'POST', headers: serviceHeaders(env), body: JSON.stringify(payload),
+  })
+  // Never degrade an accounting write by removing metadata to bypass a failure.
+  if (!response.ok) return { ok: false, error: 'No se confirmó la escritura completa. Conserva las fechas y revisa el estado antes de reintentar.' }
+  const rows = await response.json().catch(() => null)
+  const row = Array.isArray(rows) && rows.length === 1 ? rows[0] : null
+  if (!row || !isValidUuid(row.id) || row.estado !== 'activo' || row.moneda !== movementData.moneda
+    || Number(row.monto) !== movementData.monto || Number(row.tasa_ves) !== movementData.tasa_ves
+    || Number(row.tasa_usd_ves) !== movementData.tasa_usd_ves
+    || (existing.row && row.id !== existing.row.id)) {
+    return { ok: false, error: 'La respuesta no confirma el movimiento y sus tasas. No se fabricó un resultado exitoso.' }
+  }
+  return { ok: true, accion: existing.row ? 'actualizado' : 'creado', movimiento: movementResponse(row) }
 }
 
 function getDatesArray(startDateStr, endDateStr) {
@@ -248,7 +184,7 @@ export async function handleSyncVentasPos(request, env) {
       punto_venta_ves: 0,
       otros_usd: 0,
     },
-    tasa_bcv: 1,
+    tasa_bcv: null,
     despachos_detalle: [],
     dias: [],
   }
@@ -358,11 +294,29 @@ export async function handleSyncVentasPos(request, env) {
     }
   }
 
+  // Validate every selected day before the first write. A rate from another
+  // day (or an invented 1:1 quote) must never become a recorded snapshot.
+  for (const { fecha, posData } of consolidated.dias) {
+    const desglose = posData.desglose_pagos || {}
+    const selected = Object.entries(desglose).some(([key, amount]) => Number(amount) > 0 && distribucion?.[key]?.activo !== false)
+    const cxcSelected = Number(posData.cobros_cxc_usd) > 0 && (distribucion?.cxc || distribucion?.cobros_cxc)?.activo !== false
+    const fallbackSelected = !Object.values(desglose).some(amount => Number(amount) > 0)
+      && Number(posData.ventas_contado_usd) > 0 && distribucion?.efectivo_usd?.activo !== false
+    if (!selected && !cxcSelected && !fallbackSelected) continue
+    if (Number(desglose.usdt_usd) > 0 && distribucion?.usdt_usd?.activo !== false) {
+      return jsonError(`El cierre ${fecha} no distingue unidades USDT de su equivalente USD. Se requiere importe nativo y tasas explícitas antes de importar; no se asumió paridad.`, 422, request)
+    }
+    const rate = posData.tasa_bcv
+    if (!['number', 'string'].includes(typeof rate) || String(rate).trim() === ''
+      || !Number.isFinite(Number(rate)) || Number(rate) <= 0 || Number(rate) > 1000000) {
+      return jsonError(`Falta una tasa USD/VES válida del cierre ${fecha}. No se inició la escritura de este lote.`, 422, request)
+    }
+  }
   const resultados = []
 
   for (const { fecha, posData } of consolidated.dias) {
     const desglose = posData.desglose_pagos || {}
-    const tasaBcv = Number(posData.tasa_bcv || consolidated.tasa_bcv || 1) || 1
+    const tasaBcv = Number(posData.tasa_bcv)
 
     const METODOS_DEF = [
       ['efectivo_usd', 'Efectivo $', 'USD', 'USD', tasaBcv, 'BCV', 'pos-vta-efectivo-usd'],
@@ -523,15 +477,16 @@ export async function handleSyncVentasPos(request, env) {
 
   // 4. Calcular total real sincronizado y Auditoría
   let totalSincronizadoUsd = 0
-  for (const r of resultados) {
-    const m = r.movimiento
-    if (!m) continue
-    const mUsd = m.moneda === 'VES'
-      ? ((Number(m.monto_ves) || Number(m.monto) || 0) / (Number(m.tasa_ves) || Number(consolidated.tasa_bcv) || 1))
-      : (Number(m.monto) || 0)
-    totalSincronizadoUsd += mUsd
+  let movimientosSinUsd = 0
+  for (const { movimiento: m } of resultados) {
+    const rate = Number(m?.tasa_usd_ves)
+    const recorded = typeof m?.tasa_registrada_en === 'string' && Number.isFinite(Date.parse(m.tasa_registrada_en))
+    const mUsd = m?.moneda === 'USD' && m.monto != null ? Number(m.monto)
+      : m?.moneda === 'VES' && m.monto != null && recorded && Number.isFinite(rate) && rate > 0 ? Number(m.monto) / rate : null
+    if (mUsd == null || !Number.isFinite(mUsd)) movimientosSinUsd++
+    else totalSincronizadoUsd += mUsd
   }
-  totalSincronizadoUsd = round2(totalSincronizadoUsd)
+  totalSincronizadoUsd = movimientosSinUsd ? null : round2(totalSincronizadoUsd)
 
   const despachosExcluidos = []
   if (distribucion) {
@@ -554,7 +509,8 @@ export async function handleSyncVentasPos(request, env) {
     meta: {
       desde,
       hasta,
-      total_ingresos_usd: totalSincronizadoUsd || consolidated.total_ingresos_usd,
+      total_ingresos_usd: totalSincronizadoUsd,
+      movimientos_sin_usd: movimientosSinUsd,
       operaciones: resultados.length,
       ...(despachosExcluidos.length > 0 ? { despachos_excluidos: despachosExcluidos } : {}),
     },
@@ -566,7 +522,8 @@ export async function handleSyncVentasPos(request, env) {
     synced: true,
     desde,
     hasta,
-    total_ingresos_usd: totalSincronizadoUsd || consolidated.total_ingresos_usd,
+    total_ingresos_usd: totalSincronizadoUsd,
+      movimientos_sin_usd: movimientosSinUsd,
     resultados,
     posData: consolidated,
   }, 200, request)

@@ -117,9 +117,10 @@ describe('carterasHelper', () => {
     const mov = { cuenta_origen: 'Banco BNC (Principal)', subcuentaId: 'Banco en Bolívares' }
     expect(asignarMovimientoACuenta(mov, cuentas)?.id).toBe('banco-bnc-ves')
 
-    // Movimiento asignado a Mercantil por banco
-    const mov2 = { cuenta_origen: 'Mercantil' }
+    // A unique exact account name is required; a bank substring is insufficient.
+    const mov2 = { cuenta_origen: 'Banco Mercantil' }
     expect(asignarMovimientoACuenta(mov2, cuentas)?.id).toBe('banco-mercantil-ves')
+    expect(asignarMovimientoACuenta({ cuenta_origen: 'Mercantil' }, cuentas)).toBeNull()
   })
 
   it('deja SIN cuenta un movimiento que no trae cuenta_origen explícita', () => {
@@ -128,6 +129,28 @@ describe('carterasHelper', () => {
     expect(asignarMovimientoACuenta({ subcuentaId: 'Banco en Bolívares', referencia: 'Banco BNC' }, cuentas)).toBeNull()
     // Cuenta_origen que no matchea ninguna cuenta registrada -> null
     expect(asignarMovimientoACuenta({ cuenta_origen: 'Banesco' }, cuentas)).toBeNull()
+  })
+
+  it('requires a unique exact legacy name and never selects an ambiguous bank', () => {
+    const cuentas = [
+      { id: '11111111-1111-4111-8111-111111111111', nombre: 'Banco BNC', subcuentaId: 'Banco en Bolívares' },
+      { id: '22222222-2222-4222-8222-222222222222', nombre: 'Banco BNC', subcuentaId: 'Banco en Bolívares' },
+    ]
+    expect(asignarMovimientoACuenta({ cuenta_origen: 'Banco BNC' }, cuentas)).toBeNull()
+    expect(asignarMovimientoACuenta({ cuenta_origen: 'BNC' }, cuentas)).toBeNull()
+    expect(asignarMovimientoACuenta({ cuenta_origen: cuentas[1].id }, cuentas)).toBe(cuentas[1])
+    expect(asignarMovimientoACuenta({ cuenta_origen: '  banco bnc  ' }, [cuentas[0]])).toBe(cuentas[0])
+  })
+
+  it('prioritizes an explicit custody UUID over legacy name and rejects unknown UUIDs', () => {
+    const cuentas = [
+      { id: '11111111-1111-4111-8111-111111111111', nombre: 'Banco BNC' },
+      { id: '22222222-2222-4222-8222-222222222222', nombre: 'Banco Mercantil' },
+    ]
+    expect(asignarMovimientoACuenta({ cuenta_custodia_id: cuentas[1].id, cuenta_origen: cuentas[0].nombre }, cuentas)).toBe(cuentas[1])
+    expect(asignarMovimientoACuenta({ cuentaCustodiaId: cuentas[1].id, cuentaOrigen: cuentas[0].nombre }, cuentas)).toBe(cuentas[1])
+    expect(asignarMovimientoACuenta({ cuenta_custodia_id: '33333333-3333-4333-8333-333333333333', cuenta_origen: cuentas[0].nombre }, cuentas)).toBeNull()
+    expect(asignarMovimientoACuenta({ cuenta_custodia_id: cuentas[1].id }, cuentas)).toBe(cuentas[1])
   })
 
   it('cuenta los movimientos sin cuenta de custodia explícita', () => {

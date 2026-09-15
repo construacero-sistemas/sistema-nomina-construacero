@@ -65,6 +65,7 @@ describe('asistencia bloqueada por estado del período', () => {
     let enviado = null
     mock = installFetchMock([
       { match: '/nomina_periodos', respond: [] },
+      { match: '/configuracion_negocio', respond: [{}] },
       { match: '/nomina_config_empleado', respond: [{ horas_jornada: 8 }] },
       { match: '/registro_asistencia', method: 'POST', respond: (url, init) => {
         enviado = JSON.parse(init.body)
@@ -333,6 +334,19 @@ describe('eliminación de períodos', () => {
     expect(String(body.error)).toMatch(/revierte los pagos/i)
   })
 
+  it('no elimina el período ni anuncia éxito si los recibos conservan historial financiero', async () => {
+    mock = installFetchMock([
+      { match: '/nomina_periodos', method: 'GET', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'abierto' }] },
+      { match: '/nomina_lineas', method: 'GET', respond: [] },
+      { match: '/nomina_lineas', method: 'DELETE', respond: { __raw: { code: '23503' }, ok: false, status: 409 } },
+    ])
+    const { status, body } = await readResponse(await H.handleEliminarPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV))
+    expect(status).toBe(409)
+    expect(body.error).toMatch(/historial de pago/)
+    expect(mock.calls.filter(c => c.method === 'DELETE')).toHaveLength(1)
+    expect(mock.calls.some(c => c.method === 'DELETE' && c.url.includes('/nomina_periodos'))).toBe(false)
+  })
+
   it('elimina líneas asociadas y el período', async () => {
     mock = installFetchMock([
       { match: '/nomina_periodos', method: 'GET',    respond: [{ id: IDS.periodo, nombre: 'P', estado: 'abierto' }] },
@@ -420,140 +434,95 @@ describe('ajuste de recibos', () => {
     expect(enviado.deducciones_usd).toBe(0)
   })
 })
-// ─── Pago y reversión ────────────────────────────────────────────────────────
-describe('pago de recibos', () => {
-  it('no permite pagar con el período abierto', async () => {
-    mock = installFetchMock([
-      { match: '/nomina_lineas',   respond: [{ id: IDS.linea, periodo_id: IDS.periodo, pagado: false, total_neto_usd: 100 }] },
-      { match: '/nomina_periodos', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'abierto' }] },
-    ])
-    const res = await H.handlePagarLineas(makeRequest({ lineaIds: [IDS.linea] }), ENV)
-    const { status, body } = await readResponse(res)
-    expect(status).toBe(400)
-    expect(String(body.error)).toMatch(/cierra el período/i)
-  })
-  it('no permite pagar un recibo ya pagado', async () => {
-    mock = installFetchMock([
-      { match: '/nomina_lineas', respond: [{ id: IDS.linea, periodo_id: IDS.periodo, pagado: true, total_neto_usd: 100 }] },
-    ])
-    const res = await H.handlePagarLineas(makeRequest({ lineaIds: [IDS.linea] }), ENV)
-    const { status, body } = await readResponse(res)
-    expect(status).toBe(400)
-    expect(String(body.error)).toMatch(/ya está pagado/i)
-  })
-  it('rechaza un lote si falta un recibo de la cuenta', async () => {
-    mock = installFetchMock([
-      { match: '/nomina_lineas', respond: [{ id: IDS.linea, periodo_id: IDS.periodo, pagado: false, total_neto_usd: 100 }] },
-    ])
-    const res = await H.handlePagarLineas(
-      makeRequest({ lineaIds: [IDS.linea, IDS.linea2], referencia: 'Transferencia' }), ENV
-    )
-    const { status, body } = await readResponse(res)
-    expect(status).toBe(404)
-    expect(String(body.error)).toMatch(/no existen/i)
+// RPC boundary coverage; committed period and receipt effects belong to scripts/test-db.mjs.
+describe('receipt payment RPC lifecycle', () => {
+  const payment = {
+    operationId: IDS.registro, lineaIds: [IDS.linea], cuentaCustodiaId: IDS.config,
+    tasaBcv: '400', tasaUsdVes: '400', fuenteTasa: 'BCV', metodoPago: 'Efectivo $',
+  }
+  const outcome = { recibos_pagados: 2, total_usd: '150.500000', asignacionIds: [IDS.empleado, IDS.empleado2], movimientoIds: [IDS.linea, IDS.linea2] }
+  const confirmed = { ok: true, estado: 'confirmada', tipo: 'pagar_nomina', operationId: IDS.periodo,
+    idempotencyKey: payment.operationId, resultado: outcome, ...outcome }
+
+  it.each([
+    ['open period', 'PT409', 409, 'Receipts must be unpaid and periods closed'],
+    ['already-paid receipt', 'PT409', 409, 'Receipt already paid'],
+    ['incomplete tenant receipt batch', 'PT404', 404, 'Receipt not found'],
+  ])('propagates the transactional rejection for %s', async (_scenario, code, expectedStatus, message) => {
+    mock = installFetchMock([{ match: '/rpc/finanzas_operar', method: 'POST',
+      respond: { __raw: { code, message }, ok: false, status: expectedStatus } }])
+    const { status, body } = await readResponse(await H.handlePagarLineas(
+      makeRequest({ ...payment, lineaIds: [IDS.linea, IDS.linea2] }), ENV))
+    expect(status).toBe(expectedStatus)
+    expect(body).toMatchObject({ code })
+    expect(body).not.toHaveProperty('ok', true)
+    expect(mock.calls).toHaveLength(1)
+    expect(mock.calls[0].body).toMatchObject({ p_cuenta_id: OPERADORES.administracion.cuenta_id,
+      p_tipo: 'pagar_nomina', p_clave: payment.operationId, p_payload: { lineaIds: [IDS.linea, IDS.linea2] } })
     expect(mock.calls.filter(call => call.method === 'PATCH')).toHaveLength(0)
   })
-  it('registra el pago con referencia y suma el total', async () => {
-    let enviado = null
-    mock = installFetchMock([
-      { match: '/nomina_lineas', method: 'GET', respond: (url) => {
-        // Segunda consulta: pendientes tras el pago (ninguno).
-        if (url.includes('pagado=eq.false')) return []
-        return [
-          { id: IDS.linea,  periodo_id: IDS.periodo, pagado: false, total_neto_usd: 100 },
-          { id: IDS.linea2, periodo_id: IDS.periodo, pagado: false, total_neto_usd: 50.5 },
-        ]
-      }},
-      { match: '/nomina_periodos', method: 'GET',   respond: [{ id: IDS.periodo, nombre: 'P', estado: 'cerrado' }] },
-      { match: '/nomina_lineas',   method: 'PATCH', respond: (url, init) => {
-        enviado = JSON.parse(init.body); return [{ id: IDS.linea }, { id: IDS.linea2 }]
-      }},
-      { match: '/nomina_periodos', method: 'PATCH', respond: [] },
-    ])
-    const res = await H.handlePagarLineas(
-      makeRequest({ lineaIds: [IDS.linea, IDS.linea2], referencia: 'Transferencia BNC 999' }), ENV
-    )
-    const { status, body } = await readResponse(res)
-    expect(status).toBe(200)
-    expect(body.recibos_pagados).toBe(2)
-    expect(body.total_usd).toBe(150.5)
-    expect(enviado.pagado).toBe(true)
-    expect(enviado.referencia_pago).toBe('Transferencia BNC 999')
-    expect(enviado.pagado_por_nombre).toBe(OPERADORES.administracion.nombre)
+
+  it('forwards the payment reference and returns the database decimal total without recalculating', async () => {
+    mock = installFetchMock([{ match: '/rpc/finanzas_operar', method: 'POST', respond: confirmed }])
+    const result = await readResponse(await H.handlePagarLineas(
+      makeRequest({ ...payment, lineaIds: [IDS.linea2, IDS.linea], referencia: 'Transferencia BNC 999', total_usd: 1 }), ENV))
+    expect(result).toEqual({ status: 200, body: confirmed })
+    expect(mock.calls).toHaveLength(1)
+    expect(mock.calls[0].body).toEqual({
+      p_cuenta_id: OPERADORES.administracion.cuenta_id, p_operador_id: OPERADORES.administracion.id,
+      p_tipo: 'pagar_nomina', p_clave: payment.operationId, p_ip: '127.0.0.1',
+      p_payload: { lineaIds: [IDS.linea, IDS.linea2], referencia: 'Transferencia BNC 999', cuentaCustodiaId: IDS.config,
+        tasaBcv: '400', tasaUsdVes: '400', fuenteTasa: 'BCV', metodoPago: 'Efectivo $', observacionTasa: null, zonaHoraria: 'America/Caracas' },
+    })
+    expectSinRedReal(mock.calls)
   })
-  it('marca el período como pagado cuando no quedan pendientes', async () => {
-    const patchesPeriodo = []
-    mock = installFetchMock([
-      { match: '/nomina_lineas', method: 'GET', respond: (url) => {
-        if (url.includes('pagado=eq.false')) return []   // no quedan pendientes
-        return [{ id: IDS.linea, periodo_id: IDS.periodo, pagado: false, total_neto_usd: 100 }]
-      }},
-      { match: '/nomina_periodos', method: 'GET',   respond: [{ id: IDS.periodo, nombre: 'P', estado: 'cerrado' }] },
-      { match: '/nomina_lineas',   method: 'PATCH', respond: [{ id: IDS.linea }] },
-      { match: '/nomina_periodos', method: 'PATCH', respond: (url, init) => {
-        patchesPeriodo.push(JSON.parse(init.body)); return []
-      }},
-    ])
-    await H.handlePagarLineas(makeRequest({ lineaIds: [IDS.linea] }), ENV)
-    expect(patchesPeriodo).toHaveLength(1)
-    expect(patchesPeriodo[0].estado).toBe('pagado')
+
+  it('does not issue a separate period update after a confirmed full-batch payment', async () => {
+    mock = installFetchMock([{ match: '/rpc/finanzas_operar', method: 'POST', respond: confirmed }])
+    const result = await readResponse(await H.handlePagarLineas(makeRequest({ ...payment, lineaIds: [IDS.linea, IDS.linea2] }), ENV))
+    expect(result).toEqual({ status: 200, body: confirmed })
+    expect(mock.calls).toHaveLength(1)
+    expect(mock.calls[0].url).toBe(`${ENV.SUPABASE_URL}/rest/v1/rpc/finanzas_operar`)
   })
-  it('NO marca el período como pagado si aún quedan recibos pendientes', async () => {
-    const patchesPeriodo = []
-    mock = installFetchMock([
-      { match: '/nomina_lineas', method: 'GET', respond: (url) => {
-        if (url.includes('pagado=eq.false')) return [{ id: IDS.linea2 }]   // queda uno
-        return [{ id: IDS.linea, periodo_id: IDS.periodo, pagado: false, total_neto_usd: 100 }]
-      }},
-      { match: '/nomina_periodos', method: 'GET',   respond: [{ id: IDS.periodo, nombre: 'P', estado: 'cerrado' }] },
-      { match: '/nomina_lineas',   method: 'PATCH', respond: [{ id: IDS.linea }] },
-      { match: '/nomina_periodos', method: 'PATCH', respond: (url, init) => {
-        patchesPeriodo.push(JSON.parse(init.body)); return []
-      }},
-    ])
-    await H.handlePagarLineas(makeRequest({ lineaIds: [IDS.linea] }), ENV)
-    expect(patchesPeriodo).toHaveLength(0)
+
+  it('does not fetch pending receipts or close the period independently for a partial batch', async () => {
+    const partial = { recibos_pagados: 1, total_usd: '100.000000', asignacionIds: [IDS.empleado], movimientoIds: [IDS.linea] }
+    const result = { ...confirmed, resultado: partial, ...partial }
+    mock = installFetchMock([{ match: '/rpc/finanzas_operar', method: 'POST', respond: result }])
+    expect(await readResponse(await H.handlePagarLineas(makeRequest(payment), ENV))).toEqual({ status: 200, body: result })
+    expect(mock.calls).toHaveLength(1)
+    expect(mock.calls[0].body.p_payload.lineaIds).toEqual([IDS.linea])
+    expect(mock.calls[0].url).toBe(`${ENV.SUPABASE_URL}/rest/v1/rpc/finanzas_operar`)
   })
 })
-describe('reversión de pago', () => {
-  it('rechaza revertir un recibo que no está pagado', async () => {
-    mock = installFetchMock([
-      { match: '/nomina_lineas', respond: [{ id: IDS.linea, periodo_id: IDS.periodo, pagado: false }] },
-    ])
-    const res = await H.handleRevertirPagoLinea(makeRequest({ lineaId: IDS.linea }), ENV)
-    const { status, body } = await readResponse(res)
-    expect(status).toBe(400)
-    expect(String(body.error)).toMatch(/no está pagado/i)
+describe('payment reversal RPC lifecycle', () => {
+  const reversal = { operationId: IDS.registro, lineaId: IDS.linea, motivo: 'Incorrect payment' }
+
+  it.each([
+    ['unpaid receipt', 'PT409', 409],
+    ['missing receipt', 'PT404', 404],
+    ['legacy receipt requiring reconciliation', 'PT422', 422],
+  ])('propagates rejection for %s without another write', async (_scenario, code, expectedStatus) => {
+    mock = installFetchMock([{ match: '/rpc/finanzas_operar', method: 'POST',
+      respond: { __raw: { code }, ok: false, status: expectedStatus } }])
+    const { status, body } = await readResponse(await H.handleRevertirPagoLinea(makeRequest(reversal), ENV))
+    expect(status).toBe(expectedStatus)
+    expect(body).toMatchObject({ code })
+    expect(body).not.toHaveProperty('ok', true)
+    expect(mock.calls).toHaveLength(1)
+    expect(mock.calls[0].body).toMatchObject({ p_tipo: 'revertir_nomina', p_clave: reversal.operationId,
+      p_cuenta_id: OPERADORES.administracion.cuenta_id, p_payload: { lineaId: IDS.linea, motivo: reversal.motivo } })
   })
-  it('devuelve 404 si el recibo no existe', async () => {
-    mock = installFetchMock([{ match: '/nomina_lineas', respond: [] }])
-    const res = await H.handleRevertirPagoLinea(makeRequest({ lineaId: IDS.linea }), ENV)
-    const { status } = await readResponse(res)
-    expect(status).toBe(404)
-  })
-  it('limpia los datos de pago y devuelve el período a cerrado', async () => {
-    let enviadoLinea = null
-    let urlPeriodo = null
-    let enviadoPeriodo = null
-    mock = installFetchMock([
-      { match: '/nomina_lineas',   method: 'GET',   respond: [{ id: IDS.linea, periodo_id: IDS.periodo, pagado: true, total_neto_usd: 100 }] },
-      { match: '/nomina_lineas',   method: 'PATCH', respond: (url, init) => {
-        enviadoLinea = JSON.parse(init.body); return [{ id: IDS.linea }]
-      }},
-      { match: '/nomina_periodos', method: 'PATCH', respond: (url, init) => {
-        urlPeriodo = url; enviadoPeriodo = JSON.parse(init.body); return []
-      }},
-    ])
-    const res = await H.handleRevertirPagoLinea(makeRequest({ lineaId: IDS.linea }), ENV)
-    const { status } = await readResponse(res)
-    expect(status).toBe(200)
-    expect(enviadoLinea.pagado).toBe(false)
-    expect(enviadoLinea.pagado_en).toBeNull()
-    expect(enviadoLinea.pagado_por).toBeNull()
-    expect(enviadoLinea.referencia_pago).toBeNull()
-    // Solo afecta al período si estaba en 'pagado'.
-    expect(urlPeriodo).toContain('estado=eq.pagado')
-    expect(enviadoPeriodo.estado).toBe('cerrado')
+
+  it('returns the confirmed explicit reversal without clearing receipt or period state separately', async () => {
+    const outcome = { lineaId: IDS.linea, asignacionId: IDS.empleado, movimientoId: IDS.linea2, total_usd: '100.000000', reversionContable: true }
+    const confirmed = { ok: true, estado: 'confirmada', tipo: 'revertir_nomina', operationId: IDS.periodo,
+      idempotencyKey: reversal.operationId, resultado: outcome, ...outcome }
+    mock = installFetchMock([{ match: '/rpc/finanzas_operar', method: 'POST', respond: confirmed }])
+    expect(await readResponse(await H.handleRevertirPagoLinea(makeRequest(reversal), ENV))).toEqual({ status: 200, body: confirmed })
+    expect(mock.calls).toHaveLength(1)
+    expect(mock.calls[0].url).toBe(`${ENV.SUPABASE_URL}/rest/v1/rpc/finanzas_operar`)
+    expect(mock.calls[0].body.p_payload).toEqual({ lineaId: IDS.linea, motivo: reversal.motivo, zonaHoraria: 'America/Caracas' })
   })
 })
 

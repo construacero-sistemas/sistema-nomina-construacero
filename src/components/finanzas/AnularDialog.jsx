@@ -6,7 +6,7 @@ import { Modal } from '../../../compat/components/ui/Modal.jsx'
 export default function AnularDialog({ movimiento, pending, onClose, onConfirm }) {
   const [motivo, setMotivo] = useState('')
   return (
-    <Modal isOpen onClose={onClose} title="¿Anular este movimiento?" className="sm:max-w-md">
+    <Modal isOpen onClose={onClose} busy={pending} title="¿Anular este movimiento?" className="sm:max-w-md">
       <p className="text-sm text-slate-500">No se borrará. Quedará fuera del balance vigente y conservará su historial.</p>
       <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600"><strong>{movimiento.concepto}</strong> · {formatUsd(movimiento.monto)} {movimiento.moneda}</p>
       <label className="block mt-4 text-xs font-bold text-slate-600">¿Por qué quieres anularlo? *<textarea value={motivo} onChange={e => setMotivo(e.target.value)} maxLength={300} rows={3} className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm" placeholder="Describe por qué se anula..." /></label>

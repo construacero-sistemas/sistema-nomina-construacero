@@ -6,18 +6,23 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import RetencionCard from '../RetencionCard.jsx'
 
-vi.mock('../../../../compat/services/supabase/client.js', () => ({
-  default: { auth: { getSession: async () => ({ data: { session: { access_token: 'test' } } }), refreshSession: async () => ({ data: { session: { access_token: 'test' } } }) } },
-}))
+vi.mock('../../../../compat/services/authFetch.js', async () => {
+  const { apiUrl } = await import('../../../../compat/services/apiBase.js')
+  return { authFetch: (path, options) => fetch(apiUrl(path), options) }
+})
 
 vi.mock('../../../../compat/services/apiBase.js', () => ({
   apiUrl: (p) => `https://worker.test${p}`,
   getAuthHeaders: async () => ({ Authorization: 'Bearer test' }),
 }))
 
-vi.mock('../../../../compat/store/useAuthStore.js', () => ({
-  default: { getState: () => ({ perfil: { id: 'op-1' } }) },
-}))
+vi.mock('../../../../compat/store/useAuthStore.js', () => {
+  const perfil = { id: 'op-1', rol: 'administracion', cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' }
+  const state = { perfil, user: { id: perfil.cuenta_id }, accountId: perfil.cuenta_id }
+  const useAuthStore = vi.fn(selector => (selector ? selector(state) : state))
+  useAuthStore.getState = () => state
+  return { default: useAuthStore }
+})
 
 const USO = {
   presupuesto_mb: 500,

@@ -82,10 +82,10 @@ export default function MovimientoPartes({
             }
           }}
           disabled={disabled}
-          className={`relative w-11 h-6 shrink-0 rounded-full transition-colors ${habilitado ? 'bg-primary' : 'bg-slate-300'}`}
+          className={`relative w-14 min-h-11 shrink-0 rounded-full transition-colors ${habilitado ? 'bg-primary' : 'bg-slate-300'}`}
           style={{ touchAction: 'manipulation' }}
         >
-          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${habilitado ? 'left-[22px]' : 'left-0.5'}`} />
+          <span className={`absolute top-1/2 -translate-y-1/2 h-5 w-5 rounded-full bg-white shadow transition-all ${habilitado ? 'left-[22px]' : 'left-0.5'}`} />
         </button>
       </label>
       <p className="text-[11px] text-slate-500 leading-snug px-0.5">
@@ -134,7 +134,7 @@ export default function MovimientoPartes({
               type="button"
               onClick={agregarParte}
               disabled={disabled}
-              className="inline-flex items-center gap-1 px-2.5 h-9 rounded-lg bg-slate-200/70 hover:bg-slate-300 text-[11px] font-black text-slate-700 transition-all active:scale-95"
+              className="inline-flex items-center gap-1 px-2.5 min-h-11 rounded-lg bg-slate-200/70 hover:bg-slate-300 text-[11px] font-black text-slate-700 transition-all active:scale-95"
             >
               <Plus size={13} />
               <span>Añadir parte</span>
@@ -143,7 +143,7 @@ export default function MovimientoPartes({
               type="button"
               onClick={repartirIgual}
               disabled={disabled || !(Number(montoTotal) > 0)}
-              className="inline-flex items-center gap-1 px-2.5 h-9 rounded-lg text-[11px] font-black text-primary hover:bg-primary/10 transition-all active:scale-95"
+              className="inline-flex items-center gap-1 px-2.5 min-h-11 rounded-lg text-[11px] font-black text-primary hover:bg-primary/10 transition-all active:scale-95"
             >
               <Divide size={13} />
               <span>Repartir igual</span>

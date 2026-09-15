@@ -1,10 +1,12 @@
 // src/hooks/useNomina.js
 // Queries y mutations del módulo de nómina (config empleados, asistencia, períodos, líneas).
 import { useCallback } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
+import { useAccountQuery as useQuery, useAccountQueryClient as useQueryClient } from '../../compat/lib/accountQueries.js'
 import useAuthStore from '../../compat/store/useAuthStore.js'
 import { authFetch } from '../../compat/services/authFetch.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
+import useFinancialOperation from './useFinancialOperation.js'
 
 const KEY_EMPLEADOS  = ['nomina', 'empleados']
 const KEY_CONFIG     = ['nomina', 'config-empleados']
@@ -347,30 +349,29 @@ export function useAjustarLinea() {
 }
 
 export function usePagarLineas() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ lineaIds, referencia }) =>
-      apiPost('/api/nomina/lineas/pagar', { lineaIds, referencia }),
-    onSuccess: (data) => {
+  const operation = useFinancialOperation('pagar_nomina', '/api/nomina/lineas/pagar')
+  return {
+    ...operation,
+    mutateAsync: async fields => {
+      const data = await operation.mutateAsync(fields)
       showToast.success(`${data.recibos_pagados} recibo(s) pagados — $${Number(data.total_usd).toFixed(2)}`)
-      qc.invalidateQueries({ queryKey: KEY_LINEAS })
-      qc.invalidateQueries({ queryKey: KEY_PERIODOS })
+      return data
     },
-    onError: (e) => showToast.error(e.message || 'Error al registrar el pago'),
-  })
+  }
 }
 
 export function useRevertirPagoLinea() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (lineaId) => apiPost('/api/nomina/lineas/revertir-pago', { lineaId }),
-    onSuccess: () => {
-      showToast.success('Pago revertido')
-      qc.invalidateQueries({ queryKey: KEY_LINEAS })
-      qc.invalidateQueries({ queryKey: KEY_PERIODOS })
-    },
-    onError: (e) => showToast.error(e.message || 'Error al revertir el pago'),
-  })
+  const operation = useFinancialOperation('revertir_nomina', '/api/nomina/lineas/revertir-pago')
+  const mutateAsync = async fields => {
+    const data = await operation.mutateAsync(fields)
+    showToast.success('Reversión contable registrada')
+    return data
+  }
+  return { ...operation, mutateAsync, mutate: (fields, options) => {
+    mutateAsync(fields).then(result => options?.onSuccess?.(result)).catch(error => {
+      showToast.error(error.message); options?.onError?.(error)
+    })
+  } }
 }
 
 // ─── Configuración laboral, tasas y conceptos ───────────────────────────────

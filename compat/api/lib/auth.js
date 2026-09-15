@@ -6,7 +6,10 @@ import { jsonError, isValidUuid } from './utils.js'
 // y el operador. Con TTL corto (60s) las ráfagas de peticiones reutilizan la
 // verificación. El isolate de Cloudflare se recicla solo, así que el caché es
 // naturalmente efímero. Límite de entradas para acotar memoria.
-const AUTH_CACHE_TTL_MS = 60_000;
+// No cachear decisiones de autorización: una revocación o un cambio de rol
+// debe comprobarse en la siguiente petición, no al vencer el caché del isolate.
+// Conservar el helper de invalidación para consumidores existentes.
+const AUTH_CACHE_TTL_MS = 0;
 const AUTH_CACHE_MAX = 500;
 const _userCache = new Map();     // token → { user (raw), exp }
 const _operatorCache = new Map(); // operatorId → { operador, exp }

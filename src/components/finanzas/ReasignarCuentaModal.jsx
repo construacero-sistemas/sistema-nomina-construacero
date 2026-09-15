@@ -1,166 +1,56 @@
-// src/components/finanzas/ReasignarCuentaModal.jsx
-// Acción masiva: asigna los movimientos "sin cuenta asignada" a una cuenta de
-// custodia concreta. Solo lista movimientos activos sin cuenta_origen válida.
-import { useMemo, useState } from 'react'
-import { CheckCircle2, Inbox } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
-import { asignarMovimientoACuenta } from '../../utils/carterasHelper.js'
+import { historicalUsd } from '../../utils/financialValuation.js'
+const fmt = n => n == null ? 'Sin confirmar' : Number(n).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-function money(mov) {
-  const esVes = (mov.moneda || '').toUpperCase() === 'VES'
-  const valor = Number(esVes ? mov.monto_ves : mov.monto) || 0
-  return `${esVes ? 'Bs. ' : '$'}${valor.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function dateLabel(iso) {
-  if (!iso) return ''
-  const d = new Date(`${String(iso).slice(0, 10)}T12:00:00`)
-  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })
-}
-
-export default function ReasignarCuentaModal({
-  open,
-  onClose,
-  movimientos = [],
-  cuentas = [],
-  onConfirm,
-  confirmando = false,
-}) {
+export default function ReasignarCuentaModal({ open, onClose, movimientos = [], cuentas = [], onConfirm, confirmando = false }) {
   const [cuentaId, setCuentaId] = useState('')
   const [seleccion, setSeleccion] = useState(() => new Set())
-
-  // Movimientos activos SIN cuenta de custodia explícita (misma lógica que los saldos).
-  const sinCuenta = useMemo(
-    () => movimientos.filter(mov => mov.estado !== 'anulado' && !asignarMovimientoACuenta(mov, cuentas)),
-    [movimientos, cuentas],
-  )
-
-  const cuentaDestino = cuentas.find(c => c.id === cuentaId) || null
-  const puedeConfirmar = cuentaId && seleccion.size > 0 && !confirmando
-
-  const toggle = id => {
-    setSeleccion(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  const [pagina, setPagina] = useState(1)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const lock = useRef(false)
+  const busy = confirmando || saving
+  const cuenta = cuentas.find(c => c.id === cuentaId && c.activo !== false)
+  const sinCuenta = useMemo(() => movimientos.filter(m => m.estado !== 'anulado' && !m.cuenta_custodia_id && !m.cuentaCustodiaId && !m.operacion_id), [movimientos])
+  const rows = cuenta ? sinCuenta.filter(m => m.moneda === cuenta.moneda) : sinCuenta
+  const pages = Math.max(1, Math.ceil(rows.length / 10)), page = Math.min(pagina, pages)
+  const selected = rows.filter(m => seleccion.has(m.id) && !(m.partes?.length))
+  async function confirmar() {
+    if (busy || lock.current || !cuenta || !selected.length || selected.length > 100) return
+    lock.current = true; setSaving(true); setError('')
+    try {
+      const result = await onConfirm({ ids: selected.map(m => m.id), cuentaCustodiaId: cuenta.id })
+      if (result?.ok !== true) throw new Error('La asignaci\u00f3n no pudo confirmarse.')
+      setSeleccion(new Set()); setCuentaId(''); onClose()
+    } catch (cause) { setError(cause.message || 'No se confirm\u00f3 la asignaci\u00f3n. Conserva la selecci\u00f3n y reintenta.') }
+    finally { lock.current = false; setSaving(false) }
   }
-
-  const confirmar = () => {
-    if (!puedeConfirmar) return
-    onConfirm({ ids: [...seleccion], cuentaOrigen: cuentaDestino.nombre })
-    setSeleccion(new Set())
-    setCuentaId('')
-    onClose()
-  }
-
-  return (
-    <Modal isOpen={open} onClose={onClose} title="Asignar cuenta a movimientos" className="sm:max-w-md">
-      {sinCuenta.length === 0 ? (
-        <div className="text-center py-8 space-y-2">
-          <CheckCircle2 size={36} className="mx-auto text-emerald-500" />
-          <p className="text-sm font-bold text-slate-700">Todo clasificado</p>
-          <p className="text-xs text-slate-500">
-            No hay movimientos pendientes de asignar a una cuenta de custodia.
-          </p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="mt-3 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors"
-          >
-            Cerrar
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <p className="text-xs text-slate-500">
-            {sinCuenta.length} movimiento(s) viven en su subcuenta lógica pero no están
-            asignados a una cuenta de custodia concreta. Selecciónalos y asígnalos.
-          </p>
-
-          {/* Destino */}
-          <div>
-            <span className="block text-[11px] font-bold text-slate-600 mb-1.5" id="cuenta-destino-label">
-              Cuenta de destino
-            </span>
-            <CustomSelect
-              value={cuentaId}
-              onChange={setCuentaId}
-              placeholder="Selecciona una cuenta…"
-              options={cuentas.map(c => ({ value: c.id, label: c.nombre, sub: c.banco || undefined }))}
-            />
-          </div>
-
-          {/* Lista de movimientos sin cuenta */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
-                <Inbox size={12} /> Movimientos sin cuenta
-              </span>
-              <button
-                type="button"
-                onClick={() => setSeleccion(new Set(sinCuenta.map(m => m.id)))}
-                className="text-[11px] font-bold text-primary hover:underline"
-              >
-                Seleccionar todos
-              </button>
-            </div>
-            <ul className="max-h-56 overflow-y-auto custom-scrollbar divide-y divide-slate-100 rounded-xl border border-slate-100">
-              {sinCuenta.map(mov => {
-                const checked = seleccion.has(mov.id)
-                return (
-                  <li key={mov.id}>
-                    <label
-                      className={`flex items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors ${checked ? 'bg-primary/5' : 'hover:bg-slate-50'}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggle(mov.id)}
-                        className="w-4 h-4 accent-[var(--color-primary,oklch(0.55_0.15_250))]"
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-xs font-bold text-slate-800 truncate">{mov.concepto || mov.categoria}</span>
-                        <span className="block text-[10px] text-slate-400">
-                          {dateLabel(mov.fecha)} · {mov.categoria}
-                        </span>
-                      </span>
-                      <span className={`text-xs font-black shrink-0 ${(mov.tipo === 'ingreso') ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {mov.tipo === 'ingreso' ? '+' : '−'}{money(mov)}
-                      </span>
-                    </label>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <span className="text-[11px] text-slate-400 font-bold">
-              {seleccion.size} seleccionado(s)
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={confirmar}
-                disabled={!puedeConfirmar}
-                className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold shadow-xs transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {confirmando ? 'Asignando…' : 'Asignar cuenta'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </Modal>
-  )
+  const footer = <>
+    <button type="button" disabled={busy} onClick={onClose} className="min-h-11 px-4 py-2 border border-slate-300 rounded-xl">Cancelar</button>
+    <button type="button" onClick={confirmar} disabled={busy || !cuenta || !selected.length || selected.length > 100} className="min-h-11 px-4 py-2 rounded-xl bg-primary text-white font-bold disabled:opacity-50">{busy ? 'Asignando...' : 'Asignar cuenta'}</button>
+  </>
+  return <Modal isOpen={open} onClose={onClose} busy={busy} title="Asignar cuenta a movimientos" className="sm:max-w-lg" footer={footer}>
+    <div className="space-y-4">
+      {error && <p role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm">{error}</p>}
+      <p className="text-sm text-slate-700">{sinCuenta.length ? `${sinCuenta.length} registros cargados sin cuenta de custodia confirmada.` : 'Todo clasificado en los registros cargados.'} Puede haber otros registros fuera de esta página o de los filtros activos.</p>
+      <p className="text-xs text-slate-600">Selecciona una cuenta real y revisa cada partida. No se modifican importes ni tasas; el nombre histórico por sí solo no confirma la asignación.</p>
+      <div><span id="asignar-cuenta-label" className="block text-sm font-bold mb-1">Cuenta de destino</span>
+        <CustomSelect aria-labelledby="asignar-cuenta-label" value={cuentaId} onChange={id => { setCuentaId(id); setSeleccion(new Set()); setPagina(1) }} disabled={busy}
+          placeholder="Selecciona una cuenta..." options={cuentas.filter(c => c.activo !== false).map(c => ({ value: c.id, label: c.nombre, sub: c.moneda }))} />
+      </div>
+      <div className="flex flex-wrap justify-between items-center gap-2"><span className="text-sm">{selected.length} seleccionado(s) / m\u00e1ximo 100</span>
+        <button type="button" disabled={!cuenta || busy || !rows.length} onClick={() => setSeleccion(new Set(rows.filter(m => !(m.partes?.length)).slice(0,100).map(m => m.id)))} className="min-h-11 px-3 py-2 border rounded-xl text-sm">Seleccionar hasta 100 compatibles</button></div>
+      <ul className="divide-y divide-slate-200 border border-slate-200 rounded-xl">
+        {rows.slice((page-1)*10,page*10).map(m => <li key={m.id}><label className="min-h-11 flex items-center gap-3 p-3 text-sm cursor-pointer">
+          <input type="checkbox" className="w-4 h-4" disabled={busy || !cuenta || !!m.partes?.length || (!seleccion.has(m.id) && selected.length >= 100)} checked={seleccion.has(m.id)} onChange={() => setSeleccion(old => { const next = new Set(old); if (next.has(m.id)) next.delete(m.id); else next.add(m.id); return next })} />
+          <span className="min-w-0 flex-1 break-words">{m.concepto || m.categoria}<span className="block text-xs text-slate-600">{m.fecha} · {m.cuenta_origen || 'Sin referencia de cuenta'}{m.partes?.length ? ' · Requiere conciliaci\u00f3n de partes' : ''}</span></span>
+          <span className="text-right text-xs"><strong className="block">{historicalUsd(m) == null ? 'USD pendiente' : `$${fmt(historicalUsd(m))} USD`}</strong>{fmt(m.monto)} {m.moneda}</span>
+        </label></li>)}
+      </ul>
+      {rows.length === 0 && cuenta && <p className="text-sm text-slate-600">No hay partidas cargadas compatibles con {cuenta.moneda}.</p>}
+      {pages > 1 && <nav aria-label="Paginaci\u00f3n de partidas" className="flex justify-between items-center gap-2 text-sm"><button type="button" disabled={page===1 || busy} onClick={() => setPagina(page-1)} className="min-h-11 px-3 py-2 border rounded-xl">Anterior</button><span>{page} de {pages}</span><button type="button" disabled={page===pages || busy} onClick={() => setPagina(page+1)} className="min-h-11 px-3 py-2 border rounded-xl">Siguiente</button></nav>}
+    </div>
+  </Modal>
 }

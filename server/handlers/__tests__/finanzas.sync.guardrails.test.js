@@ -214,7 +214,7 @@ describe('finanzas.sync — Guardarraíles y Red de Seguridad', () => {
         respond: (url, init) => {
           const body = JSON.parse(init.body)
           creados.push(body)
-          return [{ id: IDS.linea, ...body, estado: 'activo' }]
+          return [{ id: IDS.linea, ...body, monto_ves: body.monto * body.tasa_ves, tasa_registrada_en: '2026-08-30T12:00:00Z', estado: 'activo' }]
         },
       },
     ])

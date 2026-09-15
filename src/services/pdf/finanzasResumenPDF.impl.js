@@ -10,6 +10,7 @@ import {
   fmtUsd, fmtBs, drawWatermark, drawPremiumHeader, drawSimplifiedHeader,
 } from '../../../compat/services/pdf/pdfShared.js'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
+import { historicalUsd, historicalVes } from '../../utils/financialValuation.js'
 
 function fecha(f) {
   if (!f) return '—'
@@ -97,13 +98,10 @@ async function generarFinanzasResumenPDFImpl({
   tasaActiva = null,
   nombreTasa = '',
   action = 'download',
+  printWindow = null,
 }) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' })
   const logoData = await cargarLogo(config.logo_url)
-
-  const tasaEfectiva = Number(tasaActiva) > 0
-    ? Number(tasaActiva)
-    : (Number(resumen.tasaActiva) > 0 ? Number(resumen.tasaActiva) : 0)
 
   const titulo = resumen.tipoFiltro === 'ingreso'
     ? 'Reporte de Ingresos'
@@ -112,9 +110,7 @@ async function generarFinanzasResumenPDFImpl({
       : 'Reporte de Ingresos y Egresos'
 
   const subtituloRango = `${fecha(rango.desde)} – ${fecha(rango.hasta)}`
-  const subtituloConTasa = tasaEfectiva > 0
-    ? `${subtituloRango}  ·  Tasa Activa: ${tasaEfectiva.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs/$ ${nombreTasa ? `(${nombreTasa})` : ''}`.trim()
-    : subtituloRango
+  const subtituloConTasa = `${subtituloRango} · Tasas históricas guardadas; traspasos internos fuera de totales operativos`
 
   // Sobrescribir addPage para incluir watermark y cabecera clara simplificada
   const originalAddPage = doc.addPage.bind(doc)
@@ -141,32 +137,13 @@ async function generarFinanzasResumenPDFImpl({
 
   drawWatermark(doc)
 
-  const nMovs = movimientos.length
-  const ingresos = nMovs ? movimientos.filter(m => m.tipo === 'ingreso' && m.estado !== 'anulado') : []
-  const egresos = nMovs ? movimientos.filter(m => m.tipo === 'egreso' && m.estado !== 'anulado') : []
-
-  // Conversiones monetarias exactas a la tasa activa seleccionada
-  const getTasaConversion = (m) => {
-    if (tasaEfectiva > 0) return tasaEfectiva
-    const tUsd = Number(m.tasa_usd_ves)
-    if (tUsd > 1) return tUsd
-    const tVes = Number(m.tasa_ves)
-    if (tVes > 1) return tVes
-    return 1
-  }
-
-  const calcMontoUsd = (m) => {
-    const monto = Number(m.monto) || 0
-    if (m.moneda === 'USD' || m.moneda === 'USDT') return monto
-    const tasa = getTasaConversion(m)
-    return tasa > 0 ? monto / tasa : monto
-  }
-
-  const calcMontoVes = (m) => {
-    const monto = Number(m.monto) || 0
-    if (m.moneda === 'VES') return Number(m.monto_ves) || monto
-    const tasa = getTasaConversion(m)
-    return monto * tasa
+  const operativos = movimientos.filter(m => m.estado !== 'anulado' && m.origen_operacion !== 'traspaso')
+  const ingresos = operativos.filter(m => m.tipo === 'ingreso')
+  const egresos = operativos.filter(m => m.tipo === 'egreso')
+  const calcMontoUsd = historicalUsd
+  const calcMontoVes = historicalVes
+  if (operativos.some(m => calcMontoUsd(m) == null || calcMontoVes(m) == null)) {
+    throw new Error('Faltan tasas históricas para completar el reporte. No se emitió un PDF con totales parciales.')
   }
 
   const totalIngresosUsd = ingresos.reduce((sum, m) => sum + calcMontoUsd(m), 0)
@@ -204,7 +181,7 @@ async function generarFinanzasResumenPDFImpl({
     const cat = categoriasMap.get(catNombre)
     cat.movimientos.push(m)
 
-    if (m.estado !== 'anulado') {
+    if (m.estado !== 'anulado' && m.origen_operacion !== 'traspaso') {
       cat.activosCount++
       const mUsd = calcMontoUsd(m)
       const mVes = calcMontoVes(m)
@@ -216,7 +193,7 @@ async function generarFinanzasResumenPDFImpl({
         cat.totalEgresosUsd += mUsd
         cat.totalEgresosVes += mVes
       }
-    } else {
+    } else if (m.estado === 'anulado') {
       cat.anuladosCount++
     }
   })
@@ -432,8 +409,8 @@ async function generarFinanzasResumenPDFImpl({
       doc.setFont('helvetica', 'normal')
       doc.setTextColor(...C_GRAY)
       const contravalorTexto = m.moneda === 'VES'
-        ? fmtUsd(mUsd)
-        : fmtBs(mVes)
+        ? (mUsd == null ? 'Sin tasa' : fmtUsd(mUsd))
+        : (mVes == null ? 'Sin tasa' : fmtBs(mVes))
       doc.text(contravalorTexto, cols[5].x + cols[5].w - 2, y + 3, { align: 'right' })
 
       // Tachado si anulado
@@ -504,8 +481,17 @@ async function generarFinanzasResumenPDFImpl({
   const sufijoTipo = resumen.tipoFiltro === 'ingreso' ? '-ingresos' : resumen.tipoFiltro === 'egreso' ? '-egresos' : ''
   const nombreArch = `finanzas-${safeDesde}_${safeHasta}${sufijoTipo}.pdf`
   if (action === 'print') {
+    if (!printWindow || printWindow.closed) throw new Error('La ventana de impresión no está disponible. Descarga el PDF para imprimirlo.')
     doc.autoPrint()
-    window.open(doc.output('bloburl'), '_blank')
+    const url = URL.createObjectURL(doc.output('blob'))
+    try {
+      printWindow.location.replace(url)
+      // Dar tiempo al visor para consumir el blob, sin acumular URLs por sesión.
+      setTimeout(() => URL.revokeObjectURL(url), 120000)
+    } catch (error) {
+      URL.revokeObjectURL(url)
+      throw error
+    }
   } else {
     doc.save(nombreArch)
   }

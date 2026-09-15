@@ -69,11 +69,16 @@ export function ToastProvider({ children }) {
   }, [])
 
   useEffect(() => setToastListener(addToast), [addToast])
+  useEffect(() => {
+    const timers = timersRef.current
+    return () => { timers.forEach(clearTimeout); timers.clear() }
+  }, [])
 
   return (
     <>
       {children}
       <div
+        data-overlay-live
         className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 w-[90vw] max-w-sm pointer-events-none"
         role="status"
         aria-live="polite"

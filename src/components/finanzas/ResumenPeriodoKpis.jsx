@@ -1,189 +1,27 @@
-// src/components/finanzas/ResumenPeriodoKpis.jsx
-// Tarjetas KPI del resumen financiero con selector de moneda en 1 toque y desglose triple de tesorería (USD, USDT y Bs).
 import { BarChart3, Landmark, Wallet } from 'lucide-react'
-
 import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
-import { formatNumber, formatUsd } from './formatos.js'
+import { formatNumber } from './formatos.js'
 
-const OPCIONES_MONEDA = [
-  { id: '', label: 'Todas (Consolidado)' },
-  { id: 'USD', label: 'USD' },
-  { id: 'VES', label: 'Bolívares (VES)' },
-  { id: 'USDT', label: 'USDT' },
-]
-
-function formatSigned(num, prefix = '', suffix = '') {
-  const n = Number(num || 0)
-  const abs = formatNumber(Math.abs(n))
-  if (n < 0) return `-${prefix}${abs}${suffix}`
-  return `${prefix}${abs}${suffix}`
-}
-
-function DesgloseTriple({ usd = 0, usdt = 0, ves = 0, totalUsdEstimado = 0, tasaActiva = 0 }) {
-  const usdNum = Number(usd || 0)
-  const usdtNum = Number(usdt || 0)
-  const vesNum = Number(ves || 0)
-  const tasaNum = Number(tasaActiva || 0)
-
-  // Si hay tasa activa en la cabecera (USDT, BCV o Manual), convertir los Bolívares usando esa tasa activa
-  const vesEnUsd = tasaNum > 0 ? (vesNum / tasaNum) : 0
-  const estimadoFinal = tasaNum > 0 ? (usdNum + usdtNum + vesEnUsd) : Number(totalUsdEstimado || 0)
-
-  return (
-    <div className="space-y-1.5 pt-1">
-      {/* Fila Dólares ($) */}
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-slate-500 font-bold flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
-          <span>Dólares ($):</span>
-        </span>
-        <span className="font-black text-slate-900">{formatSigned(usd, '$')}</span>
-      </div>
-
-      {/* Fila USDT */}
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-slate-500 font-bold flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
-          <span>USDT:</span>
-        </span>
-        <span className="font-black text-slate-900">{formatSigned(usdt, '', ' USDT')}</span>
-      </div>
-
-      {/* Fila Bolívares (Bs) */}
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-slate-500 font-bold flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" aria-hidden="true" />
-          <span>Bolívares (Bs):</span>
-        </span>
-        <span className="font-black text-slate-900">{formatSigned(ves, 'Bs. ')}</span>
-      </div>
-
-      {/* Pie Consolidado Estimado a la tasa activa */}
-      <div className="pt-2 mt-1 border-t border-slate-100 flex items-center justify-between text-[11px]">
-        <span className="text-slate-400 font-medium">Total estimado:</span>
-        <span className="font-black text-slate-700">{formatSigned(estimadoFinal, '$', ' USD')}</span>
-      </div>
+const monedas = [{ id: '', label: 'Todas (Consolidado)' }, { id: 'USD', label: 'USD' }, { id: 'VES', label: 'Bolívares (VES)' }, { id: 'USDT', label: 'USDT' }]
+const money = n => n == null || !Number.isFinite(Number(n)) ? 'Sin confirmar' : formatNumber(n)
+export default function ResumenPeriodoKpis({ summary, loading, moneda = '', onSelectMoneda }) {
+  const completos = summary && !summary.movimientos_sin_usd
+  return <section aria-label="Resumen financiero" className="space-y-3">
+    {onSelectMoneda && <div role="group" aria-label="Filtro de moneda para el resumen" className="flex flex-wrap gap-2 bg-slate-100 p-2 border border-slate-200 rounded-2xl">
+      {monedas.map(o => <button key={o.id} type="button" aria-pressed={o.id === moneda} onClick={() => onSelectMoneda(o.id)} className={`min-h-11 px-3 py-2 rounded-xl text-sm font-bold ${o.id === moneda ? 'bg-white text-slate-900 border border-slate-300' : 'text-slate-700'}`}>{o.label}</button>)}
+    </div>}
+    {!loading && !summary && <p className="p-3 border border-slate-200 rounded-xl text-slate-700 text-sm" role="status">Resumen sin confirmar. No se muestran importes en cero por un fallo de lectura.</p>}
+    {summary?.movimientos_sin_usd > 0 && <p role="status" className="p-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-sm">{summary.movimientos_sin_usd} movimiento(s) sin tasa histórica. El consolidado USD está pendiente de valoración.</p>}
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {[['ingresos', 'Ingresos del período', BarChart3, 'green'], ['egresos', 'Gastos del período', Wallet, 'red'], ['balance', 'Flujo neto del período', Landmark, 'blue']].map(([key, label, Icon, color]) => <KpiCard key={key} icon={Icon} label={label} color={color} loading={loading}>
+        <p className="text-lg font-black text-slate-900">{completos ? `$${money(summary[`${key}_usd`])} USD` : 'Consolidado pendiente'}</p>
+        <dl className="space-y-1 mt-2 text-sm text-slate-700">
+          <div className="flex flex-wrap justify-between gap-1"><dt>Dólares ($)</dt><dd className="font-bold">{money(summary?.[`${key}_usd_puro`])}</dd></div>
+          <div className="flex flex-wrap justify-between gap-1"><dt>USDT</dt><dd className="font-bold">{money(summary?.[`${key}_usdt_puro`])}</dd></div>
+          <div className="flex flex-wrap justify-between gap-1"><dt>Bolívares (Bs)</dt><dd className="font-bold">{money(summary?.[`${key}_ves_puro`])}</dd></div>
+        </dl>
+        <p className="text-xs text-slate-600 mt-2">Valoración con las tasas guardadas. Traspasos internos fuera del flujo operativo.</p>
+      </KpiCard>)}
     </div>
-  )
-}
-
-export default function ResumenPeriodoKpis({ summary, loading, moneda = '', onSelectMoneda, tasaActiva = 0 }) {
-  const esVes = moneda === 'VES'
-  const esUsdt = moneda === 'USDT'
-  const esUsd = moneda === 'USD'
-  const esTodas = !moneda
-  const tasaNum = Number(tasaActiva || 0)
-
-  // Configuración dinámica de etiquetas y valores según moneda activa
-  const formatVal = (valUsd, valVes) => {
-    if (esVes) return `Bs. ${formatNumber(valVes)}`
-    if (esUsdt) return `${formatNumber(valUsd)} USDT`
-    return formatUsd(valUsd)
-  }
-
-  const formatSub = (valUsd, valVes) => {
-    if (esVes) {
-      const equivUsd = tasaNum > 0 ? (Number(valVes) / tasaNum) : Number(valUsd)
-      return equivUsd > 0 ? `${formatUsd(equivUsd)} equiv.` : null
-    }
-    if (esUsd || esUsdt) {
-      const equivVes = tasaNum > 0 ? (Number(valUsd) * tasaNum) : Number(valVes)
-      return equivVes > 0 ? `Bs. ${formatNumber(equivVes)} equiv.` : null
-    }
-    return `Bs. ${formatNumber(valVes)}`
-  }
-
-  const sufijoLabel = esVes ? 'en Bolívares' : esUsd ? 'en Dólares' : esUsdt ? 'en USDT' : 'del período'
-  const balanceNum = esVes ? Number(summary?.balance_ves || 0) : Number(summary?.balance_usd || 0)
-
-  return (
-    <section aria-label="Resumen financiero" className="space-y-2.5">
-      {/* Selector de píldoras por moneda */}
-      {onSelectMoneda && (
-        <div
-          className="flex flex-wrap items-center gap-1 p-1 bg-slate-200/60 border border-slate-200 rounded-2xl"
-          role="group"
-          aria-label="Filtro de moneda para el resumen"
-        >
-          {OPCIONES_MONEDA.map(opt => {
-            const activo = moneda === opt.id
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => onSelectMoneda(opt.id)}
-                aria-pressed={activo}
-                className={`inline-flex items-center justify-center px-3 py-2 min-h-11 rounded-xl text-xs font-black transition-all cursor-pointer flex-1 sm:flex-none ${
-                  activo
-                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200/80'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                }`}
-                style={{ touchAction: 'manipulation' }}
-              >
-                {opt.label}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Tarjetas KPI adaptativas */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <KpiCard
-          icon={BarChart3}
-          label={`Ingresos ${sufijoLabel}`}
-          value={formatVal(summary?.ingresos_usd, summary?.ingresos_ves)}
-          sub={formatSub(summary?.ingresos_usd, summary?.ingresos_ves)}
-          color="green"
-          loading={loading}
-        >
-          {esTodas ? (
-            <DesgloseTriple
-              usd={summary?.ingresos_usd_puro}
-              usdt={summary?.ingresos_usdt_puro}
-              ves={summary?.ingresos_ves_puro}
-              totalUsdEstimado={summary?.ingresos_usd}
-              tasaActiva={tasaActiva}
-            />
-          ) : null}
-        </KpiCard>
-        <KpiCard
-          icon={Wallet}
-          label={`Gastos ${sufijoLabel}`}
-          value={formatVal(summary?.egresos_usd, summary?.egresos_ves)}
-          sub={formatSub(summary?.egresos_usd, summary?.egresos_ves)}
-          color="red"
-          loading={loading}
-        >
-          {esTodas ? (
-            <DesgloseTriple
-              usd={summary?.egresos_usd_puro}
-              usdt={summary?.egresos_usdt_puro}
-              ves={summary?.egresos_ves_puro}
-              totalUsdEstimado={summary?.egresos_usd}
-              tasaActiva={tasaActiva}
-            />
-          ) : null}
-        </KpiCard>
-        <KpiCard
-          icon={Landmark}
-          label={`Flujo neto ${sufijoLabel}`}
-          value={formatVal(summary?.balance_usd, summary?.balance_ves)}
-          sub={formatSub(summary?.balance_usd, summary?.balance_ves)}
-          color={balanceNum >= 0 ? 'blue' : 'red'}
-          loading={loading}
-        >
-          {esTodas ? (
-            <DesgloseTriple
-              usd={summary?.balance_usd_puro}
-              usdt={summary?.balance_usdt_puro}
-              ves={summary?.balance_ves_puro}
-              totalUsdEstimado={summary?.balance_usd}
-              tasaActiva={tasaActiva}
-            />
-          ) : null}
-        </KpiCard>
-      </div>
-    </section>
-  )
+  </section>
 }

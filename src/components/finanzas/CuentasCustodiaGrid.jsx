@@ -1,6 +1,6 @@
 // src/components/finanzas/CuentasCustodiaGrid.jsx
 // Cuadrícula visual unificada de cuentas bancarias, billeteras y cajas de custodia (con todas las funciones fusionadas)
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -29,7 +29,8 @@ import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 
 function formatMoney(amount) {
-  return Number(amount || 0).toLocaleString('es-VE', {
+  if (amount == null || !Number.isFinite(Number(amount))) return 'Sin confirmar'
+  return Number(amount).toLocaleString('es-VE', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
@@ -47,7 +48,7 @@ export default function CuentasCustodiaGrid({
   onVerDetalle,
   onTransferir,
   onRestaurar,
-  tasaBcv = 1,
+  tasaBcv = 0,
 }) {
   // Ocultas / Colapsadas por defecto según directiva del usuario
   const [expandido, setExpandido] = useState(false)
@@ -55,8 +56,18 @@ export default function CuentasCustodiaGrid({
   const [copiadoId, setCopiadoId] = useState(null)
   const [cuentaAEliminar, setCuentaAEliminar] = useState(null)
   const [descartePendiente, setDescartePendiente] = useState(null)
+  const [actionBusy, setActionBusy] = useState(false)
+  const [actionError, setActionError] = useState('')
+  const actionLock = useRef(false)
+  async function perform(action, after = () => {}) {
+    if (actionLock.current) return
+    actionLock.current = true; setActionBusy(true); setActionError('')
+    try { await action(); after() }
+    catch (cause) { setActionError(cause.message || 'No se pudo confirmar el cambio. Reintenta.') }
+    finally { actionLock.current = false; setActionBusy(false) }
+  }
 
-  const tasa = Number(tasaBcv) > 0 ? Number(tasaBcv) : 1
+  const tasa = Number(tasaBcv) > 0 ? Number(tasaBcv) : 0
 
   // Filtro por tipo/moneda de cuenta
   const cuentasFiltradas = useMemo(() => {
@@ -70,6 +81,7 @@ export default function CuentasCustodiaGrid({
   // Guarda de borrado seguro: no se puede eliminar una cuenta con fondos.
   const motivoBloqueo = (cuenta) => {
     if (!cuenta) return ''
+    if (!cuenta.saldoConfirmado) return 'Confirma y concilia el saldo de esta cuenta antes de eliminarla.'
     if (Number(cuenta.saldo) !== 0) {
       const simbolo = cuenta.moneda === 'VES' ? 'Bs. ' : '$'
       const saldoFormateado = formatMoney(cuenta.saldo)
@@ -78,7 +90,7 @@ export default function CuentasCustodiaGrid({
     return ''
   }
 
-  const bloqueoActual = motivoBloqueo(cuentaAEliminar)
+  const bloqueoActual = motivoBloqueo(cuentaAEliminar ? cuentas.find(c => c.id === cuentaAEliminar.id) || { ...cuentaAEliminar, saldoConfirmado: false } : null)
 
   const handleCopiar = (e, text, id) => {
     e.stopPropagation()
@@ -90,6 +102,7 @@ export default function CuentasCustodiaGrid({
 
   return (
     <div className="space-y-3 bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 transition-all">
+      {actionError && !cuentaAEliminar && !descartePendiente && <p role="alert" className="text-sm text-rose-800">{actionError}</p>}
       {/* Barra de Encabezado y Toggle de Detalle */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -209,7 +222,7 @@ export default function CuentasCustodiaGrid({
               {onRestaurar && (
                 <button
                   type="button"
-                  onClick={onRestaurar}
+                  disabled={actionBusy} onClick={() => perform(onRestaurar)}
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 min-h-11 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-100 active:scale-95 transition-all cursor-pointer"
                   style={{ touchAction: 'manipulation' }}
                 >
@@ -247,7 +260,7 @@ export default function CuentasCustodiaGrid({
                 <span className="max-w-[180px] truncate font-semibold text-slate-600">{capitalizarPalabras(cuenta.nombre)}</span>
                 <button
                   type="button"
-                  onClick={() => onRestaurarEliminada?.(cuenta.id)}
+                  disabled={actionBusy} onClick={() => perform(() => onRestaurarEliminada?.(cuenta.id))}
                   className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
                   aria-label={`Restaurar ${cuenta.nombre}`}
                 >
@@ -279,9 +292,10 @@ export default function CuentasCustodiaGrid({
             const esZelle = cuenta.tipo === 'zelle'
 
             // Cálculo del contravalor equivalente en la otra divisa
-            const contravalor = esVes
-              ? (Number(cuenta.saldo || 0) / tasa)
-              : (Number(cuenta.saldo || 0) * tasa)
+            const confirmado = cuenta.saldoConfirmado === true && cuenta.saldo != null && Number.isFinite(Number(cuenta.saldo))
+            const valorUsd = confirmado && cuenta.moneda === 'USD' ? Number(cuenta.saldo)
+              : confirmado && cuenta.valoracionCompleta && cuenta.valorUsd != null ? Number(cuenta.valorUsd) : null
+            const contravalor = confirmado && esVes && tasa > 0 ? Number(cuenta.saldo) / tasa : null
 
             return (
               <div
@@ -334,29 +348,13 @@ export default function CuentasCustodiaGrid({
 
                   {/* Saldo de la Cuenta y Contravalor Equivalente */}
                   <div className="py-2 px-3 rounded-xl bg-slate-50 border border-slate-100 mb-2">
-                    <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
-                      Saldo Disponible
-                    </span>
-                    <div className="flex items-baseline justify-between gap-1">
-                      <span className="text-lg font-black text-slate-900 block truncate">
-                        {esVes ? 'Bs. ' : '$'}{formatMoney(cuenta.saldo)}{' '}
-                        <span className="text-[10px] font-bold text-slate-400">{cuenta.moneda}</span>
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-semibold shrink-0" title={`Equivalente a tasa oficial de ${formatMoney(tasa)} Bs/$`}>
-                        ≈ {esVes ? `$${formatMoney(contravalor)} USD` : `Bs. ${formatMoney(contravalor)}`}
-                      </span>
-                    </div>
+                    <span className="text-xs font-bold text-slate-600 block">{confirmado && cuenta.disponible ? 'Saldo confirmado disponible' : 'Saldo sin confirmar o pendiente de conciliación'}</span>
+                    <strong className="text-lg font-black text-slate-900 block break-words">{valorUsd == null ? 'Valoración USD pendiente' : `$${formatMoney(valorUsd)} USD`}</strong>
+                    <p className="text-sm text-slate-700">Nativo: {confirmado ? `${formatMoney(cuenta.saldo)} ${cuenta.moneda}` : 'Sin confirmar'}</p>
+                    {contravalor != null && <p className="text-xs text-slate-600">Referencia de consulta: ${formatMoney(contravalor)} USD a {formatMoney(tasa)} Bs/USD.</p>}
                   </div>
 
-                  {/* Flujo acumulado: Entradas y Salidas de esta cuenta específica */}
-                  <div className="flex items-center justify-between text-[10px] font-bold px-1 mb-2">
-                    <span className="text-emerald-700 flex items-center gap-0.5">
-                      <ArrowDownRight size={11} /> Entradas: {esVes ? 'Bs. ' : '$'}{formatMoney(cuenta.entradas)}
-                    </span>
-                    <span className="text-rose-700 flex items-center gap-0.5">
-                      <ArrowUpRight size={11} /> Salidas: {esVes ? 'Bs. ' : '$'}{formatMoney(cuenta.salidas)}
-                    </span>
-                  </div>
+                  <p className="text-xs text-slate-600 px-1 mb-2">Saldo del libro completo, independiente del filtro del historial. Tasas registradas por movimiento.</p>
 
                   {/* Datos de Cuenta / Billetera (si existen) con botón de copiado */}
                   {cuenta.numeroCuenta && (
@@ -401,7 +399,8 @@ export default function CuentasCustodiaGrid({
                         e.stopPropagation()
                         onTransferir?.(cuenta)
                       }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 min-h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-700 transition-all cursor-pointer active:scale-95"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 min-h-11 rounded-lg bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-700 transition-all cursor-pointer active:scale-95"
+                      disabled={!cuenta.saldoConfirmado || !cuenta.disponible}
                       title="Mover fondos desde esta cuenta"
                     >
                       <ArrowRightLeft size={11} className="text-primary" />
@@ -456,8 +455,9 @@ export default function CuentasCustodiaGrid({
         isOpen={Boolean(cuentaAEliminar)}
         onClose={() => setCuentaAEliminar(null)}
         title={bloqueoActual ? 'No se puede eliminar la cuenta' : '¿Eliminar cuenta de custodia?'}
-        className="sm:max-w-md"
+        className="sm:max-w-md" busy={actionBusy}
       >
+        {actionError && <p role="alert" className="mb-3 text-sm text-rose-800">{actionError}</p>}
         <div className="flex items-start gap-3">
           <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
             bloqueoActual ? 'bg-slate-100' : 'bg-rose-100'
@@ -486,7 +486,7 @@ export default function CuentasCustodiaGrid({
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
-            onClick={() => setCuentaAEliminar(null)}
+            disabled={actionBusy} onClick={() => { if (!actionBusy) setCuentaAEliminar(null) }}
             className="h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
           >
             {bloqueoActual ? 'Entendido' : 'Cancelar'}
@@ -494,10 +494,8 @@ export default function CuentasCustodiaGrid({
           {!bloqueoActual && (
             <button
               type="button"
-              onClick={() => {
-                onEliminarCuenta?.(cuentaAEliminar.id)
-                setCuentaAEliminar(null)
-              }}
+              disabled={actionBusy}
+              onClick={() => perform(() => onEliminarCuenta?.(cuentaAEliminar.id), () => setCuentaAEliminar(null))}
               className="h-11 px-4 rounded-xl bg-rose-600 text-sm font-black text-white hover:bg-rose-500 active:scale-95 transition-all shadow-md inline-flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Trash2 size={14} />
@@ -512,8 +510,9 @@ export default function CuentasCustodiaGrid({
         isOpen={Boolean(descartePendiente)}
         onClose={() => setDescartePendiente(null)}
         title={descartePendiente?.todos ? '¿Vaciar papelera de cuentas?' : '¿Descartar cuenta definitivamente?'}
-        className="sm:max-w-md"
+        className="sm:max-w-md" busy={actionBusy}
       >
+        {actionError && <p role="alert" className="mb-3 text-sm text-rose-800">{actionError}</p>}
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
             <Trash2 size={18} />
@@ -536,21 +535,15 @@ export default function CuentasCustodiaGrid({
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
-            onClick={() => setDescartePendiente(null)}
+            disabled={actionBusy} onClick={() => { if (!actionBusy) setDescartePendiente(null) }}
             className="h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
           >
             Cancelar
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (descartePendiente?.todos) {
-                onVaciarPapelera?.()
-              } else if (descartePendiente?.id) {
-                onDescartarEliminada?.(descartePendiente.id)
-              }
-              setDescartePendiente(null)
-            }}
+            disabled={actionBusy}
+            onClick={() => perform(() => descartePendiente?.todos ? onVaciarPapelera?.() : onDescartarEliminada?.(descartePendiente?.id), () => setDescartePendiente(null))}
             className="h-11 px-4 rounded-xl bg-rose-600 text-sm font-black text-white hover:bg-rose-500 active:scale-95 transition-all shadow-md inline-flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Trash2 size={14} />
