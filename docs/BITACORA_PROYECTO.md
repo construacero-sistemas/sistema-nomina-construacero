@@ -3410,6 +3410,27 @@ En dispositivos móviles, la cuadrilla semanal intentaba encajar 7 días en 360p
 - `npm run build`: Compilación Vite client exitosa.
 - `npm run lint`: 0 errores.
 
+## 116. Aplicación de migraciones 237–240 a Supabase y verificación end-to-end
+
+**Fecha:** 15/09/2026
+**Objetivo:** aplicar al proyecto remoto (`wlxcclidnwketrghqaxs`) las migraciones del núcleo financiero atómico validadas localmente (237 RPC service-only, 238 operaciones atómicas, 239 lecturas consistentes, 240 asignación segura de custodia) y verificar que la API funciona contra ellas.
+
+**Aplicación:**
+- Conexión directa vía `db.<ref>.supabase.co:5432` (usuario `postgres`); el pooler del proyecto no resuelve el tenant. Cada archivo se envió como sentencia única (trae BEGIN/COMMIT propio) y se registró en `supabase_migrations.schema_migrations` con versiones `20260913000000`–`20260913000003`.
+- Postgres 17.6. Precondiciones verificadas antes de aplicar: columnas base presentes, ninguna tabla/función de 237–240 existía previamente (excepto `finanzas_resumen`, reemplazada por 239 como está previsto).
+
+**Verificación post-aplicación (todo contra el remoto):**
+- Tablas nuevas: `finanzas_operaciones`, `finanzas_nomina_asignaciones`, `finanzas_libro_version`, `finanzas_operacion_contexto`. Columnas nuevas en `finanzas_movimientos`: `tasa_registrada_en`, `cuenta_custodia_id`, `operacion_id`.
+- Triggers activos: `*_lock_statement` y `*_operation_guard` en `finanzas_movimientos`, `nomina_lineas`, `nomina_periodos`, `cuentas_custodia`.
+- Grants: las 7 RPC (`finanzas_operar`, `finanzas_saldos`, `finanzas_operacion_estado`, `finanzas_movimientos_pagina`, `finanzas_resumen`, `finanzas_resumen_consistente`, `finanzas_asignar_custodia`) quedan EXECUTE solo a `service_role`; `anon` recibe 401 (hallazgo SEC-DB-01 cerrado).
+- Pruebas vía la misma ruta REST `/rpc` que usa el backend: `finanzas_saldos` devuelve contrato completo (schemaVersion 1, 5 cuentas, noAsignados, `conciliacionPendiente: true`); `finanzas_resumen` 5 filas; `finanzas_resumen_consistente` con `versionLibro`; `finanzas_movimientos_pagina` pagina (`total=14, siguiente=5`) y con `p_version` inválida devuelve 409 como fue diseñado.
+- Flujo de escritura existente intacto: INSERT estilo worker (con `fuente_tasa`/`idempotency_key`) devuelve 201, el guard bump-erea `versionLibro` (0→2 tras insert+delete de prueba, fila de prueba eliminada) y el guard de moneda rechaza con 400 `Custody currency mismatch` un INSERT con moneda que no coincide con la custodia.
+
+**Notas operativas:**
+- `service_role` no tiene SELECT directo sobre las tablas nuevas (por diseño de 238: solo EXECUTE de las RPC); el backend no lo necesita.
+- Los traspasos/atómicos exigen libro conciliado: hoy el tenant reporta `conciliacionPendiente: true` (3 movimientos sin cuenta y pagos históricos sin asignación). Aplicar la reasignación de la UI antes de usar traspasos atómicos.
+- Scripts temporales de aplicación/inspección eliminados tras su uso. Sin commit pendiente de este paso salvo esta bitácora.
+
 
 
 
