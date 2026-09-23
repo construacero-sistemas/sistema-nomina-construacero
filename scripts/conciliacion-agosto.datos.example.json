@@ -1,0 +1,16 @@
+{
+  "cuentas": {
+    "cajabs": "<UUID-de-Caja-Efectivo-Bs>",
+    "usdt": "<UUID-de-cuenta-USDT>",
+    "cash": "<UUID-de-Caja-Efectivo-USD>"
+  },
+  "patas": [
+    { "id": "<UUID-pata-original-1>", "cuenta": "cajabs", "fila": { "fecha": "2026-08-30", "tipo": "egreso", "categoria": "Transferencia entre carteras", "concepto": "Traspaso a USDT ($)", "monto": 0, "moneda": "VES", "tasaVes": 1, "tasaUsdVes": 0, "fuenteTasa": "BCV", "referencia": "Efectivo Bs", "observaciones": "Traspaso interno entre carteras" } },
+    { "id": "<UUID-pata-original-2>", "cuenta": "usdt", "fila": { "fecha": "2026-08-30", "tipo": "ingreso", "categoria": "Transferencia entre carteras", "concepto": "Traspaso recibido desde Efectivo Bs (Bs.)", "monto": 0, "moneda": "USDT", "tasaVes": 0, "tasaUsdVes": 1, "fuenteTasa": "USDT", "referencia": "USDT", "observaciones": "Traspaso interno entre carteras" } }
+  ],
+  "correccionUsdt": [],
+  "pos": [
+    { "id": "<UUID-venta-POS-a-anular>", "concepto": "Ventas POS ... - 2026-08-29" }
+  ],
+  "motivoPos": "<motivo de anulación de las ventas POS>"
+}

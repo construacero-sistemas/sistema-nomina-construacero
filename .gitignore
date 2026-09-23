@@ -26,3 +26,6 @@ scripts/restaurar_conversaciones.py
 # Evidencias de auditoria/QA generadas localmente (informes HTML, capturas, ZIP)
 outputs/
 backups/
+
+# Datos operativos reales de scripts operativos (nunca en el repo)
+scripts/conciliacion-agosto.datos.json
