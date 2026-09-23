@@ -14,6 +14,10 @@ WHERE moneda IN ('USD', 'USDT') AND tasa_usd_ves IS NULL;
 
 -- 2. Función finanzas_resumen con soporte nativo de USDT (1:1 con USD)
 -- y fallback en VES para nunca descartar ingresos con $0.00
+-- DROP previo: CREATE OR REPLACE no puede cambiar el tipo de retorno si la
+-- función ya existe con otra firma (p.ej. estados intermedios aplicados a mano).
+DROP FUNCTION IF EXISTS public.finanzas_resumen(UUID, DATE, DATE, TEXT, TEXT, TEXT);
+
 CREATE OR REPLACE FUNCTION public.finanzas_resumen(
   p_cuenta_id UUID,
   p_desde DATE,

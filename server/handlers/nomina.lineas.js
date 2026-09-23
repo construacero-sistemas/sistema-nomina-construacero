@@ -32,7 +32,8 @@ export async function handleGetLineas(request, env) {
       'dias_trabajados,horas_normales,horas_extra,dias_sabado,dias_feriado,dias_ausencia,' +
       'monto_normal_usd,monto_extra_usd,monto_sabado_usd,monto_feriado_usd,bonos_usd,' +
       'deducciones_usd,comisiones_pos_usd,comisiones_despachos_ids,total_bruto_usd,total_neto_usd,nota_bonos,nota_deducciones,pagado,' +
-      'pagado_en,pagado_por_nombre,referencia_pago,empleado:clientes!empleado_id(id,nombre,rif)' +
+      'pagado_en,pagado_por_nombre,referencia_pago,tasa_pago_usd_ves,total_pagado_bs,' +
+      'empleado:clientes!empleado_id(id,nombre,rif)' +
       '&order=empleado(nombre).asc&limit=500',
     { headers },
   )

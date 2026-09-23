@@ -4,7 +4,7 @@
 import { json, jsonError, isValidUuid } from '../lib/utils.js'
 import { validateOperator, supaServiceHeaders } from '../lib/auth.js'
 import { registrarAuditoria } from '../lib/audit.js'
-import { requireAdmin } from '../lib/permissions.js'
+import { requireCapacidad } from '../lib/permissions.js'
 import { DEFAULT_CATEGORIES, normalizeCategory } from '../lib/finanzasUtils.js'
 
 function serviceHeaders(env, prefer = 'return=representation') {
@@ -15,10 +15,13 @@ function accountFilter(accountId) {
   return `cuenta_id=eq.${encodeURIComponent(accountId)}`
 }
 
+// Gestionar categorías/motivos es parte de OPERAR el libro (registrar
+// ingresos/egresos exige elegir motivo): rol finanzas y jefe/admin pueden.
+// El rol nomina no toca finanzas.
 function adminContext(request, env) {
   return validateOperator(request, env).then(result => {
     if (result.error) return result
-    const denied = requireAdmin(result.operador, request)
+    const denied = requireCapacidad(result.operador, 'operarFinanzas', request)
     if (denied) return { error: denied }
     if (!isValidUuid(result.operador.cuenta_id)) {
       return { error: jsonError('Cuenta inválida', 403, request) }

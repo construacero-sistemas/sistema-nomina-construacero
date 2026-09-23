@@ -20,7 +20,7 @@ const transfer = {
   tasaCambio: '120', tasaUsdVes: '120', fecha: '2026-09-12', observaciones: 'Approved transfer rate',
 }
 const env = { SUPABASE_URL: 'https://database.invalid', SUPABASE_SERVICE_KEY: 'test-service-key' }
-const actor = { cuenta_id: tenant, id, rol: 'administracion' }
+const actor = { cuenta_id: tenant, id, rol: 'jefe' }
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 

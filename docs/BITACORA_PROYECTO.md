@@ -6,6 +6,175 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Continuación de release roles/PIN: fixtures y verificación local — 22/09/2026
+
+**Objetivo:** continuar el roadmap sin usar producción como staging y resolver el primer gate local del snapshot compartido.
+
+**Hallazgo:** la primera ejecución de `npm run verify` pasó los guardarraíles, 22 pruebas QA, 34 responsivas y lint, pero `test:deterministic` falló en 20 de 27 casos de Nómina porque ambos arneses simulaban el rol ya retirado `administracion`, que la matriz ahora niega correctamente.
+
+**Cambio acotado:** `scripts/test-nomina-deterministic.mjs` y `scripts/test-finanzas-deterministic.mjs` ahora usan `jefe` en los JWT sintéticos y filas de usuario. No se relajó ninguna autorización ni se tocaron servicios externos.
+
+**Verificación del mismo snapshot:** `npm run verify` terminó con código 0: guardrail OK (39 migraciones, 338 archivos), QA 22/22, responsividad 34/34, lint OK, deterministas Nómina 27/27 y Finanzas 127/127, Vitest 90 suites con 999 aprobadas y 1 todo preexistente, `test:db` 32 comprobaciones/80 superficies capacidad × rol con 0 excesos/0 brechas, build OK y bundle-size PASS (202,2 KiB gzip JS inicial; 218,4 KiB con CSS).
+
+**Límites:** esta evidencia es local/sintética. No certifica Supabase Auth, JWT/RLS remoto, Vercel Preview ni concurrencia real. No se creó staging, no se aplicaron migraciones, no se hizo commit/push/deploy.
+
+## Convergencia de `administracion` a `jefe` — 22/09/2026
+
+**Decisión:** no se hizo un simple cambio visual de etiqueta. El inventario mostró que `jefe` ya existe en producción, por lo que la solución segura es converger las filas históricas conservando identidad y credenciales.
+
+**Plan y guardarraíles:** `docs/PLAN_ELIMINAR_ADMINISTRACION.md` documenta el preflight, backup obligatorio, límite de dos jefes activos por cuenta, preservación de IDs/PINs/relaciones, rollback lógico acotado por IDs, matriz capacidad × rol, arnés PostgreSQL embebido y criterios de salida.
+
+**Implementación local:**
+- `supabase/migrations/245_converge_administracion_to_jefe.sql` convierte `usuarios.rol = 'administracion'` a `jefe` dentro de una transacción, aborta si una cuenta supera el cupo de dos jefes activos, registra `ROL_CONVERGENCIA_ADMINISTRACION_A_JEFE` sin secretos, actualiza el CHECK y elimina `administracion` del espejo SQL de capacidades.
+- `server/lib/permissions.js` deja `jefe` como único rol administrativo vigente; `ADMIN_ROLE` conserva el nombre de exportación por compatibilidad, pero vale `jefe`.
+- Worker, panel, picker, fixtures operativos y contratos deterministas ya no autorizan ni presentan `administracion`.
+- Las migraciones históricas y las pruebas del contrato histórico 222 conservan el literal únicamente para poder reproducir y verificar la evolución anterior.
+
+**Verificación local:** `npm run check:project` OK (39 migraciones, 338 archivos), lint OK, `npm run test:db` OK (32 comprobaciones; 80 superficies capacidad × rol; 0 privilegios de más; 0 brechas), y suites focalizadas 97/97. No se aplicó la migración a Supabase remoto.
+
+## Cambio de nombre de usuarios — 22/09/2026
+
+**Problema:** el panel de Usuarios y accesos permitía PIN, rol y activar/desactivar, pero no corregir el nombre de un usuario: los errores de tipeo quedaban fijos para siempre y un nombre del histórico no se podía liberar para reutilizarlo (la unicidad incluye desactivados).
+
+**Solución:**
+- `POST /api/gestion/operadores/nombre` (`handleCambiarNombreOperador`): misma compuerta `gestionarUsuarios` que el resto del panel; valida 3–60 caracteres con el mismo `validarNombre` que al crear, exige unicidad por cuenta incluyendo el histórico (case-insensitive, con salvaguarda `duplicate/unique` del índice), es idempotente si el nombre no cambia y audita `USUARIO_NOMBRE_CAMBIADO` con `nombreAnterior`/`nombreNuevo`.
+- A diferencia de PIN/rol, también renombra usuarios **inactivos**: es la forma de liberar un nombre para reutilizarlo y de corregir el histórico; no toca el acceso.
+- UI: botón de lápiz por fila en `UsuariosPanel` (habilitado también en filas inactivas) con editor en línea prefijado con el nombre actual, y `useCambiarNombreOperador` en `useGestionOperadores.js` (invalida la lista al guardar).
+
+**Arnés determinista:** 5 casos nuevos en `gestionar-operadores.test.js` (transición auditada, duplicado del histórico, validación sin tocar la BD, idempotencia sin PATCH, inactivo) y 3 en `UsuariosPanel.test.jsx` (limpieza de espacios, rechazo de cortos sin mutación, botón habilitado en inactivos).
+
+## Arranque de cuenta: fin del callejón «sin operadores activos» — 22/09/2026
+
+**Problema (auditado y visto en la pantalla real):** una cuenta sin usuarios operativos activos quedaba bloqueada en la tarjeta «No pudimos abrir tu cuenta» (solo *Reintentar / Cerrar sesión*), porque el panel que crea usuarios exige un operador con `gestionarUsuarios`: callejón sin salida que solo se resolvía insertando filas por SQL.
+
+**Solución:**
+- `POST /api/gestion/operadores/bootstrap` (`handleBootstrapOperador`): única puerta autorizada solo con la identidad de la CUENTA (JWT). Solo responde con **0 operadores activos** (también recupera la cuenta donde «desactivaron a todos»); crea el primer usuario con rol **jefe fijo** (un primer finanzas/nómina recrearía el callejón), PIN de 6 por matriz, PBKDF2, nombre único incluido el histórico, y audita `BOOTSTRAP_PRIMER_USUARIO`.
+- `/api/auth/me` responde `code: 'SIN_OPERADORES'` y la pantalla de error monta el formulario «Crear usuario y entrar» (`PrimerUsuarioForm` en `LoginPage`).
+- La entrada usa la barrera canónica: `crearPrimerOperador` crea el usuario y pasa por `switch-operator` con el PIN recién creado (validado en el Worker, que escribe la metadata): ninguna ruta sin PIN.
+- `PinInput` extraído a `compat/components/auth/PinInput.jsx` (compartido con el panel de usuarios).
+
+**Arnés determinista:** `bootstrap-operador.test.js` (6 casos), `LoginPage.test.jsx` (4) y 3 casos nuevos en `seleccion-operador.test.jsx` (incluye el recorrido completo create → switch-operator → perfil).
+
+## Fixeo de usuarios, PIN por rol y cierre de huecos de la barrera — 22/09/2026
+
+**Proceso (como se pidió):** auditoría del código → plan de fixeo con arnés y guardarraíles (`docs/PLAN_FIX_USUARIOS_PIN.md`) → implementación. **Requisitos:** ocultar el rol `administracion` del selector · PIN de **4 dígitos** para `finanzas` y `nomina` · interfaz de PIN idéntica al POS de referencia (`listo-pos-cotizaciones`, usado solo en lectura).
+
+**Hallazgos de la auditoría:** (1) la longitud del PIN estaba escrita a mano en 4 lugares (`validarPin` fijaba `/^\d{6}$/`, el panel, `pinLengthForRole` devolvía 6, el modal); (2) el selector ofrecía `administracion`; (3) `verifyAuth` aceptaba la cabecera `X-Operator-Id` del navegador y sobrescribía el operador — cualquiera con la cuenta operaba como otro sin su PIN (hueco crítico); (4) el operador quedaba recordado en `app_metadata` y `/api/auth/me` auto-seleccionaba: se entraba sin PIN al reingresar; (5) el modal de PIN se renderizaba **sin su CSS** (`compat/styles/pin.css` huérfano, sin importar — y `brand.test.js` prohíbe importarlo); (6) la guía prometía "PIN no consecutivos ni repetidos" que ningún código validaba (doc corregida).
+
+**Implementado:** `server/lib/permissions.js` ganó `longitudPin(rol)` (finanzas/nomina: 4; resto: 6) y `ROLES_CREABLES` (jefe, finanzas, nomina) como única fuente; el login (`handleSwitchOperator`), el panel (`crear`/`pin`, validando el largo contra el rol del usuario destino) y la interfaz derivan de ahí. El selector del panel ofrece solo `ROLES_CREABLES` (al cambiar rol se muestra el rol actual aunque esté oculto); los usuarios `administracion` existentes siguen operando con normalidad. `verifyAuth` ignora `X-Operator-Id` (solo `app_metadata` escrita tras validar PIN); `/api/auth/me` ya no auto-selecciona ni siquiera con un único operador; `login()` limpia la selección en el servidor (`clear-operator`) para que toda sesión nueva exija PIN, y `cambiarOperador()` (nuevo, en el menú lateral y el drawer móvil) vuelve a la pantalla de selección sin cerrar la cuenta. El modal de PIN se reescribió replicando el Dark Premium del POS de referencia (pad numérico con hover/press teñido por el color del usuario, puntos con glow y shake, orbe, patrón, overlay "Verificando…", watchdog de 20 s y mensajes de estado), conservando las clases `pin-modal-*` como ganchos del contrato de marca y la longitud derivada de la matriz.
+
+**Migración necesaria:** un usuario `finanzas`/`nomina` existente con PIN de 6 debe restablecer su PIN a 4 desde el panel (hoy en producción solo existe Administración; verificar antes de operar con los nuevos roles).
+
+**Guardarraíles (4 nuevos, verificados con pruebas negativas):** sin largos de PIN escritos a mano fuera de la matriz ( `/^\d{6}$/` y el mensaje literal); `LoginPinModal` debe usar `longitudPin()`; `UsuariosPanel` debe usar `ROLES_CREABLES` y no `ROLES_ASIGNABLES`; `compat/api/lib/auth.js` sin `headerOpId`.
+
+**Arnés:** matriz (+2: largos y creables), gestión de usuarios (18: PIN por rol con mensajes exactos, `administracion` rechazado en crear/cambiar-rol), auth-operators (12: finanzas rechaza PIN de 6 sin tocar el hash y acepta 4; mono-operador ahora exige PIN), auth del Worker (5: la cabecera nunca decide el operador), modal de PIN (6: 4 puntos para finanzas, 6 para jefe, reintento, watchdog, sin red), panel de usuarios (5: selector sin `administracion`, PIN por rol), store (10: login limpia la selección, `cambiarOperador` vuelve al PIN).
+
+**Verificación:** `npm run verify` completo en verde — `check:project` (38 migraciones, 332 archivos), lint, `test:db` (32 comprobaciones, 0 privilegios de más, 0 brechas), `test:qa`, `test:responsive` (34/34), `test:deterministic`, `npm test` (972 en verde + 1 todo), `build` y presupuesto (199,4 de 400 KiB gzip). No se tocó el proyecto de referencia ni se hizo commit ni push.
+
+**Pendientes:** aplicar la regla de PIN de 4 dígitos a usuarios `finanzas`/`nomina` existentes cuando se creen; humo E2E por rol en producción.
+
+## Fase F2 cerrada: barrera de acceso por PIN de operador — 21/09/2026
+
+**Objetivo:** cerrar el riesgo de que cualquiera con la cuenta y el dispositivo eligiera un operador sin credencial propia. El diagnóstico cambió la decisión: `handleSwitchOperator` ya implementaba la barrera completa (PIN PBKDF2 en el Worker, rate-limit por IP, auditoría de fallo y de éxito) y `LoginPinModal` ya estaba completo… pero el frontend nunca los conectó: la sesión entraba por `handleSelectOperator`, que activaba operador sin PIN y auditaba `LOGIN_SIN_PIN`. Además, `/api/auth/me` exigía **exactamente un** operador activo por cuenta, así que crear el segundo operador habría roto el login de toda la cuenta.
+
+**Alternativas evaluadas y descartadas:** código corto (mismo riesgo de reenvío sin segundo factor), confirmación del dispositivo (autentica al aparato, no a la persona) y SSO (no disponible en este despliegue). **Decisión aprobada: PIN por operador**, con la ruta sin PIN eliminada; no hubo rotación de hashes porque el esquema PBKDF2 no cambia.
+
+**Archivos afectados:** `server/handlers/auth-operators.js` (elimina `handleSelectOperator`, reescribe `handleGetCurrentProfile`), `worker.js` (retira la ruta), `compat/store/useAuthStore.js` (estado `seleccion-pendiente` y acción `seleccionarOperador`), `compat/modules/auth/OperatorPicker.jsx` (nuevo), `compat/modules/auth/LoginPage.jsx` (monta la pantalla), `scripts/check-project.mjs` (tres guardarraíles de F2, incluido el error de orden de lectura que impedía ejecutar el bloque nuevo), y las suites de pruebas.
+
+**Comportamiento:** `GET /api/auth/me` resuelve el operador desde `app_metadata.operator_id` (lo escribe `handleSwitchOperator` tras validar el PIN); si la cuenta tiene varios operadores operativos y aún no hay elección responde `403 OPERADOR_REQUERIDO` con la lista pública, sin cargar perfil ni restaurar caché. Una cuenta mono-operador conserva la selección automática sin PIN adicional. `POST /api/auth/switch-operator` es la única puerta: valida el PIN con PBKDF2 en el Worker, aplica rate-limit por IP, audita `LOGIN_FALLIDO`/`LOGIN_EXITOSO` y nunca devuelve `pin_hash`/`pin_salt`; los roles heredados se rechazan **antes** de tocar el PIN. En la interfaz, `OperatorPicker` muestra los operadores con su etiqueta de rol derivada de la matriz y abre `LoginPinModal` (antes huérfano) para capturar el PIN.
+
+**Bug real encontrado por las pruebas:** `seleccionarOperador` devolvía `{ ok: false }` en los fallos, y `LoginPinModal` interpreta el resultado como booleano — un objeto es *truthy*, así que un PIN incorrecto se habría comportado como éxito (dígitos limpiados solo por casualidad, sin marcar error). Se corrigió a booleano en todas las salidas y se fijó con pruebas.
+
+**Guardarraíles nuevos:** `check:project` exige que la ruta de PIN conserve su validación de `operator_id` y `pin`; prohíbe `LOGIN_SIN_PIN`, `handleSelectOperator` y la ruta `select-operator`; exige `OPERADOR_REQUERIDO` en `/api/auth/me`; y prohíbe cualquier validación de credencial en `src/`/`compat/` (señales `verifyPinPBKDF2`, `pin_hash`, `pin_salt`, fuera de pruebas y de comentarios). Los tres se verificaron con pruebas negativas (inyección temporal y restauración). El bloque de F2 estaba inerte: usaba `workerSource` antes de su declaración y `check:project` abortaba con `ReferenceError`, de modo que el guardarraíl nunca había llegado a ejecutarse.
+
+**Pruebas ejecutadas:** `npm test` → **956 pruebas en 87 archivos** (nuevas: 11 en `auth-operators.test.js`, 8 en `compat/store/__tests__/seleccion-operador.test.jsx`, 4 en `compat/modules/auth/__tests__/OperatorPicker.test.jsx` y 4 en `compat/components/auth/__tests__/LoginPinModal.test.jsx`); cubren PIN válido/inválido/inexistente, rol heredado rechazado antes del PIN, auditoría de fallo y éxito, resolución de perfil en sus cinco casos, `OPERADOR_REQUERIDO` sin restaurar caché, no duplicación del envío en el mismo tick, token de otra cuenta, fallo de red, autoenvío único del modal y ausencia de validación por red en el navegador. `lint`, `check:project` (38 migraciones, 331 archivos), `test:db` (32 comprobaciones, 0 privilegios de más, 0 brechas), `test:qa`, `test:deterministic`, `build` y `test:bundle-size` (197,8 KiB gzip iniciales) en verde.
+
+**Pendientes:** humo E2E por rol en producción (crear los usuarios `finanzas`/`nomina` reales y verificar la barrera desde la app, según `docs/PLAN_HUMO_E2E_ROLES.md` y `docs/GUIA_CREAR_USUARIOS_ROLES.md`) y las fases F3–F8 del roadmap. No se hizo commit ni push de código.
+
+## Guía de creación de los primeros usuarios finanzas y nomina — 21/09/2026
+
+**Objetivo:** que personal no técnico (administración/jefe) pueda crear y validar los primeros operadores `finanzas` y `nomina` en producción sin ayuda del desarrollo.
+
+**Archivos afectados:** `docs/GUIA_CREAR_USUARIOS_ROLES.md` (nuevo) y esta bitácora.
+
+**Contenido:** flujo exacto desde el panel Sistema → Usuarios con las reglas reales del servidor (PIN de 6 dígitos, nombre único, máx. 1 activo por rol de módulo según `MAX_ACTIVOS_POR_ROL`), tabla de errores del servidor con su causa y acción (409 por cupo o nombre duplicado, 400 por PIN/nombre, 403 por capacidad), rutina de mantenimiento (PIN, desactivación, reemplazo del único activo) y validación de permisos por usuario con dos casos de protección de red que **deben fallar** (403 del Worker / `PT403` de la RPC). Remite al plan de humo para la versión completa con evidencias.
+
+**Pendientes:** ejecutar la creación y la validación con usuarios reales. No se hizo commit ni push de código.
+
+## Plan de humo E2E por rol — 21/09/2026
+
+**Objetivo:** verificar en producción que `jefe`, `finanzas` y `nomina` operan exactamente lo que la matriz concede (ni más ni menos) tras aplicar 231–244.
+
+**Archivos afectados:** `docs/PLAN_HUMO_E2E_ROLES.md` (nuevo) y esta bitácora.
+
+**Contenido:** preparación como `administracion` (crear los tres operadores y sus PIN), guiones por rol con pasos y resultados esperados, cuatro casos de protección de red (fetch directo a saldos, pago de nómina como `finanzas`, movimientos y traspaso como `nomina` → 403 esperado del Worker y `PT403` de la RPC), verificación SQL opcional de movimientos creados y criterio de rollback con el respaldo previo. Cualquier fallo en los casos de protección es bloqueante.
+
+**Pendientes:** ejecutar el plan con usuarios reales. No se hizo commit ni push de código.
+
+## Despliegue de 231–244 al Supabase enlazado con respaldo previo — 21/09/2026
+
+**Objetivo:** aplicar al remoto (`wlxcclidnwketrghqaxs`) las migraciones de autorización 243/244 —y las 231–242 que nunca se habían aplicado— con respaldo y verificación de paridad contra la base real.
+
+**Hallazgos del remoto:** el historial estaba desacoplado del repo: 230 y 237–240 habían sido aplicadas a mano con timestamps inventados (`20260902000000`, `20260913xxxxxx`), y 231–236 y 241–244 no existían; el constraint vigente era el rol único `usuarios_rol_administracion_check` (la 242 nunca corrió). La reparación fue doble: `migration repair --status reverted` de los 5 fantasmas y del marcado manual de 237–240 (para que el push reprodujera todo desde los archivos, todos idempotentes), más `--status applied` de 230 y de 238–240 tras verificar en el remoto sus 4 tablas, 12 funciones y 8 triggers, cuyas definiciones ya eran las del repo.
+
+**Incidentes resueltos durante el push:** (1) la 232 fallaba con `42P13` porque el remoto ya tenía `finanzas_resumen` con la firma de la 233; se hizo idempotente con `DROP FUNCTION IF EXISTS` previo (mismo patrón que ya usaba la 233; en una base nueva el comportamiento no cambia). (2) la 238 fallaba con `42P07` por tablas existentes; resuelto con el `--status applied` verificado de 238–240. (3) `check:project` pasó a excluir `backups/` de su escaneo de límites de líneas (respaldos generados, no código).
+
+**Respaldo:** `backups/pre-migracion-243-{globals,esquema,datos}.sql` vía `pg_dump`/`pg_dumpall` 17.11 (globals 7,6 KB, esquema 287 KB con 62 tablas y 209 políticas/constraints, datos 222 KB con todas las tablas de negocio). `backups/` se añadió a `.gitignore`.
+
+**Resultado:** `db push --include-all` aplicó 231–237 y luego 241–244; las 38 migraciones quedaron registradas. Verificación contra la base real por la API de query: el espejo `roles_capacidad()` coincide capacidad por capacidad con `rolesConCapacidad()` de la matriz JS (7/7), `roles_operativos()` devuelve los 5 roles operativos, `get_rol_actual()` sin JWT devuelve NULL (correcto: no hay operador), `listar_usuarios_login()` sin JWT devuelve 0 filas y los guardianes de actor de `finanzas_operar` y `finanzas_asignar_custodia` ya consultan el espejo (definición verificada con `pg_get_functiondef`). El `usuarios_rol_administracion_check` fue reemplazado por el `usuarios_rol_check` ampliado. Local: `check:project` OK (38 migraciones, 327 archivos), lint OK, 933 pruebas en 84 archivos, `test:db` 32 comprobaciones con 0 privilegios de más y 0 brechas.
+
+**Pendientes:** probar el flujo de login/operación de un usuario `finanzas` o `nomina` real desde la app (la paridad está verificada a nivel SQL y de guardianes, falta el humo E2E por rol en producción); F2 en adelante según roadmap. No se hizo commit ni push de código.
+
+## Fase F0 cerrada: autorización SQL alineada con la matriz única — 21/09/2026
+
+**Objetivo:** que `jefe`, `finanzas` y `nomina` operen datos reales: el SQL seguía exigiendo `administracion` en la resolución del rol, el login, las RLS y los guardianes de actor.
+
+**Archivos afectados:** `supabase/migrations/243_roles_operativos_autorizacion.sql` y `supabase/migrations/244_roles_operativos_operaciones.sql` (nuevas), `scripts/check-project.mjs`, `scripts/test-db.mjs`, `server/lib/__tests__/sql-contract.test.js`, `docs/ROADMAP_PENDIENTES_FASES.md` y esta bitácora.
+
+**Comportamiento:** el SQL mantiene un **único espejo** de la matriz, `public.roles_capacidad(capacidad)`, y `public.roles_operativos()` derivado de él; todas las políticas y guardianes lo consultan por nombre de capacidad, así que no hay listas de roles escritas por duplicado. `get_rol_actual()` deja de devolver `administracion` o NULL y devuelve el rol real del operador activo de la cuenta, restringido a los roles operativos (los heredados siguen fuera, de modo que las políticas históricas `= 'logistica'` quedan inertes y no reaparece el bypass del "desarrollador virtual"). `listar_usuarios_login()` lista todos los perfiles operativos activos. Las RLS de nómina, finanzas, custodia y purga se expresan por capacidad (`administrarNomina`, `verFinanzas`, `verSaldos`, `administrarSistema`), con las políticas restrictivas de tenant intactas. En las RPC, el guardián de actor distingue por tipo de operación: `operarFinanzas` para traspasos y `administrarNomina` para pagar o revertir nómina, igual que `CAPACIDAD_POR_TIPO` en el servidor; `finanzas_asignar_custodia` exige `operarFinanzas`. Los cuerpos de ambas funciones se redefinieron completos con el mismo patrón de la 241 y la única diferencia funcional es la línea del guardián.
+
+**Guardarraíles nuevos:** `check:project` compara el espejo SQL con `rolesConCapacidad()` capacidad por capacidad, cruza el `CHECK usuarios_rol_check` de la 242 con `ROLES_VALIDOS`, y falla si una migración de roles reintroduce un rol único literal (juzgando solo el código, no los comentarios). Se verificaron las tres reglas con pruebas negativas: divergencia inyectada en `verSaldos`, archivo temporal con lista de roles y patrones de rol único en SQL.
+
+**Pruebas ejecutadas:** `npm run test:db` → 32 comprobaciones, 38 migraciones, **90 superficies, 0 privilegios de más y 0 brechas** (antes: 31 brechas), incluida la equivalencia directa espejo SQL ↔ matriz JS en las 7 capacidades; `npm test` → **933 pruebas en 84 archivos**; `npm run lint`, `npm run check:project` (38 migraciones, 327 archivos), `npm run test:qa` (22), `npm run test:deterministic` (27 casos + 127 aserciones), `npm run test:responsive` (34), `npm run build` y `npm run test:bundle-size` (195,4 de 400 KiB gzip) en verde. Las pruebas funcionales de nómina, traspasos, custodia, reversión y conciliación siguen pasando con `administracion`, lo que confirma que la redefinición de las RPC conserva el comportamiento.
+
+**Pendientes:** aplicar las migraciones 243 y 244 al Supabase enlazado con respaldo previo (no se tocó remoto); F2 (barrera de acceso) y las fases dependientes del negocio siguen abiertas. No se hizo commit, push ni deploy.
+
+## Matriz capacidad × rol sobre Postgres embebido — 21/09/2026
+
+**Objetivo:** que el desajuste entre la matriz única y el SQL deje de ser invisible: medir, sobre Postgres real embebido, qué tablas y RPC concede cada rol y compararlo con `server/lib/permissions.js`.
+
+**Archivos afectados:** `scripts/test-db.mjs` y esta bitácora.
+
+**Comportamiento:** `scripts/test-db.mjs` importa la matriz única y mide 10 superficies por cada uno de los 9 roles válidos (**90 comprobaciones**): RLS de `nomina_periodos`, `nomina_lineas`, `finanzas_movimientos` y `cuentas_custodia` con `SET ROLE authenticated` y un JWT simulado; resolución de `get_rol_actual()`; `listar_usuarios_login()`; y los guardianes de actor de `finanzas_operar` (por tipo: `traspaso` vs `pagar_nomina`/`revertir_nomina`) y `finanzas_asignar_custodia`. Las RPC se sondean con un sobre inválido a propósito: `PT403` significa que el actor no pasa y `PT400` que el actor pasa y el payload falla, de modo que la medición no escribe nada. La comparación es bidireccional: **privilegio de más = fallo duro siempre** (nadie puede recibir acceso que la matriz no conceda) y privilegio de menos = brecha reportada, que pasa a ser fallo duro automáticamente en cuanto exista una migración `243`. El informe JSON incorpora el campo `paridad` con todas las mediciones.
+
+**Pruebas ejecutadas:** `npm run test:db` → 31 comprobaciones aprobadas, 36 migraciones. Resultado de la paridad: **0 privilegios de más**, **31 brechas de menos** (jefe, finanzas, nomina y desarrollador allí donde la matriz concede), y los roles heredados (supervisor, vendedor, vendedor_sin_comision, logistica) denegados en las 40 superficies medidas. Se verificó que la matriz distingue bien la dirección de la denegación: `finanzas` no aparece en la brecha de `cuentas_custodia` (no ve saldos) y `nomina` no aparece en la de `finanzas_asignar_custodia` ni en la del libro. `npm run check:project` OK (36 migraciones, 325 archivos), `npm run test:qa` (22) y `npm run test:deterministic` OK.
+
+**Pendientes:** la brecha confirma cuantitativamente F0-A: falta la migración `243` (`get_rol_actual()`, `listar_usuarios_login()`, RLS de las cuatro tablas y los guardianes de actor). No se hizo commit, push ni deploy.
+
+## Matriz única de roles para frontend y servidor — 21/09/2026
+
+**Objetivo:** eliminar de raíz las listas de roles duplicadas en hooks y vistas: una sola fuente de autorización para interfaz y Worker.
+
+**Archivos afectados:** `server/lib/permissions.js` (matriz única extendida), `src/config/accesoModulos.js` (ahora reexporta la matriz), `scripts/check-project.mjs` (guardarraíles), `server/handlers/nomina.shared.js`, `server/handlers/auth-operators.js`, `server/handlers/gestionar-operadores.js`, `server/handlers/nomina.asistencia.js`, `server/lib/financialOperations.js`, `compat/api/lib/auth.js`, `compat/store/useAuthStore.js`, `compat/hooks/useClientes.js`, `compat/components/auth/LoginPinModal.jsx`, `src/hooks/useNomina.js`, `src/hooks/useFinanzas.js`, `src/hooks/useCuentasCustodia.js`, `src/views/NominaView.jsx`, `src/views/SistemaView.jsx`, `src/components/nomina/MarcajeLogisticaPanel.jsx`, `src/components/sistema/UsuariosPanel.jsx`, pruebas de `permissions` y nueva suite `compuertas-rol`.
+
+**Comportamiento:** `permissions.js` es ahora el único archivo del proyecto que escribe roles. Expone derivadas (`rolesConCapacidad`, `ROLES_OPERATIVOS`, `ROLES_ASIGNABLES`, `tieneAccesoOperativo`, `accesoUI`, `etiquetaRol`, `rutaParaRol`, `CAPACIDADES`) y `accesoModulos.js` reexporta todo con `export *` (mismo patrón que `src/utils/carterasHelper.js`), así que interfaz y servidor comparten exactamente la misma matriz. Se migraron todas las compuertas: sesión (antes rechazaba todo perfil que no fuera `administracion`), nómina, finanzas, custodia/saldos, lista de operadores, gestión de usuarios y marcas de identidad. Los pagos de nómina y los traspasos ahora exigen su capacidad por tipo de operación (`administrarNomina` vs `operarFinanzas`), de modo que `finanzas` nunca paga nómina y `nomina` nunca hace traspasos. `check-project.mjs` incorpora la regla de rol literal: cualquier rol de la matriz escrito fuera de `permissions.js` (comparación, lista o constante) falla el guardarraíl, con una única excepción documentada de presentación (paleta del avatar).
+
+**Pruebas ejecutadas:** `npm run check:project` OK (36 migraciones, 325 archivos); prueba negativa del guardarraíl con un archivo temporal (falla como debe y se retiró); `npm run lint` OK; `npm test` 931 pruebas en 84 archivos (incluye 6 nuevas de derivación de la matriz, la paridad del espejo del frontend y 11 de compuertas por rol); `npm run test:deterministic`, `npm run test:db` (28 comprobaciones, 36 migraciones), `npm run test:qa` (22) y `npm run test:responsive` (34) OK; `npm run build` OK; `npm run test:bundle-size` PASS con 195,4 KiB gzip iniciales (presupuesto 400 KiB).
+
+**Pendientes:** la migración `243` en SQL (F0-A) sigue siendo el bloqueo para que `jefe/finanzas/nomina` operen datos reales: `get_rol_actual()`, `listar_usuarios_login()` y los RPC/RLS todavía exigen `administracion`. No se hizo commit, push ni deploy.
+
+## Roadmap de pendientes por fases — 21/09/2026
+
+**Objetivo:** dejar por escrito todo lo que falta para operar (roles, seguridad, tasas, integración, conciliación, QA física y deploy), ordenado por fases con entregables, guardarraíles y pruebas deterministas.
+
+**Archivos afectados:** `docs/ROADMAP_PENDIENTES_FASES.md` (nuevo) y esta bitácora.
+
+**Comportamiento:** el documento identifica como bloqueo principal la paridad de roles fin a fin (F0): la migración `242` amplió el `CHECK`, pero `get_rol_actual()`, `listar_usuarios_login()`, las RLS de `finanzas_movimientos`/`cuentas_custodia`, los guardias de `finanzas_operar`/`finanzas_asignar_custodia` y varias compuertas de la interfaz (`useAuthStore`, `useNomina`, `useFinanzas`, `useCuentasCustodia`, `NominaView`, `MarcajeLogisticaPanel`, `useClientes`, `LoginPinModal`) siguen exigiendo `administracion`. Se documentan además siete fases dependientes de decisiones del negocio (barrera de acceso, tasas/legal, sincronización Personal, conciliación, QA física, deploy y deuda técnica) con sus guardarraíles y pruebas deterministas.
+
+**Pruebas ejecutadas:** `npm run check:project` (ver abajo). No se modificó código funcional.
+
+**Pendientes:** ejecutar la F0 (migración `243` y compuertas de sesión/UI) en un cambio posterior; el resto de fases depende de decisiones y datos externos.
+
 ## Resultado de verificación local y entrega — 15/09/2026
 
 **Resultado:** la cadena completa `npm run verify` de `qa-oh6ye5` terminó con salida 0 después de las últimas correcciones. Se aprobaron **909 pruebas en 80 archivos**, con **1 todo preexistente** no contado como aprobado; 22 guardas de QA; 34 comprobaciones responsive estáticas; lint; 27 pruebas deterministas de nómina y 127 aserciones financieras; 28 comprobaciones SQL y 34 migraciones; compilación y presupuesto de carga.
@@ -3430,6 +3599,39 @@ En dispositivos móviles, la cuadrilla semanal intentaba encajar 7 días en 360p
 - `service_role` no tiene SELECT directo sobre las tablas nuevas (por diseño de 238: solo EXECUTE de las RPC); el backend no lo necesita.
 - Los traspasos/atómicos exigen libro conciliado: hoy el tenant reporta `conciliacionPendiente: true` (3 movimientos sin cuenta y pagos históricos sin asignación). Aplicar la reasignación de la UI antes de usar traspasos atómicos.
 - Scripts temporales de aplicación/inspección eliminados tras su uso. Sin commit pendiente de este paso salvo esta bitácora.
+
+
+## 117. Panel de gestión de usuarios y roles operativos jefe/finanzas/nomina (F5–F7 del plan de roles)
+
+**Fecha:** 19/09/2026
+**Objetivo:** completar el plan de roles operativos (F5 panel de usuarios, F6 tests de la matriz, F7 verify en verde) que permite crear y administrar usuarios con los roles definidos en la migración 242: `jefe` (acceso total), `finanzas` (registra ingresos/egresos y traspasos, NUNCA ve saldos ni acumulados) y `nomina` (módulo Nómina completo, NUNCA ve Finanzas).
+
+**Backend — `server/handlers/gestionar-operadores.js` (nuevo):**
+- `GET /api/gestion/operadores` — lista completa (activos e inactivos), sin exponer `pin_hash`/`pin_salt` (solo `tiene_pin`).
+- `POST /api/gestion/operadores/crear` — crea usuario con rol asignable (`jefe`/`finanzas`/`nomina`/`administracion`) y PIN de 6 dígitos guardado como PBKDF2 (100k iteraciones + salt de 16 bytes); el PIN jamás sale del Worker.
+- `POST /api/gestion/operadores/estado` — desactivar/reactivar (idempotente; al reactivar respeta el máximo por rol).
+- `POST /api/gestion/operadores/pin` — restablecer PIN (nuevo salt; el hash anterior queda inservible).
+- `POST /api/gestion/operadores/rol` — cambiar rol con auditoría de la transición.
+- Reglas de negocio: máximo de activos por rol (jefe/admin 2, finanzas 1, nomina 1), nombre único por cuenta, roles asignables excluyen `desarrollador`, toda mutación audita (`USUARIO_CREADO`, `USUARIO_DESACTIVADO`, `USUARIO_PIN_RESTABLECIDO`, `USUARIO_ROL_CAMBIADO`).
+- Autorización: `validateOperator` + `requireCapacidad('gestionarUsuarios')` — solo jefe/administración/desarrollador.
+
+**UI:**
+- `src/components/sistema/UsuariosPanel.jsx` (nuevo): modal accesible con alta (nombre + rol con descripción de qué ve cada rol + PIN), lista con badges Activo/Inactivo, cambio de PIN y rol inline, activar/desactivar. Usa `CustomSelect` (guardrail anti-selector-nativo).
+- `src/hooks/useGestionOperadores.js` (nuevo): React Query con invalidación automática.
+- `SistemaView`: tarjeta "Usuarios y accesos" visible solo para roles con `gestionarUsuarios`.
+- `NominaApp.jsx` refactorizado bajo el límite de 600 líneas: `MobileDrawerContent` extraído a `src/components/layout/MobileDrawerContent.jsx` (el filtro por rol vive en `accesoUI`, NAV/itemBloqueado pasan por props).
+
+**Guardrail actualizado (`scripts/check-project.mjs`):** el contrato antiguo "solo administración" se reemplaza por el contrato de roles: `validateOperator` debe aceptar los roles operativos (jefe/admin/desarrollador/finanzas/nomina), los handlers de nómina derivan sus listas de la matriz (`ROLES_DE_MATRIZ`), finanzas autoriza por `verFinanzas`/`operarFinanzas`, y `permissions.js` debe mantener `capacidadesFinanzas`/`capacidadesNomina` separadas (finanzas sin saldos, nomina sin finanzas).
+
+**Tests:**
+- `server/lib/__tests__/permissions.test.js` (nuevo, 10): la matriz completa por rol (total/finanzas/nomina/heredados/NULL), helpers (`tieneCapacidad`, `requireCapacidad` 403, `isAdminOperator`, `requireAdmin`, `assertAdminRole`) y reglas del negocio.
+- `server/handlers/__tests__/gestionar-operadores.test.js` (nuevo, 15): autorización 401/403, creación con hash PBKDF2 (el PIN nunca viaja en texto plano), PIN inválido, rol no asignable, máximo por rol, duplicado, activar/desactivar idempotente, máximo al reactivar, restablecer PIN, rol de inactivo, listar sin exponer hashes, y login con PIN del rol `finanzas` vía `handleSwitchOperator`.
+- Actualizados al nuevo contrato: `nomina.permisos.test.js` (finanzas/heredados → 403; jefe/desarrollador/nomina pasan la puerta), `nomina.periodos-guardas.test.js` (finanzas → 403, jefe → 201), `finanzas.sync.test.js` (logistica y finanzas → 403 en sync POS).
+- Migración 242: `COMMENT ... || ...` no compila en PGlite → cadena única.
+
+**Verificación:** `npm run verify` completo exit=0 — 913 tests (83 archivos), guardrail OK, 36 migraciones compilan en PGlite, build y bundle OK (index 195 KiB gzip, PDF en chunk separado).
+
+**Pendiente de despliegue:** aplicar migraciones 241–242 al remoto (la 242 debe ir ANTES de crear usuarios con rol finanzas/nomina, porque el CHECK de la BD los rechaza), deploy del worker y QA manual con los 3 roles.
 
 
 

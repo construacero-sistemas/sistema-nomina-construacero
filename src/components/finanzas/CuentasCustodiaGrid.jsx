@@ -349,9 +349,15 @@ export default function CuentasCustodiaGrid({
                   {/* Saldo de la Cuenta y Contravalor Equivalente */}
                   <div className="py-2 px-3 rounded-xl bg-slate-50 border border-slate-100 mb-2">
                     <span className="text-xs font-bold text-slate-600 block">{confirmado && cuenta.disponible ? 'Saldo confirmado disponible' : 'Saldo sin confirmar o pendiente de conciliación'}</span>
-                    <strong className="text-lg font-black text-slate-900 block break-words">{valorUsd == null ? 'Valoración USD pendiente' : `$${formatMoney(valorUsd)} USD`}</strong>
-                    <p className="text-sm text-slate-700">Nativo: {confirmado ? `${formatMoney(cuenta.saldo)} ${cuenta.moneda}` : 'Sin confirmar'}</p>
-                    {contravalor != null && <p className="text-xs text-slate-600">Referencia de consulta: ${formatMoney(contravalor)} USD a {formatMoney(tasa)} Bs/USD.</p>}
+                    <strong className="text-lg font-black text-slate-900 block break-words">
+                      {esVes
+                        ? confirmado ? `${formatMoney(cuenta.saldo)} VES` : 'Saldo en Bs pendiente de confirmar'
+                        : valorUsd == null ? 'Valoración USD pendiente' : `$${formatMoney(valorUsd)} USD`}
+                    </strong>
+                    {esVes
+                      ? <p className="text-sm text-slate-700">{contravalor == null ? 'Equivalente USD estimado no disponible' : `≈ $${formatMoney(contravalor)} USD estimados`}</p>
+                      : <p className="text-sm text-slate-700">Nativo: {confirmado ? `${formatMoney(cuenta.saldo)} ${cuenta.moneda}` : 'Sin confirmar'}</p>}
+                    {esVes && contravalor != null && <p className="text-xs text-slate-600">Estimado a {formatMoney(tasa)} Bs/USD; no sustituye la valoración histórica.</p>}
                   </div>
 
                   <p className="text-xs text-slate-600 px-1 mb-2">Saldo del libro completo, independiente del filtro del historial. Tasas registradas por movimiento.</p>

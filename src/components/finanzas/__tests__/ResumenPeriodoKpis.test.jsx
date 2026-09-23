@@ -37,6 +37,12 @@ describe('Resumen de flujo con valoración histórica', () => {
     expect(screen.queryByText('$110,00 USD')).not.toBeInTheDocument()
     expect(screen.getAllByText('Consolidado pendiente')).toHaveLength(3)
   })
+  it('permite ignorar el aviso de movimientos sin tasa histórica', () => {
+    render(<ResumenPeriodoKpis summary={{ ...summary, movimientos_sin_usd: 1 }} />)
+    expect(screen.getByRole('button', { name: 'Ignorar aviso de tasas históricas' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ignorar aviso de tasas históricas' }))
+    expect(screen.queryByText('1 movimiento(s) sin tasa histórica. El consolidado USD está pendiente de valoración.')).not.toBeInTheDocument()
+  })
   it('permite cambiar moneda con botones que anuncian el estado seleccionado', () => {
     const onSelect = vi.fn()
     render(<ResumenPeriodoKpis summary={summary} moneda="VES" onSelectMoneda={onSelect} />)

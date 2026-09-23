@@ -9,6 +9,7 @@ import useAuthStore from '../store/useAuthStore'
 import { sanitizePostgrestSearch } from '../utils/format'
 import { authFetch } from '../services/authFetch'
 import { broadcastEntidad } from '../services/supabase/realtimeBus'
+import { tieneCapacidad } from '../../server/lib/permissions.js'
 
 // ─── Keys de caché ────────────────────────────────────────────────────────────
 export const CLIENTES_KEY = ['clientes']
@@ -265,8 +266,8 @@ export function useVendedores() {
         .order('nombre', { ascending: true })
 
       if (error) throw error
-      // Este paquete solo opera con perfiles de administración.
-      return (data ?? []).filter(u => u.rol?.toLowerCase() === 'administracion')
+      // Solo perfiles con gestión de usuarios (matriz única).
+      return (data ?? []).filter(u => tieneCapacidad(u, 'gestionarUsuarios'))
     },
     staleTime: 1000 * 60 * 10,
     gcTime: 1000 * 60 * 30,

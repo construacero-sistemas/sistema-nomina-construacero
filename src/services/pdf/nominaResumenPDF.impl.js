@@ -97,11 +97,12 @@ async function generarNominaResumenPDFImpl({ periodo = {}, lineas = [], config =
     { label: 'DÍAS',      x: MARGIN + 42,   w: 13 },
     { label: 'H.NORM',    x: MARGIN + 55,   w: 16 },
     { label: 'H.EXTRA',   x: MARGIN + 71,   w: 16 },
-    { label: 'BASE',      x: MARGIN + 87,   w: 24 },
-    { label: 'RECARGOS',  x: MARGIN + 111,  w: 24 },
-    { label: 'BONOS',     x: MARGIN + 135,  w: 20 },
-    { label: 'DEDUC.',    x: MARGIN + 155,  w: 20 },
-    { label: 'NETO',      x: MARGIN + 175,  w: 13 },
+    { label: 'MENSUAL',   x: MARGIN + 87,   w: 22 },
+    { label: 'BASE',      x: MARGIN + 109,  w: 22 },
+    { label: 'RECARGOS',  x: MARGIN + 131,  w: 22 },
+    { label: 'BONOS',     x: MARGIN + 153,  w: 18 },
+    { label: 'DEDUC.',    x: MARGIN + 171,  w: 17 },
+    { label: 'NETO',      x: MARGIN + 188,  w: 13 },
   ]
 
   function headers(yPos) {
@@ -152,27 +153,29 @@ async function generarNominaResumenPDFImpl({ periodo = {}, lineas = [], config =
     doc.text(extras > 0 ? extras.toFixed(1) : '—',            cols[3].x + 1.5, y + 3)
 
     doc.setTextColor(...C_DARK)
-    doc.text(fmtUsd(l.monto_normal_usd),                      cols[4].x + 1.5, y + 3)
-    doc.text(recargos > 0 ? fmtUsd(recargos) : '—',           cols[5].x + 1.5, y + 3)
+    const mensual = Number(l.salario_dia_usd_snap || 0) * 30
+    doc.text(mensual > 0 ? fmtUsd(mensual) : '—',               cols[4].x + 1.5, y + 3)
+    doc.text(fmtUsd(l.monto_normal_usd),                      cols[5].x + 1.5, y + 3)
+    doc.text(recargos > 0 ? fmtUsd(recargos) : '—',           cols[6].x + 1.5, y + 3)
 
     const bonos = Number(l.bonos_usd || 0) + Number(l.comisiones_pos_usd || 0)
     doc.setTextColor(...(bonos > 0 ? C_EMERALD : C_GRAY))
-    doc.text(bonos > 0 ? fmtUsd(bonos) : '—',                 cols[6].x + 1.5, y + 3)
+    doc.text(bonos > 0 ? fmtUsd(bonos) : '—',                 cols[7].x + 1.5, y + 3)
 
     const deduc = Number(l.deducciones_usd || 0)
     doc.setTextColor(...(deduc > 0 ? C_RED : C_GRAY))
-    doc.text(deduc > 0 ? fmtUsd(deduc) : '—',                 cols[7].x + 1.5, y + 3)
+    doc.text(deduc > 0 ? fmtUsd(deduc) : '—',                 cols[8].x + 1.5, y + 3)
 
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...C_DARK)
-    doc.text(fmtUsd(l.total_neto_usd),                        cols[8].x + 1.5, y + 3)
+    doc.text(fmtUsd(l.total_neto_usd),                        cols[9].x + 1.5, y + 3)
 
     // Marca de pagado
     if (l.pagado) {
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(4.5)
       doc.setTextColor(...C_EMERALD)
-      doc.text('PAGADO', cols[8].x + 1.5, y + 5.5)
+      doc.text('PAGADO', cols[9].x + 1.5, y + 5.5)
     }
 
     doc.setFont('helvetica', 'normal')
@@ -187,13 +190,13 @@ async function generarNominaResumenPDFImpl({ periodo = {}, lineas = [], config =
   doc.setFontSize(7)
   doc.setTextColor(...C_WHITE)
   doc.text('TOTALES', cols[0].x + 1.5, y + 5.5)
-  doc.text(fmtUsd(lineas.reduce((s, l) => s + Number(l.monto_normal_usd || 0), 0)), cols[4].x + 1.5, y + 5.5)
+  doc.text(fmtUsd(lineas.reduce((s, l) => s + Number(l.monto_normal_usd || 0), 0)), cols[5].x + 1.5, y + 5.5)
   doc.text(fmtUsd(lineas.reduce((s, l) =>
     s + Number(l.monto_extra_usd || 0) + Number(l.monto_sabado_usd || 0) + Number(l.monto_feriado_usd || 0), 0)),
-    cols[5].x + 1.5, y + 5.5)
-  doc.text(fmtUsd(lineas.reduce((s, l) => s + Number(l.bonos_usd || 0), 0)), cols[6].x + 1.5, y + 5.5)
-  doc.text(fmtUsd(totDeduc), cols[7].x + 1.5, y + 5.5)
-  doc.text(fmtUsd(totNeto),  cols[8].x + 1.5, y + 5.5)
+    cols[6].x + 1.5, y + 5.5)
+  doc.text(fmtUsd(lineas.reduce((s, l) => s + Number(l.bonos_usd || 0), 0)), cols[7].x + 1.5, y + 5.5)
+  doc.text(fmtUsd(totDeduc), cols[8].x + 1.5, y + 5.5)
+  doc.text(fmtUsd(totNeto),  cols[9].x + 1.5, y + 5.5)
 
   y += 14
 

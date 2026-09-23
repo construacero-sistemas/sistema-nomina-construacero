@@ -40,7 +40,7 @@ function makeJwt(payload = {}) {
     sub: IDS.cuenta,
     app_metadata: {
       operator_id: IDS.operador,
-      operator_rol: 'administracion',
+      operator_rol: 'jefe',
       operator_nombre: 'Admin Nómina',
     },
     ...payload,
@@ -110,7 +110,7 @@ class InMemoryDatabase {
         email: 'admin@construacero.com',
         app_metadata: {
           operator_id: IDS.operador,
-          operator_rol: 'administracion',
+          operator_rol: 'jefe',
           operator_nombre: 'Admin Nómina',
         },
       })
@@ -121,7 +121,7 @@ class InMemoryDatabase {
         {
           id: IDS.operador,
           nombre: 'Admin Nómina',
-          rol: 'administracion',
+          rol: 'jefe',
           cuenta_id: IDS.cuenta,
           activo: true,
         },

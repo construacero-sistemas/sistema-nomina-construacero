@@ -1,7 +1,7 @@
-import { ArrowRightLeft, Building2, DollarSign, Inbox, Wallet } from 'lucide-react'
+import { ArrowRightLeft, Building2, DollarSign, Eye, Inbox, Wallet } from 'lucide-react'
 const money = n => n == null || !Number.isFinite(Number(n)) ? 'Sin confirmar' : Number(n).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-export default function CarterasHeader({ saldos, filtroCartera, sinCuenta, onReasignarSinCuenta, onSelectCartera, onOpenTransferencia,
+export default function CarterasHeader({ saldos, filtroCartera, sinCuenta, onPreviewConciliacion, onSelectCartera, onOpenTransferencia,
   loading = false, error = '', conciliacionPendiente = false, onRetry }) {
   return <section aria-label="Saldos de tesorería" className="space-y-3">
     <div className="flex flex-wrap justify-between items-center gap-3">
@@ -25,6 +25,9 @@ export default function CarterasHeader({ saldos, filtroCartera, sinCuenta, onRea
         </button>)}
       </div>
     </>}
-    {sinCuenta?.sinCuenta > 0 && <button type="button" onClick={onReasignarSinCuenta} className="min-h-11 px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-sm inline-flex gap-2 items-center"><Inbox size={18} />{sinCuenta.sinCuenta} movimientos sin cuenta entre los {sinCuenta.total} registros cargados</button>}
+    {(sinCuenta?.sinCuenta > 0 || conciliacionPendiente) && <div className="flex flex-wrap items-center gap-2">
+      <button type="button" onClick={onPreviewConciliacion} className="min-h-11 px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-sm inline-flex gap-2 items-center font-bold"><Eye size={18} />Simular conciliación segura</button>
+      {sinCuenta?.sinCuenta > 0 && <span className="min-h-11 px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-sm inline-flex gap-2 items-center"><Inbox size={18} />{sinCuenta.sinCuenta} sin cuenta en {sinCuenta.total} cargados{sinCuenta.totalServidor != null ? ` · período: ${sinCuenta.totalServidor}` : ''}</span>}
+    </div>}
   </section>
 }

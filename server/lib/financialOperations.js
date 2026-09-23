@@ -1,6 +1,17 @@
 import { isValidUuid, json } from './utils.js'
+import { tieneCapacidad } from './permissions.js'
 
 export const OPERATION_TYPES = ['pagar_nomina', 'revertir_nomina', 'traspaso']
+
+// Cada operación atómica pertenece a un módulo, así que exige su capacidad de
+// la matriz única: los pagos de nómina requieren administrar nómina y los
+// traspasos requieren operar finanzas. El rol finanzas NUNCA paga nómina y el
+// rol nomina NUNCA hace traspasos, aunque ambos operen el libro.
+const CAPACIDAD_POR_TIPO = Object.freeze({
+  pagar_nomina: 'administrarNomina',
+  revertir_nomina: 'administrarNomina',
+  traspaso: 'operarFinanzas',
+})
 export class FinancialOperationError extends Error {
   constructor(message, status = 400, code = 'INVALID_OPERATION') {
     super(message)
@@ -122,8 +133,9 @@ export async function callFinancialRpc(env, rpc, params) {
   return data
 }
 export async function executeFinancialOperation(env, operador, operation, ip = null) {
-  if (!isValidUuid(operador?.cuenta_id) || !isValidUuid(operador?.id) || operador.rol !== 'administracion') {
-    throw new FinancialOperationError('Se requiere una cuenta y un operador con permiso de administración.', 403, 'OPERATOR_REQUIRED')
+  const capacidad = CAPACIDAD_POR_TIPO[operation?.tipo]
+  if (!isValidUuid(operador?.cuenta_id) || !isValidUuid(operador?.id) || !capacidad || !tieneCapacidad(operador, capacidad)) {
+    throw new FinancialOperationError('Se requiere una cuenta y un operador con permiso para esta operación.', 403, 'OPERATOR_REQUIRED')
   }
   const result = await callFinancialRpc(env, 'finanzas_operar', {
     p_cuenta_id: operador.cuenta_id, p_operador_id: operador.id,

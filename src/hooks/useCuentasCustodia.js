@@ -5,6 +5,7 @@ import { useAccountQuery as useQuery, useAccountQueryClient as useQueryClient } 
 import useAuthStore from '../../compat/store/useAuthStore.js'
 import { authFetch } from '../../compat/services/authFetch.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
+import { tieneCapacidad } from '../config/accesoModulos.js'
 export { BANCOS_VENEZUELA, PLATAFORMAS_INTERNACIONALES } from '../utils/cuentasCustodiaUtils.js'
 
 const BASE_KEY = ['finanzas', 'cuentas-custodia']
@@ -20,28 +21,34 @@ async function api(path, body, signal) {
 export function useCuentasCustodia() {
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
   const queryClient = useQueryClient()
-  const puede = perfil?.rol === 'administracion'
+  // Finanzas/Nómina necesitan solo el catálogo operativo para elegir cuenta al
+  // registrar movimientos o pagar recibos. Los importes siguen reservados a
+  // verSaldos y el servidor devuelve metadatos mínimos para estos roles.
+  const puedeVerCatalogo = tieneCapacidad(perfil, 'verFinanzas') || tieneCapacidad(perfil, 'administrarNomina')
+  const puedeVerSaldos = tieneCapacidad(perfil, 'verSaldos')
   const query = useQuery({
     queryKey: BASE_KEY,
     queryFn: ({ signal }) => api('/api/finanzas/cuentas-custodia', undefined, signal),
-    enabled: puede, staleTime: 60000, retry: 1,
+    enabled: puedeVerCatalogo || puedeVerSaldos, staleTime: 60000, retry: 1,
   })
   const saldos = useQuery({
     queryKey: ['finanzas', 'saldos'],
     queryFn: ({ signal }) => api('/api/finanzas/saldos', undefined, signal),
-    enabled: puede, staleTime: 0, retry: 1,
+    enabled: puedeVerSaldos, staleTime: 0, retry: 1,
   })
   const cuentas = useMemo(() => {
-    const available = new Map((saldos.data?.cuentas || []).map(c => [c.cuentaCustodiaId, c]))
+    const available = puedeVerSaldos && !saldos.isError
+      ? new Map((saldos.data?.cuentas || []).map(c => [c.cuentaCustodiaId, c]))
+      : new Map()
     return (query.data?.cuentas || []).map(c => {
-      const balance = !saldos.isError && available.get(c.id)
+      const balance = available.get(c.id)
       const amountValid = !!balance && balance.saldoNativo != null && balance.saldoNativo !== '' && Number.isFinite(Number(balance.saldoNativo))
       const confirmed = amountValid && !saldos.isFetching && balance.conciliacion === 'confirmada' && saldos.data?.conciliacionPendiente === false
       return { ...c, saldo: amountValid ? Number(balance.saldoNativo) : null, saldoConfirmado: confirmed,
         disponible: confirmed && balance.disponible, valorUsd: balance?.valorUsd == null ? null : Number(balance.valorUsd),
         valoracionCompleta: balance?.valoracionCompleta === true, conciliacion: confirmed ? 'confirmada' : 'pendiente' }
     })
-  }, [query.data, saldos.data, saldos.isError, saldos.isFetching])
+  }, [query.data, saldos.data, saldos.isError, saldos.isFetching, puedeVerSaldos])
   function mutation(path, message) {
     return {
       mutationFn: fields => api(path, fields),
@@ -65,10 +72,10 @@ export function useCuentasCustodia() {
     cuentasEliminadas: query.data?.eliminadas || [],
     cargando: query.isPending,
     error: query.isError ? query.error.message : '',
-    saldos: saldos.data || null,
-    saldosCargando: saldos.isPending || saldos.isFetching,
-    saldosError: saldos.isError ? saldos.error.message : '',
-    conciliacionPendiente: saldos.data?.conciliacionPendiente !== false,
+    saldos: puedeVerSaldos ? saldos.data || null : null,
+    saldosCargando: puedeVerSaldos && (saldos.isPending || saldos.isFetching),
+    saldosError: puedeVerSaldos && saldos.isError ? saldos.error.message : '',
+    conciliacionPendiente: puedeVerSaldos && saldos.data?.conciliacionPendiente !== false,
     refetch: () => Promise.all([query.refetch(), saldos.refetch()]),
     agregarCuenta: nueva => crear.mutateAsync(nueva),
     editarCuenta: (id, updates) => editar.mutateAsync({ id, ...updates }),

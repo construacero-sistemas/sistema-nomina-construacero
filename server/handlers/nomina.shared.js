@@ -1,14 +1,14 @@
 // server/handlers/nomina.shared.js
 import { jsonError } from '../lib/utils.js'
 import { requireNominaTenant } from '../lib/nominaTenant.js'
+import { rolesConCapacidad } from '../lib/permissions.js'
 
-// Un único rol operativo: administración tiene todos los permisos de Nómina.
-// Los arrays conservan nombres de compatibilidad para que cada handler aplique
-// una defensa local incluso cuando una prueba o un adaptador simula auth.
-export const ADMIN_ROLE = 'administracion'
-export const ROLES_VER = [ADMIN_ROLE]
-export const ROLES_NOMINA = [ADMIN_ROLE]
-export const ROLES_ADMIN = [ADMIN_ROLE]
+// Roles con acceso a Nómina (matriz de permissions.js): nomina y los totales
+// (jefe/administracion/desarrollador). El rol finanzas NO ve nómina.
+// Los arrays derivan de la matriz única: aquí nunca se escribe una lista de roles.
+export const ROLES_VER = rolesConCapacidad('verNomina')
+export const ROLES_NOMINA = ROLES_VER
+export const ROLES_ADMIN = rolesConCapacidad('gestionarUsuarios')
 
 export function tenantGuard(operador, request) {
   return requireNominaTenant(operador, request)

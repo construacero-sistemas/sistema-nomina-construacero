@@ -72,7 +72,7 @@ describe('nómina — comisiones POS', () => {
         { id: 'u1', nombre: 'Desarrollador', rol: 'desarrollador', codigo: 'D-Z63T' },
         { id: 'u2', nombre: 'E2E Vendedor Temporal', rol: 'vendedor', codigo: 'V-XAQ3' },
         { id: 'u3', nombre: 'LOGISTICA', rol: 'logistica', codigo: 'L-9PWZ' },
-        { id: 'u4', nombre: 'ADMINISTRADOR', rol: 'administracion', codigo: 'A-RJZF' },
+        { id: 'u4', nombre: 'ADMINISTRADOR', rol: 'jefe', codigo: 'A-RJZF' },
         { id: 'u5', nombre: 'Edgar Ramírez', rol: 'vendedor', codigo: 'V-AZPZ' },
         { id: 'u6', nombre: 'EMPRESA', rol: 'vendedor_sin_comision', codigo: 'V-JBUW' },
         { id: 'u7', nombre: 'Niki Ramírez', rol: 'supervisor', codigo: 'S-GNC5' },

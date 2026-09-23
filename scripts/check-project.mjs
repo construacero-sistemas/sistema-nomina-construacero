@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findExternalImports } from './qa-responsive-rules.mjs'
+import { CAPACIDADES, ROLES_VALIDOS, rolesConCapacidad } from '../server/lib/permissions.js'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const failures = []
@@ -34,7 +35,7 @@ async function walk(directory, output = []) {
 
   for (const entry of entries) {
     const relativePath = join(directory, entry.name)
-    if (['node_modules', 'dist', 'coverage', '.git', '.freebuff', '.wrangler', 'outputs', '.workbuddy-ai'].includes(entry.name)) continue
+    if (['node_modules', 'dist', 'coverage', '.git', '.freebuff', '.wrangler', 'outputs', '.workbuddy-ai', 'backups'].includes(entry.name)) continue
     if (entry.isDirectory()) await walk(relativePath, output)
     else output.push(relativePath)
   }
@@ -123,33 +124,40 @@ const nominaSharedSource = await read('server/handlers/nomina.shared.js')
 const authOperatorsSource = await read('server/handlers/auth-operators.js')
 const tailwindSource = await read('tailwind.config.js')
 const supabaseConfig = await read('supabase/config.toml')
+const permissionsGuardSource = await read('server/lib/permissions.js')
 const acceptanceSource = await read('docs/ACEPTACION_MANUAL_E2E.md')
 const serviceWorkerSource = await read('public/sw.js')
+const workerSource = await read('worker.js')
 const agentSource = await read('AGENT.md')
 const bitacoraSource = await read('docs/BITACORA_PROYECTO.md')
 const toastSource = await read('compat/components/ui/Toast.jsx')
+const accesoModulosSource = await read('src/config/accesoModulos.js')
 
 for (const [name, source, markers] of [
   ['index.html', indexHtml, ['Nómina y Finanzas · Construacero Carabobo', 'Nómina y finanzas de Construacero Carabobo C.A.']],
   ['compat/modules/auth/LoginPage.jsx', loginSource, ['Bienvenido', 'Acceso a la cuenta', 'El acceso quedará guardado en este dispositivo', '/logo.png', 'login-stage', 'login-panel', 'login-field-control', 'login-field-icon', 'login-field-password-control', 'login-submit', 'submitReady', 'nomina-login-email', 'nomina-login-password', 'noValidate', 'Ingresa un correo válido.', 'login-form-error']],
-  ['server/handlers/nomina.shared.js', nominaSharedSource, ['ADMIN_ROLE', "ROLES_VER = [ADMIN_ROLE]", "ROLES_NOMINA = [ADMIN_ROLE]", "ROLES_ADMIN = [ADMIN_ROLE]"]],
-  ['server/handlers/auth-operators.js', authOperatorsSource, ['const OPERATOR_ROLES = new Set([\'administracion\'])', 'rol=eq.administracion']],
+  ['server/handlers/nomina.shared.js', nominaSharedSource, ['rolesConCapacidad', "rolesConCapacidad('verNomina')", "rolesConCapacidad('gestionarUsuarios')"]],
+  ['server/handlers/auth-operators.js', authOperatorsSource, ['ROLES_OPERATIVOS', 'tieneCapacidad', 'OPERATOR_ROLES']],
+  ['server/lib/permissions.js', await read('server/lib/permissions.js'), ["'finanzas'", "'nomina'", "'jefe'", 'verSaldos: false', 'MATRIZ', 'requireCapacidad', 'rolesConCapacidad', 'ROLES_OPERATIVOS', 'ROLES_ASIGNABLES', 'tieneAccesoOperativo', 'accesoUI']],
   ['compat/modules/auth/UserCard.jsx', userCardSource, ['operator-card', 'operator-card-avatar-wrap', 'operator-card-role']],
   ['compat/modules/auth/PwaInstallButton.jsx', pwaSource, ['beforeinstallprompt', 'Instalar App']],
   ['src/components/nomina/EmpleadoConfigModal.jsx', employeeModalSource, ['tipo_cliente === \'personal\'', 'Registra aquí al empleado', 'Nombre completo', 'O selecciona una persona ya registrada']],
   ['src/hooks/useTasaCambioNomina.js', ratesHookSource, ['api/rates', 'no-store', 'usdt']],
-  ['compat/store/useAuthStore.js', authStoreSource, ["signOut({ scope: 'local' })", 'finally {', '/api/auth/me', 'VITE_AUTH_DEBUG']],
-  ['server/handlers/auth-operators.js', workerAuthSource, ['handleGetCurrentProfile', 'administracion', 'pin_hash']],
+  ['compat/store/useAuthStore.js', authStoreSource, ["signOut({ scope: 'local' })", 'finally {', '/api/auth/me', 'VITE_AUTH_DEBUG', 'tieneAccesoOperativo']],
+  ['server/handlers/auth-operators.js', workerAuthSource, ['handleGetCurrentProfile', 'pin_hash', 'ROLES_OPERATIVOS']],
   ['compat/index.css', cssSource, ['.operator-card-avatar-wrap', '.operator-card-role', 'text-wrap: balance']],
   ['api/index.js', vercelApiSource, ['__route__', 'new URL(req.url']],
   ['vercel.json', vercelConfig, ['"/api/:path*"', '"/api?__route__=:path*"', '"api/index.js"']],
-  ['src/NominaApp.jsx', shellSource, ['Nómina y Finanzas', 'className="loader"', 'className="loader-square"', 'Array.from({ length: 7 }', 'md:hidden', 'translate-x-0', 'safe-area-inset-bottom', "perfil.rol !== 'administracion'"]],
-  ['src/hooks/useNomina.js', payrollHookSource, ["const ADMIN_ROLE = 'administracion'", "enabled: perfil?.rol === ADMIN_ROLE"]],
-  ['src/views/NominaView.jsx', payrollViewSource, ["perfil?.rol === 'administracion'", 'TabEmpleados', 'TabHistorial']],
-  ['src/views/SistemaView.jsx', systemViewSource, ['Sistema', 'TabConfiguracion', 'Gestión de Personal Centralizada', '/nomina']],
-  ['src/components/nomina/MarcajeLogisticaPanel.jsx', marcajeSource, ["perfil?.rol === 'administracion'", 'La hora se toma automáticamente']],
+  ['src/NominaApp.jsx', shellSource, ['Nómina y Finanzas', 'className="loader"', 'className="loader-square"', 'Array.from({ length: 7 }', 'md:hidden', 'translate-x-0', 'safe-area-inset-bottom', 'accesoUI']],
+  ['src/hooks/useNomina.js', payrollHookSource, ['tieneCapacidad', "'verNomina'", "'administrarNomina'"]],
+  ['src/views/NominaView.jsx', payrollViewSource, ['administrarNomina', 'TabEmpleados', 'TabHistorial']],
+  ['src/views/SistemaView.jsx', systemViewSource, ['Sistema', 'TabConfiguracion', 'Gestión de Personal Centralizada', '/nomina', 'tieneCapacidad', 'gestionarUsuarios']],
+  ['src/components/nomina/MarcajeLogisticaPanel.jsx', marcajeSource, ['administrarNomina', 'La hora se toma automáticamente']],
+  ['compat/components/auth/LoginPinModal.jsx', await read('compat/components/auth/LoginPinModal.jsx'), ['tieneCapacidad']],
+  ['src/components/sistema/UsuariosPanel.jsx', await read('src/components/sistema/UsuariosPanel.jsx'), ['ROLES_CREABLES', 'etiquetaRol', 'longitudPin']],
+  ['src/config/accesoModulos.js', accesoModulosSource, ["export * from '../../server/lib/permissions.js'"]],
   ['docs/ACEPTACION_MANUAL_E2E.md', acceptanceSource, ['Tareas de aceptación', 'Criterios de liberación', 'operación compartida']],
-  ['server/handlers/finanzas.js', financeHandlerSource, ['handleGetFinanzasMovimientos', 'handleCrearFinanzasMovimiento', 'handleAnularFinanzasMovimiento', 'handleGetFinanzasResumen', 'requireAdmin', 'idempotency_key']],
+  ['server/handlers/finanzas.js', financeHandlerSource, ['handleGetFinanzasMovimientos', 'handleCrearFinanzasMovimiento', 'handleAnularFinanzasMovimiento', 'handleGetFinanzasResumen', 'requireCapacidad', 'idempotency_key']],
   ['server/handlers/nomina.js', await read('server/handlers/nomina.js'), ['./nomina.empleados.js', './nomina.asistencia.js', './nomina.lineas.js']],
   ['src/components/finanzas/FinanzasView.jsx', financeViewSource, ['useFinanzasMovimientos', 'useFinanzasResumen', 'Nuevo movimiento']],
   ['src/components/finanzas/FinanzasFiltrosUI.jsx', await read('src/components/finanzas/FinanzasFiltrosUI.jsx'), ['Mostrar movimientos anulados']],
@@ -165,28 +173,97 @@ for (const [name, source, markers] of [
     if (!source.includes(marker)) fail(`${name} perdió el contrato de identidad/login: ${marker}`)
   }
 }
-if (!authServerSource.includes("operador.rol !== ADMIN_ROLE") || authServerSource.includes('NOMINA_SINGLE_ADMIN_ONLY')) {
-  fail('La autorización server-side debe fijar sin excepciones el rol único administración')
+// Contrato de roles (migración 245 + matriz permissions.js): jefe/desarrollador
+// = total; finanzas y nomina = módulo propio. La autorización SIEMPRE pasa por la
+// matriz central — ningún handler mantiene listas de roles propias.
+if (!authServerSource.includes('OPERATIONAL_ROLES') || !authServerSource.includes('ROLES_OPERATIVOS') || !authServerSource.includes('rolesConCapacidad')) {
+  fail('La puerta de autorización (validateOperator) debe derivar los roles operativos de la matriz única (server/lib/permissions.js), sin listas propias')
 }
-if (nominaSharedSource.includes("'jefe'") || nominaSharedSource.includes("'desarrollador'") || nominaSharedSource.includes("'logistica'")) {
-  fail('Los handlers de nómina no deben conservar roles operativos heredados')
+if (!accesoModulosSource.includes("export * from '../../server/lib/permissions.js'")) {
+  fail('src/config/accesoModulos.js debe reexportar la matriz única en vez de mantener su propia lista de roles')
 }
+if (!nominaSharedSource.includes("rolesConCapacidad('verNomina')") || !nominaSharedSource.includes("rolesConCapacidad('gestionarUsuarios')")) {
+  fail('Los handlers de nómina no deben fijar roles a mano: derivan de la matriz (rolesConCapacidad)')
+}
+if (!permissionsGuardSource.includes('gestionarUsuarios') || !permissionsGuardSource.includes("capacidadesFinanzas") || !permissionsGuardSource.includes("capacidadesNomina")) {
+  fail('La matriz de permisos debe mantener las capacidades separadas por rol (finanzas sin saldos, nomina sin finanzas)')
+}
+// El espejo SQL final de la matriz (migración 245) no puede divergir de la fuente JS:
+// si alguien agrega o quita un rol en cualquiera de los dos lados, esto falla.
+const rolesSqlSource = await read('supabase/migrations/245_converge_administracion_to_jefe.sql')
+for (const capacidad of CAPACIDADES) {
+  const bloque = rolesSqlSource.match(new RegExp(`WHEN '${capacidad}'\\s*THEN ARRAY\\[([^\\]]*)\\]`))
+  if (!bloque) {
+    fail(`El espejo SQL de roles (migración 245) no declara la capacidad ${capacidad}`)
+    continue
+  }
+  const rolesSql = [...bloque[1].matchAll(/'([^']+)'/g)].map(match => match[1]).sort().join(',')
+  const rolesJs = [...rolesConCapacidad(capacidad)].sort().join(',')
+  if (rolesSql !== rolesJs) {
+    fail(`El espejo SQL de '${capacidad}' no coincide con la matriz única: SQL [${rolesSql}] vs JS [${rolesJs}]`)
+  }
+}
+// El CHECK final de la migración 245 es la tercera fuente: debe cubrir
+// exactamente los mismos roles válidos que la matriz única.
+const checkRolesSql = await read('supabase/migrations/245_converge_administracion_to_jefe.sql')
+const bloqueCheck = checkRolesSql.match(/ADD CONSTRAINT usuarios_rol_check CHECK \(rol IN \(([^)]*)\)\)/)
+if (!bloqueCheck) {
+  fail('La migración 245 no declara el CHECK usuarios_rol_check')
+} else {
+  const rolesCheck = [...bloqueCheck[1].matchAll(/'([^']+)'/g)].map(match => match[1]).sort().join(',')
+  const rolesMatriz = [...ROLES_VALIDOS].sort().join(',')
+  if (rolesCheck !== rolesMatriz) {
+    fail(`El CHECK de roles (245) no coincide con ROLES_VALIDOS: SQL [${rolesCheck}] vs JS [${rolesMatriz}]`)
+  }
+}
+
+const operacionesSqlSource = await read('supabase/migrations/244_roles_operativos_operaciones.sql')
+// Se juzga solo el código: los comentarios explican el cambio y citan el patrón
+// anterior a propósito.
+const soloCodigoSql = sql => sql.split('\n').filter(linea => !linea.trimStart().startsWith('--')).join('\n')
+const convergenciaSqlSource = await read('supabase/migrations/245_converge_administracion_to_jefe.sql')
+for (const [numero, sql] of [['244', operacionesSqlSource]]) {
+  for (const patron of ["get_rol_actual() = 'administracion'", "u.rol = 'administracion'", "rol = 'administracion'"]) {
+    if (soloCodigoSql(sql).includes(patron)) fail(`La migración ${numero} reintroduce una autorización por rol único: ${patron}`)
+  }
+}
+// En 245 el literal antiguo solo puede aparecer en el filtro de conversión
+// transaccional y en la meta de auditoría; nunca en una capacidad o compuerta.
+if (soloCodigoSql(convergenciaSqlSource).includes("WHEN 'verSaldos'          THEN ARRAY['administracion'") ||
+    soloCodigoSql(convergenciaSqlSource).includes("WHEN 'gestionarUsuarios'  THEN ARRAY['administracion'")) {
+  fail('La migración 245 reintroduce administracion en una capacidad vigente')
+}
+if (!soloCodigoSql(convergenciaSqlSource).includes("SET rol = 'jefe'")) {
+  fail('La migración 245 no contiene la convergencia de usuarios a jefe')
+}
+
 if (authOperatorsSource.includes('handleSuperAdmin') || authOperatorsSource.includes('/api/auth/super-admin') || authOperatorsSource.includes('DEV_SUPER_CODE')) {
   fail('No debe existir un bypass de desarrollador o Super Admin en el flujo de autenticación')
 }
 if (loginSource.includes('super-admin') || loginSource.includes('Acceso Desarrollador') || loginSource.includes('_isSuperAdmin')) {
   fail('El login no debe contener accesos secretos ni perfiles virtuales')
 }
+// F2 — barrera de acceso: la selección de operador exige PIN validado en el
+// Worker (PBKDF2) y la ruta sin PIN está eliminada. LOGIN_SIN_PIN no debe poder
+// regresar ni por una nueva ruta ni por una redefinición del handler.
 if (workerAuthSource.includes("const { operator_id: operatorId, pin } = parsed.body || {}") === false) {
-  fail('La ruta de PIN anterior debe conservar su validación al reactivarse')
+  fail('La ruta de PIN (switch-operator) debe conservar su validación de operator_id y pin')
 }
-if (!workerAuthSource.includes('handleSelectOperator') || !workerAuthSource.includes("accion: 'LOGIN_SIN_PIN'")) {
-  fail('La selección temporal sin PIN debe validarse y auditarse en el Worker')
+if (workerAuthSource.includes('LOGIN_SIN_PIN') || workerAuthSource.includes('handleSelectOperator')) {
+  fail('La selección sin PIN (LOGIN_SIN_PIN / handleSelectOperator) está eliminada y no debe regresar')
 }
-if (!financeHandlerSource.includes("const denied = requireAdmin")) {
-  fail('Finanzas debe exigir administración antes de tocar Supabase')
+if (workerSource.includes('select-operator')) {
+  fail('La ruta /api/auth/select-operator está eliminada y no debe registrarse en el Worker')
 }
-if (payrollHookSource.includes("'logistica'") || payrollHookSource.includes("'jefe'") || payrollHookSource.includes("'desarrollador'")) {
+if (!authOperatorsSource.includes("OPERADOR_REQUERIDO")) {
+  fail('/api/auth/me debe responder OPERADOR_REQUERIDO para cuentas multi-operador sin selección')
+}
+if (!financeHandlerSource.includes("requireCapacidad(result.operador, 'verFinanzas'") || !financeHandlerSource.includes("requireCapacidad(result.operador, 'operarFinanzas'")) {
+  fail('Finanzas debe autorizar por capacidad (verFinanzas/operarFinanzas) antes de tocar Supabase')
+}
+// El frontend ya no escribe listas de roles: deriva de la matriz única. La regla
+// general (EXPRESIONES_ROL) se aplica a todas las fuentes más abajo.
+if (payrollHookSource.includes("'logistica'") || payrollHookSource.includes("'supervisor'")) {
   fail('El frontend de nómina no debe habilitar roles heredados')
 }
 if (loginSource.includes('Gestión de cotizaciones, inventario y clientes')) {
@@ -234,6 +311,9 @@ const expectedMigrations = [
   '221_finanzas_movimientos.sql',
   '222_finanzas_admin_role_guard.sql',
   '223_finanzas_resumen_filtros.sql',
+  '243_roles_operativos_autorizacion.sql',
+  '244_roles_operativos_operaciones.sql',
+  '245_converge_administracion_to_jefe.sql',
 ]
 for (const migration of expectedMigrations) {
   if (!migrationFiles.includes(migration)) fail(`Falta migración de contrato: ${migration}`)
@@ -241,6 +321,27 @@ for (const migration of expectedMigrations) {
 
 const sourceFiles = (await walk('.')).filter(path => /\.(?:js|jsx|mjs|json|toml|sql|css)$/.test(path))
 const boundedSourceFiles = sourceFiles.filter(path => /\.(?:js|jsx|mjs|sql|css)$/.test(path))
+// Rol literal: la ÚNICA fuente permitida es server/lib/permissions.js. Cualquier
+// otra autorización escrita como rol literal rompe la paridad interfaz ↔
+// servidor ↔ SQL (es justo el desajuste que dejó a jefe/finanzas/nomina fuera).
+// Solo vigila los roles de ESTA matriz: los roles heredados del POS (vendedor,
+// supervisor, logistica…) son dominio externo y pueden filtrarse donde toque.
+const ROLES_MATRIZ = 'desarrollador|jefe|finanzas|nomina'
+const EXPRESIONES_ROL = [
+  // comparación directa: perfil?.rol === 'finanzas'
+  new RegExp(`\\brol\\s*(?:===|!==|==|!=)\\s*['"](?:${ROLES_MATRIZ})['"]`),
+  // comparación normalizada: u.rol?.toLowerCase() === 'administracion'
+  new RegExp(`\\brol\\b[^\\n]{0,40}toLowerCase\\(\\)[^\\n]{0,20}(?:===|!==|==|!=)\\s*['"](?:${ROLES_MATRIZ})['"]`),
+  // lista de roles: ['jefe', 'administracion', 'desarrollador']
+  new RegExp(`\\[[^\\]\\n]*'(?:${ROLES_MATRIZ})'[^\\]\\n]*,[^\\]\\n]*'(?:${ROLES_MATRIZ})'`),
+  // constante de rol administrativo: const ADMIN_ROLE = 'jefe'
+  new RegExp(`\\b(?:const|let|var)\\s+\\w*(?:ROLE|ROL)\\w*\\s*=\\s*['"](?:${ROLES_MATRIZ})['"]`),
+]
+// Presentación pura: la paleta del avatar distingue visualmente al jefe y no
+// autoriza nada, por eso queda fuera de la regla (documentado a propósito).
+const EXENTOS_ROL_LITERAL = new Set([
+  'compat/components/auth/LoginAvatar.jsx',
+])
 for (const path of sourceFiles) {
   // Este archivo contiene las expresiones del propio escáner; no lo uses como
   // entrada para detectar los patrones que implementa.
@@ -248,6 +349,47 @@ for (const path of sourceFiles) {
   const text = await read(path)
   if (boundedSourceFiles.includes(path) && text.split(/\r?\n/).length > 600) {
     fail(`Archivo sobrepasa el límite de 600 líneas: ${path}`)
+  }
+  // Toda compuerta de rol deriva de la matriz única. La regla ignora las
+  // pruebas (su trabajo es fijar roles concretos) y el propio archivo de la
+  // matriz; se limita a JS/JSX/MJS para no chocar con el SQL de las migraciones.
+  const pathRol = path.split('\\').join('/')
+  const esFuenteRol = /\.(?:js|jsx|mjs)$/.test(pathRol)
+  const esPrueba = /__tests__\//.test(pathRol) || /\.(?:test|spec)\./.test(pathRol)
+  if (esFuenteRol && !esPrueba && pathRol !== 'server/lib/permissions.js' &&
+      !EXENTOS_ROL_LITERAL.has(pathRol) &&
+      EXPRESIONES_ROL.some(expresion => expresion.test(text))) {
+    fail(`Autorización por rol literal fuera de la matriz única en ${pathRol}; deriva de server/lib/permissions.js`)
+  }
+  // F2 — barrera de acceso: el navegador nunca compara credenciales. El PIN se
+  // valida solo en el Worker (PBKDF2); el frontend únicamente lo transporta.
+  // Se buscan señales de código (la mención de PBKDF2 en un comentario es legítima).
+  if ((pathRol.startsWith('src/') || pathRol.startsWith('compat/')) && !esPrueba &&
+      /verifyPinPBKDF2|pin_hash|pin_salt/.test(text)) {
+    fail(`Validación de credenciales en el navegador detectada en ${pathRol}; el PIN se valida solo en el Worker`)
+  }
+  // Política de PIN: la longitud por rol (finanzas/nomina: 4) SOLO se define en
+  // la matriz. Cualquier largo escrito a mano es una fuente de divergencia entre
+  // el login, el panel y el Worker. Las pruebas quedan fuera: su trabajo es fijar
+  // justamente esos largos.
+  const PIN_LITERALES = ['/^\\d{6}$/', 'PIN debe ser de 6 dígitos']
+  if (!esPrueba && pathRol !== 'server/lib/permissions.js' &&
+      PIN_LITERALES.some(literal => text.includes(literal))) {
+    fail(`Longitud de PIN escrita a mano en ${pathRol}; deriva de longitudPin() en la matriz única`)
+  }
+  if (pathRol === 'compat/components/auth/LoginPinModal.jsx' && !text.includes('longitudPin(')) {
+    fail('LoginPinModal debe derivar la longitud del PIN de longitudPin() (matriz única)')
+  }
+  if (pathRol === 'src/components/sistema/UsuariosPanel.jsx') {
+    if (!text.includes('ROLES_CREABLES')) {
+      fail('UsuariosPanel debe ofrecer ROLES_CREABLES (el selector oculta administracion)')
+    }
+    if (text.includes('ROLES_ASIGNABLES')) {
+      fail('UsuariosPanel no debe usar ROLES_ASIGNABLES: el selector debe usar la fuente vigente ROLES_CREABLES')
+    }
+  }
+  if (pathRol === 'compat/api/lib/auth.js' && text.includes('headerOpId')) {
+    fail('verifyAuth no debe aceptar el operador desde la cabecera X-Operator-Id: solo app_metadata tras validar PIN')
   }
   // El paquete puede importar sus propios módulos internos, pero nunca debe
   // alcanzar el POS por rutas relativas al directorio padre.
@@ -285,7 +427,6 @@ for (const line of ['.env', '.dev.vars', 'node_modules/', 'dist/']) {
   if (!gitignore.split(/\r?\n/).includes(line)) fail(`.gitignore no protege ${line}`)
 }
 
-const workerSource = await read('worker.js')
 for (const marker of ["GET /api/rates", 'handleGetRates']) {
   if (!workerSource.includes(marker)) fail(`worker.js no expone tasas: ${marker}`)
 }

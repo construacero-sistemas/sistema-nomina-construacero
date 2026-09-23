@@ -1,6 +1,7 @@
 import { validateOperator } from '../lib/auth.js'
 import { json, jsonError } from '../lib/utils.js'
-import { ROLES_ADMIN, tenantGuard } from './nomina.shared.js'
+import { tenantGuard } from './nomina.shared.js'
+import { requireCapacidad } from '../lib/permissions.js'
 import {
   callFinancialRpc,
   executeFinancialOperation,
@@ -15,7 +16,11 @@ export async function handleFinancialMutation(request, env, tipo) {
   const validation = await validateOperator(request, env)
   if (validation.error) return validation.error
   const { operador, ip } = validation
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado: se requiere permiso de administración', 403, request)
+  // pagar_nomina y revertir_nomina requieren ambos módulos (nómina paga,
+  // finanzas registra el egreso): lo cubre 'operarFinanzas' + validación
+  // del módulo nómina en sus propios endpoints. El traspaso es puro finanzas.
+  const denied = requireCapacidad(operador, 'operarFinanzas', request)
+  if (denied) return denied
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body
@@ -36,7 +41,10 @@ export async function handleGetSaldos(request, env) {
   const validation = await validateOperator(request, env)
   if (validation.error) return validation.error
   const { operador } = validation
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado: se requiere permiso de administración', 403, request)
+  // Regla de negocio: los saldos de las cuentas son SOLO para roles de acceso
+  // total. El rol finanzas registra movimientos pero no ve acumulados.
+  const denied = requireCapacidad(operador, 'verSaldos', request)
+  if (denied) return denied
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   try {
@@ -55,7 +63,8 @@ export async function handleGetOperacionEstado(request, env) {
   const validation = await validateOperator(request, env)
   if (validation.error) return validation.error
   const { operador } = validation
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado: se requiere permiso de administración', 403, request)
+  const denied = requireCapacidad(operador, 'operarFinanzas', request)
+  if (denied) return denied
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   try {

@@ -11,7 +11,7 @@ const receiptId = '33333333-3333-4333-8333-333333333333'
 const accountId = '44444444-4444-4444-8444-444444444444'
 const key = '55555555-5555-4555-8555-555555555555'
 const env = { SUPABASE_URL: 'https://database.invalid', SUPABASE_SERVICE_KEY: 'test-service-key' }
-const actor = { id: actorId, cuenta_id: tenant, rol: 'administracion', nombre: 'Test administrator' }
+const actor = { id: actorId, cuenta_id: tenant, rol: 'jefe', nombre: 'Test administrator' }
 const payment = { operationId: key, lineaIds: [receiptId], cuentaCustodiaId: accountId, metodoPago: 'Zelle', tasaBcv: '120', fuenteTasa: 'BCV' }
 function request(body, path = '/api/finanzas/operaciones') {
   return new Request(`https://worker.test${path}`, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })

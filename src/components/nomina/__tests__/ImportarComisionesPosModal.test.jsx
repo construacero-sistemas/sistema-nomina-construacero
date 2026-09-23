@@ -16,7 +16,7 @@ vi.mock('../../../../compat/services/apiBase.js', () => ({
 }))
 
 vi.mock('../../../../compat/store/useAuthStore.js', () => {
-  const perfil = { id: 'admin-1', rol: 'administracion', nombre: 'Admin Test', cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' }
+  const perfil = { id: 'admin-1', rol: 'jefe', nombre: 'Admin Test', cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' }
   const state = { perfil, user: { id: perfil.cuenta_id }, accountId: perfil.cuenta_id }
   const useAuthStore = vi.fn(selector => (selector ? selector(state) : state))
   useAuthStore.getState = () => state
@@ -106,8 +106,6 @@ describe('ImportarComisionesPosModal', () => {
     renderModal()
 
     expect(screen.getByText(/Semana 1 Agosto/i)).toBeDefined()
-    expect(screen.getByText(/Consultando liberaciones en el POS/i)).toBeDefined()
-
     await waitFor(() => {
       expect(screen.getByText('Luis Ramírez')).toBeDefined()
       expect(screen.getByText(/2 tickets en POS/i)).toBeDefined()

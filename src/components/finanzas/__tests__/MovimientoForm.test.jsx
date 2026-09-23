@@ -165,6 +165,27 @@ describe('MovimientoForm', () => {
     await waitFor(() => expect(screen.getByText(/Nueva/i)).toBeInTheDocument())
   })
 
+  it('muestra una sola opción de Bolívares digitales y conserva cuenta y comprobante', async () => {
+    const user = userEvent.setup()
+    const cuentas = [
+      { id: 'bank-1', nombre: 'Banco Venezuela', tipo: 'banco_ves', moneda: 'VES', activo: true },
+      { id: 'bank-2', nombre: 'Provincial', tipo: 'banco_ves', moneda: 'VES', activo: true },
+    ]
+    renderForm(cuentas)
+    const metodoTrigger = screen.getAllByRole('combobox').find(c => c.textContent.includes('Efectivo $'))
+    await user.click(metodoTrigger)
+
+    expect(await screen.findAllByRole('option', { name: /bolívares digitales/i })).toHaveLength(1)
+    expect(screen.queryByRole('option', { name: /transferencia bancaria|pago móvil|punto de venta|banco en bolívares/i })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: /bolívares digitales/i }))
+
+    expect(screen.getByLabelText(/comprobante|referencia/i)).toBeInTheDocument()
+    const cuentaTrigger = screen.getAllByRole('combobox').find(c => /desde qué cuenta/i.test(c.textContent))
+    await user.click(cuentaTrigger)
+    expect(await screen.findByRole('option', { name: /banco venezuela/i })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: /provincial/i })).toBeInTheDocument()
+  })
+
   it('atribuye a una cuenta de origen (Banesco) y permite dividir en partes', async () => {
     const user = userEvent.setup()
     const cuentasConBancos = [
@@ -178,7 +199,7 @@ describe('MovimientoForm', () => {
     // Elegir método bancario → aparece la cuenta de origen.
     const metodoTrigger = screen.getAllByRole('combobox').find(c => /efectivo \$/i.test(c.textContent))
     await user.click(metodoTrigger)
-    const opBanco = await screen.findByRole('option', { name: /banco en bolívares/i })
+    const opBanco = await screen.findByRole('option', { name: /bolívares digitales/i })
     await user.click(opBanco)
     // El select de cuenta de origen aparece.
     const cuentaTrigger = screen.getAllByRole('combobox').find(c => /desde qué cuenta/i.test(c.textContent))
@@ -191,7 +212,7 @@ describe('MovimientoForm', () => {
     if (form) fireEvent.submit(form)
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1))
     const payload = mutateAsync.mock.calls[0][0]
-    expect(payload.metodoPago).toBe('Banco en Bolívares')
+    expect(payload.metodoPago).toBe('Bolívares digitales')
     expect(payload.cuentaOrigen).toBe('Banesco')
     expect(payload.cuentaCustodiaId).toBe('c-ban')
     expect(payload.partes).toBeNull()

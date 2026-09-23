@@ -4,7 +4,7 @@
 // entre dispositivos. Borrado lógico (activo=false) para no perder historial.
 import { json, jsonError, isValidUuid } from '../lib/utils.js'
 import { validateOperator, supaServiceHeaders } from '../lib/auth.js'
-import { requireAdmin } from '../lib/permissions.js'
+import { requireCapacidad, capacidadesDe } from '../lib/permissions.js'
 import { registrarAuditoria } from '../lib/audit.js'
 import { clearEgressCache } from '../lib/egressCache.js'
 import {
@@ -27,7 +27,43 @@ function svcHeaders(env, prefer = 'return=representation') {
 async function adminContext(request, env) {
   const result = await validateOperator(request, env)
   if (result.error) return result
-  const denied = requireAdmin(result.operador, request)
+  const capacidades = capacidadesDe(result.operador)
+  // Finanzas necesita escoger cuenta al registrar/mover fondos; Nómina al
+  // liquidar recibos. El catálogo operativo se expone sin datos bancarios ni
+  // saldos. La vista de saldos sigue reservada a verSaldos.
+  if (!capacidades.verFinanzas && !capacidades.administrarNomina) {
+    return { error: requireCapacidad(result.operador, 'verFinanzas', request) }
+  }
+  if (!isValidUuid(result.operador.cuenta_id)) {
+    return { error: jsonError('Cuenta inválida', 403, request) }
+  }
+  return result
+}
+
+function respuestaCustodiaOperativa(row) {
+  const cuenta = cuentaCustodiaResponse(row)
+  return {
+    id: cuenta.id,
+    codigo: cuenta.codigo,
+    nombre: cuenta.nombre,
+    tipo: cuenta.tipo,
+    cartera: cuenta.cartera,
+    moneda: cuenta.moneda,
+    banco: cuenta.banco,
+    subcuentaId: cuenta.subcuentaId,
+    predeterminada: cuenta.predeterminada,
+    permanente: cuenta.permanente,
+    activo: cuenta.activo,
+    creadoEn: cuenta.creadoEn,
+  }
+}
+
+// Escritura de cuentas (crear/editar/eliminar): solo gestión (jefe/admin).
+// El rol finanzas y nomina consumen el catálogo pero no lo administran.
+async function gestionContext(request, env) {
+  const result = await validateOperator(request, env)
+  if (result.error) return result
+  const denied = requireCapacidad(result.operador, 'gestionarUsuarios', request)
   if (denied) return { error: denied }
   if (!isValidUuid(result.operador.cuenta_id)) {
     return { error: jsonError('Cuenta inválida', 403, request) }
@@ -55,11 +91,15 @@ export async function handleGetCuentasCustodia(request, env) {
   if (context.error) return context.error
   const { operador } = context
   const headers = svcHeaders(env, 'return=minimal')
+  const puedeVerSaldos = capacidadesDe(operador).verSaldos
+  const selectCuentas = puedeVerSaldos
+    ? SELECT
+    : 'id,codigo,nombre,tipo,cartera,moneda,banco,subcuenta_id,predeterminada,activo,creado_en'
 
   const fetchCuentas = async () => {
     const res = await fetch(
       `${env.SUPABASE_URL}/rest/v1/cuentas_custodia?${accountFilter(operador.cuenta_id)}` +
-        `&activo=eq.true&select=${SELECT}&order=predeterminada.desc,creado_en.asc`,
+        `&activo=eq.true&select=${selectCuentas}&order=predeterminada.desc,creado_en.asc`,
       { headers },
     )
     if (!res.ok) return null
@@ -69,10 +109,10 @@ export async function handleGetCuentasCustodia(request, env) {
   let rows = await fetchCuentas()
   if (rows === null) return jsonError('No se pudieron cargar las cuentas de custodia', 500, request)
 
-  // Sembrar SOLO en el primer acceso real del tenant (cero filas, activas o no).
-  // Si el tenant eliminó todas sus cuentas (quedan filas con activo=false), se
-  // respeta esa decisión y NO se vuelven a sembrar los ejemplos.
-  if (rows.length === 0) {
+  // Sembrar SOLO en el primer acceso administrativo real del tenant (cero filas,
+  // activas o no). El acceso operativo de finanzas/nómina es estrictamente de
+  // lectura: jamás crea cuentas por efecto de un GET.
+  if (puedeVerSaldos && rows.length === 0) {
     const anyRow = await fetch(
       `${env.SUPABASE_URL}/rest/v1/cuentas_custodia?${accountFilter(operador.cuenta_id)}&select=id&limit=1`,
       { headers },
@@ -86,9 +126,9 @@ export async function handleGetCuentasCustodia(request, env) {
       rows = await fetchCuentas()
       if (rows === null) return jsonError('No se pudieron cargar las cuentas de custodia', 500, request)
     }
-  }
-
-  return json({ cuentas: rows.map(cuentaCustodiaResponse), eliminadas: await fetchEliminadas(env, operador.cuenta_id, headers) }, 200, request)
+  }  const cuentas = puedeVerSaldos ? rows.map(cuentaCustodiaResponse) : rows.map(respuestaCustodiaOperativa)
+  const eliminadas = puedeVerSaldos ? await fetchEliminadas(env, operador.cuenta_id, headers) : []
+  return json({ cuentas, eliminadas }, 200, request)
 }
 
 // Papelera: últimas cuentas eliminadas (borrado lógico) para poder
@@ -131,7 +171,7 @@ async function seedDefaults(env, operador, headers) {
 
 // POST /api/finanzas/cuentas-custodia/crear
 export async function handleCrearCuentaCustodia(request, env) {
-  const context = await adminContext(request, env)
+  const context = await gestionContext(request, env)
   if (context.error) return context.error
   const { operador } = context
   const parsed = await readBody(request)
@@ -205,7 +245,7 @@ export async function handleCrearCuentaCustodia(request, env) {
 
 // POST /api/finanzas/cuentas-custodia/actualizar
 export async function handleActualizarCuentaCustodia(request, env) {
-  const context = await adminContext(request, env)
+  const context = await gestionContext(request, env)
   if (context.error) return context.error
   const { operador } = context
   const parsed = await readBody(request)
@@ -267,7 +307,7 @@ export async function handleActualizarCuentaCustodia(request, env) {
 // POST /api/finanzas/cuentas-custodia/eliminar
 // Borrado LÓGICO (activo=false). No se destruye el historial de movimientos.
 export async function handleEliminarCuentaCustodia(request, env) {
-  const context = await adminContext(request, env)
+  const context = await gestionContext(request, env)
   if (context.error) return context.error
   const { operador } = context
   const parsed = await readBody(request)
@@ -321,7 +361,7 @@ export async function handleEliminarCuentaCustodia(request, env) {
 // Reversibilidad: reactiva una cuenta específica eliminada (activo=false → true).
 // Complementa "restaurar" (que trae de vuelta las 2 cajas semilla).
 export async function handleRestaurarUnaCuentaCustodia(request, env) {
-  const context = await adminContext(request, env)
+  const context = await gestionContext(request, env)
   if (context.error) return context.error
   const { operador } = context
   const parsed = await readBody(request)
@@ -365,7 +405,7 @@ export async function handleRestaurarUnaCuentaCustodia(request, env) {
 // Permite vaciar la papelera o descartar una cuenta para que no vuelva a aparecer.
 // Las cajas físicas permanentes están protegidas contra borrado.
 export async function handleDescartarCuentaCustodia(request, env) {
-  const context = await adminContext(request, env)
+  const context = await gestionContext(request, env)
   if (context.error) return context.error
   const { operador } = context
   const parsed = await readBody(request)
@@ -412,7 +452,7 @@ export async function handleDescartarCuentaCustodia(request, env) {
 // banco/Zelle y quiere el ejemplo de vuelta, puede recrearlo desde el formulario
 // con sus datos reales — los ejemplos con datos falsos ya no se siembran.
 export async function handleRestaurarCuentasCustodia(request, env) {
-  const context = await adminContext(request, env)
+  const context = await gestionContext(request, env)
   if (context.error) return context.error
   const { operador } = context
   const headers = svcHeaders(env, 'return=minimal')

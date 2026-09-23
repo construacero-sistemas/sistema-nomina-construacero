@@ -23,7 +23,7 @@ describe('autorización incluso con caché caliente', () => {
     let active = true
     const fetchMock = vi.fn(async url => {
       if (String(url).endsWith('/auth/v1/user')) return new Response(JSON.stringify({ id: account, app_metadata: { operator_id: operator } }))
-      if (String(url).includes('/usuarios?')) return new Response(JSON.stringify(active ? [{ id: operator, cuenta_id: account, nombre: 'Test', rol: 'administracion' }] : []))
+      if (String(url).includes('/usuarios?')) return new Response(JSON.stringify(active ? [{ id: operator, cuenta_id: account, nombre: 'Test', rol: 'jefe' }] : []))
       throw new Error('Unexpected upstream')
     })
     vi.stubGlobal('fetch', fetchMock)

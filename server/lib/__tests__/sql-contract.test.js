@@ -6,6 +6,12 @@ async function migration(name) {
   return readFile(url, 'utf8')
 }
 
+// Las negaciones juzgan el CÓDIGO: los comentarios citan a propósito el patrón
+// anterior (rol único) para explicar el cambio.
+function soloCodigo(sql) {
+  return sql.split('\n').filter(linea => !linea.trimStart().startsWith('--')).join('\n')
+}
+
 describe('contrato SQL de Finanzas y autorización', () => {
   it('define libro financiero con precisión, tenant, RLS, idempotencia y resumen server-side', async () => {
     const sql = await migration('221_finanzas_movimientos.sql')
@@ -24,7 +30,7 @@ describe('contrato SQL de Finanzas y autorización', () => {
     expect(sql).not.toMatch(/DELETE\s+FROM\s+public\.finanzas_movimientos/i)
   })
 
-  it('retira roles heredados y deja una única autorización administrativa', async () => {
+  it('222 — guardia histórica de rol único (sustituida por 242 y alineada por 243)', async () => {
     const sql = await migration('222_finanzas_admin_role_guard.sql')
 
     expect(sql).toContain("WHERE rol <> 'administracion'")
@@ -37,6 +43,55 @@ describe('contrato SQL de Finanzas y autorización', () => {
     expect(sql).not.toContain('desarrollador virtual')
   })
 
+  it('243 — el espejo SQL de roles y la resolución por capacidad sustituyen al rol único', async () => {
+    const sql = await migration('243_roles_operativos_autorizacion.sql')
+
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.roles_capacidad')
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.roles_operativos')
+    for (const capacidad of ['verNomina', 'administrarNomina', 'verFinanzas', 'operarFinanzas', 'verSaldos', 'gestionarUsuarios', 'administrarSistema']) {
+      expect(sql).toContain(`WHEN '${capacidad}'`)
+    }
+    // La resolución del rol acepta cualquier rol operativo, no un rol único.
+    expect(sql).toContain('AND u.rol = ANY(public.roles_operativos())')
+    expect(sql).toContain('AND u.rol = ANY(public.roles_operativos())\n  ORDER BY u.nombre')
+    // Las políticas se expresan por capacidad.
+    expect(sql).toContain("get_rol_actual() = ANY(public.roles_capacidad('administrarNomina'))")
+    expect(sql).toContain("get_rol_actual() = ANY(public.roles_capacidad('verFinanzas'))")
+    expect(sql).toContain("get_rol_actual() = ANY(public.roles_capacidad('verSaldos'))")
+    expect(soloCodigo(sql)).not.toMatch(/get_rol_actual\(\) = 'administracion'/)
+    // Sin bypass de "desarrollador virtual": el rol sale siempre de la fila real.
+    expect(sql).not.toContain('00000000-0000-0000-0000-000000000000')
+  })
+
+  it('244 — los guardianes de actor distinguen traspaso de pagos de nómina', async () => {
+    const sql = await migration('244_roles_operativos_operaciones.sql')
+
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.finanzas_operar')
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.finanzas_asignar_custodia')
+    // Misma capacidad por tipo que el servidor (CAPACIDAD_POR_TIPO).
+    expect(sql).toContain("WHEN p_tipo = 'traspaso' THEN 'operarFinanzas' ELSE 'administrarNomina'")
+    expect(sql).toContain("rol = ANY(public.roles_capacidad('operarFinanzas'))")
+    expect(sql).toContain('GRANT EXECUTE ON FUNCTION public.finanzas_operar(UUID,UUID,TEXT,TEXT,JSONB,TEXT) TO service_role')
+    expect(soloCodigo(sql)).not.toMatch(/u\.rol = 'administracion'/)
+  })
+
+  it('245 — converge administracion a jefe preservando identidad y cerrando el rol antiguo', async () => {
+    const sql = await migration('245_converge_administracion_to_jefe.sql')
+    expect(sql).toContain("UPDATE public.usuarios")
+    expect(sql).toContain("SET rol = 'jefe'")
+    expect(sql).toContain("WHERE rol = 'administracion'")
+    expect(sql).toContain("CREATE TEMP TABLE _admin_to_jefe")
+    expect(sql).toContain('ROL_CONVERGENCIA_ADMINISTRACION_A_JEFE')
+    expect(sql).toContain("HAVING count(*) > 2")
+    expect(sql).toContain("WHEN 'verSaldos'          THEN ARRAY['desarrollador', 'jefe']")
+    expect(sql).toContain("WHEN 'gestionarUsuarios'  THEN ARRAY['desarrollador', 'jefe']")
+    expect(sql).toContain("ADD CONSTRAINT usuarios_rol_check CHECK")
+    expect(sql).toContain("'jefe', 'finanzas', 'nomina'")
+    const code = soloCodigo(sql)
+    expect(code).not.toContain("WHEN 'verSaldos'          THEN ARRAY['administracion'")
+    expect(code).not.toContain("WHEN 'gestionarUsuarios'  THEN ARRAY['administracion'")
+  })
+
   it('mantiene el orden completo de las migraciones entregadas', async () => {
     const names = [
       '001_nomina_base_contract.sql',
@@ -44,14 +99,17 @@ describe('contrato SQL de Finanzas y autorización', () => {
       '221_finanzas_movimientos.sql',
       '222_finanzas_admin_role_guard.sql',
       '223_finanzas_resumen_filtros.sql',
+      '243_roles_operativos_autorizacion.sql',
+      '244_roles_operativos_operaciones.sql',
+      '245_converge_administracion_to_jefe.sql',
     ]
     expect(names[0]).toBe('001_nomina_base_contract.sql')
-    expect(names.at(-3)).toBe('221_finanzas_movimientos.sql')
-    expect(names.at(-2)).toBe('222_finanzas_admin_role_guard.sql')
-    expect(names.at(-1)).toBe('223_finanzas_resumen_filtros.sql')
+    expect(names.at(-3)).toBe('243_roles_operativos_autorizacion.sql')
+    expect(names.at(-2)).toBe('244_roles_operativos_operaciones.sql')
+    expect(names.at(-1)).toBe('245_converge_administracion_to_jefe.sql')
     expect(Number(names.at(-1).slice(0, 3))).toBeGreaterThan(Number(names.at(-2).slice(0, 3)))
     await expect(migration('221_finanzas_movimientos.sql')).resolves.toBeTruthy()
     await expect(migration('222_finanzas_admin_role_guard.sql')).resolves.toBeTruthy()
-    await expect(migration('223_finanzas_resumen_filtros.sql')).resolves.toBeTruthy()
+    await expect(migration('245_converge_administracion_to_jefe.sql')).resolves.toBeTruthy()
   })
 })

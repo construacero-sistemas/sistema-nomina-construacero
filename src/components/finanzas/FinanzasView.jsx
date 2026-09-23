@@ -2,7 +2,6 @@
 // Libro financiero administrativo: ingresos, egresos, reportes y gestión por Carteras (USD & Bolívares).
 import { useMemo, useRef, useState, useEffect } from 'react'
 import {
-  ArrowDownToLine,
   ArrowRightLeft,
   BarChart3,
   Download,
@@ -12,11 +11,9 @@ import {
   ReceiptText,
   RefreshCw,
   Wallet,
-  Lock,
   Printer,
   Settings2,
 } from 'lucide-react'
-import { useCandados } from '../../config/candadosRuntime.js'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import PageHeader from '../../../compat/components/ui/PageHeader.jsx'
@@ -33,20 +30,20 @@ import {
   useFinanzasMovimientos,
   useFinanzasResumen,
   usePuedeFinanzas,
-  useReasignarCuenta,
+  usePreviewConciliacion,
   useEliminarCategoria,
   useRestaurarCategoria,
   useCrearCategoria,
 } from '../../hooks/useFinanzas.js'
 import { showToast } from '../../../compat/components/ui/toastBus.js'
 import { useCuentasCustodia } from '../../hooks/useCuentasCustodia.js'
+import { tieneCapacidad } from '../../config/accesoModulos.js'
 import MovimientoForm from './MovimientoForm.jsx'
 import MovimientoTable from './MovimientoTable.jsx'
-import SyncPosModal from './SyncPosModal.jsx'
 import CarterasHeader from './CarterasHeader.jsx'
 import TransferenciaCarterasModal from './TransferenciaCarterasModal.jsx'
 import DetalleCuentaModal from './DetalleCuentaModal.jsx'
-import ReasignarCuentaModal from './ReasignarCuentaModal.jsx'
+import ConciliacionPreviewModal from './ConciliacionPreviewModal.jsx'
 import CuentasCustodiaGrid from './CuentasCustodiaGrid.jsx'
 import CuentaFormModal from './CuentaFormModal.jsx'
 import CategoriasModal from './CategoriasModal.jsx'
@@ -67,10 +64,12 @@ const MOSTRAR_CSV = false
 export default function FinanzasView() {
   const perfil = useAuthStore(state => state.perfil)
   const puede = usePuedeFinanzas()
+  const puedeVerSaldos = tieneCapacidad(perfil, 'verSaldos')
   const { tasaActiva, nombreTasa } = useMonedaNomina()
 
   // Pestaña activa: 'movimientos' (operación diaria) o 'tesoreria' (saldos y carteras)
   const [activeTab, setActiveTab] = useState('movimientos')
+  const pestanaVisible = puedeVerSaldos ? activeTab : 'movimientos'
 
   const [desde, setDesde] = useState(monthStart)
   const [hasta, setHasta] = useState(isoToday)
@@ -81,14 +80,12 @@ export default function FinanzasView() {
   const [mostrarAnulados, setMostrarAnulados] = useState(false)
 
   const [formOpen, setFormOpen] = useState(false)
-  const [syncPosOpen, setSyncPosOpen] = useState(false)
-  const { syncPos: syncPosBloqueado } = useCandados()
   const [transferenciaOpen, setTransferenciaOpen] = useState(false)
   const [cuentaDetalle, setCuentaDetalle] = useState(null)
   const [cuentaFormOpen, setCuentaFormOpen] = useState(false)
   const [cuentaEditar, setCuentaEditar] = useState(null)
   const [anular, setAnular] = useState(null)
-  const [reasignarOpen, setReasignarOpen] = useState(false)
+  const [conciliacionPreviewOpen, setConciliacionPreviewOpen] = useState(false)
   const [exportandoPdf, setExportandoPdf] = useState(false)
   const [exportProgress, setExportProgress] = useState(null)
   const [exportError, setExportError] = useState('')
@@ -106,7 +103,7 @@ export default function FinanzasView() {
   const eliminarCategoriaM = useEliminarCategoria()
   const restaurarCategoriaM = useRestaurarCategoria()
   const crearCategoriaM = useCrearCategoria()
-  const reasignarMutation = useReasignarCuenta()
+  const conciliacionPreview = usePreviewConciliacion()
 
   const categoriasVisibles = categorias.data?.categorias || []
   const categoriasEliminadas = categorias.data?.eliminadas || []
@@ -147,15 +144,16 @@ export default function FinanzasView() {
 
   const saldosCarteras = useMemo(() => saldosError ? null : summarizeConfirmedBalances(saldoSnapshot, tasaActiva), [saldoSnapshot, saldosError, tasaActiva])
 
-  // Cuántos movimientos del período quedan sin cuenta de custodia explícita (auditable)
-  const sinCuentaInfo = useMemo(() => {
-    const activos = movimientosList.filter(m => m.estado !== 'anulado')
-    return { total: activos.length, sinCuenta: activos.filter(m => !m.cuenta_custodia_id && !m.cuentaCustodiaId).length }
-  }, [movimientosList, cuentas])
-
   // El servidor filtra todas las páginas por cartera; no filtrar solo las filas cargadas.
   const movimientosFiltrados = movimientosList
   const totalServidor = movimientos.data?.pages?.[0]?.paginacion?.total
+
+  // Este indicador es explícitamente un subtotal de páginas cargadas; la simulación
+  // de conciliación usa el libro completo antes de proponer cualquier cambio.
+  const sinCuentaInfo = useMemo(() => {
+    const activos = movimientosList.filter(m => m.estado !== 'anulado')
+    return { total: activos.length, totalServidor, sinCuenta: activos.filter(m => !m.cuenta_custodia_id && !m.cuentaCustodiaId).length }
+  }, [movimientosList, totalServidor])
   const pageKey = [desde, hasta, tipo, categoria, moneda, filtroCartera, mostrarAnulados].join('|')
   const paginationProps = { hasMore: !!movimientos.hasNextPage, onLoadMore: () => movimientos.fetchNextPage(), isLoadingMore: !!movimientos.isFetchingNextPage,
     loadMoreError: movimientos.isFetchNextPageError ? movimientos.error?.message : '', totalServidor, pageKey }
@@ -233,25 +231,14 @@ export default function FinanzasView() {
         subtitle="Administración de carteras en Dólares y Bolívares, ingresos, egresos y flujo de caja"
         action={(
           <div className="flex flex-wrap items-center gap-2 justify-start sm:justify-end">
-            <button
+            {puede && <button
               type="button"
               onClick={() => setTransferenciaOpen(true)}
               className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 active:scale-95 transition-all shadow-xs cursor-pointer whitespace-nowrap"
               style={{ touchAction: 'manipulation' }}
             >
               <ArrowRightLeft size={14} className="text-primary" /> Mover entre carteras
-            </button>
-            <button
-              type="button"
-              onClick={syncPosBloqueado ? undefined : () => setSyncPosOpen(true)}
-              aria-disabled={syncPosBloqueado}
-              title={syncPosBloqueado ? 'Disponible próximamente' : undefined}
-              className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 rounded-xl border border-primary/20 bg-primary/10 text-xs font-black text-primary hover:bg-primary/20 active:scale-95 transition-all shadow-xs cursor-pointer whitespace-nowrap ${syncPosBloqueado ? 'opacity-60 cursor-not-allowed' : ''}`}
-              style={{ touchAction: 'manipulation' }}
-            >
-              {syncPosBloqueado && <Lock size={14} className="text-primary/60" aria-hidden="true" />}
-              <ArrowDownToLine size={14} /> Sincronizar POS
-            </button>
+            </button>}
             {MOSTRAR_CSV && (
               <button
                 type="button"
@@ -263,64 +250,65 @@ export default function FinanzasView() {
                 <Download size={14} /> CSV
               </button>
             )}
-            <button
+            {puede && <button
               type="button"
               onClick={() => setFormOpen(true)}
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-11 rounded-xl text-sm font-black text-white shadow-lg active:scale-[.98] cursor-pointer w-full sm:w-auto"
               style={{ background: 'linear-gradient(135deg, #1B365D, #B8860B)', touchAction: 'manipulation' }}
             >
               <Plus size={16} /> Nuevo movimiento
-            </button>
+            </button>}
           </div>
         )}
       />
 
       {/* Barra de Pestañas Segmentada (Flujo de Movimientos vs. Tesorería) */}
       <div className="space-y-2.5 pt-1">
-        {/* Control segmentado a ancho completo (2 columnas iguales) */}
-        <div className="grid grid-cols-2 gap-1 p-1 bg-slate-200/70 border border-slate-200 rounded-2xl">
+
+        {/* Finanzas opera movimientos, pero la pestaña de tesorería está reservada a roles con verSaldos. */}
+        <div className={`grid ${puedeVerSaldos ? 'grid-cols-2' : 'grid-cols-1'} gap-1 p-1 bg-slate-200/70 border border-slate-200 rounded-2xl`}>
           <button
             type="button"
             onClick={() => setActiveTab('movimientos')}
             className={`inline-flex items-center justify-center gap-1.5 px-2.5 min-h-11 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              activeTab === 'movimientos'
+              pestanaVisible === 'movimientos'
                 ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
             style={{ touchAction: 'manipulation' }}
           >
-            <ReceiptText size={15} className={`shrink-0 ${activeTab === 'movimientos' ? 'text-primary' : 'text-slate-400'}`} />
+            <ReceiptText size={15} className={`shrink-0 ${pestanaVisible === 'movimientos' ? 'text-primary' : 'text-slate-400'}`} />
             <span className="truncate">
               <span className="sm:hidden">Movimientos</span>
               <span className="hidden sm:inline">Movimientos y Flujo</span>
             </span>
           </button>
 
-          <button
+          {puedeVerSaldos && <button
             type="button"
             onClick={() => setActiveTab('tesoreria')}
             className={`inline-flex items-center justify-center gap-1.5 px-2.5 min-h-11 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              activeTab === 'tesoreria'
+              pestanaVisible === 'tesoreria'
                 ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
             style={{ touchAction: 'manipulation' }}
           >
-            <Landmark size={15} className={`shrink-0 ${activeTab === 'tesoreria' ? 'text-emerald-600' : 'text-slate-400'}`} />
+            <Landmark size={15} className={`shrink-0 ${pestanaVisible === 'tesoreria' ? 'text-emerald-600' : 'text-slate-400'}`} />
             <span className="truncate">
               <span className="sm:hidden">Tesorería</span>
               <span className="hidden sm:inline">Tesorería y Carteras</span>
             </span>
-            {saldosCarteras?.patrimonioTotalUsd != null && (
+            {puedeVerSaldos && saldosCarteras?.patrimonioTotalUsd != null && (
               <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold whitespace-nowrap shrink-0">
                 ${formatNumber(saldosCarteras.patrimonioTotalUsd)} USD
               </span>
             )}
-          </button>
+          </button>}
         </div>
 
         {/* Resumen rápido de patrimonio cuando estás en la pestaña de movimientos */}
-        {activeTab === 'movimientos' && saldosCarteras?.patrimonioTotalUsd != null && (
+        {puedeVerSaldos && pestanaVisible === 'movimientos' && saldosCarteras?.patrimonioTotalUsd != null && (
           <button
             type="button"
             onClick={() => setActiveTab('tesoreria')}
@@ -335,7 +323,7 @@ export default function FinanzasView() {
       {/* =========================================================
           PESTAÑA 1: MOVIMIENTOS Y FLUJO DE CAJA (OPERACIÓN DIARIA)
          ========================================================= */}
-      {activeTab === 'movimientos' && (
+      {pestanaVisible === 'movimientos' && (
         <div className="space-y-4">
           <FinanzasFiltrosSeccion
             filtroCartera={filtroCartera}
@@ -395,9 +383,9 @@ export default function FinanzasView() {
             {!fechaValida && <p className="mt-2 text-xs font-semibold text-red-600" role="alert">El rango de fechas no es válido.</p>}
 
           {/* KPI Cards Globales del período */}
-          <ResumenPeriodoKpis summary={resumen.isError ? null : summary} loading={resumen.isLoading} moneda={moneda} onSelectMoneda={setMoneda} tasaActiva={tasaActiva} />
+          {puedeVerSaldos && <ResumenPeriodoKpis summary={resumen.isError ? null : summary} loading={resumen.isLoading} moneda={moneda} onSelectMoneda={setMoneda} tasaActiva={tasaActiva} />}
 
-          {resumen.isError && <InlineError message="No se pudo cargar el resumen." onRetry={() => resumen.refetch()} />}
+          {puedeVerSaldos && resumen.isError && <InlineError message="No se pudo cargar el resumen." onRetry={() => resumen.refetch()} />}
 
           {/* Tabla de Movimientos Filtrada */}
           <section aria-label="Movimientos financieros">
@@ -433,14 +421,14 @@ export default function FinanzasView() {
       {/* =========================================================
           PESTAÑA 2: TESORERÍA Y CARTERAS EN CUSTODIA (ESTRATÉGICO)
          ========================================================= */}
-      {activeTab === 'tesoreria' && (
+      {puedeVerSaldos && pestanaVisible === 'tesoreria' && (
         <div className="space-y-5">
           {/* 1. Panel de Carteras Maestras en Vivo (Fichas Resumidas Macro) */}
           <CarterasHeader
             saldos={saldosCarteras} loading={saldosCargando} error={saldosError} conciliacionPendiente={conciliacionPendiente} onRetry={refrescarCuentas}
             filtroCartera={filtroCartera}
             sinCuenta={sinCuentaInfo}
-            onReasignarSinCuenta={() => setReasignarOpen(true)}
+            onPreviewConciliacion={() => { setConciliacionPreviewOpen(true); conciliacionPreview.mutate({ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera }) }}
             onSelectCartera={setFiltroCartera}
             onOpenTransferencia={() => {
               setCuentaTransferir(null)
@@ -501,8 +489,8 @@ export default function FinanzasView() {
                   icon={Landmark}
                   title="Sin movimientos registrados"
                   description="No hay movimientos en esta cartera para el período actual."
-                  actionLabel="Realizar traspaso"
-                  onAction={() => setTransferenciaOpen(true)}
+                  actionLabel={puede ? 'Realizar traspaso' : undefined}
+                  onAction={puede ? () => setTransferenciaOpen(true) : undefined}
                 />
               </div>
             ) : (
@@ -521,8 +509,7 @@ export default function FinanzasView() {
       )}
 
       {formOpen && <MovimientoForm categorias={categoriasVisibles} cuentas={cuentas} onClose={() => setFormOpen(false)} />}
-      {syncPosOpen && <SyncPosModal open={syncPosOpen} onClose={() => setSyncPosOpen(false)} />}
-      {transferenciaOpen && (
+      {puede && transferenciaOpen && (
         <TransferenciaCarterasModal
           key={cuentaTransferir?.id || 'transferencia-default'}
           open={transferenciaOpen}
@@ -530,9 +517,10 @@ export default function FinanzasView() {
             setTransferenciaOpen(false)
             setCuentaTransferir(null)
           }}
-          saldos={saldosCarteras}
+          saldos={puedeVerSaldos ? saldosCarteras : null}
           cuentas={cuentas}
           cuentaInicial={cuentaTransferir}
+          validarFondosEnServidor={!puedeVerSaldos}
         />
       )}
       {cuentaFormOpen && (
@@ -577,14 +565,7 @@ export default function FinanzasView() {
           onClose={() => setCategoriasOpen(false)}
         />
       )}
-      <ReasignarCuentaModal
-        open={reasignarOpen}
-        onClose={() => setReasignarOpen(false)}
-        movimientos={movimientosList}
-        cuentas={cuentas}
-        confirmando={reasignarMutation.isPending}
-        onConfirm={fields => reasignarMutation.mutateAsync(fields)}
-      />
+      <ConciliacionPreviewModal open={conciliacionPreviewOpen} onClose={() => { setConciliacionPreviewOpen(false); conciliacionPreview.reset() }} preview={conciliacionPreview.data} loading={conciliacionPreview.isPending} error={conciliacionPreview.error?.message || ''} />
     </div>
   )
 }

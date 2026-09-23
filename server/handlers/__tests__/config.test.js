@@ -12,7 +12,7 @@ vi.mock('../../lib/auth.js', () => ({
     'Content-Type': 'application/json',
   }),
   invalidateOperatorCache: vi.fn(),
-  validateOperator: vi.fn(async () => ({ id: OPERADORES.administracion.id, rol: 'administracion', cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' })),
+  validateOperator: vi.fn(async () => ({ id: OPERADORES.administracion.id, rol: 'jefe', cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' })),
 }))
 
 const { handleGetConfig, handleUpdateConfig } = await import('../config.js')

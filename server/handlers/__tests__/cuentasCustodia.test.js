@@ -227,6 +227,25 @@ describe('cuentas de custodia', () => {
     expect(status).toBe(403)
   })
 
+  it('finanzas puede consultar catálogo operativo mínimo pero no saldo, datos bancarios ni semilla', async () => {
+    operadorActual = OPERADORES.finanzas
+    mock = installFetchMock([
+      { match: '/cuentas_custodia?cuenta_id', method: 'GET', respond: (url) => {
+        expect(String(url)).toContain('select=id,codigo,nombre,tipo,cartera,moneda,banco,subcuenta_id,predeterminada,activo,creado_en')
+        return [CUENTA_FILA]
+      } },
+    ])
+    const res = await handleGetCuentasCustodia(makeRequest(undefined, { url: `${urlBase()}/finanzas/cuentas-custodia` }), ENV)
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(200)
+    expect(body.cuentas[0]).toMatchObject({ id: CUENTA_FILA.id, nombre: CUENTA_FILA.nombre, moneda: 'VES' })
+    expect(body.cuentas[0]).not.toHaveProperty('numeroCuenta')
+    expect(body.cuentas[0]).not.toHaveProperty('titular')
+    expect(body.cuentas[0]).not.toHaveProperty('saldo')
+    expect(body.eliminadas).toEqual([])
+    expect(mock.calls.some(call => call.method === 'POST' && String(call.url).includes('/cuentas_custodia'))).toBe(false)
+  })
+
   it('POST /restaurar-una reactiva una cuenta eliminada concreta (reversible)', async () => {
     let patch
     mock = installFetchMock([

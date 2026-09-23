@@ -62,4 +62,24 @@ describe('aislamiento de tenant en nómina', () => {
     expect((await readResponse(res)).status).toBe(200)
     expect(mock.calls[0].url).toContain(`cuenta_id=eq.${OPERADORES.administracion.cuenta_id}`)
   })
+
+  it('el listado de líneas expone tasa de pago y monto en Bs congelados (migración 241)', async () => {
+    mock = installFetchMock([
+      { match: '/nomina_lineas', respond: [{
+        id: IDS.periodo, pagado: true, tasa_pago_usd_ves: '804.81', total_pagado_bs: '48288.60',
+      }] },
+    ])
+
+    const res = await H.handleGetLineas(makeRequest(undefined, {
+      url: `http://worker.test/api/nomina/lineas?periodoId=${IDS.periodo}`,
+    }), ENV)
+    const { status, body } = await readResponse(res)
+
+    expect(status).toBe(200)
+    expect(body[0].tasa_pago_usd_ves).toBe('804.81')
+    expect(body[0].total_pagado_bs).toBe('48288.60')
+    // Guardrail: el SELECT debe pedir ambas columnas o la UI/PDF pierde la evidencia.
+    expect(mock.calls[0].url).toContain('tasa_pago_usd_ves')
+    expect(mock.calls[0].url).toContain('total_pagado_bs')
+  })
 })

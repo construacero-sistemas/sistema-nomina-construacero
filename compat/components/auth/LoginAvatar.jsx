@@ -15,6 +15,32 @@ const COLORES_ROL = {
     shadowGlow: 'rgba(20,184,166,0.2)',
     accent: '#14b8a6',
   },
+  // Recuadro del avatar por rol: metal tintado del color del rol (centro claro
+  // para la letra en oscuro, bordes saturados para leer el color de un vistazo).
+  finanzas: {
+    background: 'linear-gradient(135deg, #2563eb 0%, #dbeafe 45%, #60a5fa 70%, #1d4ed8 100%)',
+    border: 'rgba(96,165,250,0.6)',
+    shadow: '#1e3a8a',
+    shadowGlow: 'rgba(59,130,246,0.35)',
+    accent: '#3b82f6',
+    darkText: true,
+  },
+  nomina: {
+    background: 'linear-gradient(135deg, #0d9488 0%, #ccfbf1 45%, #5eead4 70%, #0f766e 100%)',
+    border: 'rgba(94,234,212,0.6)',
+    shadow: '#134e4a',
+    shadowGlow: 'rgba(20,184,166,0.3)',
+    accent: '#14b8a6',
+    darkText: true,
+  },
+  desarrollador: {
+    background: 'linear-gradient(135deg, #6d28d9 0%, #ede9fe 45%, #c4b5fd 70%, #5b21b6 100%)',
+    border: 'rgba(196,181,253,0.6)',
+    shadow: '#4c1d95',
+    shadowGlow: 'rgba(139,92,246,0.3)',
+    accent: '#8b5cf6',
+    darkText: true,
+  },
 }
 
 const COLOR_PLATEADO = '#E2E8F0'
@@ -35,7 +61,9 @@ export default function LoginAvatar({ user, size = 'lg', className = '' }) {
   const nombreFuente = user?.nombre || user?.email || user?.usuario || 'Administración'
   const inicial = nombreFuente.trim().charAt(0).toUpperCase() || 'A'
 
-  const esPlateado = true
+  // Plata para administración (su identidad) y como respaldo; el resto lleva
+  // el metal del color de su rol.
+  const esPlateado = !user?.rol
   const esDorado = user?.rol === 'jefe'
   const esVendedorExterno = ['vendedor', 'vendedor_sin_comision'].includes(user?.rol) && (!!user?.es_externo || Number(user?.markup_pct) > 0)
 
@@ -54,7 +82,8 @@ export default function LoginAvatar({ user, size = 'lg', className = '' }) {
             border: 'rgba(184,134,11,0.6)',
             shadow: '#5e4406',
             shadowGlow: 'rgba(184,134,11,0.3)',
-            accent: '#BF953F'
+            accent: '#BF953F',
+            darkText: true
           }
         : (esVendedorExterno
             ? {

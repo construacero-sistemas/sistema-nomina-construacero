@@ -25,3 +25,4 @@ scripts/restaurar_conversaciones.py
 
 # Evidencias de auditoria/QA generadas localmente (informes HTML, capturas, ZIP)
 outputs/
+backups/

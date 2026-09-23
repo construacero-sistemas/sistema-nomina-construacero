@@ -215,6 +215,7 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
                             )}
                           </div>
                           {l.cargo_snap && <div className="text-[10px] text-slate-400 font-medium">{l.cargo_snap}</div>}
+                          <div className="text-[10px] text-slate-400 font-medium">Sueldo mensual: ${fmt(Number(l.salario_dia_usd_snap || 0) * 30)}</div>
                           {l.dias_ausencia > 0 && (
                             <div className="text-[10px] text-red-500 font-bold">{l.dias_ausencia} falta(s)</div>
                           )}
@@ -249,9 +250,15 @@ export default function PeriodoDetalleModal({ periodo, esAdmin, onClose }) {
                         </td>
                         <td className="text-right px-3 py-2.5 font-black text-slate-900 text-xs">
                           <div>${fmt(l.total_neto_usd)}</div>
-                          <div className="text-[10px] text-slate-400 font-mono font-normal">
-                            {fmtBs(l.total_neto_usd)}
-                          </div>
+                          {l.pagado && Number(l.tasa_pago_usd_ves) > 0 ? (
+                            <div className="text-[10px] text-emerald-700 font-mono font-semibold" title={`Tasa congelada al pagar: ${Number(l.tasa_pago_usd_ves)} Bs/$`}>
+                              {Number(l.total_pagado_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-400 font-mono font-normal">
+                              {fmtBs(l.total_neto_usd)}
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2.5 text-right">
                           <div className="flex items-center justify-end gap-1">

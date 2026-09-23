@@ -20,7 +20,7 @@ Aplicación independiente para gestionar nómina, asistencia, pagos y finanzas d
 - Configuración administrativa de feriados, horarios rotativos, conceptos, reglas legales versionadas y snapshots de tasas.
 - RLS, guardrails de tenant, límites de body, CORS explícito y headers de seguridad.
 - UI responsive alineada con Construacero: acceso inicial de un paso, sesión persistente, drawer móvil, sidebar desktop, navegación táctil y tarjetas móviles para historial.
-- Un único rol operativo `administracion`, con acceso integral a Nómina, marcaje y Finanzas; roles heredados quedan bloqueados server-side.
+- Un único rol administrativo operativo `jefe`, con acceso integral a Nómina, marcaje y Finanzas; `administracion` se converge mediante la migración 245 y los roles heredados quedan bloqueados server-side.
 - Libro financiero con ingresos, egresos, categorías, tasas congeladas, resumen por rango, CSV de la página actual y anulación auditada sin borrado.
 
 ## Inicio local
@@ -87,7 +87,7 @@ Este paquete debe instalarse en un proyecto Supabase independiente del POS. Apli
 5. `222_finanzas_admin_role_guard.sql`
 6. `223_finanzas_resumen_filtros.sql`
 
-El lote crea operadores, configuración de cuenta, empleados sincronizados, nómina, asistencia, calendarios, conceptos, reglas legales, tasas, auditoría, Finanzas y RLS. La migración 222 bloquea altas/cambios de roles distintos de `administracion`; la bandera `nomina_v2_enabled` permanece apagada por defecto.
+El lote crea operadores, configuración de cuenta, empleados sincronizados, nómina, asistencia, calendarios, conceptos, reglas legales, tasas, auditoría, Finanzas y RLS. Las migraciones 242–244 alinean capacidades y RPC; la 245 convierte usuarios `administracion` a `jefe` preservando IDs y credenciales. La bandera `nomina_v2_enabled` permanece apagada por defecto.
 
 ### Contrato de empleados
 
@@ -104,7 +104,7 @@ Nómina no debe editar ni borrar la ficha de Personal. El endpoint `/api/nomina/
 
 ### Seguridad de tenant
 
-El Worker usa service role para operaciones de negocio, pero cada handler exige un operador activo `administracion`, resuelve `cuenta_id`, filtra todas las consultas y registra auditoría. Las migraciones 220–223 agregan FKs, triggers, RLS financiera, el guard de rol único y filtros de resumen financiero. RLS es una segunda barrera, no un reemplazo del filtro del Worker.
+El Worker usa service role para operaciones de negocio, pero cada handler exige un operador activo autorizado por capacidad (jefe/desarrollador para administración, finanzas o nómina según la matriz), resuelve `cuenta_id`, filtra todas las consultas y registra auditoría. Las migraciones 220–223 agregan FKs, triggers, RLS financiera, el guard de rol único y filtros de resumen financiero. RLS es una segunda barrera, no un reemplazo del filtro del Worker.
 
 ## CI y definición de listo
 

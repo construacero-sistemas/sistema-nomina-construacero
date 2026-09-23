@@ -6,6 +6,7 @@ import { useAccountQuery as useQuery, useAccountQueryClient as useQueryClient } 
 import useAuthStore from '../../compat/store/useAuthStore.js'
 import { authFetch } from '../../compat/services/authFetch.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
+import { tieneCapacidad } from '../config/accesoModulos.js'
 import useFinancialOperation from './useFinancialOperation.js'
 
 const KEY_EMPLEADOS  = ['nomina', 'empleados']
@@ -16,18 +17,16 @@ const KEY_MARCAJE    = ['nomina', 'marcaje-hoy']
 const KEY_PERIODOS   = ['nomina', 'periodos']
 const KEY_LINEAS     = ['nomina', 'lineas']
 
-const ADMIN_ROLE = 'administracion'
-const ROLES_VER = [ADMIN_ROLE]
-const ROLES_ADMIN = [ADMIN_ROLE]
-
+// Compuertas derivadas de la matriz única (config/accesoModulos reexporta
+// server/lib/permissions.js): aquí no se escribe ningún rol a mano.
 export function usePuedeVerNomina() {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  return ROLES_VER.includes(perfil?.rol)
+  return tieneCapacidad(perfil, 'verNomina')
 }
 
 export function usePuedeAdminNomina() {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  return ROLES_ADMIN.includes(perfil?.rol)
+  return tieneCapacidad(perfil, 'administrarNomina')
 }
 
 // ── Helper de fetch con manejo de error uniforme ───────────────────────────────
@@ -54,7 +53,7 @@ async function apiPost(path, body) {
 
 export function useNominaEmpleados({ enabled = true } = {}) {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  const puede  = ROLES_VER.includes(perfil?.rol)
+  const puede  = tieneCapacidad(perfil, 'verNomina')
   return useQuery({
     queryKey: KEY_EMPLEADOS,
     queryFn: () => apiGet('/api/nomina/empleados'),
@@ -65,7 +64,7 @@ export function useNominaEmpleados({ enabled = true } = {}) {
 
 export function useConfigEmpleados({ incluirInactivas = false } = {}) {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  const puede  = ROLES_VER.includes(perfil?.rol)
+  const puede  = tieneCapacidad(perfil, 'verNomina')
   return useQuery({
     queryKey: incluirInactivas ? [...KEY_CONFIG, { incluirInactivas: true }] : KEY_CONFIG,
     queryFn: () => apiGet(incluirInactivas ? '/api/nomina/config-empleados?incluirInactivas=1' : '/api/nomina/config-empleados'),
@@ -77,7 +76,7 @@ export function useConfigEmpleados({ incluirInactivas = false } = {}) {
 /** Empleados con configuración DADA DE BAJA (activo=false), para la vista "Bajas". */
 export function useConfigEmpleadosBajas() {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  const puede  = ROLES_ADMIN.includes(perfil?.rol)
+  const puede  = tieneCapacidad(perfil, 'administrarNomina')
   return useQuery({
     queryKey: KEY_CONFIG_BAJAS,
     queryFn: () => apiGet('/api/nomina/config-empleados?incluirInactivas=1'),
@@ -133,7 +132,7 @@ export function useEliminarConfigEmpleado() {
 
 export function useAsistencia({ desde = null, hasta = null, empleadoId = null } = {}) {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  const puede  = ROLES_VER.includes(perfil?.rol)
+  const puede  = tieneCapacidad(perfil, 'verNomina')
   return useQuery({
     queryKey: [...KEY_ASISTENCIA, desde, hasta, empleadoId],
     queryFn: () => {
@@ -150,7 +149,7 @@ export function useAsistencia({ desde = null, hasta = null, empleadoId = null } 
 
 export function useFeriados(desde, hasta) {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  const puede = ROLES_VER.includes(perfil?.rol)
+  const puede = tieneCapacidad(perfil, 'verNomina')
   return useQuery({
     queryKey: ['nomina', 'feriados', desde, hasta],
     queryFn: () => apiGet(`/api/nomina/calendario/feriados?desde=${desde}&hasta=${hasta}`),
@@ -176,7 +175,7 @@ export function useMarcajeHoy() {
   return useQuery({
     queryKey: KEY_MARCAJE,
     queryFn: () => apiGet('/api/nomina/marcaje/hoy'),
-    enabled: perfil?.rol === ADMIN_ROLE,
+    enabled: tieneCapacidad(perfil, 'administrarNomina'),
     staleTime: 1000 * 30,
   })
 }
@@ -246,7 +245,7 @@ export function useEliminarAsistencia() {
 
 export function useNominaPeriodos() {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  const puede  = ROLES_VER.includes(perfil?.rol)
+  const puede  = tieneCapacidad(perfil, 'verNomina')
   return useQuery({
     queryKey: KEY_PERIODOS,
     queryFn: () => apiGet('/api/nomina/periodos'),
@@ -326,7 +325,7 @@ export function useEliminarPeriodo() {
 
 export function useNominaLineas(periodoId) {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  const puede  = ROLES_VER.includes(perfil?.rol)
+  const puede  = tieneCapacidad(perfil, 'verNomina')
   return useQuery({
     queryKey: [...KEY_LINEAS, periodoId],
     queryFn: () => apiGet(`/api/nomina/lineas?periodoId=${periodoId}`),
@@ -380,7 +379,7 @@ export function useConfigNomina() {
   return useQuery({
     queryKey: ['nomina', 'configuracion'],
     queryFn: () => apiGet('/api/config'),
-    enabled: perfil?.rol === ADMIN_ROLE,
+    enabled: tieneCapacidad(perfil, 'administrarNomina'),
     staleTime: 1000 * 60 * 10,
   })
 }
@@ -399,7 +398,7 @@ export function useGuardarConfigNomina() {
 
 export function useHorarios(empleadoId = '') {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  const puede = ROLES_ADMIN.includes(perfil?.rol)
+  const puede = tieneCapacidad(perfil, 'administrarNomina')
   const query = empleadoId ? `?empleadoId=${empleadoId}` : ''
   return useQuery({
     queryKey: ['nomina', 'horarios', empleadoId],
@@ -447,7 +446,7 @@ export function useEliminarFeriado() {
 
 export function useTasasSnapshots(desde, hasta) {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  const puede = ROLES_ADMIN.includes(perfil?.rol)
+  const puede = tieneCapacidad(perfil, 'administrarNomina')
   return useQuery({
     queryKey: ['nomina', 'tasas', desde, hasta],
     queryFn: () => apiGet(`/api/nomina/tasas-snapshots?desde=${desde}&hasta=${hasta}`),
@@ -473,7 +472,7 @@ export function useNominaConceptos() {
   return useQuery({
     queryKey: ['nomina', 'conceptos'],
     queryFn: () => apiGet('/api/nomina/conceptos'),
-    enabled: perfil?.rol === ADMIN_ROLE,
+    enabled: tieneCapacidad(perfil, 'administrarNomina'),
     staleTime: 1000 * 60 * 10,
   })
 }
@@ -495,7 +494,7 @@ export function useReglasLegales() {
   return useQuery({
     queryKey: ['nomina', 'reglas-legales'],
     queryFn: () => apiGet('/api/nomina/reglas-legales'),
-    enabled: perfil?.rol === ADMIN_ROLE,
+    enabled: tieneCapacidad(perfil, 'administrarNomina'),
     staleTime: 1000 * 60 * 10,
   })
 }
@@ -516,7 +515,7 @@ export function useCrearReglaLegal() {
 
 export function usePosVendedores() {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  const puede = ROLES_VER.includes(perfil?.rol)
+  const puede = tieneCapacidad(perfil, 'verNomina')
   return useQuery({
     queryKey: ['nomina', 'pos-vendedores'],
     queryFn: () => apiGet('/api/nomina/pos-vendedores'),
@@ -527,7 +526,7 @@ export function usePosVendedores() {
 
 export function usePreviewComisionesPos(periodoId) {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
-  const puede = ROLES_ADMIN.includes(perfil?.rol)
+  const puede = tieneCapacidad(perfil, 'administrarNomina')
   return useQuery({
     queryKey: ['nomina', 'comisiones-pos', periodoId],
     queryFn: () => apiGet(`/api/nomina/comisiones-pos?periodoId=${periodoId}`),

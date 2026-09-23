@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { LogIn, LogOut, RefreshCw, Clock, CheckCircle2 } from 'lucide-react'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
+import { tieneCapacidad } from '../../config/accesoModulos.js'
 import {
   useConfigEmpleados, useMarcajeHoy, useMarcarEntrada, useMarcarSalida,
 } from '../../hooks/useNomina'
@@ -16,7 +17,8 @@ function fmtHora(h) {
 
 export default function MarcajeLogisticaPanel() {
   const perfil = useAuthStore(state => state.perfil)
-  const esAdmin = perfil?.rol === 'administracion'
+  // El marcaje operativo es administración de nómina (matriz única).
+  const puedeMarcar = tieneCapacidad(perfil, 'administrarNomina')
   const { data: empleados = [] } = useConfigEmpleados()
   const { data, isFetching, refetch } = useMarcajeHoy()
   const marcarEntrada = useMarcarEntrada()
@@ -27,7 +29,7 @@ export default function MarcajeLogisticaPanel() {
     () => new Map((data?.registros || []).map(r => [r.empleado_id, r])),
     [data?.registros],
   )
-  if (!esAdmin) return null
+  if (!puedeMarcar) return null
 
   const registro = empleadoId ? registros.get(empleadoId) : null
   const entradaMarcada = !!registro?.hora_entrada

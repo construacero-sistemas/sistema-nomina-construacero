@@ -17,7 +17,7 @@ vi.mock('idb-keyval', () => ({ get: mocks.get, set: mocks.set, del: mocks.del })
 const accountA = { id: 'account-a', email: 'a@example.invalid' }
 const accountB = { id: 'account-b', email: 'b@example.invalid' }
 const session = user => ({ user, access_token: `test-token-${user.id}` })
-const profile = user => ({ id: `operator-${user.id}`, cuenta_id: user.id, rol: 'administracion', activo: true })
+const profile = user => ({ id: `operator-${user.id}`, cuenta_id: user.id, rol: 'jefe', activo: true })
 const response = (status, data) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
 function deferred() {
   let resolve, reject
@@ -118,7 +118,8 @@ describe('Session isolation and recovery', () => {
     await expect(store.getState().login(accountA.email, 'test-password')).resolves.toEqual({ ok: true })
     await vi.advanceTimersByTimeAsync(0)
     expect(store.getState()).toMatchObject({ accountId: accountA.id, authStatus: 'authenticated', loading: false })
-    expect(fetch).toHaveBeenCalledTimes(1)
+    // F2: el login primero limpia la selección de operador y luego carga el perfil.
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 
   it.each(['resolve', 'reject'])('an online lookup settling after SIGNED_OUT stays withdrawn (%s)', async outcome => {

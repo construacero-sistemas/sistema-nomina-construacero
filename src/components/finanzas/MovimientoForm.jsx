@@ -19,7 +19,7 @@ import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
-import { FORMAS_PAGO_OPCIONES } from '../../constants/formasPago.js'
+import { FORMAS_PAGO_FINANZAS_OPCIONES } from '../../constants/formasPago.js'
 import { formatNumber, normalizarMontoInput } from './formatos.js'
 import { isoToday as today } from './fechasRapidas.js'
 import { getCuentasCompatibles } from './cuentasCompatibles.js'
@@ -75,21 +75,14 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
 
   // Derivar la moneda y cartera directamente del método/cuenta seleccionado
   const opcionSeleccionada = useMemo(() => {
-    return FORMAS_PAGO_OPCIONES.find(op => op.value === metodoPago) || FORMAS_PAGO_OPCIONES[0]
+    return FORMAS_PAGO_FINANZAS_OPCIONES.find(op => op.value === metodoPago) || FORMAS_PAGO_FINANZAS_OPCIONES[0]
   }, [metodoPago])
 
   const moneda = opcionSeleccionada.moneda || 'USD'
   const esVes = moneda === 'VES'
 
-  // Métodos que requieren indicar una cuenta/banco de origen concreto (ej. Banesco)
-  const METODOS_CON_CUENTA = ['Banco en Bolívares', 'Transferencia', 'Pago Móvil', 'Punto de Venta']
-  const esMetodoBanco = METODOS_CON_CUENTA.includes(metodoPago)
-
-  // Métodos visibles según el tipo: el POS es terminal de cobro, no aplica como egreso.
-  const opcionesMetodo = useMemo(
-    () => FORMAS_PAGO_OPCIONES.filter(op => !op.soloIngreso || tipo === 'ingreso'),
-    [tipo],
-  )
+  // Los canales digitales VES se agrupan bajo un método y se distinguen por cuenta.
+  const opcionesMetodo = FORMAS_PAGO_FINANZAS_OPCIONES
 
   // Cuentas de custodia compatibles con el método seleccionado (USDT/Binance, Zelle, Efectivo, Bancos)
   const cuentasCompatibles = useMemo(() => {
@@ -119,7 +112,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
       setModoTasa('bcv')
     }
     // Default inteligente: si el método no usa referencia, la limpiamos.
-    const nuevaOpcion = FORMAS_PAGO_OPCIONES.find(op => op.value === nuevoMetodo)
+    const nuevaOpcion = FORMAS_PAGO_FINANZAS_OPCIONES.find(op => op.value === nuevoMetodo)
     if (nuevaOpcion && !nuevaOpcion.requiereReferencia) setReferencia('')
 
     // Auto-selección inteligente si solo hay una cuenta compatible registrada (ej. Binance Pay en USDT)
@@ -131,16 +124,11 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
     }
   }
 
-  // Default inteligente al cambiar Ingreso/Egreso: si la categoría elegida ya no
-  // es compatible con el nuevo tipo, se limpia para evitar datos inconsistentes.
-  // También: si el método actual no aplica al nuevo tipo (ej. POS en egreso), se restablece.
+  // Al cambiar Ingreso/Egreso, limpia una categoría que no sea compatible.
   function seleccionarTipo(nuevo) {
     setTipo(nuevo)
     const compatible = categorias.some(c => (c.tipo === 'ambos' || c.tipo === nuevo) && c.nombre === categoria)
     if (!compatible) setCategoria('')
-    if (metodoPago === 'Punto de Venta' && nuevo === 'egreso') {
-      handleCambiarMetodo('Banco en Bolívares')
-    }
   }
 
   function handleCambiarCategoria(value) {

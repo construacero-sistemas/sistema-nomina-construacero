@@ -28,8 +28,8 @@ describe('getCuentasCompatibles — Separación Inteligente y Estricta', () => {
     expect(res.some(c => c.id === 'c-binance')).toBe(false)
   })
 
-  it('Métodos bancarios (Transferencia, Pago Móvil, Punto de Venta, Banco en Bolívares) solo retornan cuentas bancarias en Bs', () => {
-    const metodos = ['Banco en Bolívares', 'Transferencia', 'Pago Móvil', 'Punto de Venta']
+  it('Bolívares digitales y valores históricos retornan solo cuentas bancarias en Bs', () => {
+    const metodos = ['Bolívares digitales', 'Banco en Bolívares', 'Transferencia', 'Pago Móvil', 'Punto de Venta']
     for (const m of metodos) {
       const res = getCuentasCompatibles(m, CUENTAS_TEST)
       expect(res).toHaveLength(1)

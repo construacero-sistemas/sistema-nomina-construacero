@@ -48,7 +48,7 @@ describe('identidad de Nómina y Finanzas Construacero Carabobo', () => {
     expect(shellSource).toContain('await logout()')
     expect(userCardSource).toContain('operator-card')
     expect(userCardSource).toContain('operator-card-avatar-wrap')
-    expect(userCardSource).toContain("label: 'Cuenta'")
+    expect(userCardSource).toContain("label: 'Jefe'")
     expect(pwaSource).toContain('beforeinstallprompt')
     expect(loginSource).not.toContain('supabase.auth.signOut')
     expect(loginSource).not.toContain('Completa este campo')

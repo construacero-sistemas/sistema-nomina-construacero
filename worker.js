@@ -11,8 +11,12 @@ import {
   handleListarPosVendedores, handlePreviewComisionesPos, handleAplicarComisionesPos,
 } from './server/handlers/nomina.js'
 import {
-  handleSwitchOperator, handleSelectOperator, handleClearOperator, handleGetOperators, handleGetCurrentProfile,
+  handleSwitchOperator, handleClearOperator, handleGetOperators, handleGetCurrentProfile,
 } from './server/handlers/auth-operators.js'
+import {
+  handleListarOperadores, handleCrearOperador, handleBootstrapOperador, handleCambiarEstadoOperador,
+  handleCambiarPinOperador, handleCambiarRolOperador, handleCambiarNombreOperador,
+} from './server/handlers/gestionar-operadores.js'
 import { handleGetConfig, handleUpdateConfig, handlePing } from './server/handlers/config.js'
 import {
   handleGetFinanzasMovimientos,
@@ -20,6 +24,7 @@ import {
   handleAnularFinanzasMovimiento,
   handleRevertirAnulacionMovimiento,
   handleReasignarCuentaMovimientos,
+  handlePreviewReconciliacionMovimientos,
   handleGetFinanzasResumen,
   handleGetFinanzasCategorias,
   handleCrearFinanzasCategoria,
@@ -64,8 +69,14 @@ const routes = new Map([
   ['GET /api/auth/me', handleGetCurrentProfile],
   ['GET /api/auth/operators', handleGetOperators],
   ['POST /api/auth/switch-operator', handleSwitchOperator],
-  ['POST /api/auth/select-operator', handleSelectOperator],
   ['POST /api/auth/clear-operator', handleClearOperator],
+  ['GET /api/gestion/operadores', handleListarOperadores],
+  ['POST /api/gestion/operadores/crear', handleCrearOperador],
+  ['POST /api/gestion/operadores/bootstrap', handleBootstrapOperador],
+  ['POST /api/gestion/operadores/estado', handleCambiarEstadoOperador],
+  ['POST /api/gestion/operadores/pin', handleCambiarPinOperador],
+  ['POST /api/gestion/operadores/rol', handleCambiarRolOperador],
+  ['POST /api/gestion/operadores/nombre', handleCambiarNombreOperador],
   ['GET /api/finanzas/movimientos', handleGetFinanzasMovimientos],
   ['POST /api/finanzas/movimientos/crear', handleCrearFinanzasMovimiento],
   ['POST /api/finanzas/transferencias/crear', handleCrearTransferencia],
@@ -74,6 +85,7 @@ const routes = new Map([
   ['POST /api/finanzas/movimientos/anular', handleAnularFinanzasMovimiento],
   ['POST /api/finanzas/movimientos/revertir-anulacion', handleRevertirAnulacionMovimiento],
   ['POST /api/finanzas/movimientos/reasignar-cuenta', handleReasignarCuentaMovimientos],
+  ['GET /api/finanzas/movimientos/conciliacion-preview', handlePreviewReconciliacionMovimientos],
   ['POST /api/finanzas/sync-pos', handleSyncVentasPos],
   ['GET /api/finanzas/reportes/resumen', handleGetFinanzasResumen],
   ['GET /api/finanzas/categorias', handleGetFinanzasCategorias],

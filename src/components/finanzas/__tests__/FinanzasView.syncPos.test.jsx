@@ -1,12 +1,10 @@
 // @vitest-environment jsdom
 // src/components/finanzas/__tests__/FinanzasView.syncPos.test.jsx
-// Test anti-regresión: el botón "Sincronizar POS" debe MONTAR SyncPosModal.
-// Contexto: la línea {syncPosOpen && <SyncPosModal/>} se perdió una vez en el
-// JSX (el estado cambiaba pero nada se renderizaba). Este test lo atrapa.
-// También cubre el candado: bloqueado → sin onClick; desbloqueado → abre.
+// Regresión de producto: la sincronización POS queda oculta a todos los perfiles.
+// Los flujos de sincronización permanecen probados en SyncPosModal y sus handlers.
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 
 // Mock de los hooks de datos de Finanzas (sin red).
@@ -26,10 +24,9 @@ vi.mock('../../../hooks/useFinanzas.js', () => ({
   useRestaurarCategoria: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, variables: null }),
   useCrearCategoria: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useReasignarCuenta: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
+  usePreviewConciliacion: () => ({ data: null, isPending: false, reset: vi.fn(), mutate: vi.fn(), mutateAsync: vi.fn() }),
   // El formulario y los modales de cuentas usan estos:
   useCrearMovimiento: () => ({ mutateAsync: vi.fn(async () => ({})), isPending: false }),
-  usePreviewSyncPos: () => ({ data: null, isPending: false, reset: vi.fn(), mutate: vi.fn(), mutateAsync: vi.fn() }),
-  useEjecutarSyncPos: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }),
 }))
 
 vi.mock('../../../hooks/useMonedaNomina.js', () => ({
@@ -48,23 +45,18 @@ vi.mock('../../../hooks/useCuentasCustodia.js', () => ({
   }),
 }))
 
+const session = vi.hoisted(() => ({ perfil: { rol: 'finanzas', nombre: 'QA' } }))
 vi.mock('../../../../compat/store/useAuthStore.js', () => ({
-  default: () => ({ perfil: { rol: 'administracion', nombre: 'QA' } }),
+  default: selector => selector ? selector(session) : session,
 }))
 
 vi.mock('../../../../compat/utils/errorLogger.js', () => ({
   logClientError: vi.fn(),
 }))
 
-// Marcador inequívoco del modal real (el mocked SyncPosModal es un stub).
-vi.mock('../SyncPosModal.jsx', () => ({
-  default: ({ open }) => (open ? <div role="dialog" data-testid="sync-pos-modal-stub">Sincronizar Ventas del POS</div> : null),
-}))
-
-// Candados de sesión controlables por test (en lugar del runtime global).
-let candadosTest = { nomina: true, syncPos: true }
+// FinanzasView mantiene acceso a botones operativos independientes del candado POS.
 vi.mock('../../../config/candadosRuntime.js', () => ({
-  useCandados: () => candadosTest,
+  useCandados: () => ({ nomina: true, syncPos: false }),
 }))
 
 import FinanzasView from '../FinanzasView.jsx'
@@ -78,56 +70,14 @@ function renderView() {
   )
 }
 
-beforeEach(() => {
-  candadosTest = { nomina: true, syncPos: true }
-})
+beforeEach(() => { session.perfil = { rol: 'finanzas', nombre: 'QA' } })
+afterEach(cleanup)
 
-afterEach(() => {
-  cleanup()
-})
-
-describe('Sincronizar POS — montaje del modal (anti-regresión)', () => {
-  it('con el candado levantado, el clic en "Sincronizar POS" monta SyncPosModal', async () => {
-    candadosTest = { nomina: true, syncPos: false }
+describe('FinanzasView — funciones POS ocultas', () => {
+  it.each(['finanzas', 'jefe', 'desarrollador'])('no ofrece sincronización POS al rol %s', rol => {
+    session.perfil = { rol, nombre: 'QA' }
     renderView()
-
-    const btn = screen.getByRole('button', { name: /Sincronizar POS/i })
-    expect(btn).toHaveAttribute('aria-disabled', 'false')
-    expect(screen.queryByTestId('sync-pos-modal-stub')).toBeNull()
-
-    fireEvent.click(btn)
-
-    await waitFor(() => {
-      expect(screen.getByTestId('sync-pos-modal-stub')).toBeInTheDocument()
-      expect(screen.getByRole('dialog')).toHaveTextContent('Sincronizar Ventas del POS')
-    })
-  })
-
-  it('con el candado activo, el clic NO monta el modal', async () => {
-    candadosTest = { nomina: true, syncPos: true }
-    renderView()
-
-    const btn = screen.getByRole('button', { name: /Sincronizar POS/i })
-    expect(btn).toHaveAttribute('aria-disabled', 'true')
-
-    fireEvent.click(btn)
-
-    // Pequeño margen para que un mount accidental tuviera lugar
-    await new Promise(r => setTimeout(r, 50))
-    expect(screen.queryByTestId('sync-pos-modal-stub')).toBeNull()
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('el modal montado se desmonta al cerrar (onClose → syncPosOpen=false)', async () => {
-    candadosTest = { nomina: true, syncPos: false }
-    renderView()
-
-    fireEvent.click(screen.getByRole('button', { name: /Sincronizar POS/i }))
-    await waitFor(() => expect(screen.getByTestId('sync-pos-modal-stub')).toBeInTheDocument())
-
-    // El stub no dispara onClose (es un stub); esto verifica solo el montaje.
-    // El ciclo completo de cierre lo cubre la vista en vivo. Aquí validamos
-    // que el montaje es reactivo al estado, no un render estático:
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Sincronizar POS/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Nuevo movimiento/i })).toBeInTheDocument()
   })
 })

@@ -1,8 +1,10 @@
-@keyframes pinModalFadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes pinModalIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+/* Entradas sin fade desde opacity 0: si el motor congela una animación (webview
+   sin composición, pestaña oculta) el contenido debe seguir siendo visible. */
+@keyframes pinModalFadeIn { from { opacity: .45; } to { opacity: 1; } }
+@keyframes pinModalIn { from { transform: translateY(14px) scale(.97); } to { transform: translateY(0) scale(1); } }
 @keyframes pinModalShake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
-@keyframes loginPanelIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes fadeSlideUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes loginPanelIn { from { transform: translateY(18px); } to { transform: translateY(0); } }
+@keyframes fadeSlideUp { from { transform: translateY(24px); } to { transform: translateY(0); } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes logoReveal { from { opacity: 0; transform: scale(.85) translateY(-20px); filter: blur(8px); } to { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); } }
 @keyframes square-animation { 0%,10.5% { left: 0; top: 0; } 12.5%,23% { left: 11px; top: 0; } 25%,35.5% { left: 22px; top: 0; } 37.5%,48% { left: 22px; top: 11px; } 50%,60.5% { left: 11px; top: 11px; } 62.5%,73% { left: 11px; top: 22px; } 75%,85.5% { left: 0; top: 22px; } 87.5%,98% { left: 0; top: 11px; } 100% { left: 0; top: 0; } }

@@ -30,7 +30,7 @@ function makeJwt() {
     sub: IDS.cuenta,
     app_metadata: {
       operator_id: IDS.operador,
-      operator_rol: 'administracion',
+      operator_rol: 'jefe',
       operator_nombre: 'Admin Finanzas',
     },
   })).toString('base64url')
@@ -197,7 +197,7 @@ class InMemoryFinanzasDb {
         email: 'admin@construacero.com',
         app_metadata: {
           operator_id: IDS.operador,
-          operator_rol: 'administracion',
+          operator_rol: 'jefe',
           operator_nombre: 'Admin Finanzas',
         },
       }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
@@ -209,7 +209,7 @@ class InMemoryFinanzasDb {
         {
           id: IDS.operador,
           nombre: 'Admin Finanzas',
-          rol: 'administracion',
+          rol: 'jefe',
           cuenta_id: IDS.cuenta,
           activo: true,
           es_externo: false,

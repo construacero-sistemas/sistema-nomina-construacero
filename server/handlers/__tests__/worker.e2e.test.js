@@ -106,7 +106,7 @@ describe('Worker E2E determinista', () => {
         return supabaseResponse({ id: ACCOUNT_ID, app_metadata: { operator_id: OPERATOR_ID } })
       }
       if (target.includes('/rest/v1/usuarios?')) {
-        return supabaseResponse([{ id: OPERATOR_ID, nombre: 'Administración', rol: 'administracion', cuenta_id: ACCOUNT_ID }])
+        return supabaseResponse([{ id: OPERATOR_ID, nombre: 'Administración', rol: 'jefe', cuenta_id: ACCOUNT_ID }])
       }
       if (target.includes('/rest/v1/auditoria')) return supabaseResponse([])
       if (target.includes('/rest/v1/finanzas_movimientos') && method === 'GET' && target.includes('idempotency_key=')) {

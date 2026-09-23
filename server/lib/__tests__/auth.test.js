@@ -45,14 +45,35 @@ describe('autenticación server-side', () => {
     expect(fetchMock.mock.calls[0][1].headers.apikey).toBe(ENV.SUPABASE_SERVICE_KEY)
   })
 
+  it('la cabecera X-Operator-Id del navegador nunca decide el operador', async () => {
+    // F2: el operador SOLO sale de app_metadata (escrita tras validar el PIN).
+    // Si la cabecera pudiera sobrescribirlo, cualquiera operaría como otro sin PIN.
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ id: ACCOUNT_ID, app_metadata: { operator_id: OPERATOR_ID, operator_rol: 'jefe' } }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = new Request('https://worker.test/api/finanzas/movimientos', {
+      headers: {
+        Authorization: 'Bearer auth-test-token-without-exp',
+        'X-Operator-Id': 'bbbbbbbb-2222-4222-8222-999999999999',
+      },
+    })
+
+    const user = await verifyAuth(request, ENV)
+    expect(user.operator_id).toBe(OPERATOR_ID)
+    // Ni siquiera consulta la base para "verificar" la cabecera.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('limita la consulta de rol al tenant explícito', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
-      json: async () => [{ rol: 'administracion' }],
+      json: async () => [{ rol: 'jefe' }],
     }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(getOperatorRole(OPERATOR_ID, ENV, ACCOUNT_ID)).resolves.toBe('administracion')
+    await expect(getOperatorRole(OPERATOR_ID, ENV, ACCOUNT_ID)).resolves.toBe('jefe')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock.mock.calls[0][0]).toContain(`id=eq.${OPERATOR_ID}`)
     expect(fetchMock.mock.calls[0][0]).toContain(`cuenta_id=eq.${ACCOUNT_ID}`)

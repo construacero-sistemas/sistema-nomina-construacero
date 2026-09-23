@@ -75,6 +75,28 @@ export const FORMAS_PAGO_OPCIONES = [
   { value: 'Punto de Venta',      label: 'Punto de Venta (Bs)',              selectedLabel: 'Punto Venta Bs',     cartera: 'VES', moneda: 'VES', icon: CreditCard, sub: 'Cartera Bs', requiereReferencia: true, soloIngreso: true },
 ]
 
+// Selector simplificado para el formulario financiero: los canales digitales
+// en VES comparten una sola opción; la cuenta bancaria concreta identifica
+// dónde quedó el dinero. Se mantiene la lista histórica para Nómina/Comisiones
+// y para poder leer los valores antiguos ya persistidos.
+const METODOS_DIGITALES_VES_LEGACY = new Set([
+  'Banco en Bolívares', 'Transferencia', 'Pago Móvil', 'Punto de Venta',
+])
+
+export const FORMAS_PAGO_FINANZAS_OPCIONES = [
+  ...FORMAS_PAGO_OPCIONES.filter(op => !METODOS_DIGITALES_VES_LEGACY.has(op.value)),
+  {
+    value: 'Bolívares digitales',
+    label: 'Bolívares digitales',
+    selectedLabel: 'Bolívares digitales',
+    cartera: 'VES',
+    moneda: 'VES',
+    icon: Building2,
+    sub: 'Cartera Bs',
+    requiereReferencia: true,
+  },
+]
+
 export const FORMAS_PAGO_NOMINA_OPCIONES = [
   { value: 'Transferencia',       label: 'Transferencia Bancaria (Bs)',       cartera: 'VES', moneda: 'VES', icon: Building2 },
   { value: 'Pago Móvil',          label: 'Pago Móvil (Bs)',                  cartera: 'VES', moneda: 'VES', icon: Smartphone },

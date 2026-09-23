@@ -112,8 +112,8 @@ describe('nómina — guardas de períodos', () => {
     expect(posted.cuenta_id).toBe(OPERADORES.administracion.cuenta_id)
   })
 
-  it('un jefe (no admin) no puede crear períodos', async () => {
-    operadorActual = OPERADORES.jefe
+  it('el rol finanzas (sin capacidad de nómina) no puede crear períodos', async () => {
+    operadorActual = OPERADORES.finanzas
     mock = installFetchMock([])
     const res = await H.handleCrearPeriodo(
       makeRequest({ nombre: 'S4', desde: '2026-08-15', hasta: '2026-08-21', tipo: 'semanal' }),
@@ -121,5 +121,19 @@ describe('nómina — guardas de períodos', () => {
     )
     const { status } = await readResponse(res)
     expect(status).toBe(403)
+  })
+
+  it('el jefe (acceso total) SÍ puede crear períodos', async () => {
+    operadorActual = OPERADORES.jefe
+    mock = installFetchMock([
+      { match: '/nomina_periodos', method: 'GET', respond: [] },
+      { match: '/nomina_periodos', method: 'POST', respond: [{ id: 'b1', nombre: 'S4', tipo: 'semanal', estado: 'abierto', cuenta_id: OPERADORES.jefe.cuenta_id }] },
+    ])
+    const res = await H.handleCrearPeriodo(
+      makeRequest({ nombre: 'S4', desde: '2026-08-15', hasta: '2026-08-21', tipo: 'semanal' }),
+      ENV,
+    )
+    const { status } = await readResponse(res)
+    expect(status).toBe(201)
   })
 })

@@ -152,6 +152,29 @@ describe('CuentasCustodiaGrid — borrado seguro', () => {
   })
 })
 
+describe('CuentasCustodiaGrid — jerarquía de saldos por moneda', () => {
+  it('muestra el saldo VES como valor principal y la conversión USD como estimado secundario', () => {
+    renderGrid([mkCuenta({ nombre: 'Caja Efectivo Bs', moneda: 'VES', saldo: 136075 })], vi.fn(), { tasaBcv: 853.5 })
+
+    expect(screen.getByText('136.075,00 VES')).toBeInTheDocument()
+    expect(screen.getByText('≈ $159,43 USD estimados')).toBeInTheDocument()
+    expect(screen.getByText(/Estimado a 853,50 Bs\/USD/)).toBeInTheDocument()
+    expect(screen.queryByText(/Valoración USD pendiente/)).not.toBeInTheDocument()
+  })
+
+  it('conserva USD como principal para cuentas USD y USDT', () => {
+    renderGrid([
+      mkCuenta({ id: 'usd', nombre: 'Caja USD', moneda: 'USD', saldo: -250, valorUsd: -250, valoracionCompleta: true }),
+      mkCuenta({ id: 'usdt', nombre: 'Billetera USDT', moneda: 'USDT', tipo: 'cripto_usdt', saldo: 3486.51, valorUsd: 3486.51, valoracionCompleta: true }),
+    ])
+
+    expect(screen.getByText('$-250,00 USD')).toBeInTheDocument()
+    expect(screen.getByText('Nativo: -250,00 USD')).toBeInTheDocument()
+    expect(screen.getByText('$3.486,51 USD')).toBeInTheDocument()
+    expect(screen.getByText('Nativo: 3.486,51 USDT')).toBeInTheDocument()
+  })
+})
+
 describe('CuentasCustodiaGrid — papelera reversible', () => {
   beforeEach(() => vi.clearAllMocks())
 

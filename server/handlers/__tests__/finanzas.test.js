@@ -32,13 +32,13 @@ const movement = {
 }
 
 describe('finanzas — guardrails de administración', () => {
-  it('rechaza cualquier operador distinto de administración antes de consultar', async () => {
+  it('rechaza cualquier operador sin acceso a finanzas antes de consultar', async () => {
     operadorActual = OPERADORES.logistica
     mock = installFetchMock([])
     const response = await H.handleGetFinanzasCategorias(makeRequest(), ENV)
     const result = await readResponse(response)
     expect(result.status).toBe(403)
-    expect(result.body.error).toMatch(/administración/i)
+    expect(result.body.error).toMatch(/Acceso denegado/i)
     expect(mock.calls).toHaveLength(0)
   })
 
@@ -53,6 +53,33 @@ describe('finanzas — guardrails de administración', () => {
 })
 
 describe('finanzas — flujo crear, reportar y anular', () => {
+  it('rol finanzas registra un movimiento en su tenant sin requerir ver saldos', async () => {
+    let sent
+    operadorActual = OPERADORES.finanzas
+    const custodyId = IDS.config
+    mock = installFetchMock([
+      { match: `/cuentas_custodia?id=eq.${custodyId}`, method: 'GET', respond: [{ id: custodyId, nombre: 'Caja USD', moneda: 'USD' }] },
+      { match: 'idempotency_key=eq.finanzas-create-test-001', method: 'GET', respond: [] },
+      { match: '/finanzas_movimientos', method: 'POST', respond: (url, init) => { sent = JSON.parse(init.body); return [{ ...movement, creado_por: OPERADORES.finanzas.id, cuenta_custodia_id: custodyId }] } },
+    ])
+
+    const response = await H.handleCrearFinanzasMovimiento(makeRequest({
+      ...movementInput,
+      idempotencyKey: 'finanzas-create-test-001',
+      cuentaCustodiaId: custodyId,
+    }), ENV)
+    const result = await readResponse(response)
+
+    expect(result.status).toBe(201)
+    expect(sent).toMatchObject({
+      cuenta_id: OPERADORES.finanzas.cuenta_id,
+      creado_por: OPERADORES.finanzas.id,
+      cuenta_custodia_id: custodyId,
+      cuenta_origen: 'Caja USD',
+    })
+    expect(mock.calls.filter(call => call.method === 'POST')).toHaveLength(1)
+  })
+
   it('crea un movimiento con cuenta, tasa e idempotencia server-side', async () => {
     let sent
     mock = installFetchMock([
@@ -154,6 +181,30 @@ describe('finanzas — flujo crear, reportar y anular', () => {
     expect(result.status).toBe(400)
     expect(result.body.error).toMatch(/idempotency/i)
     expect(mock.calls).toHaveLength(0)
+  })
+
+  it('rol finanzas puede crear categorías (operar el libro) y rol nomina no puede', async () => {
+    // Regla de negocio: crear categorías/motivos es parte de registrar ingresos/egresos.
+    // El rol finanzas opera el libro (aunque no vea saldos); nomina no toca finanzas.
+    mock = installFetchMock([
+      {
+        match: '/finanzas_categorias',
+        method: 'POST',
+        respond: [{ id: IDS.config, nombre: 'Fletes', tipo: 'egreso', activo: true }],
+      },
+    ])
+    operadorActual = OPERADORES.finanzas
+    const ok = await H.handleCrearFinanzasCategoria(
+      makeRequest({ nombre: 'Fletes', tipo: 'egreso' }), ENV)
+    const okBody = await readResponse(ok)
+    expect(okBody.status).toBe(201)
+    expect(okBody.body.categoria.nombre).toBe('Fletes')
+
+    operadorActual = OPERADORES.nomina
+    const denied = await H.handleCrearFinanzasCategoria(
+      makeRequest({ nombre: 'X', tipo: 'egreso' }), ENV)
+    const deniedBody = await readResponse(denied)
+    expect(deniedBody.status).toBe(403)
   })
 
   it('lista categorías del tenant y completa las predeterminadas sin insertar filas', async () => {

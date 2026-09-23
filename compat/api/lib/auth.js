@@ -1,5 +1,12 @@
 // api/lib/auth.js
 import { jsonError, isValidUuid } from './utils.js'
+import { ROLES_OPERATIVOS, rolesConCapacidad } from '../../../server/lib/permissions.js'
+
+// Roles con acceso operativo y roles de acceso total (migración 245).
+// Los dos conjuntos DERIVAN de la matriz única (server/lib/permissions.js);
+// aquí no se escribe ningún rol a mano.
+const ROLES_TOTALES = new Set(rolesConCapacidad('gestionarUsuarios'));
+const OPERATIONAL_ROLES = new Set(ROLES_OPERATIVOS);
 
 // ─── Caché en memoria del isolate para verificación de auth ────────────────────
 // Cada petición API pagaba 2-3 round-trips a Supabase solo para validar el token
@@ -118,25 +125,11 @@ export async function verifyAuth(request, env) {
   user.operator_nombre = user.app_metadata?.operator_nombre || null;
   user.operator_es_externo = user.app_metadata?.operator_es_externo || null;
 
-  // Allow frontend to override operator_id via header (handles JWT refresh delay)
-  const headerOpId = request.headers.get('X-Operator-Id');
-  if (headerOpId && isValidUuid(headerOpId) && headerOpId !== user.operator_id) {
-    // Verify the operator exists and is active before trusting the header
-    const checkRes = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/usuarios?id=eq.${headerOpId}&activo=eq.true&cuenta_id=eq.${user.id}&select=id,nombre,rol,es_externo`,
-      { headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}` } }
-    );
-    if (checkRes.ok) {
-      const [op] = await checkRes.json();
-      if (op) {
-        user.operator_id = op.id;
-        user.operator_rol = op.rol;
-        user.operator_nombre = op.nombre;
-        user.operator_es_externo = op.es_externo;
-      }
-    }
-  }
-
+  // La identidad del operador SOLO puede salir de app_metadata, escrita por
+  // handleSwitchOperator tras validar el PIN en el Worker. La cabecera
+  // X-Operator-Id del navegador jamás decide el operador: hacerla autoridad
+  // permitía operar como cualquier operador sin su PIN. validateOperator la
+  // usa únicamente como comprobación de coherencia (si difiere → 401).
   return user;
 }
 
@@ -160,17 +153,17 @@ export async function getOperatorRole(operatorId, env, accountId) {
   if (!res.ok) return null;
   const rows = await res.json();
   const role = rows.length === 1 ? rows[0].rol : null;
-  return role === 'administracion' ? role : null;
+  return ROLES_TOTALES.has(role) ? role : null;
 }
 
 // Este paquete tiene un único rol operativo. Se conservan ambos nombres de
 // compatibilidad para consumidores antiguos, pero nunca amplían autorización.
 export async function verifySupervisor(operatorId, env, accountId) {
-  return (await getOperatorRole(operatorId, env, accountId)) === 'administracion';
+  return ROLES_TOTALES.has(await getOperatorRole(operatorId, env, accountId));
 }
 
 export async function verifyPrivileged(operatorId, env, accountId) {
-  return (await getOperatorRole(operatorId, env, accountId)) === 'administracion';
+  return ROLES_TOTALES.has(await getOperatorRole(operatorId, env, accountId));
 }
 
 // Valida auth + operator_id, devuelve { user, operador, ip } o Response de error
@@ -187,7 +180,6 @@ export async function validateOperator(request, env, { requireSupervisor = false
   }
 
   const h = supaServiceHeaders(env);
-  const ADMIN_ROLE = 'administracion';
   try {
     // Caché 60s por operador — evita re-consultar usuarios en cada petición.
     // El filtro de rol se aplica en código para poder compartir la entrada
@@ -214,11 +206,15 @@ export async function validateOperator(request, env, { requireSupervisor = false
     if (!operador) {
       return { error: jsonError('Operador no encontrado o inactivo', 403, request) };
     }
-    if (operador.rol !== ADMIN_ROLE) {
-      return { error: jsonError('Este sistema solo admite el rol administración', 403, request) };
+    // Roles operativos del sistema (migración 245 + matriz de permissions.js):
+    // jefe/desarrollador = total; finanzas y nomina = módulo propio.
+    // Qué puede HACER cada rol lo decide la matriz; aquí solo se exige que
+    // el rol sea operativo (tenga entrada en la matriz con acceso).
+    if (!OPERATIONAL_ROLES.has(operador.rol)) {
+      return { error: jsonError('Este rol no tiene acceso operativo al sistema', 403, request) };
     }
-    if (requireSupervisor && operador.rol !== ADMIN_ROLE) {
-      return { error: jsonError('Se requiere el rol administración', 403, request) };
+    if (requireSupervisor && !ROLES_TOTALES.has(operador.rol)) {
+      return { error: jsonError('Se requiere un rol de acceso total (jefe)', 403, request) };
     }
 
     return { user, operador, headers: h, ip };

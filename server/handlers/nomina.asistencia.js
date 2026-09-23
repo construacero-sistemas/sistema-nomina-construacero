@@ -1,6 +1,7 @@
 // server/handlers/nomina.asistencia.js
 import { json, jsonError, isValidUuid } from '../lib/utils.js'
 import { validateOperator } from '../lib/auth.js'
+import { tieneCapacidad } from '../lib/permissions.js'
 import { registrarAuditoria } from '../lib/audit.js'
 import { calcularCamposAsistencia } from '../lib/nominaUtils.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
@@ -100,7 +101,7 @@ export async function handleMarcarEntrada(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers, ip } = v
-  if (operador.rol !== 'administracion') return jsonError('Solo administración puede marcar entradas', 403, request)
+  if (!tieneCapacidad(operador, 'administrarNomina')) return jsonError('Tu rol no tiene permiso para marcar entradas', 403, request)
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body
@@ -131,7 +132,7 @@ export async function handleMarcarSalida(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers, ip } = v
-  if (operador.rol !== 'administracion') return jsonError('Solo administración puede marcar salidas', 403, request)
+  if (!tieneCapacidad(operador, 'administrarNomina')) return jsonError('Tu rol no tiene permiso para marcar salidas', 403, request)
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body

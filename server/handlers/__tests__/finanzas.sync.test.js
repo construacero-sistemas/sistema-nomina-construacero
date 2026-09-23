@@ -152,13 +152,15 @@ describe('finanzas.sync — sincronización de ventas del POS hacia Carteras', (
     expect(result.body.error).toMatch(/respuesta no confirma/)
     expect(writes()).toHaveLength(1)
   })
-  it('rechaza operadores sin rol de administración', async () => {
-    operadorActual = OPERADORES.logistica
-    mock = installFetchMock([])
-    const response = await H.handleSyncVentasPos(makeRequest({ fecha: '2026-08-30' }), testEnv)
-    const result = await readResponse(response)
-    expect(result.status).toBe(403)
-    expect(result.body.error).toMatch(/administración/i)
+  it('rechaza roles sin capacidad de gestión (logistica y finanzas)', async () => {
+    // Sincronizar POS toca el libro y el cierre del día: solo gestión (jefe/admin).
+    for (const rol of ['logistica', 'finanzas']) {
+      operadorActual = OPERADORES[rol]
+      mock = installFetchMock([])
+      const response = await H.handleSyncVentasPos(makeRequest({ fecha: '2026-08-30' }), testEnv)
+      const result = await readResponse(response)
+      expect(result.status).toBe(403)
+    }
   })
 
   it('retorna preview con los totales del POS sin alterar base de datos', async () => {

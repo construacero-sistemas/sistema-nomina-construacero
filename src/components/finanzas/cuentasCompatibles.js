@@ -61,7 +61,7 @@ export function getCuentasCompatibles(metodo, cuentas) {
   if (metodo === 'Efectivo Bs') {
     return activas.filter(esEfectivoVes)
   }
-  if (['Banco en Bolívares', 'Transferencia', 'Pago Móvil', 'Punto de Venta'].includes(metodo)) {
+  if (['Banco en Bolívares', 'Transferencia', 'Pago Móvil', 'Punto de Venta', 'Bolívares digitales'].includes(metodo)) {
     return activas.filter(esBancoVes)
   }
   return []

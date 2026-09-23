@@ -72,6 +72,7 @@ export default function LiquidacionModal({ linea, onClose }) {
 Calculado con la asistencia
           </div>
           {[
+            { label: 'Sueldo mensual (referencia)', value: Number(linea.salario_dia_usd_snap || 0) * 30 },
             { label: `Días trabajados (${Number(linea.dias_trabajados)})`, value: linea.monto_normal_usd },
             { label: `Horas extra (${Number(linea.horas_extra).toFixed(1)}h)`, value: linea.monto_extra_usd },
             { label: `Recargo sábados (${linea.dias_sabado})`, value: linea.monto_sabado_usd },

@@ -9,6 +9,7 @@ import TabEmpleados from '../components/nomina/TabEmpleados.jsx'
 import TabAsistencia from '../components/nomina/TabAsistencia.jsx'
 import TabPeriodos from '../components/nomina/TabPeriodos.jsx'
 import TabHistorial from '../components/nomina/TabHistorial.jsx'
+import { tieneCapacidad } from '../config/accesoModulos.js'
 
 const TABS = [
   { id: 'empleados', label: 'Empleados', short: 'Emple.', icon: Users },
@@ -19,7 +20,8 @@ const TABS = [
 
 export default function NominaView() {
   const perfil = useAuthStore(s => s.perfil)
-  const esAdmin = perfil?.rol === 'administracion'
+  // Los tabs de período e historial son administración de nómina (matriz única).
+  const esAdmin = tieneCapacidad(perfil, 'administrarNomina')
   const tabsVisibles = TABS.filter(t => !t.soloNomina || esAdmin)
   const [tab, setTab] = useState(esAdmin ? 'empleados' : 'asistencia')
   const tabActivo = tabsVisibles.some(t => t.id === tab) ? tab : tabsVisibles[0].id

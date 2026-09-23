@@ -4,7 +4,7 @@ import { OverlayContext, useOverlay } from '../compat/components/ui/useOverlay.j
 import { useOverlayPosition } from '../compat/components/ui/useOverlayPosition.js'
 import {
   ChevronRight, Landmark, Lock, LogOut, Menu, PanelLeftClose,
-  PanelLeftOpen, Settings2, TrendingUp, User, Wallet, X
+  PanelLeftOpen, Settings2, TrendingUp, User, UserCog, Wallet, X
 } from 'lucide-react'
 import { Link, Navigate, Outlet, Route, Routes, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../compat/store/useAuthStore.js'
@@ -14,10 +14,13 @@ import ModuloBloqueado from './components/ModuloBloqueado.jsx'
 import ComandoDesbloqueo from './components/ComandoDesbloqueo.jsx'
 import { useCandados } from './config/candadosRuntime.js'
 import { rutaPorDefecto } from './config/modulos.js'
+import { accesoUI, etiquetaRol, rutaParaRol } from './config/accesoModulos.js'
+import { filtrarNavPorRol } from './config/navModulos.js'
 import SistemaView from './views/SistemaView.jsx'
 import useTasaCambioNomina from './hooks/useTasaCambioNomina.js'
 import RateHeader from './components/layout/RateHeader.jsx'
 import HeaderDate from './components/layout/HeaderDate.jsx'
+import MobileDrawerContent from './components/layout/MobileDrawerContent.jsx'
 
 const NominaView = lazy(() => import('./views/NominaView.jsx'))
 const FinanzasView = lazy(() => import('./components/finanzas/FinanzasView.jsx'))
@@ -119,163 +122,6 @@ function NavItem({ item, collapsed, onClick }) {
   )
 }
 
-function MobileDrawerContent({ onClose, onLogout }) {
-  const candados = useCandados()
-  const { usd, eur, usdt, loading } = useTasaCambioNomina()
-  const format = value => value > 0 ? `${value.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
-
-  return (
-    <div className="flex flex-col h-full justify-between min-h-0 text-white select-none">
-      {/* 1. Cabecera del drawer móvil */}
-      <div
-        className="px-4 py-3.5 flex items-center justify-between shrink-0"
-        style={{
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-          paddingTop: 'calc(0.875rem + env(safe-area-inset-top, 0px))',
-        }}
-      >
-        <div className="flex items-center gap-2.5">
-          <img
-            src="/logo.png"
-            alt="Construacero Carabobo C.A."
-            className="h-8 w-auto object-contain brightness-110 select-none"
-            draggable={false}
-            onPointerDown={() => window.dispatchEvent(new CustomEvent('logo-tap'))}
-          />
-          <div>
-            <h4 className="text-xs font-black text-white tracking-wide">Construacero</h4>
-            <span className="text-[10px] font-bold text-amber-400/80 uppercase tracking-widest block">
-              Nómina & Finanzas
-            </span>
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="p-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white/80 hover:text-white transition-colors active:scale-95"
-          aria-label="Cerrar menú"
-        >
-          <X size={18} />
-        </button>
-      </div>
-
-      {/* 2. Cuerpo desplazable con módulos y tasas */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3.5 custom-scrollbar">
-        {/* Módulos de Navegación */}
-        <div className="space-y-1.5">
-          <span className="px-2 text-[10px] font-bold tracking-widest uppercase text-white/40 block">
-            Módulos del Sistema
-          </span>
-          <nav className="space-y-1" aria-label="Navegación móvil">
-            {NAV.map(item => {
-              if (itemBloqueado(item, candados)) {
-                return (
-                  <button
-                    key={item.to}
-                    type="button"
-                    onClick={onClose}
-                    aria-label={`${item.label} — bloqueado temporalmente`}
-                    aria-disabled="true"
-                    className="w-full flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/[0.05] text-white/35 cursor-not-allowed"
-                    style={{ touchAction: 'manipulation' }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/[0.04] text-white/30">
-                        <item.icon size={18} />
-                      </div>
-                      <div>
-                        <p className="text-xs font-black leading-tight text-white/50">{item.label}</p>
-                        <p className="text-[10px] text-white/35 mt-0.5">Disponible próximamente</p>
-                      </div>
-                    </div>
-                    <Lock size={15} className="text-white/25 shrink-0" aria-hidden="true" />
-                  </button>
-                )
-              }
-              const Icon = item.icon
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end
-                  onClick={onClose}
-                  className={({ isActive }) =>
-                    `flex items-center justify-between p-3 rounded-2xl transition-all ${
-                      isActive
-                        ? 'bg-gradient-to-r from-amber-500/20 via-primary/30 to-amber-500/10 border border-amber-500/30 text-white shadow-lg shadow-amber-950/30'
-                        : 'bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.05] text-white/70 hover:text-white'
-                    }`
-                  }
-                  style={{ touchAction: 'manipulation' }}
-                >
-                  {({ isActive }) => (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${isActive ? 'bg-amber-500 text-white shadow-md' : 'bg-white/10 text-white/70'}`}>
-                          <Icon size={18} />
-                        </div>
-                        <div>
-                          <p className="text-xs font-black leading-tight text-white">{item.label}</p>
-                          <p className="text-[10px] text-white/50 mt-0.5">{item.desc}</p>
-                        </div>
-                      </div>
-                      <ChevronRight size={15} className={isActive ? 'text-amber-400' : 'text-white/30'} />
-                    </>
-                  )}
-                </NavLink>
-              )
-            })}
-          </nav>
-        </div>
-
-        {/* Widget de Tasas Referenciales en Móvil */}
-        <div className="p-3 rounded-2xl bg-gradient-to-br from-white/[0.05] to-white/[0.02] border border-white/[0.08] space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-amber-400 flex items-center gap-1.5">
-              <TrendingUp size={13} />
-              Tasas Referenciales
-            </span>
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-white/10 text-white/70 uppercase">
-              Al día
-            </span>
-          </div>
-          <div className="grid grid-cols-3 gap-1.5 pt-0.5 text-center">
-            <div className="p-1.5 rounded-xl bg-white/[0.04] border border-white/[0.05]">
-              <span className="text-[9px] font-bold text-white/40 block">USD BCV</span>
-              <strong className="text-[11px] font-black text-white">{loading ? '...' : format(usd)}</strong>
-            </div>
-            <div className="p-1.5 rounded-xl bg-white/[0.04] border border-white/[0.05]">
-              <span className="text-[9px] font-bold text-white/40 block">EUR BCV</span>
-              <strong className="text-[11px] font-black text-white">{loading ? '...' : format(eur)}</strong>
-            </div>
-            <div className="p-1.5 rounded-xl bg-white/[0.04] border border-white/[0.05]">
-              <span className="text-[9px] font-bold text-white/40 block">USDT</span>
-              <strong className="text-[11px] font-black text-white">{loading ? '...' : format(usdt)}</strong>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Footer con Botón de Cerrar Sesión y Versión */}
-      <div
-        className="p-3.5 border-t border-white/[0.08] bg-black/20 shrink-0 space-y-2"
-        style={{ paddingBottom: 'calc(0.875rem + env(safe-area-inset-bottom))' }}
-      >
-        <button
-          onClick={onLogout}
-          className="w-full h-11 flex items-center justify-center gap-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-200 hover:text-white font-bold text-xs transition-all active:scale-[0.98] shadow-lg shadow-red-950/40"
-          style={{ touchAction: 'manipulation' }}
-        >
-          <LogOut size={16} />
-          <span>Cerrar sesión</span>
-        </button>
-        <p className="text-[10px] text-center text-white/30 font-medium">
-          Construacero Carabobo C.A. · v2.1
-        </p>
-      </div>
-    </div>
-  )
-}
-
 function Protected() {
   const initialized = useAuthStore(useCallback(state => state.initialized, []))
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
@@ -285,7 +131,12 @@ function Protected() {
   const generation = useAuthStore(state => state.sessionGeneration)
   if (!initialized) return <Loading />
   if (user && (!perfil || loadingProfile && status !== 'authenticated')) return <LoginPage />
-  if (!perfil || perfil.rol !== 'administracion' || status !== 'authenticated') return <Navigate to="/login" replace />
+  // Roles operativos del sistema (migración 242): jefe/administracion/desarrollador
+  // = total; finanzas y nomina = módulo propio. Qué módulos ve cada rol lo decide
+  // accesoUI (espejo de la matriz del servidor); el servidor revalida todo endpoint.
+  if (!perfil || status !== 'authenticated' || !accesoUI(perfil.rol).finanzas && !accesoUI(perfil.rol).nomina) {
+    return <Navigate to="/login" replace />
+  }
   return <Outlet key={`${user?.id}:${generation}`} />
 }
 
@@ -300,7 +151,7 @@ function Public() {
 
 
 
-function MobileDrawerOverlay({ onClose, onLogout }) {
+function MobileDrawerOverlay({ onClose, onLogout, onChangeUser }) {
   const panelRef = useRef(null)
   const layerRef = useRef(null)
   const { mobileStyle } = useOverlayPosition({ open: true, anchorRef: layerRef, panelRef })
@@ -315,7 +166,7 @@ function MobileDrawerOverlay({ onClose, onLogout }) {
       <aside ref={panelRef} role="dialog" aria-modal="true" aria-label="Menú principal" tabIndex={-1}
         className="translate-x-0 h-full flex flex-col w-[85%] max-w-xs min-w-0 overflow-y-auto rounded-r-2xl bg-slate-900 text-white"
         style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <MobileDrawerContent onClose={() => overlay.requestClose('close-button')} onLogout={onLogout} />
+        <MobileDrawerContent nav={NAV} estaBloqueado={itemBloqueado} onClose={() => overlay.requestClose('close-button')} onLogout={onLogout} onChangeUser={onChangeUser} />
       </aside>
     </div>
   </OverlayContext.Provider>, document.body)
@@ -323,11 +174,17 @@ function MobileDrawerOverlay({ onClose, onLogout }) {
 
 function Shell() {
   const logout = useAuthStore(state => state.logout)
+  const cambiarOperador = useAuthStore(state => state.cambiarOperador)
+  const perfil = useAuthStore(useCallback(state => state.perfil, []))
+  const acceso = accesoUI(perfil?.rol)
+  const navVisible = filtrarNavPorRol(NAV, perfil?.rol)
   const candados = useCandados()
   const navigate = useNavigate()
   const location = useLocation()
   const mainRef = useRef(null)
-  const current = NAV.find(item => location.pathname.startsWith(item.to)) || NAV[0]
+  const current = NAV.find(item => location.pathname.startsWith(item.to))
+    || navVisible[0]
+    || NAV[0]
   const CurrentIcon = current.icon
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false)
@@ -346,6 +203,13 @@ function Shell() {
     setMenuOpen(false)
     await logout()
     navigate('/login', { replace: true })
+  }
+
+  // F2 — cambiar de operador: vuelve a la pantalla de selección + PIN sin
+  // cerrar la sesión de la cuenta. El store limpia la selección en el servidor.
+  async function ejecutarCambiarUsuario() {
+    setMenuOpen(false)
+    await cambiarOperador()
   }
 
   return (
@@ -392,7 +256,7 @@ function Shell() {
         <RateHeader />
       </header>
 
-      {menuOpen && <MobileDrawerOverlay onClose={() => setMenuOpen(false)} onLogout={() => { setMenuOpen(false); setConfirmLogoutOpen(true) }} />}
+      {menuOpen && <MobileDrawerOverlay onClose={() => setMenuOpen(false)} onLogout={() => { setMenuOpen(false); setConfirmLogoutOpen(true) }} onChangeUser={ejecutarCambiarUsuario} />}
 
       {/* Sidebar fijo en desktop y drawer completo en móvil */}
       <div className={`relative shrink-0 transition-all duration-300 ease-out ${sidebarCollapsed ? 'md:w-[72px]' : 'md:w-64'}`}>
@@ -441,13 +305,28 @@ function Shell() {
             </div>
 
             <nav className="relative z-10 flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5 sidebar-scrollbar" aria-label="Navegación principal">
-              {NAV.map(item => itemBloqueado(item, candados)
+              {navVisible.map(item => itemBloqueado(item, candados)
                 ? <NavLockedButton key={item.to} item={item} collapsed={collapsed} onClick={() => setMenuOpen(false)} />
                 : <NavItem key={item.to} item={item} collapsed={collapsed} onClick={() => setMenuOpen(false)} />)}
             </nav>
 
-            {/* Zona de Cerrar sesión en Desktop Sidebar */}
-            <div className="relative z-10 p-2.5 pb-3 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            {/* Zona de sesión en Desktop Sidebar */}
+            <div className="relative z-10 p-2.5 pb-3 shrink-0 space-y-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <button
+                type="button"
+                onClick={ejecutarCambiarUsuario}
+                className={`flex items-center ${collapsed ? 'justify-center p-2.5 mx-auto' : 'w-full gap-3 px-3.5 py-2.5'} rounded-xl text-white/70 hover:text-amber-300 hover:bg-amber-500/10 border border-white/[0.06] hover:border-amber-500/25 transition-all duration-150 active:scale-[0.98] group`}
+                style={{ background: 'rgba(255,255,255,0.03)' }}
+                title="Cambiar de usuario (PIN)"
+                aria-label="Cambiar de usuario"
+              >
+                <UserCog size={17} className="text-white/45 group-hover:text-amber-400 transition-colors shrink-0" />
+                {!collapsed && (
+                  <span className="text-xs font-bold text-white/80 group-hover:text-white transition-colors truncate">
+                    Cambiar de usuario
+                  </span>
+                )}
+              </button>
               <button
                 type="button"
                 onClick={() => setConfirmLogoutOpen(true)}
@@ -504,7 +383,7 @@ function Shell() {
         }}
       >
         <div className="flex items-center justify-around px-1 h-16 min-h-[4rem]">
-          {NAV.map(item => {
+          {navVisible.map(item => {
             const Icon = item.icon
             if (itemBloqueado(item, candados)) {
               return <button
@@ -566,21 +445,32 @@ function Shell() {
 export default function NominaApp() {
   const initialize = useAuthStore(state => state.initialize)
   const candados = useCandados()
+  const perfil = useAuthStore(useCallback(state => state.perfil, []))
   useEffect(() => {
     return initialize()
   }, [initialize])
+
+  const acceso = accesoUI(perfil?.rol)
 
   return (
     <Routes>
       <Route element={<Public />}><Route path="/login" element={<LoginPage />} /></Route>
       <Route element={<Protected />}><Route element={<Shell />}>
-        {candados.nomina
-          ? <Route path="/nomina" element={<ModuloBloqueado />} />
-          : <Route path="/nomina" element={<NominaView />} />}
-        <Route path="/finanzas" element={<FinanzasView />} />
-        <Route path="/sistema" element={<SistemaView />} />
+        {/* Defensa en profundidad: aunque el servidor revalida cada endpoint,
+            el rol sin acceso al módulo ni siquiera ve la ruta. */}
+        {acceso.nomina
+          ? (candados.nomina
+              ? <Route path="/nomina" element={<ModuloBloqueado />} />
+              : <Route path="/nomina" element={<NominaView />} />)
+          : <Route path="/nomina" element={<Navigate to="/finanzas" replace />} />}
+        {acceso.finanzas
+          ? <Route path="/finanzas" element={<FinanzasView />} />
+          : <Route path="/finanzas" element={<Navigate to="/nomina" replace />} />}
+        {acceso.sistema
+          ? <Route path="/sistema" element={<SistemaView />} />
+          : <Route path="/sistema" element={<Navigate to={acceso.finanzas ? '/finanzas' : '/nomina'} replace />} />}
       </Route></Route>
-      <Route path="*" element={<Navigate to={rutaPorDefecto()} replace />} />
+      <Route path="*" element={<Navigate to={rutaParaRol(perfil?.rol)} replace />} />
     </Routes>
   )
 }

@@ -1,5 +1,7 @@
 // server/handlers/__tests__/nomina.permisos.test.js
-// Toda ruta de Nómina debe aceptar únicamente el rol administracion.
+// Autorización de Nómina según la matriz de capacidades (migración 242):
+//   * jefe / administracion / desarrollador / nomina → acceso al módulo.
+//   * finanzas y el resto de roles → 403 sin consultar datos.
 // El mock de auth permite comprobar la defensa local sin depender de Supabase.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ENV, IDS, OPERADORES, authOk, installFetchMock, makeRequest, readResponse } from './_harness'
@@ -56,10 +58,12 @@ const ROUTES = [
   ['handleRevertirPagoLinea', { operationId: IDS.registro, lineaId: IDS.linea, motivo: 'Corrección de prueba' }],
 ]
 
-const LEGACY_ROLES = ['jefe', 'desarrollador', 'logistica', 'supervisor', 'vendedor']
+// Roles SIN acceso a nómina: finanzas (solo su módulo) y los heredados del
+// sistema de cotizaciones (logistica/supervisor/vendedor).
+const ROLES_SIN_NOMINA = ['finanzas', 'logistica', 'supervisor', 'vendedor']
 
-describe('permisos — solo administración', () => {
-  for (const rol of LEGACY_ROLES) {
+describe('permisos — matriz de nómina', () => {
+  for (const rol of ROLES_SIN_NOMINA) {
     for (const [name, body] of ROUTES) {
       it(`${rol} recibe 403 en ${name} sin consultar datos`, async () => {
         operadorActual = OPERADORES[rol]
@@ -75,6 +79,22 @@ describe('permisos — solo administración', () => {
         expect(mock.calls).toHaveLength(0)
       })
     }
+  }
+
+  // Los roles CON acceso (jefe, desarrollador, nomina) deben pasar la puerta de
+  // autorización: con BD vacía pueden fallar por datos, pero NO por 403.
+  for (const rol of ['jefe', 'desarrollador', 'nomina']) {
+    it(`${rol} pasa la puerta de autorización en handleGetEmpleados (no 403 por rol)`, async () => {
+      operadorActual = OPERADORES[rol]
+      mock = installFetchMock([
+        { match: '/rpc/', method: 'POST', respond: [] },
+        { match: '/clientes', method: 'GET', respond: [] },
+        { match: '/empleados', method: 'GET', respond: [] },
+      ])
+      const response = await H.handleGetEmpleados(makeRequest(), ENV)
+      const result = await readResponse(response)
+      expect(result.status).not.toBe(403)
+    })
   }
 
   it.each(['handlePagarLineas', 'handleRevertirPagoLinea'])('rejects a missing tenant for %s before calling the RPC', async name => {

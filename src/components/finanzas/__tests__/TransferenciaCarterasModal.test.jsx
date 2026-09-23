@@ -19,6 +19,17 @@ describe('Traspasos: confirmación única, saldos y unidades', () => {
     expect(screen.getByText('Disponible: 50 USD')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Confirmar traspaso' })).toBeDisabled()
   })
+  it('permite a finanzas elegir una cuenta sin revelar saldo y delega el control de fondos al servidor', async () => {
+    const user = userEvent.setup(), onClose = vi.fn()
+    mount({ cuentas: accounts.map(({ saldo, disponible, saldoConfirmado, ...cuenta }) => cuenta), validarFondosEnServidor: true, onClose })
+    expect(screen.getByText('Disponible: El servidor validará el saldo al confirmar')).toBeInTheDocument()
+    expect(screen.queryByText(/50 USD/)).not.toBeInTheDocument()
+    await target(user)
+    fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '10' } })
+    expect(screen.getByRole('button', { name: 'Confirmar traspaso' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Confirmar traspaso' }))
+    await waitFor(() => expect(operation.mutateAsync).toHaveBeenCalledTimes(1))
+  })
   it.each([null, 500])('saldo %s sin confirmar no habilita transferencias', saldo => {
     mount({ cuentas: accounts.map(c => ({ ...c, saldo, saldoConfirmado: false, disponible: false })) })
     expect(screen.getByRole('status')).toHaveTextContent('Sin saldo disponible')

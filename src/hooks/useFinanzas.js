@@ -6,12 +6,13 @@ import { useAccountQuery as useQuery, useAccountInfiniteQuery as useInfiniteQuer
 import useAuthStore from '../../compat/store/useAuthStore.js'
 import { authFetch } from '../../compat/services/authFetch.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
+import { tieneCapacidad } from '../config/accesoModulos.js'
 
 const BASE_KEY = ['finanzas']
-const ADMIN_ROLE = 'administracion'
 
+// Compuerta derivada de la matriz única: finanzas y los roles totales.
 function puedeFinanzas(perfil) {
-  return perfil?.rol === ADMIN_ROLE
+  return tieneCapacidad(perfil, 'verFinanzas')
 }
 
 // authFetch refresca la sesión y reintenta automáticamente en 401.
@@ -83,6 +84,7 @@ export function useFinanzasMovimientos({ desde, hasta, tipo = '', categoria = ''
 
 export function useFinanzasResumen({ desde, hasta, tipo = '', categoria = '', moneda = '', cartera = '' } = {}) {
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
+  const puedeVerSaldos = tieneCapacidad(perfil, 'verSaldos')
   const params = new URLSearchParams({ desde, hasta })
   if (tipo) params.set('tipo', tipo)
   if (categoria) params.set('categoria', categoria)
@@ -91,7 +93,9 @@ export function useFinanzasResumen({ desde, hasta, tipo = '', categoria = '', mo
   return useQuery({
     queryKey: [...BASE_KEY, 'resumen', desde, hasta, tipo, categoria, moneda, cartera],
     queryFn: ({ signal }) => apiGet(`/api/finanzas/reportes/resumen?${params}`, signal),
-    enabled: puedeFinanzas(perfil) && Boolean(desde && hasta && desde <= hasta),
+    // Los roles de operación del libro (finanzas) no ven agregados; tampoco
+    // solicitamos un resumen que su interfaz no puede presentar.
+    enabled: puedeFinanzas(perfil) && puedeVerSaldos && Boolean(desde && hasta && desde <= hasta),
     staleTime: 1000 * 30,
   })
 }
@@ -174,6 +178,20 @@ export function useReasignarCuenta() {
       client.invalidateQueries({ queryKey: ['finanzas', 'cuentas-custodia'] })
     },
     onError: error => showToast.error(error.message || 'No se pudo asignar la cuenta'),
+  })
+}
+
+export function usePreviewConciliacion() {
+  return useMutation({
+    mutationFn: ({ desde, hasta, tipo = '', categoria = '', moneda = '', cartera = '' } = {}) => {
+      const params = new URLSearchParams({ desde, hasta, limit: '100' })
+      if (tipo) params.set('tipo', tipo)
+      if (categoria) params.set('categoria', categoria)
+      if (moneda) params.set('moneda', moneda)
+      if (cartera) params.set('cartera', cartera)
+      return apiGet(`/api/finanzas/movimientos/conciliacion-preview?${params}`)
+    },
+    onError: error => showToast.error(error.message || 'No se pudo simular la conciliación'),
   })
 }
 

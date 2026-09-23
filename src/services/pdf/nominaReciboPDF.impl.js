@@ -340,8 +340,15 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
     doc.setTextColor(71, 85, 105)
     const fechaPago = linea.pagado_en ? fmtFechaVE(linea.pagado_en) : '—'
     const ref = linea.referencia_pago ? `Ref: ${linea.referencia_pago}` : 'Ref: N/A'
-    const tasa = linea.tasa_bcv_snap ? `Tasa BCV: ${linea.tasa_bcv_snap} Bs/$` : null
-    const montoBs = linea.total_neto_bs ? `Total Bs: ${fmtBs(linea.total_neto_bs)}` : null
+    // Tasa y monto en Bs congelados en el recibo al momento del pago (migración 241).
+    // Recibos pagados antes de la 241 no tienen tasa congelada: se omiten ambas líneas
+    // para no inventar una conversión retroactiva.
+    const tasa = linea.tasa_pago_usd_ves > 0
+      ? `Tasa de pago: ${Number(linea.tasa_pago_usd_ves).toLocaleString('es-VE', { maximumFractionDigits: 2 })} Bs/$`
+      : null
+    const montoBs = linea.total_pagado_bs > 0
+      ? `Total: ${fmtBs(linea.total_pagado_bs)}`
+      : null
     const pagoInfo = [fechaPago, ref, tasa, montoBs].filter(Boolean).join('   ·   ')
     doc.text(pagoInfo, MARGIN + 5, y + 8.5)
 

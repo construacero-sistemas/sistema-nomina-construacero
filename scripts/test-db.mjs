@@ -3,6 +3,10 @@
 import { PGlite } from '@electric-sql/pglite'
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
+import {
+  CAPACIDADES, ROLES_VALIDOS, ROLES_OPERATIVOS, tieneCapacidad, tieneAccesoOperativo,
+  rolesConCapacidad,
+} from '../server/lib/permissions.js'
 import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
@@ -54,7 +58,7 @@ try {
   }
   const tenant = randomUUID(), other = randomUUID(), actor = randomUUID(), otherActor = randomUUID()
   await db.query('INSERT INTO auth.users(id) VALUES($1),($2)', [tenant, other])
-  await db.query("INSERT INTO usuarios(id,cuenta_id,nombre,rol) VALUES($1,$2,'QA A','administracion'),($3,$4,'QA B','administracion')", [actor, tenant, otherActor, other])
+  await db.query("INSERT INTO usuarios(id,cuenta_id,nombre,rol) VALUES($1,$2,'QA A','jefe'),($3,$4,'QA B','jefe')", [actor, tenant, otherActor, other])
   const usd = randomUUID(), ves = randomUUID(), second = randomUUID(), usdt = randomUUID(), outside = randomUUID()
   for (const [id, account, moneda, tipo] of [[usd, tenant, 'USD', 'efectivo_usd'], [ves, tenant, 'VES', 'banco_ves'], [second, tenant, 'USD', 'zelle'], [usdt, tenant, 'USDT', 'cripto_usdt'], [outside, other, 'USD', 'efectivo_usd']]) {
     await db.query('INSERT INTO cuentas_custodia(id,cuenta_id,nombre,tipo,cartera,moneda,subcuenta_id) VALUES($1,$2,$3,$4,$5,$6,$3)', [id, account, `Cuenta ${id}`, tipo, moneda === 'VES' ? 'VES' : 'USD', moneda])
@@ -443,8 +447,136 @@ try {
     assert.deepEqual(await rpc('revertir_nomina', inactiveReverse, inactiveReverseKey, other, otherActor), reversed)
     assert.deepEqual(await inactiveSnapshot(), after)
   })
+  // ─── Paridad capacidad × rol: la matriz única contra PostgreSQL ─────────────
+  // `server/lib/permissions.js` es la fuente de la verdad de la autorización.
+  // Aquí se mide qué concede realmente el SQL a cada rol y se compara en las dos
+  // direcciones:
+  //   * privilegio de MÁS   → fallo duro SIEMPRE: nadie puede recibir acceso que
+  //     la matriz no conceda;
+  //   * privilegio de MENOS → se reporta como brecha mientras el SQL siga
+  //     exigiendo 'administracion' (F0-A). Al aplicar la migración 243, la
+  //     paridad completa pasa a exigirse sola.
+  const PARIDAD_SQL_ALINEADA = result.migrations.some(nombre => nombre.startsWith('243'))
+  const brechasParidad = []
+  const sobrePrivilegios = []
+  const operadoresParidad = ROLES_VALIDOS.map(rol => ({ rol, id: randomUUID() }))
+  for (const operador of operadoresParidad) {
+    await db.query('INSERT INTO usuarios(id,cuenta_id,nombre,rol) VALUES($1,$2,$3,$4)',
+      [operador.id, tenant, `Paridad ${operador.rol}`, operador.rol])
+  }
+  // Supabase concede a `authenticated` los privilegios de tabla por defecto;
+  // PGlite no los trae, así que el arnés replica ese privilegio para medir la
+  // decisión REAL de RLS: el aislamiento por fila lo decide la política.
+  await db.exec('GRANT SELECT ON public.nomina_periodos, public.nomina_lineas, public.finanzas_movimientos, public.cuentas_custodia TO authenticated')
+
+  // Equivalencia directa: el espejo SQL (migración 243) y la fuente JS deben
+  // declarar exactamente los mismos roles en cada capacidad. Es la comprobación
+  // más fuerte de la paridad: si alguien toca un solo lado, falla aquí.
+  await check('El espejo SQL de la matriz coincide capacidad por capacidad con la fuente JS', async () => {
+    for (const capacidad of CAPACIDADES) {
+      const rolesSql = (await one('SELECT public.roles_capacidad($1) AS roles', [capacidad])).roles || []
+      assert.deepEqual([...rolesSql].sort(), [...rolesConCapacidad(capacidad)].sort(), `capacidad ${capacidad}`)
+    }
+    const operativos = (await one('SELECT public.roles_operativos() AS roles')).roles || []
+    assert.deepEqual([...operativos].sort(), [...ROLES_OPERATIVOS].sort(), 'roles_operativos()')
+    console.log(`[PASS] Espejo SQL verificado en ${CAPACIDADES.length} capacidades y en roles_operativos().`)
+  })
+
+  const conJwt = async (operadorId, tarea) => {
+    await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)", [tenant])
+    await db.query("SELECT set_config('request.jwt.claims',$1,false)",
+      [JSON.stringify({ app_metadata: { operator_id: operadorId } })])
+    try { return await tarea() } finally {
+      await db.query("SELECT set_config('request.jwt.claim.sub','',false)")
+      await db.query("SELECT set_config('request.jwt.claims','',false)")
+    }
+  }
+
+  // Filas del tenant visibles con la sesión de ese operador (RLS + restrictiva).
+  const filasVisibles = (tabla, operador) => conJwt(operador.id, async () => {
+    await db.exec('SET ROLE authenticated')
+    try { return Number((await one(`SELECT count(*)::int AS n FROM public.${tabla} WHERE cuenta_id=$1`, [tenant])).n) > 0 }
+    finally { await db.exec('RESET ROLE') }
+  })
+
+  const rolQueVeSql = operador => conJwt(operador.id, async () => (await one('SELECT public.get_rol_actual() AS rol')).rol)
+  const apareceEnLogin = (operador, filas) => filas.some(fila => fila.id === operador.id)
+  const usuariosDeLogin = operador => conJwt(operador.id,
+    async () => (await db.query('SELECT id FROM public.listar_usuarios_login()')).rows)
+
+  // Las RPC privadas se ejecutan con service_role y el guardián de actor vive
+  // dentro. Se envía un sobre inválido a propósito: PT403 significa que el actor
+  // no pasa y PT400 que el actor pasa y el payload falla — sin escribir nada.
+  const actorAceptado = async (sql, params) => {
+    try { await one(sql, params); return true }
+    catch (error) { return error.code === 'PT400' }
+  }
+  const operaFinanzasSql = (operador, tipo) => actorAceptado(
+    'SELECT finanzas_operar($1,$2,$3,$4,$5::jsonb,NULL) AS value',
+    [tenant, operador.id, tipo, 'sobre-invalido', JSON.stringify({})])
+  const asignaCustodiaSql = operador => actorAceptado(
+    'SELECT finanzas_asignar_custodia($1,$2,$3::uuid[],$4,NULL) AS value',
+    [tenant, operador.id, [], usd])
+
+  const esperadoCapacidad = capacidad => operador => tieneCapacidad({ rol: operador.rol }, capacidad)
+  const esperadoOperativo = operador => tieneAccesoOperativo(operador.rol)
+  const SUPERFICIES_SQL = [
+    { nombre: 'nomina_periodos (RLS SELECT)', esperado: esperadoCapacidad('verNomina'), medir: operador => filasVisibles('nomina_periodos', operador) },
+    { nombre: 'nomina_lineas (RLS SELECT)', esperado: esperadoCapacidad('verNomina'), medir: operador => filasVisibles('nomina_lineas', operador) },
+    { nombre: 'finanzas_movimientos (RLS SELECT)', esperado: esperadoCapacidad('verFinanzas'), medir: operador => filasVisibles('finanzas_movimientos', operador) },
+    { nombre: 'cuentas_custodia (RLS SELECT)', esperado: esperadoCapacidad('verSaldos'), medir: operador => filasVisibles('cuentas_custodia', operador) },
+    { nombre: 'get_rol_actual() resuelve el rol', esperado: operador => esperadoOperativo(operador) ? operador.rol : null, medir: operador => rolQueVeSql(operador) },
+    { nombre: 'listar_usuarios_login() lista al operador', esperado: esperadoOperativo, medir: async operador => apareceEnLogin(operador, await usuariosDeLogin(operador)) },
+    { nombre: 'finanzas_operar:traspaso (guardián de actor)', esperado: esperadoCapacidad('operarFinanzas'), medir: operador => operaFinanzasSql(operador, 'traspaso') },
+    { nombre: 'finanzas_operar:pagar_nomina (guardián de actor)', esperado: esperadoCapacidad('administrarNomina'), medir: operador => operaFinanzasSql(operador, 'pagar_nomina') },
+    { nombre: 'finanzas_operar:revertir_nomina (guardián de actor)', esperado: esperadoCapacidad('administrarNomina'), medir: operador => operaFinanzasSql(operador, 'revertir_nomina') },
+    { nombre: 'finanzas_asignar_custodia (guardián de actor)', esperado: esperadoCapacidad('operarFinanzas'), medir: operador => asignaCustodiaSql(operador) },
+  ]
+
+  const mediciones = []
+  for (const superficie of SUPERFICIES_SQL) {
+    for (const operador of operadoresParidad) {
+      const esperado = superficie.esperado(operador)
+      let real
+      try { real = await superficie.medir(operador) }
+      catch (error) { real = `error: ${error.message}` }
+      const detalle = typeof real === 'string' && real.startsWith('error:') ? real : null
+      const concedido = detalle ? false : real
+      mediciones.push({ superficie: superficie.nombre, rol: operador.rol, concedido, esperado, detalle })
+      if (concedido === esperado) continue
+      if (!esperado && concedido) sobrePrivilegios.push({ superficie: superficie.nombre, rol: operador.rol, detalle })
+      else brechasParidad.push({ superficie: superficie.nombre, rol: operador.rol, detalle })
+    }
+  }
+  result.paridad = { alineada: PARIDAD_SQL_ALINEADA, mediciones, brechas: brechasParidad, sobrePrivilegios }
+
+  await check('Paridad capacidad × rol: nadie recibe acceso que la matriz única no conceda', async () => {
+    assert.deepEqual(sobrePrivilegios.map(x => `${x.rol} → ${x.superficie}`), [])
+  })
+
+  await check('Paridad capacidad × rol: los roles heredados quedan fuera de todas las superficies', async () => {
+    const filas = mediciones.filter(x => !ROLES_OPERATIVOS.includes(x.rol))
+    assert.ok(filas.length > 0, 'la matriz debe tener roles heredados que probar')
+    assert.deepEqual(filas.filter(x => x.concedido === true).map(x => `${x.rol} → ${x.superficie}`), [])
+  })
+
+  await check('Paridad capacidad × rol coincide con server/lib/permissions.js', async () => {
+    if (brechasParidad.length === 0) {
+      console.log(`[PASS] Paridad SQL completa: ${mediciones.length} superficies capacidad × rol reflejan la matriz única.`)
+      return
+    }
+    const resumen = brechasParidad.map(x => `${x.rol} → ${x.superficie}${x.detalle ? ` (${x.detalle})` : ''}`)
+    if (!PARIDAD_SQL_ALINEADA) {
+      console.warn(`[paridad] Brecha pendiente (${resumen.length}): el SQL todavía exige 'administracion'; falta la migración 243 (F0-A del roadmap).`)
+      for (const linea of resumen) console.warn(`  - ${linea}`)
+      return
+    }
+    assert.fail(`El SQL no refleja la matriz única en ${resumen.length} superficies: ${resumen.slice(0, 6).join(' | ')}`)
+  })
+
   result.passed = true
   console.log(`[test:db] ${result.checks.length} comprobaciones aprobadas; ${result.migrations.length} migraciones.`)
+  console.log(`[test:db] Paridad capacidad × rol: ${mediciones.length} superficies medidas, ${result.paridad.sobrePrivilegios.length} privilegios de más, ${result.paridad.brechas.length} brechas pendientes.`)
 } catch (error) {
   result.error = error.message; result.code = error.code; process.exitCode = 1
   console.error('[test:db] FAIL', error.message, error.code || '')

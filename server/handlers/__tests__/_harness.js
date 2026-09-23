@@ -12,8 +12,10 @@ export const ENV = {
 }
 
 export const OPERADORES = {
-  administracion: { id: '11111111-1111-4111-8111-111111111111', nombre: 'Admin Test',      rol: 'administracion', cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },
+  administracion: { id: '11111111-1111-4111-8111-111111111111', nombre: 'Admin Test',      rol: 'jefe',           cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },
   jefe:           { id: '22222222-2222-4222-8222-222222222222', nombre: 'Jefe Test',       rol: 'jefe',           cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },
+  finanzas:       { id: '77777777-7777-4777-8777-777777777777', nombre: 'Finanzas Test',   rol: 'finanzas',       cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },
+  nomina:         { id: '88888888-8888-4888-8888-888888888888', nombre: 'Nomina Test',     rol: 'nomina',         cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },
   desarrollador:  { id: '33333333-3333-4333-8333-333333333333', nombre: 'Dev Test',        rol: 'desarrollador',  cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },
   logistica:      { id: '44444444-4444-4444-8444-444444444444', nombre: 'Logistica Test',  rol: 'logistica',      cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },
   supervisor:     { id: '55555555-5555-4555-8555-555555555555', nombre: 'Supervisor Test', rol: 'supervisor',     cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },

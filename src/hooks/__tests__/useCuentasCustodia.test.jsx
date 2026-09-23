@@ -9,7 +9,7 @@ import { useCuentasCustodia } from '../useCuentasCustodia.js'
 const session = vi.hoisted(() => ({
   accountId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
   user: { id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },
-  perfil: { rol: 'administracion', cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },
+  perfil: { rol: 'jefe', cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },
 }))
 vi.mock('../../../compat/services/authFetch.js', () => ({ authFetch: vi.fn() }))
 vi.mock('../../../compat/components/ui/toastBus.js', () => ({ showToast: { success: vi.fn(), error: vi.fn() } }))
@@ -38,7 +38,7 @@ beforeEach(() => {
   localStorage.clear()
   session.accountId = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa'
   session.user = { id: session.accountId }
-  session.perfil = { rol: 'administracion', cuenta_id: session.accountId }
+  session.perfil = { rol: 'jefe', cuenta_id: session.accountId }
   catalog = { cuentas: ACCOUNTS.map(account => ({ ...account })), eliminadas: [] }
   balances = { schemaVersion: 1, conciliacionPendiente: false, cuentas: [balance(ACCOUNTS[0], -1000, -10), balance(ACCOUNTS[1], 500, 5)], noAsignados: [] }
   catalogStatus = 200
@@ -193,10 +193,21 @@ describe('useCuentasCustodia canonical account balances', () => {
     expect(bodies).toEqual([{ id: ACCOUNTS[0].id, todos: false }, { todos: true }])
   })
 
+  it('finanzas carga cuentas operativas sin consultar saldos ni exponer disponibilidad', async () => {
+    session.perfil = { rol: 'finanzas', cuenta_id: session.accountId }
+    const { result } = renderCustodia()
+    await waitFor(() => expect(result.current.cuentas).toHaveLength(2))
+    expect(result.current.cuentas[0]).toMatchObject({ id: ACCOUNTS[0].id, nombre: 'Banco BNC', saldo: null, saldoConfirmado: false, disponible: false, valorUsd: null, valoracionCompleta: false })
+    expect(result.current.saldos).toBeNull()
+    expect(result.current.saldosError).toBe('')
+    expect(authFetch).toHaveBeenCalledWith('/api/finanzas/cuentas-custodia', expect.any(Object))
+    expect(authFetch).not.toHaveBeenCalledWith('/api/finanzas/saldos', expect.anything())
+  })
+
   it('does not query private catalog or balances without an authenticated account', () => {
     session.accountId = null
     session.user = null
-    session.perfil = { rol: 'administracion' }
+    session.perfil = { rol: 'jefe' }
     const { result } = renderCustodia()
     expect(authFetch).not.toHaveBeenCalled()
     expect(result.current.cuentas).toEqual([])
