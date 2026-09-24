@@ -79,6 +79,11 @@ class InMemoryDatabase {
     ]
     this.finanzas_movimientos = []
     this.finanzas_categorias = []
+    // Cuentas de custodia del arnés: la comisión es USD, así que la caja USD
+    // debe existir para que el guardarraíl anti-huérfanos del handler resuelva.
+    this.cuentas_custodia = [
+      { id: IDS.custodia, cuenta_id: IDS.cuenta, nombre: 'Caja USD', moneda: 'USD', activo: true },
+    ]
     this.rpcOperations = new Map()
     this.rpcAssignments = []
     this.config = {
@@ -337,6 +342,17 @@ class InMemoryDatabase {
         if (estEq) res = res.filter(m => m.estado === estEq)
         return jsonResponse(res)
       }
+    }
+
+    if (pathname.includes('/rest/v1/cuentas_custodia')) {
+      const idEq = params.get('id')?.replace('eq.', '')
+      const cuentaEq = params.get('cuenta_id')?.replace('eq.', '')
+      const activoEq = params.get('activo')?.replace('eq.', '')
+      let res = this.cuentas_custodia
+      if (idEq) res = res.filter(c => c.id === idEq)
+      if (cuentaEq) res = res.filter(c => c.cuenta_id === cuentaEq)
+      if (activoEq) res = res.filter(c => String(c.activo) === activoEq)
+      return jsonResponse(res)
     }
 
     if (pathname.includes('/rest/v1/config_negocio') || pathname.includes('/rest/v1/config')) {
@@ -763,6 +779,7 @@ async function runAllTests() {
       observacionTasa: 'Tasa BCV de nómina',
       referencia: 'Pago Móvil - Ref: 987654',
       observaciones: 'Beneficiario: Carlos Comisionista (V-20334455). Vendedor Externo.',
+      cuentaCustodiaId: IDS.custodia,
       idempotencyKey: 'comision-test-001',
     })
     const res = await F.handleCrearFinanzasMovimiento(req, ENV)
@@ -771,6 +788,7 @@ async function runAllTests() {
     assertEqual(body.movimiento.categoria, 'Comisiones', 'Categoría Comisiones')
     assertEqual(body.movimiento.monto, 150.0, 'Monto en USD')
     assertEqual(body.movimiento.tipo, 'egreso', 'Tipo Egreso')
+    assertEqual(body.movimiento.cuenta_custodia_id, IDS.custodia, 'Comisión enlazada a su cuenta de custodia (anti-huérfanos)')
   })
 
   // ── REPORTE FINAL Y DIAGNÓSTICO ─────────────────────────────────────────────

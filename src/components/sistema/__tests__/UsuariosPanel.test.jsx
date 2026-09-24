@@ -105,7 +105,7 @@ describe('UsuariosPanel — filas de usuario (mapa completo)', () => {
     await user.click(screen.getByLabelText('Asignar PIN de Cajera Finanzas'))
     expect(screen.getByText('Nuevo PIN (4 dígitos)')).toBeInTheDocument()
     const fila = screen.getByText('Nuevo PIN (4 dígitos)').closest('article')
-    await user.type(within(fila).getByPlaceholderText('4 dígitos'), '4829')
+    await user.type(within(fila).getAllByPlaceholderText('4 dígitos')[0], '4829')
 
     // Editor de nombre abierto (input prefijado con el nombre actual de la fila).
     await user.click(screen.getByLabelText('Cambiar nombre de Cajera Finanzas'))
@@ -159,6 +159,60 @@ describe('UsuariosPanel — PIN por rol', () => {
 
     expect(await screen.findByText('El PIN debe ser de 4 dígitos.')).toBeInTheDocument()
     expect(crearMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('UsuariosPanel — restablecer PIN con confirmación', () => {
+  const fila = [{ id: 'u1', nombre: 'Cajera', rol: 'finanzas', activo: true, tiene_pin: true }]
+
+  function montarConFila() {
+    hooks.useOperadores.mockReturnValue({ data: { usuarios: fila }, isLoading: false, error: null })
+    return render(<UsuariosPanel open onClose={vi.fn()} />)
+  }
+
+  it('rechaza el guardado si la confirmación difiere del nuevo PIN', async () => {
+    const cambiarPinMock = vi.fn(async () => ({}))
+    hooks.useCambiarPinOperador.mockReturnValue({ mutateAsync: cambiarPinMock, isPending: false })
+    const user = userEvent.setup()
+    montarConFila()
+
+    await user.click(screen.getByLabelText('Restablecer PIN de Cajera'))
+    const confirmacion = screen.getByLabelText('Confirmar nuevo PIN')
+    await user.type(screen.getByLabelText('Nuevo PIN (4 dígitos)'), '1234')
+    await user.type(confirmacion, '9876')
+    await user.click(screen.getByRole('button', { name: /guardar pin/i }))
+
+    expect(showToast).toHaveBeenCalledWith('La confirmación no coincide con el nuevo PIN', 'error')
+    expect(cambiarPinMock).not.toHaveBeenCalled()
+  })
+
+  it('guarda el PIN cuando ambas entradas coinciden y limpia el editor', async () => {
+    const cambiarPinMock = vi.fn(async () => ({}))
+    hooks.useCambiarPinOperador.mockReturnValue({ mutateAsync: cambiarPinMock, isPending: false })
+    const user = userEvent.setup()
+    montarConFila()
+
+    await user.click(screen.getByLabelText('Restablecer PIN de Cajera'))
+    await user.type(screen.getByLabelText('Nuevo PIN (4 dígitos)'), '4321')
+    await user.type(screen.getByLabelText('Confirmar nuevo PIN'), '4321')
+    await user.click(screen.getByRole('button', { name: /guardar pin/i }))
+
+    expect(cambiarPinMock).toHaveBeenCalledWith({ id: 'u1', pin: '4321' })
+    expect(showToast).toHaveBeenCalledWith('PIN de Cajera actualizado', 'success')
+  })
+
+  it('la confirmación adopta el largo del rol (jefe: 6 dígitos)', () => {
+    hooks.useOperadores.mockReturnValue({
+      data: { usuarios: [{ id: 'u2', nombre: 'Jefe Principal', rol: 'jefe', activo: true, tiene_pin: true }] },
+      isLoading: false,
+      error: null,
+    })
+    render(<UsuariosPanel open onClose={vi.fn()} />)
+
+    return userEvent.setup().click(screen.getByLabelText('Restablecer PIN de Jefe Principal')).then(() => {
+      expect(screen.getByText('Confirmar nuevo PIN')).toBeInTheDocument()
+      expect(screen.getAllByPlaceholderText('6 dígitos')).toHaveLength(2)
+    })
   })
 })
 

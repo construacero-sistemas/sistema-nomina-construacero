@@ -118,6 +118,7 @@ export default function UsuariosPanel({ open, onClose }) {
 
   const [pinPara, setPinPara] = useState(null) // usuario en edición de PIN
   const [nuevoPin, setNuevoPin] = useState('')
+  const [confirmarPin, setConfirmarPin] = useState('')
   const [rolPara, setRolPara] = useState(null)
   const [rolNuevo, setRolNuevo] = useState('')
   const [nombrePara, setNombrePara] = useState(null) // usuario en edición de nombre
@@ -137,9 +138,10 @@ export default function UsuariosPanel({ open, onClose }) {
   async function guardarPin(u) {
     const largoPin = longitudPin(u.rol)
     if (nuevoPin.length !== largoPin) return showToast(`El PIN debe ser de ${largoPin} dígitos`, 'error')
+    if (nuevoPin !== confirmarPin) return showToast('La confirmación no coincide con el nuevo PIN', 'error')
     try {
       await cambiarPin.mutateAsync({ id: u.id, pin: nuevoPin })
-      setPinPara(null); setNuevoPin('')
+      setPinPara(null); setNuevoPin(''); setConfirmarPin('')
       showToast(`PIN de ${u.nombre} actualizado`, 'success')
     } catch (err) {
       showToast(err.message || 'No se pudo actualizar el PIN', 'error')
@@ -221,7 +223,7 @@ export default function UsuariosPanel({ open, onClose }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setPinPara(pinPara === u.id ? null : u.id); setNuevoPin('') }}
+                    onClick={() => { setPinPara(pinPara === u.id ? null : u.id); setNuevoPin(''); setConfirmarPin('') }}
                     className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl border border-slate-300 text-slate-600"
                     title={u.tiene_pin ? 'Restablecer PIN' : 'Asignar PIN'}
                     aria-label={`${u.tiene_pin ? 'Restablecer' : 'Asignar'} PIN de ${u.nombre}`}
@@ -276,16 +278,20 @@ export default function UsuariosPanel({ open, onClose }) {
               )}
 
               {pinPara === u.id && (
-                <div className="mt-3 flex flex-col sm:flex-row gap-2 items-stretch sm:items-end">
-                  <label className="block flex-1">
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:items-end">
+                  <label className="block">
                     <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Nuevo PIN ({longitudPin(u.rol)} dígitos)</span>
                     <PinInput value={nuevoPin} onChange={setNuevoPin} disabled={cambiarPin.isPending} length={longitudPin(u.rol)} />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Confirmar nuevo PIN</span>
+                    <PinInput value={confirmarPin} onChange={setConfirmarPin} disabled={cambiarPin.isPending} length={longitudPin(u.rol)} />
                   </label>
                   <button
                     type="button"
                     onClick={() => guardarPin(u)}
                     disabled={cambiarPin.isPending}
-                    className="min-h-11 rounded-xl bg-primary px-4 py-2 font-bold text-white disabled:opacity-60"
+                    className="min-h-11 rounded-xl bg-primary px-4 py-2 font-bold text-white disabled:opacity-60 sm:col-span-2"
                   >
                     Guardar PIN
                   </button>

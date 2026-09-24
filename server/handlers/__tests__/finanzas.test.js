@@ -42,6 +42,38 @@ describe('finanzas — guardrails de administración', () => {
     expect(mock.calls).toHaveLength(0)
   })
 
+  it('rechaza el alta sin cuenta de custodia: ningún movimiento huérfano (anti-huérfanos)', async () => {
+    mock = installFetchMock([])
+    const response = await H.handleCrearFinanzasMovimiento(makeRequest(movementInput), ENV)
+    const result = await readResponse(response)
+    expect(result.status).toBe(400)
+    expect(result.body.error).toMatch(/cuenta de origen\/destino/i)
+    // No debe haber tocado Supabase: la validación es la primera barrera.
+    expect(mock.calls.filter(call => call.method === 'POST')).toHaveLength(0)
+  })
+
+  it('rechaza el alta con cuenta de custodia malformada', async () => {
+    mock = installFetchMock([])
+    const response = await H.handleCrearFinanzasMovimiento(
+      makeRequest({ ...movementInput, cuentaCustodiaId: 'no-es-un-uuid' }), ENV)
+    const result = await readResponse(response)
+    expect(result.status).toBe(400)
+    expect(result.body.error).toMatch(/cuenta de origen\/destino|inválida/i)
+  })
+
+  it('rechaza el alta cuya cuenta de custodia no existe o es de otro tenant', async () => {
+    const ajena = '99999999-9999-4999-8999-999999999999'
+    mock = installFetchMock([
+      { match: `/cuentas_custodia?id=eq.${ajena}`, method: 'GET', respond: [] },
+    ])
+    const response = await H.handleCrearFinanzasMovimiento(
+      makeRequest({ ...movementInput, cuentaCustodiaId: ajena }), ENV)
+    const result = await readResponse(response)
+    expect(result.status).toBe(400)
+    expect(result.body.error).toMatch(/no corresponde|no existe/i)
+    expect(mock.calls.filter(call => call.method === 'POST')).toHaveLength(0)
+  })
+
   it('rechaza movimiento inválido sin tocar Supabase', async () => {
     mock = installFetchMock([])
     const response = await H.handleCrearFinanzasMovimiento(makeRequest({ ...movementInput, monto: -1 }), ENV)
@@ -82,11 +114,14 @@ describe('finanzas — flujo crear, reportar y anular', () => {
 
   it('crea un movimiento con cuenta, tasa e idempotencia server-side', async () => {
     let sent
+    const custodyId = IDS.config
     mock = installFetchMock([
+      { match: `/cuentas_custodia?id=eq.${custodyId}`, method: 'GET', respond: [{ id: custodyId, nombre: 'Caja USD', moneda: 'USD' }] },
       { match: 'idempotency_key=eq.movimiento-test-0001', method: 'GET', respond: [] },
-      { match: '/finanzas_movimientos', method: 'POST', respond: (url, init) => { sent = JSON.parse(init.body); return [movement] } },
+      { match: '/finanzas_movimientos', method: 'POST', respond: (url, init) => { sent = JSON.parse(init.body); return [{ ...movement, cuenta_custodia_id: custodyId }] } },
     ])
-    const response = await H.handleCrearFinanzasMovimiento(makeRequest(movementInput), ENV)
+    const response = await H.handleCrearFinanzasMovimiento(
+      makeRequest({ ...movementInput, cuentaCustodiaId: custodyId }), ENV)
     const result = await readResponse(response)
     expect(result.status).toBe(201)
     expect(result.body.movimiento.monto_ves).toBe(12000)
@@ -96,10 +131,13 @@ describe('finanzas — flujo crear, reportar y anular', () => {
   })
 
   it('reintento con la misma idempotency key no crea otra fila', async () => {
+    const custodyId = IDS.config
     mock = installFetchMock([
+      { match: `/cuentas_custodia?id=eq.${custodyId}`, method: 'GET', respond: [{ id: custodyId, nombre: 'Caja USD', moneda: 'USD' }] },
       { match: 'idempotency_key=eq.movimiento-test-0001', method: 'GET', respond: [movement] },
     ])
-    const response = await H.handleCrearFinanzasMovimiento(makeRequest(movementInput), ENV)
+    const response = await H.handleCrearFinanzasMovimiento(
+      makeRequest({ ...movementInput, cuentaCustodiaId: custodyId }), ENV)
     const result = await readResponse(response)
     expect(result.status).toBe(200)
     expect(result.body.idempotente).toBe(true)

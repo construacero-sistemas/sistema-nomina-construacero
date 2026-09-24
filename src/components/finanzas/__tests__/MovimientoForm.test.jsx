@@ -270,6 +270,29 @@ describe('MovimientoForm', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
 
+  it('invariante anti-huérfanos: sin cuenta seleccionada NO envía nada y avisa', async () => {
+    const user = userEvent.setup()
+    // Método bancario con DOS cuentas: el selector aparece vacío por defecto.
+    const cuentasConDosBancos = [
+      { id: 'c-ban-1', nombre: 'Banco Venezuela', tipo: 'banco_ves', moneda: 'VES', activo: true },
+      { id: 'c-ban-2', nombre: 'Provincial', tipo: 'banco_ves', moneda: 'VES', activo: true },
+    ]
+    renderForm(cuentasConDosBancos)
+    await fillValidForm(user)
+    await pickCategory(user, 'General')
+
+    // Cambiar a Bolívares digitales: el selector queda sin selección.
+    const metodoTrigger = screen.getAllByRole('combobox').find(c => c.textContent.includes('Efectivo $'))
+    await user.click(metodoTrigger)
+    await user.click(await screen.findByRole('option', { name: /bolívares digitales/i }))
+
+    const form = screen.getByRole('dialog').querySelector('form')
+    if (form) fireEvent.submit(form)
+
+    expect(await screen.findByText(/selecciona la cuenta de origen/i)).toBeInTheDocument()
+    expect(mutateAsync).not.toHaveBeenCalled()
+  })
+
   it('permite ingresar montos con coma (teclado español de iPhone) y los normaliza a número decimal', async () => {
     const user = userEvent.setup()
     const { onClose } = renderForm()

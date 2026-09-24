@@ -134,14 +134,15 @@ export async function handleCrearFinanzasMovimiento(request, env) {
   }
 
   const custodyId = parsed.body?.cuentaCustodiaId || parsed.body?.cuenta_custodia_id
-  if (custodyId != null && !isValidUuid(custodyId)) return jsonError('Cuenta de custodia inválida', 400, request)
-  if (custodyId) {
-    const custodyResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/cuentas_custodia?id=eq.${custodyId}&${accountFilter(context.operador.cuenta_id)}&activo=eq.true&select=id,nombre,moneda&limit=1`, { headers: serviceHeaders(env) })
-    if (!custodyResponse.ok) return jsonError('No se pudo comprobar la cuenta de custodia', 503, request)
-    const [custody] = await custodyResponse.json()
-    if (!custody || custody.moneda !== movement.moneda) return jsonError('La cuenta no existe o su moneda no corresponde al movimiento', 400, request)
-    movement.cuenta_origen = custody.nombre
-  }
+  // Guardarraíl anti-huérfanos: toda alta exige cuenta de custodia válida,
+  // activa y del tenant. Sin ella la partida queda fuera de los saldos y el
+  // libro vuelve a reportar conciliación pendiente para toda la cuenta.
+  if (custodyId == null || !isValidUuid(custodyId)) return jsonError('Selecciona la cuenta de origen/destino del movimiento', 400, request)
+  const custodyResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/cuentas_custodia?id=eq.${custodyId}&${accountFilter(context.operador.cuenta_id)}&activo=eq.true&select=id,nombre,moneda&limit=1`, { headers: serviceHeaders(env) })
+  if (!custodyResponse.ok) return jsonError('No se pudo comprobar la cuenta de custodia', 503, request)
+  const [custody] = await custodyResponse.json()
+  if (!custody || custody.moneda !== movement.moneda) return jsonError('La cuenta no existe o su moneda no corresponde al movimiento', 400, request)
+  movement.cuenta_origen = custody.nombre
   const existing = await readExistingByKey(env, context.operador.cuenta_id, movement.idempotency_key)
   if (existing.error) return jsonError('No se pudo comprobar la idempotencia', 500, request)
   if (existing.row) {

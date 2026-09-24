@@ -2,7 +2,7 @@
 // Modal para registrar el pago de comisiones a trabajadores sin nómina fija.
 // Registra el egreso automáticamente en Finanzas y genera el comprobante en PDF.
 import { useState, useMemo } from 'react'
-import { DollarSign, FileText, CheckCircle2, RefreshCw, Sparkles, User, Calendar, CreditCard } from 'lucide-react'
+import { DollarSign, FileText, CheckCircle2, RefreshCw, Sparkles, User, Calendar, CreditCard, Wallet } from 'lucide-react'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
@@ -14,6 +14,8 @@ import { useConfigNegocio } from '../../../compat/hooks/useConfigNegocio.js'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
 
 import { FORMAS_PAGO_OPCIONES } from '../../constants/formasPago.js'
+import { getCuentasCompatibles } from '../finanzas/cuentasCompatibles.js'
+import { useCuentasCustodia } from '../../hooks/useCuentasCustodia.js'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 
 const inputCls = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
@@ -27,6 +29,7 @@ export default function ComisionPagoModal({ empleadoInicial, onClose, onSuccess 
   const { data: configNegocio } = useConfigNegocio()
   const { fmtBs, shortLabelTasa } = useMonedaNomina()
   const { usd, eur, usdt } = useTasaCambioNomina()
+  const { cuentas: datosCuentas } = useCuentasCustodia()
 
   // Lista de personal con puesto de Vendedor
   const listaVendedores = useMemo(() => {
@@ -54,6 +57,11 @@ export default function ComisionPagoModal({ empleadoInicial, onClose, onSuccess 
   const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10))
   const [concepto, setConcepto] = useState('Comisión por ventas de productos / estructuras')
   const [metodoPago, setMetodoPago] = useState('Efectivo $')
+  const [cuentaCustodiaId, setCuentaCustodiaId] = useState(() => {
+    // Auto-asignación como en MovimientoForm: una sola cuenta compatible = preseleccionada.
+    const compatibles = getCuentasCompatibles('Efectivo $', datosCuentas || [])
+    return compatibles.length === 1 ? compatibles[0].id : ''
+  })
   const [referencia, setReferencia] = useState('')
   const [observaciones, setObservaciones] = useState('')
 
@@ -73,6 +81,18 @@ export default function ComisionPagoModal({ empleadoInicial, onClose, onSuccess 
   const tasaActiva = usd > 0 ? usd : 1
   const equivalenteBs = montoNum * tasaActiva
 
+  // Cuentas compatibles con el método elegido (misma regla de separación que Finanzas).
+  const cuentasCompatibles = useMemo(() => getCuentasCompatibles(metodoPago, datosCuentas || []), [metodoPago, datosCuentas])
+  const esEfectivo = metodoPago === 'Efectivo $' || metodoPago === 'Efectivo Bs'
+  const cuentaSeleccionada = cuentasCompatibles.find(c => c.id === cuentaCustodiaId) || null
+
+  function handleCambiarMetodo(nuevo) {
+    setMetodoPago(nuevo)
+    const compatibles = getCuentasCompatibles(nuevo, datosCuentas || [])
+    if (compatibles.length === 1) setCuentaCustodiaId(compatibles[0].id)
+    else if (!compatibles.some(c => c.id === cuentaCustodiaId)) setCuentaCustodiaId('')
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
@@ -85,6 +105,11 @@ export default function ComisionPagoModal({ empleadoInicial, onClose, onSuccess 
     }
     if (!concepto.trim()) {
       return setError('Ingresa el motivo o concepto de la comisión.')
+    }
+    if (!cuentaSeleccionada) {
+      return setError(esEfectivo
+        ? 'No tienes una caja de efectivo registrada para este método. Regístrala en Finanzas → Cuentas y Custodia.'
+        : 'Selecciona la cuenta de origen del pago.')
     }
 
     try {
@@ -100,6 +125,7 @@ export default function ComisionPagoModal({ empleadoInicial, onClose, onSuccess 
         observacionTasa: 'Tasa BCV de nómina',
         referencia: referencia.trim() ? `${metodoPago} - Ref: ${referencia.trim()}` : metodoPago,
         observaciones: `Comisionista: ${empSeleccionado.nombre} (${empSeleccionado.documento || 'Sin doc'}). Cargo: ${empSeleccionado.cargo}. ${observaciones.trim()}`.trim(),
+        cuentaCustodiaId: cuentaSeleccionada.id,
       }
 
       await crearMovimiento.mutateAsync(payloadMovimiento)
@@ -299,7 +325,7 @@ export default function ComisionPagoModal({ empleadoInicial, onClose, onSuccess 
               </label>
               <CustomSelect
                 value={metodoPago}
-                onChange={setMetodoPago}
+                onChange={handleCambiarMetodo}
                 options={METODOS_PAGO}
               />
             </div>
@@ -316,6 +342,34 @@ export default function ComisionPagoModal({ empleadoInicial, onClose, onSuccess 
                 className={inputCls}
               />
             </div>
+          </div>
+
+          {/* Cuenta de origen: toda comisión nace enlazada a su cuenta de custodia */}
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+              <Wallet size={13} className="text-slate-500" />
+              <span>{esEfectivo ? 'Caja de efectivo (auto-asignada)' : 'Cuenta de origen *'}</span>
+            </label>
+            {!esEfectivo && cuentasCompatibles.length > 0 ? (
+              <CustomSelect
+                value={cuentaCustodiaId}
+                onChange={setCuentaCustodiaId}
+                options={cuentasCompatibles.map(c => ({
+                  value: c.id,
+                  label: c.nombre,
+                }))}
+                placeholder="¿Desde qué cuenta paga?"
+              />
+            ) : cuentaSeleccionada ? (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 flex justify-between items-center">
+                <span>{cuentaSeleccionada.nombre}</span>
+                <span className="text-[10px] text-slate-500 bg-white border border-slate-200 font-bold px-2 py-0.5 rounded-md">Auto</span>
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                No tienes una caja registrada para <strong>{metodoPago}</strong>. Regístrala en Finanzas → Cuentas y Custodia.
+              </div>
+            )}
           </div>
 
           {/* Observaciones */}

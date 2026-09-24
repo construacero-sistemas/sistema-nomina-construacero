@@ -243,6 +243,10 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
     {
       if (opcionesCuenta.length === 0) return `No tienes cuentas registradas para ${metodoPago}. Regístrala en Cuentas y Custodia.`
       if (!cuentaOrigen.trim()) return tipo === 'ingreso' ? 'Selecciona la cuenta de destino.' : 'Selecciona la cuenta de origen.'
+      // Invariante anti-huérfanos: todo movimiento nace enlazado a su cuenta de
+      // custodia. Un envío sin id válido crearía una partida sin destino y
+      // reactivaría el banner de conciliación pendiente para todo el libro.
+      if (!cuentas.some(c => c.id === cuentaOrigen)) return 'La cuenta seleccionada ya no existe. Vuelve a elegirla.'
     }
     if (partes.length > 0) {
       const sumaPartes = partes.reduce((acc, p) => acc + (Number(p.monto) || 0), 0)
