@@ -6,6 +6,7 @@ import worker from '../../../worker.js'
 
 const ACCOUNT_ID = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa'
 const OPERATOR_ID = '11111111-1111-4111-8111-111111111111'
+const CUSTODY_ID = '3f1d2c9a-9a4e-4b7f-9d2c-8f6b1a2e3d4c'
 const SUPABASE_URL = 'https://supabase.e2e.invalid'
 const ENV = {
   SUPABASE_URL,
@@ -128,6 +129,7 @@ describe('Worker E2E determinista', () => {
         return supabaseResponse([{ ...movement, estado: 'anulado', motivo_anulacion: 'Duplicado', anulado_en: '2026-08-18T13:00:00.000Z' }])
       }
       if (target.includes('/rest/v1/finanzas_categorias')) return supabaseResponse([])
+      if (target.includes('/rest/v1/cuentas_custodia')) return supabaseResponse([{ id: CUSTODY_ID, nombre: 'Caja USD', moneda: 'USD' }])
       throw new Error(`Ruta Supabase no declarada en smoke E2E: ${method} ${target}`)
     })
     vi.stubGlobal('fetch', upstream)
@@ -136,6 +138,7 @@ describe('Worker E2E determinista', () => {
       fecha: '2026-08-18', tipo: 'egreso', categoria: 'Proveedores', concepto: 'Cemento',
       monto: 100, moneda: 'USD', tasaVes: 120, fuenteTasa: 'MANUAL',
       observacionTasa: 'Aprobada', idempotencyKey: 'e2e-movimiento-000001',
+      cuentaCustodiaId: CUSTODY_ID,
     }
 
     const created = await worker.fetch(request('/api/finanzas/movimientos/crear', {

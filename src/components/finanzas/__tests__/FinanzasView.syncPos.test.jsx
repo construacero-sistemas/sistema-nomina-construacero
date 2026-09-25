@@ -54,10 +54,6 @@ vi.mock('../../../../compat/utils/errorLogger.js', () => ({
   logClientError: vi.fn(),
 }))
 
-// FinanzasView mantiene acceso a botones operativos independientes del candado POS.
-vi.mock('../../../config/candadosRuntime.js', () => ({
-  useCandados: () => ({ nomina: true, syncPos: false }),
-}))
 
 import FinanzasView from '../FinanzasView.jsx'
 

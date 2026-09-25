@@ -6,7 +6,7 @@
 import * as F from '../server/handlers/finanzas.js'
 import * as C from '../server/handlers/cuentasCustodia.js'
 import * as S from '../server/handlers/finanzas.sync.js'
-import { randomUUID } from 'node:crypto'
+import { handleCrearTransferencia } from '../server/handlers/finanzas.operaciones.js'
 
 // ─── Configuración de Entorno y Constantes ──────────────────────────────────
 const ENV = {
@@ -60,6 +60,11 @@ async function readJson(res) {
 }
 
 const RATES = { usdVes: 73.5, usdtVes: 80 }
+let fixtureSequence = 0
+function nextFixtureUuid() {
+  fixtureSequence += 1
+  return `00000000-0000-4000-8000-${fixtureSequence.toString(16).padStart(12, '0')}`
+}
 const CUSTODY = {
   cajaVes: '11111111-0000-4000-8000-000000000001',
   cajaUsd: '11111111-0000-4000-8000-000000000002',
@@ -98,7 +103,7 @@ function crearMovBody(data) {
     referencia: data.referencia ?? 'REF-OP-MES',
     observaciones: data.observaciones ?? null,
     partes: data.partes ?? null,
-    idempotencyKey: data.idempotency_key || `key-op-mes-${randomUUID()}`,
+    idempotencyKey: data.idempotency_key || `key-op-mes-${nextFixtureUuid()}`,
   }
 }
 
@@ -146,10 +151,33 @@ class InMemoryFinanzasDb {
     this.auditoria = []
     this.posClosures = new Map()
     this.versions = new Map()
+    this.operations = new Map()
   }
 
   bumpVersion(accountId) {
     this.versions.set(accountId, (this.versions.get(accountId) || 0) + 1)
+  }
+
+  // Solo para compatibilidad histórica: estas filas no pasan por el endpoint
+  // actual, que obliga a elegir custodia al crear. El mismo guardrail sigue
+  // aplicando si una fila histórica ya trae custodia o intenta asignarse.
+  seedLegacyMovement(input) {
+    if (!input?.id || !input.cuenta_id || input.cuenta_id !== IDS.cuenta) {
+      throw new Error('Legacy movement fixture requires a stable id and tenant')
+    }
+    if (input.cuenta_custodia_id) {
+      const custody = this.cuentas_custodia.find(account => account.id === input.cuenta_custodia_id
+        && account.cuenta_id === input.cuenta_id && account.activo)
+      if (!custody || custody.moneda !== input.moneda || input.partes?.length) {
+        throw new Error('Legacy movement violates custody/moneda/split invariants')
+      }
+    }
+    const row = this.generatedMovement({
+      estado: 'activo', creado_en: '2026-08-31T11:00:00.000Z', tasa_registrada_en: null, ...input,
+    }, false)
+    this.finanzas_movimientos.push(row)
+    this.bumpVersion(row.cuenta_id)
+    return row
   }
 
   filteredRows(params, includeVoided = false) {
@@ -164,14 +192,41 @@ class InMemoryFinanzasDb {
   }
 
   tableRows(rows, url) {
-    return rows.filter(row => [...url.searchParams].every(([field, value]) => {
+    let result = rows.filter(row => [...url.searchParams].every(([field, value]) => {
       if (['select', 'order', 'limit', 'offset'].includes(field)) return true
-      if (value.startsWith('eq.')) return String(row[field]) === value.slice(3)
+      if (value.startsWith('eq.')) {
+        const expected = value.slice(3)
+        return expected === 'null' ? row[field] == null : String(row[field]) === expected
+      }
+      if (value.startsWith('neq.')) return String(row[field]) !== value.slice(4)
+      if (value === 'is.null') return row[field] == null
+      if (value === 'not.is.null') return row[field] != null
       if (value.startsWith('gte.')) return row[field] >= value.slice(4)
       if (value.startsWith('lte.')) return row[field] <= value.slice(4)
       if (value.startsWith('in.(')) return value.slice(4, -1).split(',').includes(String(row[field]))
       throw new Error(`Unsupported fixture filter: ${field}=${value}`)
     }))
+
+    const order = url.searchParams.get('order')
+    if (order) {
+      const terms = order.split(',').map(term => {
+        const [field, direction = 'asc'] = term.split('.')
+        return { field, descending: direction.toLowerCase() === 'desc' }
+      })
+      result = [...result].sort((a, b) => {
+        for (const { field, descending } of terms) {
+          if (a[field] === b[field]) continue
+          if (a[field] == null) return descending ? 1 : -1
+          if (b[field] == null) return descending ? -1 : 1
+          const comparison = a[field] < b[field] ? -1 : 1
+          return descending ? -comparison : comparison
+        }
+        return 0
+      })
+    }
+    const offset = Number(url.searchParams.get('offset') || 0)
+    const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : result.length
+    return result.slice(offset, offset + limit)
   }
 
   generatedMovement(row, inserted = false) {
@@ -215,6 +270,61 @@ class InMemoryFinanzasDb {
           es_externo: false,
         },
       ]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    }
+
+    // Minimal atomic transfer contract for handler-level simulation. SQL locking,
+    // rollback and transaction-level invariants are exercised by test:db.
+    if (method === 'POST' && pathname === '/rest/v1/rpc/finanzas_operar') {
+      if (body.p_tipo !== 'traspaso' || body.p_cuenta_id !== IDS.cuenta || body.p_operador_id !== IDS.operador) {
+        return fixtureResponse({ code: 'PT403' }, 403)
+      }
+      const operationKey = `${body.p_cuenta_id}:traspaso:${body.p_clave}`
+      const payloadHash = JSON.stringify(body.p_payload)
+      const previous = this.operations.get(operationKey)
+      if (previous) {
+        return previous.payloadHash === payloadHash
+          ? fixtureResponse(previous.result)
+          : fixtureResponse({ code: 'PT409' }, 409)
+      }
+      const payload = body.p_payload || {}
+      const source = this.cuentas_custodia.find(row => row.id === payload.origenCuentaId && row.cuenta_id === body.p_cuenta_id && row.activo)
+      const target = this.cuentas_custodia.find(row => row.id === payload.destinoCuentaId && row.cuenta_id === body.p_cuenta_id && row.activo)
+      if (!source || !target || source.id === target.id) return fixtureResponse({ code: 'PT404' }, 404)
+      if (this.finanzas_movimientos.some(row => row.cuenta_id === body.p_cuenta_id && row.estado === 'activo'
+        && (!row.cuenta_custodia_id || row.partes?.length))) return fixtureResponse({ code: 'PT422' }, 422)
+      const amount = Number(payload.montoOrigen)
+      const rate = Number(payload.tasaCambio)
+      const usdRate = Number(payload.tasaUsdVes)
+      if (!(amount > 0) || !(rate > 0) || !(usdRate > 0) || source.moneda !== target.moneda || rate !== 1) {
+        return fixtureResponse({ code: 'PT400' }, 400)
+      }
+      const balance = this.finanzas_movimientos.filter(row => row.cuenta_id === body.p_cuenta_id
+        && row.cuenta_custodia_id === source.id && row.moneda === source.moneda && row.estado === 'activo')
+        .reduce((sum, row) => sum + (row.tipo === 'ingreso' ? Number(row.monto) : -Number(row.monto)), 0)
+      if (balance < amount) return fixtureResponse({ code: 'PT402' }, 409)
+      const operationId = nextFixtureUuid()
+      const targetAmount = round6(amount * rate)
+      const base = { cuenta_id: body.p_cuenta_id, fecha: payload.fecha, categoria: 'Traspasos',
+        moneda: source.moneda, tasa_ves: source.moneda === 'VES' ? 1 : usdRate, tasa_usd_ves: usdRate,
+        fuente_tasa: 'MANUAL', observacion_tasa: payload.observaciones, referencia: payload.referencia,
+        observaciones: payload.observaciones, estado: 'activo', creado_por: body.p_operador_id,
+        metodo_pago: 'Transferencia', operacion_id: operationId }
+      const outgoing = this.generatedMovement({ ...base, id: nextFixtureUuid(), tipo: 'egreso',
+        concepto: `Transfer to ${target.nombre}`, monto: amount, cuenta_origen: source.nombre,
+        cuenta_custodia_id: source.id, idempotency_key: `op:${operationId}:out` }, true)
+      const incoming = this.generatedMovement({ ...base, id: nextFixtureUuid(), tipo: 'ingreso',
+        concepto: `Transfer from ${source.nombre}`, monto: targetAmount, cuenta_origen: target.nombre,
+        cuenta_custodia_id: target.id, idempotency_key: `op:${operationId}:in` }, true)
+      this.finanzas_movimientos.push(outgoing, incoming)
+      this.bumpVersion(body.p_cuenta_id)
+      this.operations.set(operationKey, { payloadHash, result: {
+        ok: true, estado: 'confirmada', operationId, idempotencyKey: body.p_clave, tipo: 'traspaso',
+        resultado: { origenCuentaId: source.id, destinoCuentaId: target.id,
+          montoOrigen: String(amount), montoDestino: String(targetAmount), monedaOrigen: source.moneda,
+          monedaDestino: target.moneda, tasaCambio: String(rate), movimientoIds: [outgoing.id, incoming.id] },
+      } })
+      this.auditoria.push({ cuenta_id: body.p_cuenta_id, accion: 'TRASPASO', entidad_id: operationId })
+      return fixtureResponse(this.operations.get(operationKey).result)
     }
 
     // Exact RPC transport contracts. SQL locking/atomicity is tested separately.
@@ -300,14 +410,13 @@ class InMemoryFinanzasDb {
     // 4. Tabla cuentas_custodia
     if (pathname.includes('/rest/v1/cuentas_custodia')) {
       if (method === 'GET') {
-        const rows = this.tableRows(this.cuentas_custodia, u)
-        return fixtureResponse(rows.slice(0, Number(u.searchParams.get('limit') || rows.length)))
+        return fixtureResponse(this.tableRows(this.cuentas_custodia, u))
       }
       if (method === 'POST') {
         const input = Array.isArray(body) ? body : [body]
         if (input.some(item => !item.cuenta_id)) throw new Error('Custody INSERT omitted tenant')
         if (input.some(item => item.id && this.cuentas_custodia.some(row => row.id === item.id))) return fixtureResponse({ code: '23505', message: 'unique custody id' }, 409)
-        const items = input.map(item => ({ ...item, id: item.id || randomUUID(), activo: item.activo !== false, creado_en: '2026-08-01T00:00:00.000Z' }))
+        const items = input.map(item => ({ ...item, id: item.id || nextFixtureUuid(), activo: item.activo !== false, creado_en: '2026-08-01T00:00:00.000Z' }))
         this.cuentas_custodia.push(...items)
         return fixtureResponse(items, 201)
       }
@@ -330,7 +439,7 @@ class InMemoryFinanzasDb {
       }
       if (method === 'POST') {
         if (!body.cuenta_id) throw new Error('Category INSERT omitted tenant')
-        const cat = { id: randomUUID(), activo: true, ...body }
+        const cat = { id: nextFixtureUuid(), activo: true, ...body }
         this.finanzas_categorias.push(cat)
         return Promise.resolve(new Response(JSON.stringify([cat]), { status: 201 }))
       }
@@ -350,7 +459,13 @@ class InMemoryFinanzasDb {
       if (method === 'POST') {
         if (!body.cuenta_id) throw new Error('Movement INSERT omitted tenant')
         if (this.finanzas_movimientos.some(row => row.cuenta_id === body.cuenta_id && row.idempotency_key === body.idempotency_key)) return fixtureResponse({ code: '23505', message: 'unique idempotency_key' }, 409)
-        const mov = this.generatedMovement({ id: body.id || randomUUID(), estado: 'activo', creado_en: '2026-08-31T12:00:00.000Z', ...body }, true)
+        if (body.cuenta_custodia_id) {
+          const custody = this.cuentas_custodia.find(account => account.id === body.cuenta_custodia_id
+            && account.cuenta_id === body.cuenta_id && account.activo)
+          if (!custody || custody.moneda !== body.moneda) return fixtureResponse({ code: 'PT400', message: 'Custody currency mismatch' }, 400)
+          if (body.partes?.length) return fixtureResponse({ code: 'PT422', message: 'Split legacy entries require reconciliation' }, 422)
+        }
+        const mov = this.generatedMovement({ id: body.id || nextFixtureUuid(), estado: 'activo', creado_en: '2026-08-31T12:00:00.000Z', ...body }, true)
         this.finanzas_movimientos.push(mov)
         this.bumpVersion(mov.cuenta_id)
         return fixtureResponse([mov], 201)
@@ -491,7 +606,7 @@ async function ejecutarSimulacionMesFinanzas() {
       { fecha: '2026-08-01', monto: 1500, moneda: 'USD', cuenta_origen: 'Zelle Corporativo', concepto: 'Saldo inicial de mes Zelle' },
       { fecha: '2026-08-01', monto: 1000, moneda: 'USDT', cuenta_origen: 'Binance Pay (USDT)', concepto: 'Saldo inicial de mes Binance USDT' },
       { fecha: '2026-08-01', monto: 7350, moneda: 'VES', monto_ves: 7350, cuenta_origen: 'Banco BNC (Principal)', concepto: 'Saldo inicial de mes BNC' },
-      { fecha: '2026-08-01', monto: 30000, moneda: 'VES', monto_ves: 30000, cuenta_origen: 'Banco Mercantil', concepto: 'Saldo inicial de mes Mercantil' },
+      { fecha: '2026-08-01', monto: 50000, moneda: 'VES', monto_ves: 50000, cuenta_origen: 'Banco Mercantil', concepto: 'Saldo inicial de mes Mercantil' },
     ]
 
     for (const sa of saldosApertura) {
@@ -597,8 +712,9 @@ async function ejecutarSimulacionMesFinanzas() {
       }),
     }), ENV)
 
-    // 5. Venta con pago dividido (split)
-    await F.handleCrearFinanzasMovimiento(makeRequest('/api/finanzas/movimientos', {
+    // 5. Intento de alta de split multi-moneda. El alta actual exige custodia
+    // de una sola moneda y no puede representar este caso como un movimiento.
+    const splitAlta = await F.handleCrearFinanzasMovimiento(makeRequest('/api/finanzas/movimientos', {
       method: 'POST',
       body: crearMovBody({
         fecha: '2026-08-10',
@@ -614,9 +730,35 @@ async function ejecutarSimulacionMesFinanzas() {
         referencia: 'SPLIT-VENTA-102',
       }),
     }), ENV)
-    assertMovementCount(11, 'Opening plus five sales')
-    const split = db.finanzas_movimientos.find(row => row.referencia === 'SPLIT-VENTA-102')
-    assert(split?.partes?.length === 2 && !split.cuenta_custodia_id, 'Legacy split remains explicitly unassigned; its parts do not invent custody postings')
+    const splitAltaBody = await readJson(splitAlta)
+    assert(splitAlta.status === 400 && /cuenta de origen\/destino/i.test(splitAltaBody.error),
+      'Un split multi-moneda sin custodia se rechaza antes de persistir')
+    assertMovementCount(10, 'Split rechazado no debe persistir')
+
+    // Compatibilidad con una fila legacy de split: la API actual no admite
+    // crearla sin custodia y Postgres impide asignar una custodia a `partes`.
+    const split = db.seedLegacyMovement({
+      id: '11111111-0000-4000-8000-000000000008', cuenta_id: IDS.cuenta,
+      fecha: '2026-08-10', tipo: 'ingreso', categoria: 'Ventas',
+      concepto: 'Venta combinada tubería estructural', monto: 1000, moneda: 'USD',
+      tasa_ves: RATES.usdVes, tasa_usd_ves: RATES.usdVes, fuente_tasa: 'BCV',
+      referencia: 'SPLIT-VENTA-102', idempotency_key: 'legacy-split-venta-102',
+      partes: [
+        { monto: 500, moneda: 'USD', metodo_pago: 'efectivo_usd', cuenta_origen: 'Caja Efectivo $' },
+        { monto: 500, moneda: 'USD', metodo_pago: 'zelle_usd', cuenta_origen: 'Zelle Corporativo' },
+      ],
+    })
+    assertMovementCount(11, 'Six opening rows, four current sales, one seeded legacy split')
+    assert(split.partes.length === 2 && !split.cuenta_custodia_id
+      && split.partes.every(part => part.moneda === split.moneda)
+      && split.partes.reduce((sum, part) => sum + part.monto, 0) === split.monto
+      && split.tasa_registrada_en == null,
+    'Legacy split is internally balanced, unassigned, and does not invent rate provenance')
+    const splitAssignment = await F.handleReasignarCuentaMovimientos(makeRequest('/api/finanzas/movimientos/reasignar-cuenta', {
+      method: 'POST', body: { ids: [split.id], cuentaCustodiaId: CUSTODY.cajaUsd },
+    }), ENV)
+    assert(splitAssignment.status === 409 && !split.cuenta_custodia_id,
+      'Legacy split cannot be assigned to one custody account')
     const cryptoSale = db.finanzas_movimientos.find(row => row.referencia === 'ORDER-BINANCE-4491')
     assert(cryptoSale?.tasa_ves === RATES.usdtVes && cryptoSale.tasa_usd_ves === RATES.usdVes
       && cryptoSale.fuente_tasa === 'USDT' && cryptoSale.tasa_registrada_en != null
@@ -746,8 +888,18 @@ async function ejecutarSimulacionMesFinanzas() {
       assert(resSync.status === 200 && dataSync.ok && dataSync.resultados?.length === 4, `POS ${f}: four payment/CxC rows persisted`)
       const posRows = db.finanzas_movimientos.filter(row => row.fecha === f && row.idempotency_key?.startsWith('pos-'))
       const posUsd = posRows.reduce((sum, row) => sum + (row.moneda === 'USD' ? row.monto : row.monto_ves / row.tasa_usd_ves), 0)
-      assert(posRows.length === 4 && Math.abs(posUsd - 1800) < 0.000001, `POS ${f}: four rows value $800 + $400 + Bs22050/73.5 + $300 CxC = $1800`)
-      assert(posRows.every(row => !row.cuenta_custodia_id && row.tasa_registrada_en && row.tasa_usd_ves === RATES.usdVes), 'Unclassified POS entries retain rate snapshots, not inferred custody')
+      const expectedPosKeys = [
+        `pos-vta-efectivo-usd-${f}`,
+        `pos-vta-zelle-usd-${f}`,
+        `pos-vta-pagomovil-ves-${f}`,
+        `pos-cxc-${f}`,
+      ]
+      assert(posRows.length === expectedPosKeys.length
+        && expectedPosKeys.every(key => posRows.some(row => row.idempotency_key === key))
+        && Math.abs(posUsd - 1800) < 0.000001,
+      `POS ${f}: expected method keys value $800 + $400 + Bs22050/73.5 + $300 CxC = $1800`)
+      assert(posRows.every(row => !row.cuenta_custodia_id && row.tasa_registrada_en && row.tasa_usd_ves === RATES.usdVes),
+        `POS ${f}: entries retain rate provenance but remain pending custody classification`)
       assert(dataSync.total_ingresos_usd === 1800, `POS ${f}: reported USD total matches persisted valuation (received ${dataSync.total_ingresos_usd})`)
     }
     stats.fasesCompletadas++
@@ -759,94 +911,77 @@ async function ejecutarSimulacionMesFinanzas() {
     assert(replayPos.status === 200 && replayPosData.resultados?.every(row => row.accion === 'actualizado'), 'POS replay updates the same four historical rows')
     assertMovementCount(beforePosReplay, 'POS replay preserves row count')
 
-    // Historical pairs were separate writes, not an atomic transfer operation.
-    console.log('\nPHASE 7: LEGACY TRANSFER REPRESENTATION (NO SQL ATOMICITY CLAIM)')
+    // Los traspasos actuales usan una RPC; dos altas independientes no son atómicas.
+    console.log('\nPHASE 7: ATOMIC TRANSFER AND PENDING-RECONCILIATION GUARD')
 
-    // Traspaso interbancario BNC -> Mercantil
-    await F.handleCrearFinanzasMovimiento(makeRequest('/api/finanzas/movimientos', {
-      method: 'POST',
-      body: crearMovBody({
-        fecha: '2026-08-21',
-        tipo: 'egreso',
-        categoria: 'Otros gastos',
-        concepto: 'Traspaso a Banco Mercantil',
-        monto: 22050.00,
-        moneda: 'VES',
-        monto_ves: 22050.00,
-        cuenta_origen: 'Banco BNC (Principal)',
-        referencia: 'TRASPASO-INT-01',
-      }),
+    const pendingTransfer = await handleCrearTransferencia(makeRequest('/api/finanzas/operaciones', {
+      method: 'POST', body: {
+        operationId: '77777777-7777-4777-8777-777777777701',
+        origenCuentaId: CUSTODY.bnc, destinoCuentaId: CUSTODY.mercantil,
+        montoOrigen: '100', tasaCambio: '1', tasaUsdVes: String(RATES.usdVes),
+        fecha: '2026-08-21', referencia: 'TRASPASO-PENDIENTES-01',
+        observaciones: 'Debe bloquearse por partidas pendientes de conciliación',
+      },
     }), ENV)
-    await F.handleCrearFinanzasMovimiento(makeRequest('/api/finanzas/movimientos', {
-      method: 'POST',
-      body: crearMovBody({
-        fecha: '2026-08-21',
-        tipo: 'ingreso',
-        categoria: 'Otros ingresos',
-        concepto: 'Traspaso recibido desde Banco BNC (Principal)',
-        monto: 22050.00,
-        moneda: 'VES',
-        monto_ves: 22050.00,
-        cuenta_origen: 'Banco Mercantil',
-        referencia: 'TRASPASO-INT-01',
-      }),
-    }), ENV)
+    assert(pendingTransfer.status === 422 && db.finanzas_movimientos.length === 26,
+      'El traspaso atómico rechaza el libro mensual con POS/split sin conciliar, sin escrituras parciales')
 
-    // Fondeo Caja $ -> Binance USDT
-    await F.handleCrearFinanzasMovimiento(makeRequest('/api/finanzas/movimientos', {
-      method: 'POST',
-      body: crearMovBody({
-        fecha: '2026-08-23',
-        tipo: 'egreso',
-        categoria: 'Otros gastos',
-        concepto: 'Traspaso a Binance Pay (USDT)',
-        monto: 1000.00,
-        moneda: 'USD',
-        cuenta_origen: 'Caja Efectivo $',
-        referencia: 'FONDEO-BINANCE-88',
-      }),
-    }), ENV)
-    await F.handleCrearFinanzasMovimiento(makeRequest('/api/finanzas/movimientos', {
-      method: 'POST',
-      body: crearMovBody({
-        fecha: '2026-08-23',
-        tipo: 'ingreso',
-        categoria: 'Otros ingresos',
-        concepto: 'Traspaso recibido desde Caja Efectivo $',
-        monto: 1000.00,
-        moneda: 'USDT',
-        cuenta_origen: 'Binance Pay (USDT)',
-        referencia: 'FONDEO-BINANCE-88',
-      }),
-    }), ENV)
-    assertMovementCount(30, 'Cuatro asientos de transferencias históricas separados')
-    const bankPair = db.finanzas_movimientos.filter(row => row.referencia === 'TRASPASO-INT-01')
-    assert(bankPair.length === 2 && bankPair.every(row => row.moneda === 'VES')
-      && bankPair.reduce((sum, row) => sum + (row.tipo === 'ingreso' ? row.monto : -row.monto), 0) === 0, 'Traspaso histórico VES: importes opuestos conservados')
-    const cryptoPair = db.finanzas_movimientos.filter(row => row.referencia === 'FONDEO-BINANCE-88')
-    assert(cryptoPair.length === 2 && cryptoPair.find(row => row.moneda === 'USD')?.monto === 1000
-      && cryptoPair.find(row => row.moneda === 'USDT')?.monto === 1000, 'Histórico USD/USDT conserva unidades, sin afirmar paridad ni atomicidad')
-    assert(cryptoPair.every(row => !row.operacion_id), 'Los asientos legacy no se hacen pasar por un traspaso RPC')
+    const transferDb = new InMemoryFinanzasDb()
+    transferDb.cuentas_custodia = db.cuentas_custodia.map(account => ({ ...account }))
+    transferDb.seedLegacyMovement({
+      id: '11111111-0000-4000-8000-000000000009', cuenta_id: IDS.cuenta,
+      fecha: '2026-08-01', tipo: 'ingreso', categoria: 'Inversión y capital',
+      concepto: 'Saldo inicial para prueba de transferencia atómica', monto: 1000,
+      moneda: 'VES', tasa_ves: 1, tasa_usd_ves: RATES.usdVes, fuente_tasa: 'FIJA',
+      cuenta_origen: 'Banco BNC (Principal)', cuenta_custodia_id: CUSTODY.bnc,
+      idempotency_key: 'transfer-fixture-opening-0001', referencia: 'APERTURA-TRANSFER-TEST',
+    })
+    const restoreFetch = globalThis.fetch
+    globalThis.fetch = (url, init) => transferDb.fetchHandler(url, init)
+    try {
+      const buildTransferRequest = (amount = '100') => handleCrearTransferencia(makeRequest('/api/finanzas/operaciones', {
+        method: 'POST', body: {
+          operationId: '77777777-7777-4777-8777-777777777702',
+          origenCuentaId: CUSTODY.bnc, destinoCuentaId: CUSTODY.mercantil,
+          montoOrigen: amount, tasaCambio: '1', tasaUsdVes: String(RATES.usdVes),
+          fecha: '2026-08-21', referencia: 'TRASPASO-ATOMICO-01',
+          observaciones: 'Rebalanceo entre cuentas VES',
+        },
+      }), ENV)
+      const response = await buildTransferRequest()
+      const result = await readJson(response)
+      const linked = transferDb.finanzas_movimientos.filter(row => row.operacion_id === result.operationId)
+      assert(response.status === 200 && result.estado === 'confirmada' && linked.length === 2
+        && linked.some(row => row.tipo === 'egreso' && row.cuenta_custodia_id === CUSTODY.bnc)
+        && linked.some(row => row.tipo === 'ingreso' && row.cuenta_custodia_id === CUSTODY.mercantil),
+      'Un traspaso confirma una operación y dos asientos vinculados a custodias explícitas')
+      const replay = await buildTransferRequest()
+      assert(replay.status === 200 && transferDb.finanzas_movimientos.length === 3,
+        'Repetir la clave devuelve el resultado y no duplica asientos')
+      const conflict = await buildTransferRequest('101')
+      assert(conflict.status === 409 && transferDb.finanzas_movimientos.length === 3,
+        'Reutilizar la clave con payload distinto da conflicto sin alterar el libro')
+    } finally {
+      globalThis.fetch = restoreFetch
+    }
+    assertMovementCount(26, 'Las fixtures aisladas del traspaso no contaminan el libro mensual')
     stats.fasesCompletadas++
 
     // ━━━ FASE 8: Auditoría, Reasignaciones y Anulaciones (Días 25-28) ━━━
     console.log('\n━━━ FASE 8: AUDITORÍA, REASIGNACIONES Y ANULACIONES (DÍAS 25-28) ━━━')
 
-    // 1. Movimiento huérfano reasignado
-    const resHuerfano = await F.handleCrearFinanzasMovimiento(makeRequest('/api/finanzas/movimientos', {
-      method: 'POST',
-      body: crearMovBody({
-        fecha: '2026-08-25',
-        tipo: 'ingreso',
-        categoria: 'Ventas',
-        concepto: 'Cobranza sin cuenta especificada inicialmente',
-        monto: 400.00,
-        moneda: 'USD',
-        cuenta_origen: null,
-      }),
-    }), ENV)
-    const movHuerfano = (await readJson(resHuerfano)).movimiento
-    assert(movHuerfano && !movHuerfano.cuenta_origen, 'Movimiento huérfano simulado')
+    // 1. Movimiento huérfano histórico reasignable. El alta actual debe
+    // rechazarlo; por eso se siembra solo en la fixture, como fila preexistente.
+    const movHuerfano = db.seedLegacyMovement({
+      id: '11111111-0000-4000-8000-000000000007', cuenta_id: IDS.cuenta,
+      fecha: '2026-08-25', tipo: 'ingreso', categoria: 'Ventas',
+      concepto: 'Cobranza sin cuenta especificada inicialmente', monto: 400,
+      moneda: 'USD', tasa_ves: RATES.usdVes, tasa_usd_ves: RATES.usdVes,
+      fuente_tasa: 'BCV', cuenta_origen: null, cuenta_custodia_id: null,
+      idempotency_key: 'legacy-cobranza-sin-custodia-001',
+    })
+    assert(movHuerfano && !movHuerfano.cuenta_origen && !movHuerfano.cuenta_custodia_id,
+      'Movimiento histórico sin custodia preparado para clasificación explícita')
 
     const resReasig = await F.handleReasignarCuentaMovimientos(makeRequest('/api/finanzas/movimientos/reasignar-cuenta', {
       method: 'POST',
@@ -862,7 +997,9 @@ async function ejecutarSimulacionMesFinanzas() {
     const retryAssignment = await F.handleReasignarCuentaMovimientos(makeRequest('/api/finanzas/movimientos/reasignar-cuenta', {
       method: 'POST', body: { ids: [movHuerfano.id], cuentaCustodiaId: CUSTODY.zelle },
     }), ENV)
-    assert((await readJson(retryAssignment)).actualizados === 0, 'La misma clasificación no duplica efectos')
+    const retryAssignmentBody = await readJson(retryAssignment)
+    assert(retryAssignment.status === 200 && retryAssignmentBody.actualizados === 0
+      && retryAssignmentBody.idempotente === true, 'La misma clasificación no duplica efectos')
 
     // 2. Anulación con motivo formal
     const resErr = await F.handleCrearFinanzasMovimiento(makeRequest('/api/finanzas/movimientos', {
@@ -877,7 +1014,10 @@ async function ejecutarSimulacionMesFinanzas() {
         cuenta_origen: 'Caja Efectivo $',
       }),
     }), ENV)
-    const movErr = (await readJson(resErr)).movimiento
+    const movErrBody = await readJson(resErr)
+    assert(resErr.status === 201 && movErrBody.movimiento?.id,
+      `Movimiento para anulación creado con custodia (status=${resErr.status})`)
+    const movErr = movErrBody.movimiento
 
     const resAnular = await F.handleAnularFinanzasMovimiento(makeRequest('/api/finanzas/movimientos/anular', {
       method: 'POST',
@@ -888,7 +1028,8 @@ async function ejecutarSimulacionMesFinanzas() {
       },
     }), ENV)
     const dataAnular = await readJson(resAnular)
-    assert(dataAnular.movimiento.estado === 'anulado', 'Movimiento anulado correctamente con motivo formal')
+    assert(resAnular.status === 200 && dataAnular.movimiento?.estado === 'anulado',
+      `Movimiento anulado con motivo formal (status=${resAnular.status})`)
 
     // 3. Reversión de anulación
     const resRevertir = await F.handleRevertirAnulacionMovimiento(makeRequest('/api/finanzas/movimientos/revertir-anulacion', {
@@ -896,7 +1037,8 @@ async function ejecutarSimulacionMesFinanzas() {
       body: { id: movErr.id },
     }), ENV)
     const dataRevertir = await readJson(resRevertir)
-    assert(dataRevertir.movimiento.estado === 'activo', 'Reversión de anulación verificada (vuelve a activo)')
+    assert(resRevertir.status === 200 && dataRevertir.movimiento?.estado === 'activo',
+      `Reversión de anulación verificada (status=${resRevertir.status})`)
 
     // Anulación definitiva
     await F.handleAnularFinanzasMovimiento(makeRequest('/api/finanzas/movimientos/anular', {
@@ -910,6 +1052,8 @@ async function ejecutarSimulacionMesFinanzas() {
 
     const resResumen = await F.handleGetFinanzasResumen(makeRequest('/api/finanzas/resumen?desde=2026-08-01&hasta=2026-08-31'), ENV)
     const dataResumen = await readJson(resResumen)
+    assert(resResumen.status === 200 && dataResumen.resumen,
+      `Resumen mensual devuelve 200 con datos (status=${resResumen.status})`)
     const resumen = dataResumen.resumen || {}
 
     assert(resumen.ingresos_usd > 0, `Total Ingresos del mes calculados: $${resumen.ingresos_usd.toFixed(2)}`)
@@ -938,9 +1082,9 @@ async function ejecutarSimulacionMesFinanzas() {
       assert(next === offset + page.movimientos.length && next > offset, 'La paginación avanza sin omisiones')
       offset = next
     } while (pages <= 10)
-    assert(pages === 4 && todosMovs.length === 32 && todosMovs.length === total, 'Conjunto completo de 32 movimientos en cuatro páginas')
+    assert(pages === 3 && todosMovs.length === 28 && todosMovs.length === total, 'Conjunto completo de 28 movimientos en tres páginas')
     const movimientosActivos = todosMovs.filter(m => m.estado === 'activo')
-    assert(movimientosActivos.length === 31, 'Sólo el movimiento anulado queda fuera del flujo')
+    assert(movimientosActivos.length === 27, 'Solo el movimiento anulado queda fuera del flujo')
     const amountUsd = row => row.moneda === 'USD' ? row.monto : row.monto_ves / row.tasa_usd_ves
     const expectedIngresos = movimientosActivos.filter(row => row.tipo === 'ingreso').reduce((sum, row) => sum + amountUsd(row), 0)
     const expectedEgresos = movimientosActivos.filter(row => row.tipo === 'egreso').reduce((sum, row) => sum + amountUsd(row), 0)
@@ -948,35 +1092,56 @@ async function ejecutarSimulacionMesFinanzas() {
       'Resumen USD coincide con los importes y tasas de todo el conjunto')
 
     const sinCustodia = movimientosActivos.filter(row => !row.cuenta_custodia_id)
-    assert(sinCustodia.length === 13 && sinCustodia.filter(row => row.partes?.length).length === 1,
-      'Doce partidas POS y una partida dividida siguen sin custodia confirmada')
+    const posSinCustodia = sinCustodia.filter(row => /POS-(?:CXC-)?\d{4}-\d{2}-\d{2}/i.test(row.referencia || ''))
+    const legacySinCustodia = sinCustodia.filter(row => row.referencia === 'SPLIT-VENTA-102')
+    assert(posSinCustodia.length === 12 && legacySinCustodia.length === 1
+      && legacySinCustodia[0].partes?.length === 2,
+    'Pendientes separados: doce filas POS y una fila histórica split sin custodia')
+    assert(posSinCustodia.every(row => row.tasa_registrada_en && row.tasa_usd_ves === RATES.usdVes),
+      'Las filas POS pendientes tienen tasa con procedencia, sin entrar en saldos confirmados')
+
+    const movimientosConCustodia = movimientosActivos.filter(row => row.cuenta_custodia_id)
+    assert(movimientosConCustodia.length === 14,
+      'Solo los 14 movimientos con custodia confirmada entran al cálculo de saldos')
     const saldosCalculados = new Map()
-    for (const mov of movimientosActivos) {
+    for (const mov of movimientosConCustodia) {
       if (!mov.cuenta_custodia_id) continue
       const c = listaCuentas.find(account => account.id === mov.cuenta_custodia_id)
       assert(c && c.moneda === mov.moneda, 'Cuenta exacta y moneda nativa coinciden')
-      const prev = saldosCalculados.get(c.id) || { nombre: c.nombre, moneda: c.moneda, ingresos: 0, egresos: 0 }
-      if (mov.tipo === 'ingreso') prev.ingresos += Number(mov.monto)
-      else prev.egresos += Number(mov.monto)
+      const prev = saldosCalculados.get(c.id) || {
+        nombre: c.nombre, moneda: c.moneda, apertura: 0, ingresosOperativos: 0, egresos: 0,
+      }
+      const amount = Number(mov.monto)
+      if (mov.referencia === 'APERTURA-08-2026') {
+        if (mov.tipo === 'ingreso') prev.apertura += amount
+        else prev.apertura -= amount
+      } else if (mov.tipo === 'ingreso') {
+        prev.ingresosOperativos += amount
+      } else {
+        prev.egresos += amount
+      }
       saldosCalculados.set(c.id, prev)
     }
     assert(saldosCalculados.size === 6, 'El cálculo comprueba las seis cuentas, no un conjunto vacío')
+    assert([...saldosCalculados.values()].every(row => row.apertura > 0),
+      'Las seis cuentas parten de su asiento de apertura, separado de la actividad operativa')
 
     console.log('\n  ┌─────────────────────────────┬──────────┬──────────────┬──────────────┬──────────────┐')
-    console.log('  │ Cuenta de Custodia          │ Moneda   │ Entradas     │ Salidas      │ Saldo Final  │')
+    console.log('  │ Cuenta de Custodia          │ Moneda   │ Apertura     │ Entradas     │ Salidas      │ Saldo Final  │')
     console.log('  ├─────────────────────────────┼──────────┼──────────────┼──────────────┼──────────────┤')
     for (const [, val] of saldosCalculados) {
-      const saldoFinal = val.ingresos - val.egresos
-      const sim = val.moneda === 'VES' ? 'Bs.' : '$'
+      const saldoFinal = val.apertura + val.ingresosOperativos - val.egresos
+      const sim = val.moneda === 'VES' ? 'Bs.' : (val.moneda === 'USDT' ? 'USDT' : '$')
       const n = val.nombre.padEnd(27)
       const m = val.moneda.padEnd(8)
-      const e = `${sim} ${val.ingresos.toFixed(2)}`.padStart(12)
-      const s = `${sim} ${val.egresos.toFixed(2)}`.padStart(12)
-      const sf = `${sim} ${saldoFinal.toFixed(2)}`.padStart(12)
-      console.log(`  │ ${n} │ ${m} │ ${e} │ ${s} │ ${sf} │`)
-      assert(saldoFinal >= 0, `Ecuación de solvencia: ${val.nombre} cerró con saldo positivo`)
+      const opening = `${sim} ${val.apertura.toFixed(2)}`.padStart(12)
+      const income = `${sim} ${val.ingresosOperativos.toFixed(2)}`.padStart(12)
+      const expense = `${sim} ${val.egresos.toFixed(2)}`.padStart(12)
+      const closing = `${sim} ${saldoFinal.toFixed(2)}`.padStart(12)
+      console.log(`  │ ${n} │ ${m} │ ${opening} │ ${income} │ ${expense} │ ${closing} │`)
+      assert(saldoFinal >= 0, `Saldo nativo final no negativo: ${val.nombre}`)
     }
-    console.log('  └─────────────────────────────┴──────────┴──────────────┴──────────────┴──────────────┘')
+    console.log('  └─────────────────────────────┴──────────┴──────────────┴──────────────┴──────────────┴──────────────┘')
 
     stats.totalIngresosUsd = resumen.ingresos_usd
     stats.totalEgresosUsd = resumen.egresos_usd
@@ -1006,7 +1171,7 @@ async function ejecutarSimulacionMesFinanzas() {
     console.log('======================================================================')
     console.log(`  • Total de Fases Ejecutadas:        ${stats.fasesCompletadas} / 10 (100% COMPLETADAS)`)
     console.log(`  • Aserciones y Pruebas Verificadas: ${stats.verificaciones} APROBADAS (0 FALLIDAS)`)
-    console.log(`  • Total de Movimientos Contables:   ${stats.totalMovimientos} transacciones procesadas`)
+    console.log(`  • Total de Movimientos del Libro:   ${stats.totalMovimientos} filas históricas/operativas procesadas`)
     console.log(`  • Volumen de Ingresos del Mes:      $${stats.totalIngresosUsd.toLocaleString('es-VE', { minimumFractionDigits: 2 })}`)
     console.log(`  • Volumen de Egresos del Mes:       $${stats.totalEgresosUsd.toLocaleString('es-VE', { minimumFractionDigits: 2 })}`)
     console.log(`  • Flujo Operativo Neto (Superávit): $${(stats.totalIngresosUsd - stats.totalEgresosUsd).toLocaleString('es-VE', { minimumFractionDigits: 2 })}`)

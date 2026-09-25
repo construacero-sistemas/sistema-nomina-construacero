@@ -23,7 +23,6 @@ vi.mock('../../../hooks/useMonedaNomina.js', () => ({ default: () => ({ tasaActi
 vi.mock('../../../hooks/useTasaCambioNomina.js', () => ({ default: () => ({ usd: 1, usdt: 1 }) }))
 vi.mock('../../../hooks/useCuentasCustodia.js', () => ({ useCuentasCustodia: () => ({ cuentas: custody.cuentas, cuentasEliminadas: [], saldos: null, saldosCargando: false, saldosError: false, conciliacionPendiente: false, refetch: vi.fn(), agregarCuenta: vi.fn(), editarCuenta: vi.fn(), eliminarCuenta: vi.fn(), restaurarCuentaEliminada: vi.fn(), descartarCuentaEliminada: vi.fn(), vaciarPapelera: vi.fn(), restaurarPredeterminadas: vi.fn() }) }))
 vi.mock('../../../hooks/useCustodySave.js', () => ({ default: () => vi.fn() }))
-vi.mock('../../../config/candadosRuntime.js', () => ({ useCandados: () => ({ syncPos: true }) }))
 vi.mock('../../../../compat/utils/errorLogger.js', () => ({ logClientError: vi.fn() }))
 vi.mock('../../../../compat/components/ui/toastBus.js', () => ({ showToast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 vi.mock('../../../../compat/components/ui/DatePicker.jsx', () => ({ default: () => <div /> }))
