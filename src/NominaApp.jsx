@@ -3,17 +3,13 @@ import { createPortal } from 'react-dom'
 import { OverlayContext, useOverlay } from '../compat/components/ui/useOverlay.js'
 import { useOverlayPosition } from '../compat/components/ui/useOverlayPosition.js'
 import {
-  ChevronRight, Landmark, Lock, LogOut, Menu, PanelLeftClose,
+  ChevronRight, Landmark, LogOut, Menu, PanelLeftClose,
   PanelLeftOpen, Settings2, TrendingUp, User, UserCog, Wallet, X
 } from 'lucide-react'
 import { Link, Navigate, Outlet, Route, Routes, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../compat/store/useAuthStore.js'
 import LoginPage from '../compat/modules/auth/LoginPage.jsx'
 import LogoutConfirmModal from './components/LogoutConfirmModal.jsx'
-import ModuloBloqueado from './components/ModuloBloqueado.jsx'
-import ComandoDesbloqueo from './components/ComandoDesbloqueo.jsx'
-import { useCandados } from './config/candadosRuntime.js'
-import { rutaPorDefecto } from './config/modulos.js'
 import { accesoUI, etiquetaRol, rutaParaRol } from './config/accesoModulos.js'
 import { filtrarNavPorRol } from './config/navModulos.js'
 import SistemaView from './views/SistemaView.jsx'
@@ -25,37 +21,11 @@ import MobileDrawerContent from './components/layout/MobileDrawerContent.jsx'
 const NominaView = lazy(() => import('./views/NominaView.jsx'))
 const FinanzasView = lazy(() => import('./components/finanzas/FinanzasView.jsx'))
 
-// El estado EN VIVO de los candados vive en src/config/candadosRuntime.js.
 const NAV = [
-  { to: '/nomina', label: 'Nómina', desc: 'Salarios, asistencia y recibos', icon: Wallet, locked: false },
-  { to: '/finanzas', label: 'Finanzas', desc: 'Movimientos, bancos y balances', icon: Landmark, locked: false },
-  { to: '/sistema', label: 'Sistema', desc: 'Personal y configuración general', icon: Settings2, locked: false },
+  { to: '/nomina', label: 'Nómina', desc: 'Salarios, asistencia y recibos', icon: Wallet },
+  { to: '/finanzas', label: 'Finanzas', desc: 'Movimientos, bancos y balances', icon: Landmark },
+  { to: '/sistema', label: 'Sistema', desc: 'Personal y configuración general', icon: Settings2 },
 ]
-
-/** ¿Está este ítem del NAV bloqueado ahora mismo? (consulta el runtime) */
-function itemBloqueado(item, candados) {
-  if (item.to === '/nomina') return candados.nomina
-  return item.locked
-}
-
-function NavLockedButton({ item, collapsed, onClick }) {
-  const Icon = item.icon
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={collapsed ? `${item.label} (próximamente)` : undefined}
-      aria-label={`${item.label} — bloqueado temporalmente`}
-      aria-disabled="true"
-      className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-1.5 rounded-xl text-sm font-bold text-white/30 cursor-not-allowed transition-colors duration-150`}
-      style={{ touchAction: 'manipulation' }}
-    >
-      <Icon size={18} />
-      {!collapsed && <span className="flex-1 text-left">{item.label}</span>}
-      {!collapsed && <Lock size={13} className="text-white/25 shrink-0" aria-hidden="true" />}
-    </button>
-  )
-}
 
 function Loading() {
   const [showRetry, setShowRetry] = useState(false)
@@ -145,7 +115,7 @@ function Public() {
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
   const status = useAuthStore(state => state.authStatus)
   if (!initialized) return <Loading />
-  if (perfil && status === 'authenticated') return <Navigate to={rutaPorDefecto()} replace />
+  if (perfil && status === 'authenticated') return <Navigate to={rutaParaRol(perfil?.rol)} replace />
   return <Outlet />
 }
 
@@ -166,7 +136,7 @@ function MobileDrawerOverlay({ onClose, onLogout, onChangeUser }) {
       <aside ref={panelRef} role="dialog" aria-modal="true" aria-label="Menú principal" tabIndex={-1}
         className="translate-x-0 h-full flex flex-col w-[85%] max-w-xs min-w-0 overflow-y-auto rounded-r-2xl bg-slate-900 text-white"
         style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <MobileDrawerContent nav={NAV} estaBloqueado={itemBloqueado} onClose={() => overlay.requestClose('close-button')} onLogout={onLogout} onChangeUser={onChangeUser} />
+        <MobileDrawerContent nav={NAV} onClose={() => overlay.requestClose('close-button')} onLogout={onLogout} onChangeUser={onChangeUser} />
       </aside>
     </div>
   </OverlayContext.Provider>, document.body)
@@ -178,7 +148,6 @@ function Shell() {
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
   const acceso = accesoUI(perfil?.rol)
   const navVisible = filtrarNavPorRol(NAV, perfil?.rol)
-  const candados = useCandados()
   const navigate = useNavigate()
   const location = useLocation()
   const mainRef = useRef(null)
@@ -237,7 +206,6 @@ function Shell() {
           className="md:hidden h-7 w-auto object-contain select-none"
           style={{ filter: 'brightness(1.1)' }}
           draggable={false}
-          onPointerDown={() => window.dispatchEvent(new CustomEvent('logo-tap'))}
         />
 
         <div className="hidden md:flex items-center gap-2.5">
@@ -291,7 +259,6 @@ function Shell() {
                 className={`object-contain transition-all duration-300 select-none ${collapsed ? 'h-10 w-10' : 'h-[66px] md:h-20'}`}
                 style={{ filter: 'brightness(1.05) drop-shadow(0 0 12px rgba(184,134,11,0.2))' }}
                 draggable={false}
-                onPointerDown={() => window.dispatchEvent(new CustomEvent('logo-tap'))}
               />
               {!collapsed && (
                 <div className="mt-1.5 md:mt-2 flex items-center gap-2 w-full justify-center">
@@ -305,9 +272,7 @@ function Shell() {
             </div>
 
             <nav className="relative z-10 flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5 sidebar-scrollbar" aria-label="Navegación principal">
-              {navVisible.map(item => itemBloqueado(item, candados)
-                ? <NavLockedButton key={item.to} item={item} collapsed={collapsed} onClick={() => setMenuOpen(false)} />
-                : <NavItem key={item.to} item={item} collapsed={collapsed} onClick={() => setMenuOpen(false)} />)}
+              {navVisible.map(item => <NavItem key={item.to} item={item} collapsed={collapsed} onClick={() => setMenuOpen(false)} />)}
             </nav>
 
             {/* Zona de sesión en Desktop Sidebar */}
@@ -385,22 +350,6 @@ function Shell() {
         <div className="flex items-center justify-around px-1 h-16 min-h-[4rem]">
           {navVisible.map(item => {
             const Icon = item.icon
-            if (itemBloqueado(item, candados)) {
-              return <button
-                key={item.to}
-                type="button"
-                aria-label={`${item.label} — bloqueado temporalmente`}
-                aria-disabled="true"
-                className="flex flex-col items-center gap-0.5 py-1.5 px-2 rounded-xl min-w-[58px] text-white/30 cursor-not-allowed"
-                style={{ touchAction: 'manipulation' }}
-              >
-                <div className="p-1.5 rounded-lg relative">
-                  <Icon size={20} strokeWidth={2} />
-                  <Lock size={10} className="absolute -top-0.5 -right-0.5 text-white/40" aria-hidden="true" />
-                </div>
-                <span className="text-[10px] font-bold">{item.label}</span>
-              </button>
-            }
             return <NavLink
               key={item.to}
               to={item.to}
@@ -436,15 +385,12 @@ function Shell() {
         onConfirm={ejecutarCerrarSesion}
       />
 
-      {/* Comando secreto de desbloqueo (teclado / toques en logo) */}
-      <ComandoDesbloqueo />
     </div>
   )
 }
 
 export default function NominaApp() {
   const initialize = useAuthStore(state => state.initialize)
-  const candados = useCandados()
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
   useEffect(() => {
     return initialize()
@@ -459,9 +405,7 @@ export default function NominaApp() {
         {/* Defensa en profundidad: aunque el servidor revalida cada endpoint,
             el rol sin acceso al módulo ni siquiera ve la ruta. */}
         {acceso.nomina
-          ? (candados.nomina
-              ? <Route path="/nomina" element={<ModuloBloqueado />} />
-              : <Route path="/nomina" element={<NominaView />} />)
+          ? <Route path="/nomina" element={<NominaView />} />
           : <Route path="/nomina" element={<Navigate to="/finanzas" replace />} />}
         {acceso.finanzas
           ? <Route path="/finanzas" element={<FinanzasView />} />

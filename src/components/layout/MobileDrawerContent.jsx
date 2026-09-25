@@ -3,16 +3,14 @@
 // Extraído de NominaApp.jsx por el guardrail de 600 líneas.
 import { useCallback } from 'react'
 import { NavLink } from 'react-router-dom'
-import { ChevronRight, Lock, LogOut, TrendingUp, UserCog, X } from 'lucide-react'
+import { ChevronRight, LogOut, TrendingUp, UserCog, X } from 'lucide-react'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
-import { useCandados } from '../../config/candadosRuntime.js'
 import { filtrarNavPorRol } from '../../config/navModulos.js'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
 
-// NAV e itemBloqueado viven en NominaApp y se pasan por props para evitar
-// dependencia circular; el filtro por rol se aplica aquí con accesoUI.
-export default function MobileDrawerContent({ nav, estaBloqueado, onClose, onLogout, onChangeUser }) {
-  const candados = useCandados()
+// NAV vive en NominaApp y se pasa por props para evitar dependencia
+// circular; el filtro por rol se aplica aquí con accesoUI.
+export default function MobileDrawerContent({ nav, onClose, onLogout, onChangeUser }) {
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
   const navVisible = filtrarNavPorRol(nav, perfil?.rol)
   const { usd, eur, usdt, loading } = useTasaCambioNomina()
@@ -34,7 +32,6 @@ export default function MobileDrawerContent({ nav, estaBloqueado, onClose, onLog
             alt="Construacero Carabobo C.A."
             className="h-8 w-auto object-contain brightness-110 select-none"
             draggable={false}
-            onPointerDown={() => window.dispatchEvent(new CustomEvent('logo-tap'))}
           />
           <div>
             <h4 className="text-xs font-black text-white tracking-wide">Construacero</h4>
@@ -61,30 +58,6 @@ export default function MobileDrawerContent({ nav, estaBloqueado, onClose, onLog
           </span>
           <nav className="space-y-1" aria-label="Navegación móvil">
             {navVisible.map(item => {
-              if (estaBloqueado(item, candados)) {
-                return (
-                  <button
-                    key={item.to}
-                    type="button"
-                    onClick={onClose}
-                    aria-label={`${item.label} — bloqueado temporalmente`}
-                    aria-disabled="true"
-                    className="w-full flex items-center justify-between p-3 rounded-2xl bg-white/[0.02] border border-white/[0.05] text-white/35 cursor-not-allowed"
-                    style={{ touchAction: 'manipulation' }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/[0.04] text-white/30">
-                        <item.icon size={18} />
-                      </div>
-                      <div>
-                        <p className="text-xs font-black leading-tight text-white/50">{item.label}</p>
-                        <p className="text-[10px] text-white/35 mt-0.5">Disponible próximamente</p>
-                      </div>
-                    </div>
-                    <Lock size={15} className="text-white/25 shrink-0" aria-hidden="true" />
-                  </button>
-                )
-              }
               const Icon = item.icon
               return (
                 <NavLink

@@ -411,13 +411,16 @@ for (const path of sourceFiles) {
   if (path.endsWith('.jsx') && /<select\b/i.test(text)) {
     fail(`Selector nativo cuadrado detectado en ${path}; usa el selector visual compartido`)
   }
-  // El candado de Nómina se define en un único interruptor (src/config/modulos.js).
-  // Cualquier otra declaración del flag es una fuente de divergencia: falla aquí.
-  // (Los tests quedan exentos: su trabajo es justamente verificar el flag.)
+  // Lanzamiento por fases terminado: el candado de Nómina y el comando secreto
+  // (logo + código) fueron eliminados — el acceso lo decide el permiso del rol.
+  // Prueba negativa: ninguna fuente puede re-declarar la maquinaria.
   const pathNorm = path.split('\\').join('/')
   const esTest = /__tests__\//.test(pathNorm)
-  if (!esTest && pathNorm !== 'src/config/modulos.js' && /(?:const|let|var)\s+(?:NOMINA_BLOQUEADA|SECCIONES_NOMINA_BLOQUEADAS|MODULO_BLOQUEADO)\s*=/.test(text)) {
-    fail(`El candado de Nómina debe definirse solo en src/config/modulos.js (declaración local en ${path})`)
+  if (!esTest && pathNorm.startsWith('src/') && /(?:const|let|var)\s+(?:NOMINA_BLOQUEADA|SECCIONES_NOMINA_BLOQUEADAS|MODULO_BLOQUEADO|CODIGO_DESBLOQUEO)\s*=/.test(text)) {
+    fail(`La maquinaria de candados fue eliminada (declaración local en ${path}); el acceso lo decide el permiso del rol`)
+  }
+  if (!esTest && pathNorm.startsWith('src/') && /ComandoDesbloqueo|comandoDesbloqueo/.test(text)) {
+    fail(`El comando secreto de desbloqueo fue eliminado y no debe regresar (${path})`)
   }
 }
 if (boundedSourceFiles.length === 0) fail('No se encontraron fuentes acotadas para el guardrail de tamaño')

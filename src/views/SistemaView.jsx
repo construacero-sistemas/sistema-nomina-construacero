@@ -1,22 +1,18 @@
-import { Settings2, Users, Lock, UserCog } from 'lucide-react'
+import { Settings2, Users, UserCog } from 'lucide-react'
 import { useState } from 'react'
 import PageHeader from '../../compat/components/ui/PageHeader.jsx'
 import TabConfiguracion from '../components/nomina/TabConfiguracion.jsx'
 import UsuariosPanel from '../components/sistema/UsuariosPanel.jsx'
 import useAuthStore from '../../compat/store/useAuthStore.js'
-import { useCandados } from '../config/candadosRuntime.js'
 import { tieneCapacidad } from '../config/accesoModulos.js'
 
 function GestionPersonalBadge() {
-  const { nomina } = useCandados()
   return (
     <span
-      className={`inline-flex items-center gap-1.5 self-start sm:self-auto px-3.5 py-2 rounded-xl font-bold text-xs shrink-0 ${nomina ? 'border border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed' : 'border-primary/25 bg-primary/5 text-primary'}`}
-      aria-disabled={nomina || undefined}
-      title={nomina ? 'Disponible próximamente' : 'Ir a Personal'}
+      className="inline-flex items-center gap-1.5 self-start sm:self-auto px-3.5 py-2 rounded-xl font-bold text-xs shrink-0 border-primary/25 bg-primary/5 text-primary"
+      title="Ir a Personal"
     >
-      {nomina && <Lock size={13} aria-hidden="true" />}
-      <span>{nomina ? 'Gestión de personal — próximamente' : 'Gestión de personal en Nómina'}</span>
+      <span>Gestión de personal en Nómina</span>
     </span>
   )
 }
