@@ -154,3 +154,27 @@ export function inspectResponsiveJsx(source) {
 export function hasMinimumTouchHeight(control) {
   return control.classes.some(token => !token.includes(':') && height(token) >= 44)
 }
+
+// ── Reglas de egress del servidor ────────────────────────────────────────────
+// `walk()` de check-project compone las rutas con path.join, que en Windows usa
+// `\`: comparar la ruta cruda contra `server/...` hacía que estas dos reglas
+// nunca dispararan en desarrollo local (sí en CI/Linux, donde el guardarraíl
+// terminaba rompiendo el build). La comparación vive aquí, normalizada, para que
+// el escáner y su prueba (scripts/qa-guards.test.mjs) usen la misma.
+export function rutaPosix(path) {
+  return String(path ?? '').split('\\').join('/')
+}
+
+/** Infracciones de egress de una fuente (lista vacía = archivo correcto). */
+export function infraccionesEgress(path, source) {
+  const ruta = rutaPosix(path)
+  const texto = String(source ?? '')
+  const fallos = []
+  if (ruta === 'server/handlers/nomina.js' && /select=\*/.test(texto)) {
+    fallos.push('El handler de nómina no debe usar select=*; proyecta columnas para proteger egress')
+  }
+  if (ruta.startsWith('server/') && /limit=1000/.test(texto)) {
+    fallos.push(`Límite de egress demasiado alto detectado en ${ruta}`)
+  }
+  return fallos
+}

@@ -48,6 +48,13 @@ function makeJwt(payload = {}) {
   return `${h}.${p}.dummy_signature`
 }
 
+function extractColumnFilter(raw) {
+  if (!raw) return null
+  if (raw.startsWith('in.(')) return raw.slice(4, -1).split(',')
+  if (raw.startsWith('eq.')) return [raw.slice(3)]
+  return null
+}
+
 function extractIdFilter(params) {
   const idRaw = params.get('id')
   if (!idRaw) return null
@@ -77,6 +84,9 @@ class InMemoryDatabase {
     this.nomina_feriados = [
       { id: '70000000-0000-4000-8000-000000000001', fecha: '2026-08-14', nombre: 'Día Festivo Especial', tipo: 'empresa', laborable: false, cuenta_id: IDS.cuenta },
     ]
+    // Sin semanas laborales propias: cada persona conserva el horario histórico
+    // Lun–Sáb, que es lo que la carga masiva usa para no escribir en un día libre.
+    this.nomina_horarios = []
     this.finanzas_movimientos = []
     this.finanzas_categorias = []
     // Cuentas de custodia del arnés: la comisión es USD, así que la caja USD
@@ -150,10 +160,10 @@ class InMemoryDatabase {
 
     if (pathname.includes('/rest/v1/nomina_config_empleado')) {
       if (method === 'GET') {
-        const empEq = params.get('empleado_id')?.replace('eq.', '')
+        const empIds = extractColumnFilter(params.get('empleado_id'))
         let res = this.nomina_config_empleado
         if (idFilter?.type === 'eq') res = res.filter(c => c.id === idFilter.value)
-        if (empEq) res = res.filter(c => c.empleado_id === empEq)
+        if (empIds) res = res.filter(c => empIds.includes(c.empleado_id))
         return jsonResponse(res.map(c => ({
           ...c,
           empleado: this.clientes.find(cl => cl.id === c.empleado_id) || null,
@@ -207,9 +217,9 @@ class InMemoryDatabase {
 
     if (pathname.includes('/rest/v1/registro_asistencia')) {
       if (method === 'GET') {
-        const empEq = params.get('empleado_id')?.replace('eq.', '')
+        const empIds = extractColumnFilter(params.get('empleado_id'))
         let res = this.registro_asistencia
-        if (empEq) res = res.filter(r => r.empleado_id === empEq)
+        if (empIds) res = res.filter(r => empIds.includes(r.empleado_id))
         for (const filter of params.getAll('fecha')) {
           if (filter.startsWith('eq.')) res = res.filter(r => r.fecha === filter.slice(3))
           else if (filter.startsWith('gte.')) res = res.filter(r => r.fecha >= filter.slice(4))
@@ -300,6 +310,10 @@ class InMemoryDatabase {
 
     if (pathname.includes('/rest/v1/nomina_feriados')) {
       return jsonResponse(this.nomina_feriados)
+    }
+
+    if (pathname.includes('/rest/v1/nomina_horarios')) {
+      return jsonResponse(this.nomina_horarios)
     }
 
     if (pathname.includes('/rest/v1/finanzas_categorias')) {
@@ -558,16 +572,31 @@ async function runAllTests() {
   })
 
   await test('Marcar asistencia masiva para toda la plantilla (8 a 5)', async () => {
+    // La carga masiva ahora exige la lista explícita de empleados para no sobrescribir marcajes existentes.
     const req = makeRequest({
       fecha: '2026-08-11',
       horaEntrada: '08:00',
       horaSalida: '17:00',
       esFeriado: false,
+      empleadoIds: [IDS.empleado1, IDS.empleado2],
     })
     const res = await H.handleRegistrarAsistenciaMasivo(req, ENV)
     assertEqual(res.status, 200, 'Status de marcaje masivo')
     const body = await res.json()
-    assert(body.registros >= 2, 'Deben marcarse todos los empleados')
+    assertEqual(body.registros, 2, 'Deben marcarse los empleados solicitados')
+  })
+
+  await test('La carga masiva rechaza listas vacías o implícitas', async () => {
+    const req = makeRequest({
+      fecha: '2026-08-12',
+      horaEntrada: '08:00',
+      horaSalida: '17:00',
+      esFeriado: false,
+    })
+    const res = await H.handleRegistrarAsistenciaMasivo(req, ENV)
+    assertEqual(res.status, 400, 'Debe exigir empleados explícitos para el lote')
+    const body = await res.json()
+    assert(/empleados válidos/i.test(body.error || ''), 'El error debe indicar que faltan empleados explícitos')
   })
 
   // ── SECCIÓN 4: CICLO DE VIDA DE PERÍODOS DE NÓMINA ──────────────────────────

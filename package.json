@@ -6,6 +6,12 @@
   "scripts": {
     "dev": "npm run check:local && concurrently -n VITE,API -c cyan,yellow \"vite --config vite.config.js\" \"wrangler dev --config wrangler.toml --port 8788 --local\"",
     "check:local": "node scripts/check-local-dev.mjs",
+    "prepare:staging": "node scripts/seed-staging-fixtures.mjs",
+    "check:staging": "node scripts/check-staging-config.mjs",
+    "dev:staging": "npm run check:staging && concurrently -n VITE,API -c cyan,yellow \"vite --config vite.config.js --mode staging --host 127.0.0.1 --port 5174 --strictPort\" \"wrangler dev --config wrangler.toml --env-file .dev.vars.staging --port 8789 --local --ip 127.0.0.1\"",
+    "test:staging:smoke": "node scripts/test-staging-smoke.mjs",
+    "test:staging:deterministic": "node scripts/test-staging-deterministic.mjs",
+    "test:staging:concurrency": "node scripts/test-staging-concurrency.mjs",
     "dev:vite": "vite --config vite.config.js",
     "dev:api": "npm run check:local && wrangler dev --config wrangler.toml --port 8788 --local",
     "build": "vite build --config vite.config.js",

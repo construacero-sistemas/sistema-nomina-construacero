@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { findExternalImports } from './qa-responsive-rules.mjs'
+import { findExternalImports, infraccionesEgress } from './qa-responsive-rules.mjs'
 import { CAPACIDADES, ROLES_VALIDOS, rolesConCapacidad } from '../server/lib/permissions.js'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -36,8 +36,12 @@ async function walk(directory, output = []) {
   for (const entry of entries) {
     const relativePath = join(directory, entry.name)
     if (['node_modules', 'dist', 'coverage', '.git', '.freebuff', '.wrangler', 'outputs', '.workbuddy-ai', 'backups'].includes(entry.name)) continue
+    // Las rutas se acumulan normalizadas a `/`: con `path.join` en Windows usan
+    // `\` y las reglas que comparan contra `server/...` o `src/...` nunca
+    // disparaban (F-2 del plan de flujo de nómina). La recursión sigue usando la
+    // ruta nativa porque la resuelve el sistema de archivos.
     if (entry.isDirectory()) await walk(relativePath, output)
-    else output.push(relativePath)
+    else output.push(relativePath.split('\\').join('/'))
   }
   return output
 }
@@ -73,6 +77,8 @@ const requiredFiles = [
   'supabase/migrations/221_finanzas_movimientos.sql',
   'supabase/migrations/222_finanzas_admin_role_guard.sql',
   'supabase/migrations/223_finanzas_resumen_filtros.sql',
+  'supabase/migrations/246_nomina_control_asistencia.sql',
+  'supabase/migrations/248_nomina_comisiones_atomicas.sql',
   'server/handlers/nomina.js',
   'server/handlers/nomina.lineas.js',
   'server/handlers/finanzas.js',
@@ -136,7 +142,11 @@ const accesoModulosSource = await read('src/config/accesoModulos.js')
 for (const [name, source, markers] of [
   ['index.html', indexHtml, ['Nómina y Finanzas · Construacero Carabobo', 'Nómina y finanzas de Construacero Carabobo C.A.']],
   ['compat/modules/auth/LoginPage.jsx', loginSource, ['Bienvenido', 'Acceso a la cuenta', 'El acceso quedará guardado en este dispositivo', '/logo.png', 'login-stage', 'login-panel', 'login-field-control', 'login-field-icon', 'login-field-password-control', 'login-submit', 'submitReady', 'nomina-login-email', 'nomina-login-password', 'noValidate', 'Ingresa un correo válido.', 'login-form-error']],
-  ['server/handlers/nomina.shared.js', nominaSharedSource, ['rolesConCapacidad', "rolesConCapacidad('verNomina')", "rolesConCapacidad('gestionarUsuarios')"]],
+  ['server/handlers/nomina.shared.js', nominaSharedSource, ['rolesConCapacidad', "rolesConCapacidad('verNomina')", "rolesConCapacidad('gestionarUsuarios')", 'fetchConfigsConControl', 'controla_asistencia']],
+  // El interruptor de Asistencia va con la migración 246; sin ella el servidor
+  // sirve el listado anterior (respaldo en fetchConfigsConControl).
+  ['supabase/migrations/246_nomina_control_asistencia.sql', await read('supabase/migrations/246_nomina_control_asistencia.sql'), ['ADD COLUMN IF NOT EXISTS controla_asistencia BOOLEAN NOT NULL DEFAULT true', 'COMMENT ON COLUMN']],
+  ['src/components/nomina/TabEmpleados.jsx', await read('src/components/nomina/TabEmpleados.jsx'), ['puedeGestionarNomina', 'puedePagarComision']],
   ['server/handlers/auth-operators.js', authOperatorsSource, ['ROLES_OPERATIVOS', 'tieneCapacidad', 'OPERATOR_ROLES']],
   ['server/lib/permissions.js', await read('server/lib/permissions.js'), ["'finanzas'", "'nomina'", "'jefe'", 'verSaldos: false', 'MATRIZ', 'requireCapacidad', 'rolesConCapacidad', 'ROLES_OPERATIVOS', 'ROLES_ASIGNABLES', 'tieneAccesoOperativo', 'accesoUI']],
   ['compat/modules/auth/UserCard.jsx', userCardSource, ['operator-card', 'operator-card-avatar-wrap', 'operator-card-role']],
@@ -150,9 +160,13 @@ for (const [name, source, markers] of [
   ['vercel.json', vercelConfig, ['"/api/:path*"', '"/api?__route__=:path*"', '"api/index.js"']],
   ['src/NominaApp.jsx', shellSource, ['Nómina y Finanzas', 'className="loader"', 'className="loader-square"', 'Array.from({ length: 7 }', 'md:hidden', 'translate-x-0', 'safe-area-inset-bottom', 'accesoUI']],
   ['src/hooks/useNomina.js', payrollHookSource, ['tieneCapacidad', "'verNomina'", "'administrarNomina'"]],
-  ['src/views/NominaView.jsx', payrollViewSource, ['administrarNomina', 'TabEmpleados', 'TabHistorial']],
+  // Las acciones de personal se gatean con la MISMA capacidad que exige el servidor
+  // (`gestionarUsuarios`): el rol nomina tiene administrarNomina pero no esa llave.
+  ['src/views/NominaView.jsx', payrollViewSource, ['administrarNomina', 'TabEmpleados', 'TabHistorial', "tieneCapacidad(perfil, 'gestionarUsuarios')", "tieneCapacidad(perfil, 'operarFinanzas')", 'puedeGestionarNomina', 'puedePagarNomina']],
   ['src/views/SistemaView.jsx', systemViewSource, ['Sistema', 'TabConfiguracion', 'Gestión de Personal Centralizada', '/nomina', 'tieneCapacidad', 'gestionarUsuarios']],
-  ['src/components/nomina/MarcajeLogisticaPanel.jsx', marcajeSource, ['administrarNomina', 'La hora se toma automáticamente']],
+  // El contrato es que la interfaz advierta que la hora la pone el servidor; la
+  // redacción del panel cambió al reescribirlo, así que el marcador sigue el texto vigente.
+  ['src/components/nomina/MarcajeLogisticaPanel.jsx', marcajeSource, ['administrarNomina', 'El servidor registra la hora']],
   ['compat/components/auth/LoginPinModal.jsx', await read('compat/components/auth/LoginPinModal.jsx'), ['tieneCapacidad']],
   ['src/components/sistema/UsuariosPanel.jsx', await read('src/components/sistema/UsuariosPanel.jsx'), ['ROLES_CREABLES', 'etiquetaRol', 'longitudPin']],
   ['src/config/accesoModulos.js', accesoModulosSource, ["export * from '../../server/lib/permissions.js'"]],
@@ -187,6 +201,47 @@ if (!nominaSharedSource.includes("rolesConCapacidad('verNomina')") || !nominaSha
 }
 if (!permissionsGuardSource.includes('gestionarUsuarios') || !permissionsGuardSource.includes("capacidadesFinanzas") || !permissionsGuardSource.includes("capacidadesNomina")) {
   fail('La matriz de permisos debe mantener las capacidades separadas por rol (finanzas sin saldos, nomina sin finanzas)')
+}
+
+// Paridad UI ↔ servidor: `administrarNomina` es la capacidad del MÓDULO (lectura y
+// marcaje); 31 rutas del Worker exigen `gestionarUsuarios` y 7 exigen `operarFinanzas`.
+// Cada acción de escritura de Nómina debe gatearse con la capacidad de su endpoint, o
+// el rol `nomina` vuelve a ver botones que el servidor rechaza con 403.
+const paridadGates = [
+  ['src/components/nomina/TabPeriodos.jsx',
+    ['puedeGestionarNomina &&', 'puedePagarNomina &&'],
+    ['esAdmin && abierto', 'esAdmin && tieneLineas', 'esAdmin && periodo.estado']],
+  ['src/components/nomina/PeriodoDetalleModal.jsx',
+    ['puedeGestionarNomina &&', 'puedePagarNomina &&'],
+    ['esAdmin']],
+  ['src/components/nomina/AsistenciaDiariaMovil.jsx',
+    ['puedeGestionarNomina &&'],
+    ['esAdmin && !esDomingo']],
+  ['src/components/nomina/AsistenciaModal.jsx',
+    ['registro && puedeGestionarNomina && !esMarcajeReal'],
+    ['registro && esAdmin && !esMarcajeReal']],
+  ['src/components/nomina/TabAsistencia.jsx',
+    ['puedeGestionarNomina={puedeGestionarNomina}'],
+    []],
+]
+for (const [archivo, requeridos, prohibidos] of paridadGates) {
+  const fuente = await read(archivo)
+  for (const marcador of requeridos) {
+    if (!fuente.includes(marcador)) fail(`${archivo} debe gatear por capacidad del endpoint: falta ${marcador}`)
+  }
+  for (const marcador of prohibidos) {
+    if (fuente.includes(marcador)) fail(`${archivo} volvió a gatear una escritura con la capacidad del módulo: ${marcador}`)
+  }
+}
+
+// La marca de capacidad tiene que viajar del servidor al cliente: si se pierde en
+// cualquiera de los dos lados, un «no tienes permiso» vuelve a cerrar la sesión.
+const authFetchSource = await read('compat/services/authFetch.js')
+if (!permissionsGuardSource.includes('CODIGO_CAPACIDAD_INSUFICIENTE')) {
+  fail('requireCapacidad debe marcar sus 403 con CODIGO_CAPACIDAD_INSUFICIENTE')
+}
+if (!authFetchSource.includes('CODIGO_CAPACIDAD_INSUFICIENTE') || !authFetchSource.includes('denyAccess')) {
+  fail('authFetch debe distinguir el 403 por capacidad antes de invalidar la sesión')
 }
 // El espejo SQL final de la matriz (migración 245) no puede divergir de la fuente JS:
 // si alguien agrega o quita un rol en cualquiera de los dos lados, esto falla.
@@ -402,12 +457,9 @@ for (const path of sourceFiles) {
       /(?:sk_live_|sk_test_|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/.test(text)) {
     fail(`Posible secreto incrustado en ${path}`)
   }
-  if (path === 'server/handlers/nomina.js' && /select=\*/.test(text)) {
-    fail('El handler de nómina no debe usar select=*; proyecta columnas para proteger egress')
-  }
-  if (path.startsWith('server/') && /limit=1000/.test(text)) {
-    fail(`Límite de egress demasiado alto detectado en ${path}`)
-  }
+  // Guardarraíl de egress (proyección de columnas y techo de filas): la regla
+  // vive en qa-responsive-rules para que su prueba use el mismo comparador.
+  for (const fallo of infraccionesEgress(path, text)) fail(fallo)
   if (path.endsWith('.jsx') && /<select\b/i.test(text)) {
     fail(`Selector nativo cuadrado detectado en ${path}; usa el selector visual compartido`)
   }

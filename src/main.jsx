@@ -32,6 +32,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <OfflineBanner>
               <NominaApp />
             </OfflineBanner>
+            {import.meta.env.MODE === 'staging' && (
+              <div className="staging-watermark" role="status" aria-label="Entorno de pruebas staging">
+                STAGING
+              </div>
+            )}
           </ToastProvider>
         </BrowserRouter>
       </QueryClientProvider>

@@ -24,7 +24,7 @@ export default function SistemaView() {
   const puedeGestionar = tieneCapacidad(perfil, 'gestionarUsuarios')
 
   return (
-    <div className="p-3 sm:p-4 md:p-5 lg:p-6 space-y-4 md:space-y-5 pb-12 md:pb-4">
+    <div className="p-3 sm:p-4 md:p-5 lg:p-6 space-y-4 md:space-y-5 pb-4">
       <PageHeader
         icon={Settings2}
         title="Sistema"

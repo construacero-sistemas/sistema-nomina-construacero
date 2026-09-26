@@ -74,7 +74,48 @@ try {
   const pay = ids => ({ lineaIds: ids, cuentaCustodiaId: usd, metodoPago: 'Efectivo $', tasaBcv: '400', tasaUsdVes: '400', fuenteTasa: 'MANUAL', observacionTasa: 'Tasa de prueba aprobada', referencia: 'QA', zonaHoraria: 'America/Caracas' })
   const balance = async () => (await one('SELECT finanzas_saldos($1) AS value', [tenant])).value
   const ledgerCounts = async () => one('SELECT (SELECT count(*)::int FROM finanzas_operaciones) AS operations,(SELECT count(*)::int FROM finanzas_movimientos) AS movements,(SELECT count(*)::int FROM finanzas_nomina_asignaciones) AS assignments')
-  await check('Todas las migraciones compilan desde una base vacía', async () => assert.ok(result.migrations.includes('240_custodia_asignacion_segura.sql')))
+  await check('Todas las migraciones compilan desde una base vacía', async () => {
+    assert.ok(result.migrations.includes('240_custodia_asignacion_segura.sql'))
+    assert.ok(result.migrations.includes('248_nomina_comisiones_atomicas.sql'))
+  })
+  await check('Importación de comisiones POS es atómica, tenant-scoped y exige capacidad administrativa', async () => {
+    const commissionPeriod = randomUUID()
+    const employeeA = randomUUID(), employeeB = randomUUID()
+    const lineA = randomUUID(), lineB = randomUUID()
+    await db.query("INSERT INTO nomina_periodos(id,cuenta_id,nombre,desde,hasta,estado) VALUES($1,$2,'Commission QA','2099-09-01','2099-09-07','abierto')", [commissionPeriod, tenant])
+    await db.query('INSERT INTO clientes(id,cuenta_id,nombre) VALUES($1,$2,$3),($4,$2,$5)', [employeeA, tenant, 'Commission A', employeeB, 'Commission B'])
+    await db.query(`INSERT INTO nomina_lineas(id,cuenta_id,periodo_id,empleado_id,monto_normal_usd,bonos_usd,deducciones_usd,total_bruto_usd,total_neto_usd)
+      VALUES($1,$2,$3,$4,120,10,20,130,110),($5,$2,$3,$6,50,0,5,50,45)`, [lineA, tenant, commissionPeriod, employeeA, lineB, employeeB])
+    const applyCommissions = async (account, user, applications, periodId = commissionPeriod) => (await one(
+      'SELECT public.nomina_aplicar_comisiones_pos($1,$2,$3,$4::jsonb,NULL) AS value',
+      [account, user, periodId, JSON.stringify(applications)],
+    )).value
+    const before = await db.query('SELECT id,comisiones_pos_usd,total_bruto_usd,total_neto_usd FROM nomina_lineas WHERE id=ANY($1::uuid[]) ORDER BY id', [[lineA, lineB]])
+    await rejects('PT403', () => applyCommissions(tenant, otherActor, [{ empleadoId: employeeA, comisionesUsd: 10, despachosIds: ['d-1'] }]))
+    await rejects('PT400', () => applyCommissions(tenant, actor, [
+      { empleadoId: employeeA, comisionesUsd: 10, despachosIds: ['d-1'] },
+      { empleadoId: employeeA, comisionesUsd: 20, despachosIds: ['d-2'] },
+    ]))
+    await rejects('PT404', () => applyCommissions(tenant, actor, [
+      { empleadoId: employeeA, comisionesUsd: 10, despachosIds: ['d-1'] },
+      { empleadoId: randomUUID(), comisionesUsd: 20, despachosIds: ['d-2'] },
+    ]))
+    assert.deepEqual((await db.query('SELECT id,comisiones_pos_usd,total_bruto_usd,total_neto_usd FROM nomina_lineas WHERE id=ANY($1::uuid[]) ORDER BY id', [[lineA, lineB]])).rows, before.rows)
+    const applied = await applyCommissions(tenant, actor, [
+      { empleadoId: employeeA, comisionesUsd: 85.5, despachosIds: ['d-1','d-2'] },
+      { empleadoId: employeeB, comisionesUsd: 15, despachosIds: ['d-3'] },
+    ])
+    assert.equal(applied.ok, true); assert.equal(applied.actualizados, 2); assert.equal(Number(applied.total_comisiones_usd), 100.5)
+    const updated = await db.query('SELECT empleado_id,comisiones_pos_usd,total_bruto_usd,total_neto_usd,comisiones_despachos_ids FROM nomina_lineas WHERE id=ANY($1::uuid[])', [[lineA, lineB]])
+    assert.deepEqual(updated.rows.map(row => [Number(row.comisiones_pos_usd), Number(row.total_bruto_usd), Number(row.total_neto_usd)]).sort((a,b) => a[0]-b[0]), [[15,65,60],[85.5,215.5,195.5]])
+    await db.query("UPDATE nomina_periodos SET estado='cerrado' WHERE id=$1", [commissionPeriod])
+    await rejects('PT409', () => applyCommissions(tenant, actor, [
+      { empleadoId: employeeA, comisionesUsd: 90, despachosIds: ['d-4'] },
+      { empleadoId: employeeB, comisionesUsd: 30, despachosIds: ['d-5'] },
+    ]))
+    assert.equal(Number((await one('SELECT comisiones_pos_usd FROM nomina_lineas WHERE id=$1', [lineA])).comisiones_pos_usd), 85.5)
+    assert.equal((await one("SELECT count(*)::int AS n FROM auditoria WHERE cuenta_id=$1 AND accion='APLICAR_COMISIONES_POS' AND entidad_id=$2", [tenant, commissionPeriod])).n, 1)
+  })
   await check('RPCs privados: anon y authenticated sin EXECUTE; service autorizado', async () => {
     for (const signature of ['finanzas_resumen(uuid,date,date,text,text,text)', 'finanzas_operar(uuid,uuid,text,text,jsonb,text)', 'finanzas_saldos(uuid)', 'finanzas_operacion_estado(uuid,text,text)', 'finanzas_asignar_custodia(uuid,uuid,uuid[],uuid,text)', 'finanzas_movimientos_pagina(uuid,date,date,text,text,text,text,boolean,integer,integer,text)', 'finanzas_resumen_consistente(uuid,date,date,text,text,text,text)']) {
       const privileges = await one('SELECT has_function_privilege(\'anon\',$1,\'EXECUTE\') AS anon, has_function_privilege(\'authenticated\',$1,\'EXECUTE\') AS authenticated, has_function_privilege(\'service_role\',$1,\'EXECUTE\') AS service', [signature])

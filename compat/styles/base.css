@@ -19,8 +19,16 @@
 }
 
 :root { --bottom-navigation-height: 5.25rem; }
-.app-main-safe { padding-bottom: calc(var(--bottom-navigation-height) + env(safe-area-inset-bottom, 0px) + 0.75rem); }
+.app-main-safe { padding-bottom: 0.75rem; }
 @media (min-width: 768px) { .app-main-safe { padding-bottom: 1rem; } }
+/* Reserva real del nav inferior: el padding-bottom de un contenedor flex con scroll no siempre
+   cuenta como área desplazable (Blink/WebKit), así que el hueco se hace con un elemento medible. */
+.app-nav-spacer {
+  flex-shrink: 0;
+  width: 100%;
+  height: calc(var(--bottom-navigation-height) + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 768px) { .app-nav-spacer { display: none; } }
 nav a { min-height: 44px; }
 
 .app-header-safe {
@@ -40,6 +48,25 @@ nav a { min-height: 44px; }
   .app-shell-safe {
     padding-top: 3.5rem;
   }
+}
+
+.staging-watermark {
+  position: fixed;
+  z-index: 9999;
+  top: calc(0.5rem + env(safe-area-inset-top, 0px));
+  right: 0.75rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 9999px;
+  background: rgba(185, 28, 28, 0.92);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  line-height: 1.5;
+  pointer-events: none;
+  user-select: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 /* Minimum hit boxes grow with enlarged text instead of clipping it. */

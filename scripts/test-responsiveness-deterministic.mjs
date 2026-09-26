@@ -67,6 +67,7 @@ async function run() {
   const nominaView = await read('src/views/NominaView.jsx')
   const sistemaView = await read('src/views/SistemaView.jsx')
   const holidayManager = await read('src/components/nomina/HolidayManager.jsx')
+  const holidayModals = await read('src/components/nomina/HolidayModals.jsx')
   const nominaApp = await read('src/NominaApp.jsx')
   const modal = await read('compat/components/ui/Modal.jsx')
   const baseCss = await read('compat/styles/base.css')
@@ -86,6 +87,18 @@ async function run() {
   test('TabConfiguracion (Sistema): Pestañas de configuración usan flex-wrap', () => {
     if (!tabConfiguracion.includes('flex-wrap')) {
       throw new Error('TabConfiguracion debe usar flex-wrap en su barra de pestañas')
+    }
+  })
+
+  test('TabConfiguracion (Sistema): los checkbox de concepto tienen área táctil ≥44px', () => {
+    const etiquetas = tabConfiguracion.match(/<label className="[^"]*">\s*<input type="checkbox"/g) || []
+    if (etiquetas.length === 0) {
+      throw new Error('No se encontraron etiquetas de checkbox en TabConfiguracion')
+    }
+    for (const etiqueta of etiquetas) {
+      if (!/min-h-1[12]/.test(etiqueta)) {
+        throw new Error('Cada label con checkbox en TabConfiguracion debe declarar min-h-11: el input mide 13px y el label es el área táctil real')
+      }
     }
   })
 
@@ -110,9 +123,38 @@ async function run() {
     }
   })
 
-  test('NominaApp: Contenedor principal protege con padding inferior amplio para que el nav móvil nunca obstaculice botones o contenido', () => {
-    if (!nominaApp.includes('pb-36') && !nominaApp.includes('pb-32') && !nominaApp.includes('pb-28') && !nominaApp.includes('paddingBottom')) {
-      throw new Error('NominaApp main debe declarar padding inferior amplio (pb-36 o paddingBottom con safe-area) para no tapar contenido')
+  test('NominaApp: reserva espacio real para el nav móvil con un spacer medible (no solo padding)', () => {
+    if (!nominaApp.includes('app-nav-spacer')) {
+      throw new Error('NominaApp debe incluir .app-nav-spacer: el padding de un contenedor flex con scroll no garantiza el hueco del nav')
+    }
+    if (!/\.app-nav-spacer\s*\{[^}]*--bottom-navigation-height/.test(baseCss) ||
+      !/\.app-nav-spacer\s*\{[^}]*env\(safe-area-inset-bottom/.test(baseCss)) {
+      throw new Error('.app-nav-spacer debe calcular su altura con --bottom-navigation-height y env(safe-area-inset-bottom)')
+    }
+  })
+
+  test('Nav móvil: el hueco reservado (--bottom-navigation-height) nunca es menor que la propia barra (4rem)', () => {
+    const navHeight = Number(/--bottom-navigation-height:\s*([\d.]+)rem/.exec(baseCss)?.[1])
+    if (!Number.isFinite(navHeight)) {
+      throw new Error('--bottom-navigation-height debe declararse en rem dentro de :root')
+    }
+    if (navHeight <= 4) {
+      throw new Error(`--bottom-navigation-height (${navHeight}rem) debe superar los 4rem del nav (h-16) para que la última tarjeta no quede tapada`)
+    }
+  })
+
+  test('Vistas: no duplican la reserva del nav inferior con paddings móviles propios', () => {
+    for (const [name, content] of [['NominaView', nominaView], ['SistemaView', sistemaView]]) {
+      if (/pb-(?:10|12|16|20|24|28|32|36)\b/.test(content)) {
+        throw new Error(`${name} vuelve a reservar el nav con padding grande: el hueco lo aporta .app-nav-spacer`)
+      }
+    }
+  })
+
+  test('Nav móvil: los overlays de feriados se dibujan por encima de la barra inferior', () => {
+    const overlays = holidayModals.match(/fixed inset-0 z-\[(\d+)\]/g) || []
+    if (overlays.length < 3 || overlays.some(o => Number(/z-\[(\d+)\]/.exec(o)[1]) < 98)) {
+      throw new Error('Los modales de feriados deben usar un z-index mayor que el nav inferior (z-[97]) para no quedar tapados')
     }
   })
 
@@ -337,8 +379,31 @@ async function run() {
     }
   })
 
-  // ─── 12. REGLA: GUARDARRAÍLES Y ERGONOMÍA EN ZONA DE SINCRONIZACIÓN POS ───────
-  console.log('\n━━━ 12. GUARDARRAÍLES EN ZONA DE SINCRONIZACIÓN POS (FINANZAS) ━━━')
+  // ─── 12. REGLA: CONTROLES MOBILE-FIRST DEL MARCAJE REAL DE NÓMINA ───────────
+  console.log('\n━━━ 12. MARCAJE REAL DE NÓMINA EN IPHONE (TOUCH, TIPOGRAFÍA Y CONTENCIÓN) ━━━')
+
+  const marcajeReal = await read('src/components/nomina/MarcajeLogisticaPanel.jsx')
+
+  test('Marcaje real: lista compacta de una columna en móvil, con dos columnas solo en pantallas anchas', () => {
+    if (!marcajeReal.includes('grid min-w-0 grid-cols-1 gap-2.5 lg:grid-cols-2') || !marcajeReal.includes('min-w-0')) {
+      throw new Error('La lista real debe apilar tarjetas en móvil, usar dos columnas en escritorio y contener textos largos')
+    }
+  })
+
+  test('Marcaje real: buscador evita autozoom de iOS y botones superan 44px con touchAction manipulation', () => {
+    if (!marcajeReal.includes('text-[16px]') || !marcajeReal.includes('min-h-12') || !marcajeReal.includes('touchAction: \'manipulation\'')) {
+      throw new Error('Buscador de iPhone debe tener 16px y las acciones reales, touch targets >= 44px y manipulation')
+    }
+  })
+
+  test('Marcaje real: bloquea acciones hasta cargar confirmados empleados y fecha de operación', () => {
+    if (!marcajeReal.includes('!data?.fecha') || !marcajeReal.includes('consultaConError') || !marcajeReal.includes('empleadosActualizando')) {
+      throw new Error('No se debe habilitar marcaje mientras faltan datos fiables de hoy o hay errores de consulta')
+    }
+  })
+
+  // ─── 13. REGLA: GUARDARRAÍLES Y ERGONOMÍA EN ZONA DE SINCRONIZACIÓN POS ───────
+  console.log('\n━━━ 13. GUARDARRAÍLES EN ZONA DE SINCRONIZACIÓN POS (FINANZAS) ━━━')
 
   const posModalContent = await read('src/components/finanzas/SyncPosModal.jsx')
   const posItemContent = await read('src/components/finanzas/SyncPosMetodoItem.jsx')

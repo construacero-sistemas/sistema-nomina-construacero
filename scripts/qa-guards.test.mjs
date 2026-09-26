@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { gzipSync } from 'node:zlib'
 import { inspectBundle } from './test-bundle-size.mjs'
-import { findExternalImports, hasMinimumTouchHeight, inspectResponsiveJsx } from './qa-responsive-rules.mjs'
+import { findExternalImports, hasMinimumTouchHeight, infraccionesEgress, inspectResponsiveJsx, rutaPosix } from './qa-responsive-rules.mjs'
 
 async function buildFixture(t, configure = () => {}) {
   const directory = await mkdtemp(join(tmpdir(), 'construacero-qa-'))
@@ -206,6 +206,23 @@ test('responsive guard catches UI glyphs but ignores commented examples', () => 
 
 test('responsive guard rejects invalid JSX rather than silently passing a source file', () => {
   assert.throws(() => inspectResponsiveJsx('<button className="h-9">'), /Unexpected|Unterminated/)
+})
+
+test('egress guard fires for Windows and POSIX server paths and never for client code', () => {
+  // F-2: walk() compone las rutas con path.join, que en Windows usa `\`. Las reglas
+  // que comparaban contra `server/...` no disparaban en local y sí rompían el build
+  // en CI: el comparador normalizado es el mismo que usa check-project.
+  assert.equal(rutaPosix('server\\lib\\nominaHorarios.js'), 'server/lib/nominaHorarios.js')
+  for (const ruta of ['server\\lib\\nominaHorarios.js', 'server/lib/nominaHorarios.js']) {
+    assert.equal(infraccionesEgress(ruta, 'const url = `${base}&limit=1000`').length, 1)
+    assert.deepEqual(infraccionesEgress(ruta, 'const url = `${base}&limit=500`'), [])
+  }
+  assert.deepEqual(infraccionesEgress('src\\lib\\nominaHorarios.js', 'limit=1000'), [])
+  assert.deepEqual(infraccionesEgress('scripts\\test-x.mjs', 'limit=1000'), [])
+  // select=* solo se prohíbe en el handler de nómina, con ruta nativa o normalizada.
+  assert.equal(infraccionesEgress('server\\handlers\\nomina.js', 'select=*').length, 1)
+  assert.equal(infraccionesEgress('server/handlers/nomina.js', 'select=*').length, 1)
+  assert.deepEqual(infraccionesEgress('server\\handlers\\nomina.empleados.js', 'select=*'), [])
 })
 
 test('import guard accepts internal Supabase and cross-folder imports', () => {
