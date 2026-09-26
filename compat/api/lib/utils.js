@@ -94,6 +94,12 @@ export function jsonError(message, status = 400, request = null) {
   return json({ error: message }, status, request);
 }
 
+// Marca de un 403 por CAPACIDAD insuficiente (no por rol revocado). El cliente la usa
+// para mostrar el error sin cerrar la sesión: `requireCapacidad` la emite y
+// `compat/services/authFetch.js` la consulta antes de invalidar la sesión.
+export const CODIGO_CAPACIDAD_INSUFICIENTE = 'CAPACIDAD_INSUFICIENTE'
+
+
 export function removeAccents(str) {
   if (!str) return '';
   return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");

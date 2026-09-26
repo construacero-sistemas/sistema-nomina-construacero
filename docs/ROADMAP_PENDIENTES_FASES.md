@@ -291,6 +291,72 @@ Transversal a todas las fases.
 
 ---
 
+## Pendientes de la auditoría de capacidades UI ↔ servidor (25/09/2026)
+
+Plan completo: `docs/PLAN_ALINEACION_CAPACIDADES_UI.md`. Origen: el rol `nomina` recibía 403 en acciones que la pantalla le ofrecía (períodos, ajuste de línea, pagar/revertir nómina, importar comisiones POS, carga masiva de horario, eliminar asistencia), y `authFetch` convertía ese 403 en cierre de sesión.
+
+| Fase | Alcance | Dependencia |
+|---|---|---|
+| A1 | ✅ Gates por acción en Nómina: `puedeGestionarNomina` (`gestionarUsuarios`) y `puedePagarNomina` (`operarFinanzas`); `esAdmin` queda para lectura y marcaje | ✅ |
+| A2 | ✅ Contrato escrito: rol `nomina` en todas las rutas de escritura de `nomina.permisos.test.js` + guardarraíl de paridad UI ↔ servidor en `check:project` | A1 |
+| A3 | ✅ Un 403 de capacidad no cierra la sesión (marca de motivo en `requireCapacidad` que `authFetch` distingue de la revocación de rol) | ✅ |
+
+Cerrado el 25/09/2026 (bitácora #120): las tres fases se implementaron y verificaron (`lint`, 103 archivos / 1093 pruebas, `test:qa` 22/22, `test:responsive` 41/41, `test:bundle-size` PASS, `build`, `check:project`) con recorrido en vivo del operador `nomina`.
+
+Decisiones abiertas: ¿el rol `nomina` administra personal? ¿paga nómina? La interfaz ya refleja lo que el servidor exige hoy (solo jefe/desarrollador); abrirlo es cambiar la matriz, no la UI.
+
+---
+
+## Pendientes de control de asistencia (25/09/2026)
+
+Origen: el sábado aparecía en rojo para todo el personal, cuando solo una parte viene, y el panel «Marcaje real de hoy» no tenía forma de marcar que alguien no vino (ni de corregirlo después).
+
+| Ítem | Alcance | Estado |
+|---|---|---|
+| B1 | Días laborables por empleado y con horas por día, guardados en `nomina_horarios` como horario permanente; sin filas propias se asume Lun–Sáb y el domingo nunca es laborable (se paga como feriado) | ✅ |
+| B2 | Estado «Día libre» en Asistencia, en la vista diaria y en el reloj real: no suma pendientes ni pide ausencia; quien viene igual se puede marcar | ✅ |
+| B3 | Botón «Marcar ausente» y su reversa («Deshacer ausencia») en el reloj real, solo en día laborable y solo sobre ausencias manuales | ✅ |
+| B4 | Carga masiva que se niega (409 con el conteo) a escribir el día libre de alguno de los seleccionados | ✅ |
+
+Cerrado el 25/09/2026 (bitácora #121) con `lint`, 104 archivos / 1103 pruebas, `test:qa` 22/22, `test:responsive` 41/41, los dos scripts determinísticos, `test:bundle-size` PASS, `build` y `check:project`.
+
+Decisiones abiertas: ¿la ausencia justificada debe poder registrar un motivo o un documento? ¿El personal con «sin control de asistencia» (cobro por comisión) debe seguir apareciendo en el reloj real? Queda por probar en vivo el ciclo Marcar ausente → Deshacer ausencia y falta aplicar la migración 246.
+
+---
+
+## Pendientes de la auditoría del flujo de Nómina (26/09/2026)
+
+Plan maestro completo: **`docs/PLAN_FIXEO_FLUJO_NOMINA.md`** (13 hallazgos en 4 fases, con
+evidencia, fix, guardarraíl y tests). Origen: auditoría del flujo completo (vistas → hooks →
+handlers → motor de cálculo → SQL) con simulación del motor y una prueba de componente temporal.
+
+| Fase | Alcance | Estado |
+|---|---|---|
+| 1 | **F-1** contrato horas/ausencia/jornada abierta (crítico: una jornada sin salida se paga como día completo con 0 h, y el resultado cambia según el campo que el handler no pide) · **F-2** el guardarraíl de egress no protege en Windows y `nominaHorarios.js` lo viola · **F-3** una sola fuente de verdad para los días de la semana (el salario semanal puede pagarse a 5/6) | ✅ |
+| 2 | **F-4** «Registrados» incluye días libres · **F-5** el sábado laborable se pinta como libre · **F-6** el reloj real y la vista diaria ignoran los feriados · **F-8** las horas por día configuradas no son el valor por defecto de los modales | ✅ |
+| 3 | **F-7** guardar la semana laboral sin pérdida (hoy borra y luego inserta) + índice único en `nomina_horarios` (migración 247, con limpieza previa) | ✅ |
+| 4 | **F-9** vigencia `fecha_desde` · **F-10** aviso de ausencia en día no laborable en el módulo Manual · **F-11** truncado silencioso de asistencia a 500 filas · **F-12** copy del monto fijo de feriado · **F-13** fecha operativa del grid móvil | ✅ |
+
+Ninguno de estos hallazgos lo detectaba la suite al momento de la auditoría (`check:project`,
+`lint`, 104 archivos / 1103 pruebas, los dos determinísticos y el build estaban en verde): el más
+grave vivía en el borde entre la consulta de liquidación y el motor de cálculo, donde no había
+pruebas.
+
+Cerrado el 26/09/2026 (bitácora #122) con `lint` limpio, **111 archivos / 1158 pruebas**,
+`test:qa` 23/23, `test:responsive` 41/41, `test:nomina-deterministic` 28/28,
+`test:finanzas-deterministic` 125 aserciones, `test:bundle-size` PASS, `build` OK y
+`check:project` OK (41 migraciones). Queda pendiente aplicar las migraciones **246** y **247** y el
+recorrido en vivo del reloj real y del cálculo con jornadas abiertas.
+
+**No auditado todavía**: importación y pago de comisiones POS (`nomina.comisiones.js`,
+`ImportarComisionesPosModal`) y el motor financiero/RPC más allá de su idempotencia. Merece su
+propia pasada antes de tocar esa parte.
+
+Decisiones adoptadas (26/09/2026), las cuatro con la recomendación del plan: una jornada abierta
+**bloquea** el cálculo con 409 y confirmación explícita; la ausencia en feriado no laborable **se
+bloquea** como el día libre; el divisor del salario semanal **se deriva** de los días marcados; los
+días libres **siguen sin pagarse** (el modelo paga por día registrado).
+
 ## Orden de ejecución recomendado
 
 ```text

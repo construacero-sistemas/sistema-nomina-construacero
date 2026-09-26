@@ -14,6 +14,7 @@ export {
   handleGetMarcajeHoy,
   handleMarcarEntrada,
   handleMarcarSalida,
+  handleCorregirMarcaje,
   handleGetFeriados,
   handleCrearFeriado,
   handleEliminarFeriado,
@@ -21,6 +22,12 @@ export {
   handleCrearHorario,
   validarFeriadoSolicitado,
 } from './nomina.asistencia.js'
+
+export {
+  handleGuardarHorarioEmpleado,
+  handleMarcarAusencia,
+  handleAnularEntradaComoAusencia,
+} from './nomina.horarios.js'
 
 export {
   handleRegistrarAsistencia,

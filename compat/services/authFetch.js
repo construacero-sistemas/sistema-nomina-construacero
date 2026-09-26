@@ -1,6 +1,7 @@
 import supabase, { createRequestScope } from './supabase/client'
 import { apiUrl } from './apiBase'
 import useAuthStore from '../store/useAuthStore'
+import { CODIGO_CAPACIDAD_INSUFICIENTE } from '../api/lib/utils.js'
 
 const DEFAULT_TIMEOUT = 15000
 let refreshPromise = null
@@ -9,6 +10,19 @@ function assertSession(original) {
   const current = useAuthStore.getState()
   if (current.sessionGeneration !== original.sessionGeneration || current.user?.id !== original.user?.id) {
     throw new DOMException('La sesión cambió durante la solicitud', 'AbortError')
+  }
+}
+
+// Un 403 por CAPACIDAD insuficiente (`requireCapacidad`) significa «esta acción no es
+// tuya», no «tu rol fue revocado»: se devuelve el error a la UI sin borrar el perfil.
+// Los 403 de validateOperator (rol revocado, operador inactivo) no traen la marca y sí
+// cierran la sesión, que es el comportamiento que ya existía.
+async function esDenegacionPorCapacidad(response) {
+  try {
+    const payload = await response.clone().json()
+    return payload?.code === CODIGO_CAPACIDAD_INSUFICIENTE
+  } catch {
+    return false
   }
 }
 
@@ -57,7 +71,7 @@ export async function authFetch(path, options = {}) {
     if ([401, 403].includes(response.status)) {
       // Invalidación de rol; no restaurar el perfil administrativo cacheado.
       if (response.status === 401) original.expireSession?.('La sesión terminó. Inicia sesión nuevamente.')
-      else original.denyAccess?.('Tu cuenta no tiene autorización para esta operación.')
+      else if (!(await esDenegacionPorCapacidad(response))) original.denyAccess?.('Tu cuenta no tiene autorización para esta operación.')
     }
     return response
   } catch (error) {

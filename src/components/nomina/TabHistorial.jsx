@@ -167,10 +167,10 @@ export default function TabHistorial() {
         </>
       )}
 
+      {/* Historial es solo consulta: sin las llaves de escritura el modal queda de lectura. */}
       {detalle && (
         <PeriodoDetalleModal
           periodo={detalle}
-          esAdmin={false}
           onClose={() => setDetalle(null)}
         />
       )}

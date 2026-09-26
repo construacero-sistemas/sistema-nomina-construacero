@@ -98,6 +98,28 @@ describe('Authenticated request boundaries', () => {
     expect(mocks.auth.refreshSession).not.toHaveBeenCalled()
   })
 
+  // Un 403 por CAPACIDAD («esta acción no es tuya») no es una revocación de rol: la
+  // sesión sigue viva y el error llega íntegro a la interfaz.
+  it('a capability 403 keeps the session and delivers the error untouched', async () => {
+    fetch.mockResolvedValue(reply(403, { error: 'Acceso denegado: no tienes permiso para esta acción', code: 'CAPACIDAD_INSUFICIENTE' }))
+    const result = await authFetch('/api/nomina/periodos/crear', { method: 'POST', body: '{}' })
+
+    expect(result.status).toBe(403)
+    expect(await result.json()).toEqual({
+      error: expect.stringMatching(/Acceso denegado/i),
+      code: 'CAPACIDAD_INSUFICIENTE',
+    })
+    expect(state.denyAccess).not.toHaveBeenCalled()
+    expect(state.expireSession).not.toHaveBeenCalled()
+    expect(mocks.auth.refreshSession).not.toHaveBeenCalled()
+  })
+
+  it('a 403 without the capability mark still revokes the profile', async () => {
+    fetch.mockResolvedValue(reply(403, { error: 'Este rol no tiene acceso operativo al sistema' }))
+    expect((await authFetch('/api/example')).status).toBe(403)
+    expect(state.denyAccess).toHaveBeenCalledTimes(1)
+  })
+
   it('preserves caller cancellation while session lookup is stalled', async () => {
     mocks.auth.getSession.mockReturnValue(new Promise(() => {}))
     const caller = new AbortController()

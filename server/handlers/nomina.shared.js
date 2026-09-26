@@ -48,11 +48,27 @@ export function booleanNominaValido(value) {
   return value === undefined || value === null || typeof value === 'boolean'
 }
 
-export function horasEntradaSalidaValidas(horaEntrada, horaSalida) {
-  const tieneEntrada = horaEntrada !== undefined && horaEntrada !== null && horaEntrada !== ''
-  const tieneSalida = horaSalida !== undefined && horaSalida !== null && horaSalida !== ''
-  if (!tieneEntrada && !tieneSalida) return true
-  return tieneEntrada && tieneSalida && horaNominaValida(horaEntrada) && horaNominaValida(horaSalida)
+// Nota: no existe un validador «ambas horas opcionales». Antes `horasEntradaSalidaValidas`
+// aceptaba entrada y salida vacías y el registro resultante se liquidaba como día
+// completo con 0 h (hallazgo F-1 del plan de flujo de nómina). El contrato vigente vive
+// en los handlers: un registro de horas exige `horaNominaValida` en entrada Y salida;
+// la ausencia es la única fila válida sin horas.
+
+// ── Zona horaria operativa ─────────────────────────────────────────────────────
+// El marcaje, la ausencia y los períodos se fechan en la zona de la empresa, no en
+// la del runtime (Cloudflare/Vercel corren en UTC). Única fuente del nombre de zona.
+export function zonaNomina(env) {
+  return env?.NOMINA_TIMEZONE || 'America/Caracas'
+}
+
+/** Fecha `YYYY-MM-DD` de hoy en la zona operativa (acepta `NOMINA_NOW` en pruebas). */
+export function fechaOperativaNomina(env) {
+  const ahora = env?.NOMINA_NOW ? new Date(env.NOMINA_NOW) : new Date()
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: zonaNomina(env), year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(ahora)
+  const valores = Object.fromEntries(partes.map(({ type, value }) => [type, value]))
+  return `${valores.year}-${valores.month}-${valores.day}`
 }
 
 export function svcHeaders(env, prefer = 'return=representation') {
@@ -61,6 +77,54 @@ export function svcHeaders(env, prefer = 'return=representation') {
     Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`,
     'Content-Type': 'application/json',
     Prefer: prefer,
+  }
+}
+
+// Lee configuración de empleados incluyendo `controla_asistencia`, la bandera que
+// llega con la migración 246. Mientras esa migración no esté aplicada PostgREST
+// responde 42703 («column does not exist») y el flujo de asistencia no debe caerse
+// por eso: se reintenta sin la columna y todos se comportan como antes (controlan
+// asistencia). Una vez aplicada, la bandera se respeta en todos los llamadores.
+export async function fetchConfigsConControl(env, headers, { filtros = '', select = 'id', orden = '', limit = 1 } = {}) {
+  const url = campos => `${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?${filtros}&select=${campos}${orden ? `&order=${orden}` : ''}&limit=${limit}`
+  let response = await fetch(url(`${select},controla_asistencia`), { headers })
+  let controlDisponible = true
+  if (response.status === 400) {
+    const detalle = await response.text().catch(() => '')
+    if (detalle.includes('controla_asistencia')) {
+      controlDisponible = false
+      response = await fetch(url(select), { headers })
+    }
+  }
+  if (!response.ok) return { ok: false, rows: [] }
+  const rows = await response.json()
+  return {
+    ok: true,
+    rows: (rows ?? []).map(row => ({
+      ...row,
+      controla_asistencia: controlDisponible ? row.controla_asistencia !== false : true,
+    })),
+  }
+}
+
+// Cuerpo de un registro de asistencia manual (horario previsto o ausencia).
+// Vive aquí porque lo escriben tanto el registro individual como el marcaje de
+// ausencia del panel de reloj real, y ambos deben guardar la misma forma.
+export function construirPayloadAsistenciaManual({ empleadoId, fecha, horaEntrada, horaSalida, esAusencia, esFeriado, nota, descanso, operador, calculation }) {
+  const { horas_descanso: _horasDescanso, ...camposCalculados } = calculation
+  return {
+    empleado_id: empleadoId,
+    fecha,
+    hora_entrada: esAusencia ? null : horaEntrada || null,
+    hora_salida: esAusencia ? null : horaSalida || null,
+    ...camposCalculados,
+    horas_descanso: descanso,
+    estado_marcaje: 'manual',
+    es_feriado: !!esFeriado,
+    es_ausencia: !!esAusencia,
+    nota: nota || null,
+    registrado_por: operador.id,
+    cuenta_id: operador.cuenta_id,
   }
 }
 

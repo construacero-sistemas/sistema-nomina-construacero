@@ -92,6 +92,18 @@ describe('contrato SQL de Finanzas y autorización', () => {
     expect(code).not.toContain("WHEN 'gestionarUsuarios'  THEN ARRAY['administracion'")
   })
 
+  it('248 — aplica comisiones POS en una transacción, con locks, tenant y guardián de capacidad', async () => {
+    const sql = await migration('248_nomina_comisiones_atomicas.sql')
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.nomina_aplicar_comisiones_pos')
+    expect(sql).toContain('PERFORM pg_advisory_xact_lock(238, 1)')
+    expect(sql).toContain("public.roles_capacidad('gestionarUsuarios')")
+    expect(sql).toContain('FOR UPDATE')
+    expect(sql).toContain('WHERE l.cuenta_id = p_cuenta_id AND l.periodo_id = p_periodo_id AND l.empleado_id = employee_id')
+    expect(sql).toContain('INSERT INTO public.auditoria')
+    expect(sql).toContain('REVOKE ALL ON FUNCTION public.nomina_aplicar_comisiones_pos')
+    expect(sql).toContain('GRANT EXECUTE ON FUNCTION public.nomina_aplicar_comisiones_pos(UUID,UUID,UUID,JSONB,TEXT)\n  TO service_role')
+  })
+
   it('mantiene el orden completo de las migraciones entregadas', async () => {
     const names = [
       '001_nomina_base_contract.sql',
@@ -102,14 +114,20 @@ describe('contrato SQL de Finanzas y autorización', () => {
       '243_roles_operativos_autorizacion.sql',
       '244_roles_operativos_operaciones.sql',
       '245_converge_administracion_to_jefe.sql',
+      '246_nomina_control_asistencia.sql',
+      '247_nomina_horarios_unico.sql',
+      '248_nomina_comisiones_atomicas.sql',
     ]
     expect(names[0]).toBe('001_nomina_base_contract.sql')
-    expect(names.at(-3)).toBe('243_roles_operativos_autorizacion.sql')
-    expect(names.at(-2)).toBe('244_roles_operativos_operaciones.sql')
-    expect(names.at(-1)).toBe('245_converge_administracion_to_jefe.sql')
+    expect(names.indexOf('243_roles_operativos_autorizacion.sql')).toBeLessThan(names.indexOf('244_roles_operativos_operaciones.sql'))
+    expect(names.indexOf('244_roles_operativos_operaciones.sql')).toBeLessThan(names.indexOf('245_converge_administracion_to_jefe.sql'))
+    expect(names.at(-3)).toBe('246_nomina_control_asistencia.sql')
+    expect(names.at(-2)).toBe('247_nomina_horarios_unico.sql')
+    expect(names.at(-1)).toBe('248_nomina_comisiones_atomicas.sql')
     expect(Number(names.at(-1).slice(0, 3))).toBeGreaterThan(Number(names.at(-2).slice(0, 3)))
     await expect(migration('221_finanzas_movimientos.sql')).resolves.toBeTruthy()
     await expect(migration('222_finanzas_admin_role_guard.sql')).resolves.toBeTruthy()
     await expect(migration('245_converge_administracion_to_jefe.sql')).resolves.toBeTruthy()
+    await expect(migration('248_nomina_comisiones_atomicas.sql')).resolves.toBeTruthy()
   })
 })

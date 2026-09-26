@@ -2,36 +2,83 @@
 // Registro y edición rápida e intuitiva de la asistencia diaria de un empleado.
 import { useState } from 'react'
 import { Clock, Trash2, Calendar, AlertCircle, Sparkles, UserX, Coffee } from 'lucide-react'
-import { useRegistrarAsistencia, useEliminarAsistencia } from '../../hooks/useNomina'
+import { useRegistrarAsistencia, useEliminarAsistencia, useHorarios } from '../../hooks/useNomina'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 import { formatHora12 } from '../../utils/timeUtils.js'
+import { semanaEditable } from '../../utils/diasLaborables.js'
+
+/** Horas de permanencia entre dos HH:MM (la salida anterior a la entrada cruza medianoche). */
+function permanenciaEnHoras(entrada, salida) {
+  const aMinutos = valor => {
+    const [horas, minutos] = String(valor || '').slice(0, 5).split(':').map(Number)
+    return Number.isFinite(horas) ? horas * 60 + (minutos || 0) : null
+  }
+  const inicio = aMinutos(entrada)
+  let fin = aMinutos(salida)
+  if (inicio === null || fin === null) return null
+  if (fin < inicio) fin += 24 * 60
+  return Math.max(0, (fin - inicio) / 60)
+}
+
+/** Suma horas a un HH:MM (para los atajos de «+1h / +2h extra»). */
+function sumarHoras(hora, horas) {
+  const [h, m] = String(hora || '').slice(0, 5).split(':').map(Number)
+  if (!Number.isFinite(h)) return null
+  const total = (h * 60 + (m || 0) + horas * 60) % (24 * 60)
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
 
 const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all font-mono'
 
-export default function AsistenciaModal({ empleado, fecha, registro, feriado, esAdmin, onClose }) {
+// Registrar o corregir un día exige `verNomina` (lo que `esAdmin`/administrarNomina
+// ya implica), pero ELIMINAR el registro exige `gestionarUsuarios` en el servidor:
+// por eso el botón de borrado se gatea con `puedeGestionarNomina`.
+export default function AsistenciaModal({ empleado, fecha, registro, feriado, esAdmin, puedeGestionarNomina = false, onClose, soloLectura = false, horasDescansoDefault = 1 }) {
   const registrar = useRegistrarAsistencia()
   const eliminar  = useEliminarAsistencia()
 
-  const jornada = Number(empleado?.horas_jornada) || 8
-  const puedeEditar = !!esAdmin
+  const esMarcajeReal = soloLectura || ['entrada', 'completo', 'corregido'].includes(registro?.estado_marcaje)
+  const puedeEditar = !!esAdmin && !esMarcajeReal
 
   const dow = new Date(`${fecha}T12:00:00`).getDay()
   const esSabado = dow === 6
 
-  const [horaEntrada, setHoraEntrada] = useState(
-    String(registro?.hora_entrada ?? empleado?.hora_inicio ?? '08:00').slice(0, 5)
-  )
-  const [horaSalida, setHoraSalida] = useState(
-    String(registro?.hora_salida ?? empleado?.hora_fin ?? (esSabado ? '13:00' : '17:00')).slice(0, 5)
-  )
-  const [horasDescanso, setHorasDescanso] = useState(
-    registro?.horas_descanso != null
-      ? String(registro.horas_descanso)
-      : (esSabado ? '0' : '1')
-  )
-  const [esFeriado, setEsFeriado]   = useState(registro?.es_feriado ?? !!feriado)
-  const [esAusencia, setEsAusencia] = useState(registro?.es_ausencia ?? false)
+  // F-8: los valores por defecto salen del día configurado de ESTA persona en su
+  // semana laboral («Días que trabaja»). El 08:00–17:00 genérico y el 13:00 del
+  // sábado solo aplican cuando su ficha no tiene semana configurada: antes el modal
+  // proponía un horario distinto al de la persona.
+  const { data: horarios = [] } = useHorarios(empleado?.empleado_id || '')
+  const semana = semanaEditable(horarios, {
+    horaInicio: empleado?.hora_inicio, horaFin: empleado?.hora_fin, horasJornada: empleado?.horas_jornada,
+  })
+  const diaConfigurado = semana.hayHorario
+    ? (semana.dias.find(dia => dia.diaSemana === dow) || null)
+    : null
+  const jornada = Number(diaConfigurado?.horasJornada ?? empleado?.horas_jornada) || 8
+  // Descanso derivado de la ficha: lo que sobra entre la permanencia prevista y la
+  // jornada efectiva del día (una jornada de 8 h con 08:00–17:00 descansa 1 h).
+  const descansoDeFicha = diaConfigurado
+    ? Math.max(0, Math.round(((permanenciaEnHoras(diaConfigurado.horaInicio, diaConfigurado.horaFin) ?? 0) - Number(diaConfigurado.horasJornada)) * 100) / 100)
+    : null
+
+  const entradaInicial = String(registro?.hora_entrada ?? diaConfigurado?.horaInicio ?? empleado?.hora_inicio ?? '08:00').slice(0, 5)
+  const salidaInicial = String(registro?.hora_salida ?? diaConfigurado?.horaFin ?? empleado?.hora_fin ?? (esSabado ? '13:00' : '17:00')).slice(0, 5)
+  const descansoInicial = registro?.horas_descanso != null
+    ? String(registro.horas_descanso)
+    : (descansoDeFicha != null ? String(descansoDeFicha) : (esSabado ? '0' : String(horasDescansoDefault)))
+  // Base de los atajos: el día configurado de su semana o, sin ella, la ficha.
+  const inicioAtajo = diaConfigurado?.horaInicio ?? String(empleado?.hora_inicio ?? '08:00').slice(0, 5)
+  const finAtajo = diaConfigurado?.horaFin ?? String(empleado?.hora_fin ?? (esSabado ? '13:00' : '17:00')).slice(0, 5)
+  const descansoAtajo = descansoDeFicha != null ? String(descansoDeFicha) : (esSabado ? '0' : String(horasDescansoDefault))
+  const etiquetaJornada = diaConfigurado ? `Su semana: ${diaConfigurado.horasJornada}h` : `${jornada}h de jornada`
+  const feriadoInicial = registro?.es_feriado ?? !!feriado
+  const ausenciaInicial = registro?.es_ausencia ?? false
+  const [horaEntrada, setHoraEntrada] = useState(entradaInicial)
+  const [horaSalida, setHoraSalida] = useState(salidaInicial)
+  const [horasDescanso, setHorasDescanso] = useState(descansoInicial)
+  const [esFeriado, setEsFeriado]   = useState(feriadoInicial)
+  const [esAusencia, setEsAusencia] = useState(ausenciaInicial)
   const [nota, setNota]             = useState(registro?.nota ?? '')
   const [confirmandoBorrar, setConfirmandoBorrar] = useState(false)
   const [error, setError] = useState('')
@@ -62,7 +109,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
 
   const cargando = registrar.isPending || eliminar.isPending
 
-  function aplicarPreset(entrada, salida, descanso = esSabado ? '0' : '1') {
+  function aplicarPreset(entrada, salida, descanso = esSabado ? '0' : String(horasDescansoDefault)) {
     setEsAusencia(false)
     setHoraEntrada(entrada)
     setHoraSalida(salida)
@@ -85,6 +132,8 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
       await registrar.mutateAsync({
         empleadoId: empleado.empleado_id,
         fecha,
+        registroIdEsperado: registro?.id || null,
+        estadoMarcajeEsperado: registro?.estado_marcaje || null,
         horaEntrada: esAusencia ? null : horaEntrada,
         horaSalida:  esAusencia ? null : horaSalida,
         esFeriado, esAusencia,
@@ -109,9 +158,16 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
   return (
     <Modal
       isOpen onClose={onClose}
+      busy={cargando}
+      dirty={puedeEditar && (horaEntrada !== entradaInicial || horaSalida !== salidaInicial || horasDescanso !== descansoInicial || esFeriado !== feriadoInicial || esAusencia !== ausenciaInicial || nota !== (registro?.nota ?? ''))}
       title={capitalizarPalabras(empleado?.empleado?.nombre) || 'Registro de Asistencia'}
       className="max-w-md">
       <div className="space-y-4">
+        {esMarcajeReal && (
+          <div className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm leading-relaxed text-violet-950">
+            Este es un marcaje real del reloj. Para mantenerlo protegido, aquí se muestra solo en lectura; consúltalo o corrígelo desde <strong>Marcaje real</strong>.
+          </div>
+        )}
         {/* Cabecera del día */}
         <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center justify-between">
           <div>
@@ -124,14 +180,14 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
             <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 text-[10px] font-bold border border-purple-200">
               {feriado.nombre || 'Feriado'}
             </span>
-          ) : new Date(`${fecha}T12:00:00`).getDay() === 6 ? (
+          ) : esSabado && !diaConfigurado ? (
             <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-200">
               Sábado Rotativo
             </span>
           ) : null}
         </div>
 
-        {new Date(`${fecha}T12:00:00`).getDay() === 6 && (
+        {esSabado && !diaConfigurado && (
           <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-2.5 text-[11px] text-amber-900 leading-relaxed">
             <strong>Sábado Rotativo:</strong> Registra la jornada si el trabajador laboró este fin de semana para computar su pago de sábado. Si disfrutó de su descanso reglamentario, no es necesario registrar marcaje.
           </div>
@@ -152,33 +208,31 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
               <button
                 type="button"
-                onClick={() => aplicarPreset('08:00', '17:00')}
+                onClick={() => aplicarPreset(inicioAtajo, finAtajo, descansoAtajo)}
                 className="py-2 px-2 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-emerald-800 text-[11px] font-bold transition-all text-center min-h-11 flex flex-col items-center justify-center"
                 style={{ touchAction: 'manipulation' }}
               >
-                08:00 AM – 05:00 PM
-                <span className="block text-[9px] font-normal text-emerald-600">Estándar (8h)</span>
+                {formatHora12(inicioAtajo)} – {formatHora12(finAtajo)}
+                <span className="block text-[9px] font-normal text-emerald-600">{etiquetaJornada}</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => aplicarPreset('08:00', new Date(`${fecha}T12:00:00`).getDay() === 6 ? '13:00' : '18:00')}
+                onClick={() => aplicarPreset(inicioAtajo, sumarHoras(finAtajo, 1), descansoAtajo)}
                 className="py-2 px-2 rounded-xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-800 text-[11px] font-bold transition-all text-center min-h-11 flex flex-col items-center justify-center"
                 style={{ touchAction: 'manipulation' }}
               >
-                {new Date(`${fecha}T12:00:00`).getDay() === 6 ? '08:00 AM – 01:00 PM' : '08:00 AM – 06:00 PM'}
-                <span className="block text-[9px] font-normal text-amber-600">
-                  {new Date(`${fecha}T12:00:00`).getDay() === 6 ? 'Medio Sábado (5h)' : '+1h Extra'}
-                </span>
+                {formatHora12(inicioAtajo)} – {formatHora12(sumarHoras(finAtajo, 1))}
+                <span className="block text-[9px] font-normal text-amber-600">+1h Extra</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => aplicarPreset('08:00', '19:00')}
+                onClick={() => aplicarPreset(inicioAtajo, sumarHoras(finAtajo, 2), descansoAtajo)}
                 className="py-2 px-2 rounded-xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-800 text-[11px] font-bold transition-all text-center min-h-11 flex flex-col items-center justify-center"
                 style={{ touchAction: 'manipulation' }}
               >
-                08:00 AM – 07:00 PM
+                {formatHora12(inicioAtajo)} – {formatHora12(sumarHoras(finAtajo, 2))}
                 <span className="block text-[9px] font-normal text-amber-600">+2h Extra</span>
               </button>
 
@@ -195,7 +249,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
           </div>
         )}
 
-        <form onSubmit={guardar} className="space-y-4 pt-1">
+        <form id="asistencia-manual-form" onSubmit={guardar} className="space-y-4 pt-1">
           {/* Opciones del día */}
           <div className="flex flex-wrap items-center gap-3">
             <label className="min-h-11 flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
@@ -317,7 +371,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
 
       {/* Footer */}
       <div className="flex items-center justify-between gap-2 pt-3 mt-4 border-t border-slate-100">
-        {registro && esAdmin ? (
+        {registro && puedeGestionarNomina && !esMarcajeReal ? (
           confirmandoBorrar ? (
             <div className="flex items-center gap-1.5">
               <button onClick={borrar} disabled={cargando}
@@ -343,8 +397,9 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
             Cerrar
           </button>
           {puedeEditar && (
-            <button onClick={guardar} disabled={cargando}
-              className="px-5 py-2 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-primary/20 transition-all active:scale-95">
+            <button disabled={cargando}
+              type="submit" form="asistencia-manual-form"
+              className="px-5 py-2 min-h-11 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-primary/20 transition-all active:scale-95">
               {registrar.isPending ? 'Guardando...' : 'Guardar asistencia'}
             </button>
           )}

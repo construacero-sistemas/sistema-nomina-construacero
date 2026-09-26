@@ -5,13 +5,15 @@ import { normalizarConcepto } from '../lib/nominaConceptos.js'
 import { normalizarReglaLegal } from '../lib/nominaLegal.js'
 import { normalizarTasa } from '../lib/tasasCambio.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
-import { ROLES_ADMIN, ROLES_NOMINA, fechaNominaValida, svcHeaders, tenantGuard } from './nomina.shared.js'
+import { requireCapacidad } from '../lib/permissions.js'
+import { fechaNominaValida, svcHeaders, tenantGuard } from './nomina.shared.js'
 
 export async function handleGetConceptos(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  if (!ROLES_NOMINA.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoVer = requireCapacidad(operador, 'verNomina', request)
+  if (denegadoVer) return denegadoVer
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_conceptos?activo=eq.true${nominaTenantFilter(operador.cuenta_id)}&select=id,codigo,nombre,tipo,imponible,obligatorio,moneda_default,formula_key,fecha_desde,fecha_hasta&order=codigo.asc&limit=500`, { headers })
@@ -23,7 +25,8 @@ export async function handleCrearConcepto(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador } = v
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body
@@ -41,7 +44,8 @@ export async function handleGetTasasSnapshots(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  if (!ROLES_NOMINA.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoVer = requireCapacidad(operador, 'verNomina', request)
+  if (denegadoVer) return denegadoVer
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   const url = new URL(request.url)
@@ -59,7 +63,8 @@ export async function handleCrearTasaSnapshot(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body
@@ -85,7 +90,8 @@ export async function handleGetReglasLegales(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  if (!ROLES_NOMINA.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoVer = requireCapacidad(operador, 'verNomina', request)
+  if (denegadoVer) return denegadoVer
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_reglas_legal?order=codigo.asc,fecha_desde.desc${nominaTenantFilter(operador.cuenta_id)}&select=id,codigo,nombre,tipo,valor,unidad,formula_key,base_key,fecha_desde,fecha_hasta,version,fuente,aprobado_por,aprobado_en,activo&limit=500`, { headers })
@@ -97,7 +103,8 @@ export async function handleCrearReglaLegal(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador } = v
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body

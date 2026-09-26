@@ -18,7 +18,7 @@
 // El guardrail (scripts/check-project.mjs) vigila este archivo.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { jsonError } from './utils.js'
+import { json, CODIGO_CAPACIDAD_INSUFICIENTE } from './utils.js'
 
 // Alias de compatibilidad: el único rol administrativo vigente es `jefe`.
 export const ADMIN_ROLE = 'jefe'
@@ -205,7 +205,9 @@ export function rutaParaRol(rol) {
  */
 export function requireCapacidad(operador, capacidad, request) {
   if (tieneCapacidad(operador, capacidad)) return null
-  return jsonError('Acceso denegado: no tienes permiso para esta acción', 403, request)
+  // El `code` distingue «no puedes hacer ESTA acción» de «tu rol ya no vale»: el
+  // segundo caso lo emite validateOperator y SÍ invalida la sesión en el cliente.
+  return json({ error: 'Acceso denegado: no tienes permiso para esta acción', code: CODIGO_CAPACIDAD_INSUFICIENTE }, 403, request)
 }
 
 // ── Compatibilidad con el código existente ───────────────────────────────────

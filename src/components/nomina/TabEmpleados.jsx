@@ -16,8 +16,11 @@ import EmpleadoConfigModal from './EmpleadoConfigModal'
 import ComisionPagoModal from './ComisionPagoModal.jsx'
 import EmpleadoBajaModal from './EmpleadoBajaModal.jsx'
 import EmpleadoEliminarModal from './EmpleadoEliminarModal.jsx'
+import ControlAsistenciaToggle from './ControlAsistenciaToggle.jsx'
+import { logClientError } from '../../../compat/utils/errorLogger.js'
 import { formatRangoHoras12 } from '../../utils/timeUtils'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
+import { diasLaborablesTexto } from '../../utils/diasLaborables.js'
 
 function fmt(n) {
   return (Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -30,9 +33,14 @@ function esVendedor(config) {
   return cargo.includes('vendedor') || cargo.includes('ventas')
 }
 
-export default function TabEmpleados({ esAdmin }) {
+// `esAdmin` (administrarNomina) es lectura: plantilla, montos y vista de Bajas.
+// `puedeGestionarNomina` (gestionarUsuarios) habilita alta, edición, baja, reactivación,
+// eliminación y el interruptor de asistencia; `puedePagarComision` refleja `operarFinanzas`,
+// porque pagar una comisión crea un egreso en Finanzas. El servidor exige exactamente esas
+// capacidades, así que el rol de nómina no debe ver ninguno de esos botones.
+export default function TabEmpleados({ esAdmin, puedePagarComision = false, puedeGestionarNomina = false }) {
   const { data: allConfigs = [], isLoading, isError, refetch } = useConfigEmpleados({ incluirInactivas: true })
-  const { data: clientes = [] } = useNominaEmpleados({ enabled: esAdmin })
+  const { data: clientes = [] } = useNominaEmpleados({ enabled: esAdmin && puedeGestionarNomina })
   const { fmtBs, shortLabelTasa } = useMonedaNomina()
   const actualizarConfig = useActualizarConfigEmpleado()
   const eliminarConfig = useEliminarConfigEmpleado()
@@ -95,6 +103,17 @@ export default function TabEmpleados({ esAdmin }) {
     }
   }
 
+  // Control de asistencia: solo cambia la visibilidad en la zona de Asistencia.
+  // El aviso de las consecuencias lo muestra el propio interruptor antes de apagarlo.
+  const cambiarAsistencia = async (config, valor) => {
+    try {
+      await actualizarConfig.mutateAsync({ id: config.id, controlaAsistencia: valor })
+    } catch (err) {
+      // El hook ya avisa al usuario con un toast; aquí queda la traza para diagnóstico.
+      logClientError({ mensaje: `Error al cambiar el control de asistencia: ${err?.message || err}`, stack: err?.stack, categoria: 'NOMINA_ASISTENCIA' })
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <details className="rounded-2xl border border-slate-200 bg-white p-3">
@@ -115,7 +134,7 @@ export default function TabEmpleados({ esAdmin }) {
       </div>
       </details>
 
-      {sinConfigurar.length > 0 && (
+      {puedeGestionarNomina && sinConfigurar.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2.5">
           <AlertTriangle size={16} className="text-amber-600 shrink-0" />
           <p className="text-xs text-amber-900 flex-1">
@@ -189,29 +208,27 @@ export default function TabEmpleados({ esAdmin }) {
             <RateSelector />
           </div>
 
-          {esAdmin && (
-            <>
-              {kpis.vendedoresCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setModalComision({})}
-                  className="flex items-center gap-1.5 text-amber-900 bg-amber-100 hover:bg-amber-200 font-black text-xs px-3.5 py-2 rounded-xl transition-all shadow-xs active:scale-95 border border-amber-300"
-                  title="Registrar comisión a un vendedor"
-                >
-                  <DollarSign size={14} className="text-amber-700" />
-                  <span>Pagar Comisión</span>
-                </button>
-              )}
+          {puedePagarComision && kpis.vendedoresCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setModalComision({})}
+              className="flex items-center gap-1.5 text-amber-900 bg-amber-100 hover:bg-amber-200 font-black text-xs px-3.5 py-2 rounded-xl transition-all shadow-xs active:scale-95 border border-amber-300"
+              title="Registrar comisión a un vendedor"
+            >
+              <DollarSign size={14} className="text-amber-700" />
+              <span>Pagar Comisión</span>
+            </button>
+          )}
 
-              <button
-                type="button"
-                onClick={() => setModal({ modo: 'crear' })}
-                className="flex items-center gap-1.5 text-white font-black text-xs px-3.5 py-2 rounded-xl transition-all shadow-md shadow-primary/20 hover:brightness-110 active:scale-95 bg-primary"
-              >
-                <Plus size={14} />
-                <span>Nuevo Empleado</span>
-              </button>
-            </>
+          {puedeGestionarNomina && (
+            <button
+              type="button"
+              onClick={() => setModal({ modo: 'crear' })}
+              className="flex items-center gap-1.5 text-white font-black text-xs px-3.5 py-2 rounded-xl transition-all shadow-md shadow-primary/20 hover:brightness-110 active:scale-95 bg-primary"
+            >
+              <Plus size={14} />
+              <span>Nuevo Empleado</span>
+            </button>
           )}
         </div>
       </div>
@@ -233,8 +250,8 @@ export default function TabEmpleados({ esAdmin }) {
           description={verBajas
             ? (busqueda.trim() ? 'Prueba con otro término de búsqueda.' : 'Los empleados que des de baja aparecerán aquí y podrás reactivarlos.')
             : configs.length === 0 ? 'Registra aquí al empleado para configurar su salario y jornada o puesto de vendedor.' : 'Prueba con otro término de búsqueda o filtro.'}
-          actionLabel={!verBajas && configs.length === 0 && esAdmin ? 'Agregar a nómina' : undefined}
-          onAction={!verBajas && configs.length === 0 && esAdmin ? () => setModal({ modo: 'crear' }) : undefined}
+          actionLabel={!verBajas && configs.length === 0 && puedeGestionarNomina ? 'Agregar a nómina' : undefined}
+          onAction={!verBajas && configs.length === 0 && puedeGestionarNomina ? () => setModal({ modo: 'crear' }) : undefined}
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -242,7 +259,7 @@ export default function TabEmpleados({ esAdmin }) {
             <EmpleadoBajaCard
               key={c.id}
               config={c}
-              esAdmin={esAdmin}
+              puedeGestionar={puedeGestionarNomina}
               cargando={actualizarConfig.isPending || eliminarConfig.isPending}
               onReactivar={() => reactivar(c)}
               onEliminar={() => setEmpleadoParaEliminar(c)}
@@ -252,10 +269,14 @@ export default function TabEmpleados({ esAdmin }) {
               key={c.id}
               config={c}
               esAdmin={esAdmin}
+              puedeGestionar={puedeGestionarNomina}
+              puedePagarComision={puedePagarComision}
               mostrarMontos={esAdmin}
+              cargando={actualizarConfig.isPending}
               onEditar={() => setModal({ modo: 'editar', config: c })}
               onPagarComision={() => setModalComision(c)}
               onDarDeBaja={() => setEmpleadoParaBaja(c)}
+              onCambiarAsistencia={valor => cambiarAsistencia(c, valor)}
             />
           ))}
         </div>
@@ -300,13 +321,9 @@ export default function TabEmpleados({ esAdmin }) {
           isOpen
           empleado={empleadoParaEliminar}
           onClose={() => setEmpleadoParaEliminar(null)}
-          onConfirm={async () => {
-            try {
-              await eliminarConfig.mutateAsync({ id: empleadoParaEliminar.id })
-              setEmpleadoParaEliminar(null)
-            } catch (err) {
-              console.error('Error al eliminar empleado:', err)
-            }
+          onConfirm={async options => {
+            await eliminarConfig.mutateAsync({ id: empleadoParaEliminar.id, ...options })
+            setEmpleadoParaEliminar(null)
           }}
           cargando={eliminarConfig.isPending}
         />
@@ -315,7 +332,7 @@ export default function TabEmpleados({ esAdmin }) {
   )
 }
 
-function EmpleadoBajaCard({ config, esAdmin, cargando, onReactivar, onEliminar }) {
+function EmpleadoBajaCard({ config, puedeGestionar, cargando, onReactivar, onEliminar }) {
   const nombre = capitalizarPalabras(config.empleado?.nombre) || 'Sin nombre'
   return (
     <article className="bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden min-w-0 opacity-90">
@@ -338,7 +355,7 @@ function EmpleadoBajaCard({ config, esAdmin, cargando, onReactivar, onEliminar }
         Sin acceso a asistencia, períodos ni pagos mientras esté de baja.
       </div>
 
-      {esAdmin && (
+      {puedeGestionar && (
         <div className="border-t border-slate-100 px-3 py-2 bg-white flex items-center gap-2">
           <button
             type="button"
@@ -368,7 +385,7 @@ function EmpleadoBajaCard({ config, esAdmin, cargando, onReactivar, onEliminar }
   )
 }
 
-function EmpleadoNominaCard({ config, esAdmin, mostrarMontos = true, onEditar, onPagarComision, onDarDeBaja }) {
+function EmpleadoNominaCard({ config, esAdmin, puedeGestionar = false, puedePagarComision = false, mostrarMontos = true, cargando = false, onEditar, onPagarComision, onDarDeBaja, onCambiarAsistencia }) {
   const { fmtBs } = useMonedaNomina()
   const nombre = capitalizarPalabras(config.empleado?.nombre) || 'Sin nombre'
   const salarioDia = Number(config.salario_dia_usd) || 0
@@ -413,6 +430,19 @@ function EmpleadoNominaCard({ config, esAdmin, mostrarMontos = true, onEditar, o
             <Clock size={11} />Jornada: {Number(config.horas_jornada) || 0}h ({formatRangoHoras12(config.hora_inicio || '08:00', config.hora_fin || '17:00')})
           </div>
         )}
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+          <CalendarDays size={11} />Trabaja: {diasLaborablesTexto(config.dias_laborables)}
+          {config.horario_configurado === false && (
+            <span className="text-[10px] font-bold text-amber-700">(sin fijar)</span>
+          )}
+        </div>
+        {puedeGestionar && (
+          <ControlAsistenciaToggle
+            config={config}
+            cargando={cargando}
+            onCambiar={onCambiarAsistencia}
+          />
+        )}
       </div>
 
       {mostrarMontos && (
@@ -449,9 +479,9 @@ function EmpleadoNominaCard({ config, esAdmin, mostrarMontos = true, onEditar, o
         )
       )}
 
-      {esAdmin && (
+      {(puedeGestionar || (esVendedorRol && puedePagarComision)) && (
         <div className={`mt-auto border-t border-slate-100 px-3 py-2 bg-white flex items-center ${esVendedorRol ? 'justify-between' : 'justify-end'} gap-1.5`}>
-          {esVendedorRol && (
+          {esVendedorRol && puedePagarComision && (
             <button
               type="button"
               onClick={onPagarComision}
@@ -463,6 +493,7 @@ function EmpleadoNominaCard({ config, esAdmin, mostrarMontos = true, onEditar, o
             </button>
           )}
 
+          {puedeGestionar && (
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -483,6 +514,7 @@ function EmpleadoNominaCard({ config, esAdmin, mostrarMontos = true, onEditar, o
               <span>Configurar</span>
             </button>
           </div>
+          )}
         </div>
       )}
     </article>

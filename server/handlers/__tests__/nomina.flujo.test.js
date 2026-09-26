@@ -67,6 +67,11 @@ describe('asistencia bloqueada por estado del período', () => {
       { match: '/nomina_periodos', respond: [] },
       { match: '/configuracion_negocio', respond: [{}] },
       { match: '/nomina_config_empleado', respond: [{ horas_jornada: 8 }] },
+      // F-10: la ausencia valida que ese día le toque trabajar (lunes 2026-08-03)
+      // y que no sea un feriado no laborable.
+      { match: '/nomina_horarios', method: 'GET', respond: [] },
+      { match: '/nomina_feriados', respond: [] },
+      { match: '/registro_asistencia', method: 'GET', respond: [] },
       { match: '/registro_asistencia', method: 'POST', respond: (url, init) => {
         enviado = JSON.parse(init.body)
         return [{ id: IDS.registro }]
@@ -236,7 +241,10 @@ describe('cálculo de período', () => {
     expect(l.total_bruto_usd).toBe(50)   // 30 + 20
     expect(l.total_neto_usd).toBe(40)    // 50 − 10
   })
+
 })
+// Las pruebas del 409 por jornadas abiertas viven en nomina.periodos-jornadas.test.js
+// (el contrato completo está en server/lib/nominaUtils.js#esJornadaAbierta).
 // ─── Cierre y reapertura ─────────────────────────────────────────────────────
 describe('cierre y reapertura de período', () => {
   it('no cierra un período sin líneas calculadas', async () => {
@@ -528,12 +536,12 @@ describe('payment reversal RPC lifecycle', () => {
 
 // ─── Agregados del listado de períodos ───────────────────────────────────────
 describe('totales del listado de períodos', () => {
-  it('agrega empleados, bruto, neto y pagados por período', async () => {
+  it('agrega empleados, bruto, deducciones, neto y pagados por período', async () => {
     mock = installFetchMock([
       { match: '/nomina_periodos', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'cerrado' }] },
       { match: '/nomina_lineas',   respond: [
-        { periodo_id: IDS.periodo, total_bruto_usd: 100, total_neto_usd: 90,  pagado: true },
-        { periodo_id: IDS.periodo, total_bruto_usd: 50,  total_neto_usd: 45.5, pagado: false },
+        { periodo_id: IDS.periodo, total_bruto_usd: 100, deducciones_usd: 10, total_neto_usd: 90, pagado: true },
+        { periodo_id: IDS.periodo, total_bruto_usd: 50, deducciones_usd: 4.5, total_neto_usd: 45.5, pagado: false },
       ]},
     ])
     const res = await H.handleGetPeriodos(makeRequest(), ENV)
@@ -541,8 +549,10 @@ describe('totales del listado de períodos', () => {
     expect(status).toBe(200)
     expect(body[0].total_empleados).toBe(2)
     expect(body[0].total_bruto_usd).toBe(150)
+    expect(body[0].total_deducciones_usd).toBe(14.5)
     expect(body[0].total_neto_usd).toBe(135.5)
     expect(body[0].lineas_pagadas).toBe(1)
+    expect(mock.calls[1].url).toContain('deducciones_usd')
   })
   it('no consulta líneas si no hay períodos', async () => {
     mock = installFetchMock([{ match: '/nomina_periodos', respond: [] }])

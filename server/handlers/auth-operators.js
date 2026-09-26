@@ -46,10 +46,10 @@ function publicOperator(operator) {
     nombre: operator.nombre,
     rol: operator.rol,
     color: operator.color ?? null,
-    markup_pct: operator.markup_pct ?? null,
-    comision_pct: operator.comision_pct ?? null,
-    comision_pct_cabilla: operator.comision_pct_cabilla ?? null,
-    es_externo: !!operator.es_externo,
+    ...(operator.markup_pct !== undefined ? { markup_pct: operator.markup_pct } : {}),
+    ...(operator.comision_pct !== undefined ? { comision_pct: operator.comision_pct } : {}),
+    ...(operator.comision_pct_cabilla !== undefined ? { comision_pct_cabilla: operator.comision_pct_cabilla } : {}),
+    ...(operator.es_externo !== undefined ? { es_externo: !!operator.es_externo } : {}),
   }
 }
 
@@ -162,12 +162,30 @@ export async function handleGetCurrentProfile(request, env) {
   const user = await verifyAuth(request, env)
   if (!user?.id) return jsonError('No autenticado', 401, request)
 
-  const response = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/usuarios?activo=eq.true&cuenta_id=eq.${user.id}` +
-    '&select=id,nombre,rol,color,markup_pct,comision_pct,comision_pct_cabilla,es_externo&order=nombre.asc&limit=50',
-    { headers: serviceHeaders(env) },
+  const baseUrl = `${env.SUPABASE_URL}/rest/v1/usuarios?activo=eq.true&cuenta_id=eq.${user.id}`
+  const headers = serviceHeaders(env)
+  let response = await fetch(
+    `${baseUrl}&select=id,nombre,rol,color,markup_pct,comision_pct,comision_pct_cabilla,es_externo&order=nombre.asc&limit=50`,
+    { headers },
   )
-  if (!response.ok) return jsonError('No se pudo cargar el perfil', 502, request)
+  if (!response.ok) {
+    const failure = await response.json().catch(() => ({}))
+    const projectionUnavailable = response.status === 400 && (
+      ['42703', 'PGRST204'].includes(failure.code)
+      || /column .* does not exist|schema cache/i.test(String(failure.message || ''))
+    )
+    if (projectionUnavailable) {
+      // Algunas instalaciones pueden tener el contrato base pero aún no exponer
+      // una columna opcional en el schema cache de PostgREST. Identidad, estado,
+      // tenant y rol son el mínimo seguro para autenticar y seleccionar operador.
+      response = await fetch(`${baseUrl}&select=id,nombre,rol&order=nombre.asc&limit=50`, { headers })
+    }
+  }
+  if (!response.ok) {
+    const failure = await response.json().catch(() => ({}))
+    console.error('[auth] current profile query failed', response.status, failure.code || 'unknown')
+    return jsonError('No se pudo cargar el perfil', 502, request)
+  }
   const operators = (await response.json()).filter(op => OPERATOR_ROLES.has(op.rol))
   if (operators.length === 0) {
     // SIN_OPERADORES: no es una denegación de identidad sino una cuenta sin

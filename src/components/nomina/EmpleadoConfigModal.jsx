@@ -1,20 +1,40 @@
 import { useState, useMemo, useEffect } from 'react'
-import { RefreshCw, Clock, DollarSign, Calendar, Sparkles, ShoppingBag, Trash2, AlertTriangle } from 'lucide-react'
+import { RefreshCw, Clock, Calendar, Sparkles, ShoppingBag, Trash2, AlertTriangle } from 'lucide-react'
 import {
   useNominaEmpleados,
   useCrearConfigEmpleado,
   useActualizarConfigEmpleado,
+  useGuardarHorarioEmpleado,
+  useHorarios,
   usePosVendedores,
 } from '../../hooks/useNomina'
+import { diasActivosSemana, semanaEditable } from '../../utils/diasLaborables.js'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import EmpleadoBajaModal from './EmpleadoBajaModal.jsx'
-import { normalizarMontoInput } from '../../utils/montoUtils.js'
+import ModalidadSalarioSection from './ModalidadSalarioSection.jsx'
+import SemanaLaborableSection from './SemanaLaborableSection.jsx'
 
 const inputCls = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
 const PREF_KEY_PREFIX = 'nomina_empleado_salario_pref_'
+
+/**
+ * Semana mostrada en la ficha: días y horas guardados en `nomina_horarios` y, si la
+ * consulta aún no llegó, los días que el listado ya conoce. `hayHorario` evita el
+ * aviso de "sin semana guardada" cuando la ficha sí la tiene.
+ */
+function semanaBaseDe(config, horarios) {
+  const base = semanaEditable(horarios, {
+    horaInicio: config?.hora_inicio, horaFin: config?.hora_fin, horasJornada: config?.horas_jornada,
+  })
+  const dias = config?.dias_laborables
+  const conDias = Array.isArray(dias)
+    ? { ...base, dias: base.dias.map(dia => ({ ...dia, activo: dias.includes(dia.diaSemana) })) }
+    : base
+  return { ...conDias, hayHorario: base.hayHorario || config?.horario_configurado === true }
+}
 
 function getSavedSalaryPref(id) {
   if (!id) return null
@@ -39,6 +59,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const esEdicion = modo === 'editar'
   const crear      = useCrearConfigEmpleado()
   const actualizar = useActualizarConfigEmpleado()
+  const guardarHorario = useGuardarHorarioEmpleado()
 
   const {
     data: clientes = [],
@@ -67,9 +88,28 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const empKey = config?.empleado_id || config?.id
   const savedPref = useMemo(() => getSavedSalaryPref(empKey), [empKey])
 
+  // Semana laboral de la persona: qué días trabaja y con qué jornada cada uno.
+  // De ella depende el estado «Libre» de la asistencia, del reloj real y el
+  // guardarraíl de la carga masiva, así que se guarda junto con la ficha. Se
+  // declara ANTES del salario porque el divisor del monto semanal sale de aquí.
+  const horariosEmpleadoId = esEdicion ? (config?.empleado_id || '') : ''
+  const { data: horarios = [] } = useHorarios(horariosEmpleadoId)
+  // La semana se deriva de sus horarios guardados; `semanaOverride` solo existe si
+  // el usuario ya marcado o editado algún día en este formulario.
+  const semanaBase = useMemo(() => semanaBaseDe(config, horarios), [config, horarios])
+  const [semanaOverride, setSemanaOverride] = useState(null)
+  const semana = semanaOverride ?? semanaBase
+  const semanaTocada = semanaOverride !== null
+
+  // UNA sola fuente de verdad para el divisor semanal (F-3): SIEMPRE son los días
+  // marcados en «Días que trabaja». Antes había un selector 5/6/7 independiente y
+  // el monto semanal acordado se pagaba a 5/6 sin aviso. Sin días marcados la
+  // ficha no se puede guardar; entretanto se usa el default histórico (6).
+  const diasSemana = useMemo(() => diasActivosSemana(semana.dias).length, [semana])
+  const divisorSemana = diasSemana || 6
+
   // Modalidad salarial persistente: 'dia' | 'semana' | 'mes' | 'comision'
   const [modalidad, setModalidad] = useState(() => savedPref?.modalidad || (Number(config?.salario_dia_usd) === 0 ? 'comision' : 'dia'))
-  const [diasSemana, setDiasSemana] = useState(() => (savedPref?.diasSemana ? Number(savedPref.diasSemana) : 6))
 
   const [montoInput, setMontoInput] = useState(() => {
     const daily = Number(config?.salario_dia_usd)
@@ -78,7 +118,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
       return ''
     }
     const mod = savedPref?.modalidad || 'dia'
-    const ds = Number(savedPref?.diasSemana) || 6
+    const ds = divisorSemana
 
     if (mod === 'semana') {
       if (savedPref?.montoInput) {
@@ -108,15 +148,46 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const [confirmandoBaja, setConfirmandoBaja] = useState(false)
   const [error, setError]           = useState('')
 
+  function actualizarSemana(transformar) {
+    setSemanaOverride(actual => transformar(actual ?? semanaBase))
+  }
+
+  function alternarDiaLaborable(diaSemana) {
+    actualizarSemana(actual => ({
+      ...actual,
+      dias: actual.dias.map(dia => (dia.diaSemana === diaSemana ? { ...dia, activo: !dia.activo } : dia)),
+    }))
+  }
+
+  function cambiarJornadaDelDia(diaSemana, campo, valor) {
+    actualizarSemana(actual => ({
+      ...actual,
+      dias: actual.dias.map(dia => (dia.diaSemana === diaSemana ? { ...dia, [campo]: valor } : dia)),
+    }))
+  }
+
+  function copiarJornadaAlResto() {
+    actualizarSemana(actual => {
+      const [modelo] = actual.dias.filter(dia => dia.activo)
+      if (!modelo) return actual
+      return {
+        ...actual,
+        dias: actual.dias.map(dia => (dia.activo
+          ? { ...dia, horaInicio: modelo.horaInicio, horaFin: modelo.horaFin, horasJornada: modelo.horasJornada }
+          : dia)),
+      }
+    })
+  }
+
   // Cálculo del salario diario en USD según la modalidad elegida
   const salarioDiaCalculado = useMemo(() => {
     if (modalidad === 'comision') return 0
     const val = Number(montoInput)
     if (!Number.isFinite(val) || val <= 0) return 0
-    if (modalidad === 'semana') return val / (diasSemana || 6)
+    if (modalidad === 'semana') return val / divisorSemana
     if (modalidad === 'mes') return val / 30
     return val
-  }, [montoInput, modalidad, diasSemana])
+  }, [montoInput, modalidad, divisorSemana])
 
   function handleCambioModalidad(nuevoModo) {
     if (nuevoModo === modalidad) return
@@ -125,7 +196,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
     } else if (salarioDiaCalculado > 0 || (modalidad === 'comision' && Number(montoInput) === 0)) {
       const baseDaily = salarioDiaCalculado > 0 ? salarioDiaCalculado : 10
       if (nuevoModo === 'semana') {
-        const nuevoMonto = Math.round(baseDaily * (diasSemana || 6) * 100) / 100
+        const nuevoMonto = Math.round(baseDaily * divisorSemana * 100) / 100
         setMontoInput(String(nuevoMonto))
       } else if (nuevoModo === 'mes') {
         const nuevoMonto = Math.round(baseDaily * 30 * 100) / 100
@@ -137,11 +208,6 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
     }
     setModalidad(nuevoModo)
   }
-
-  const jornadaNum = Number(horasJornada) || 8
-  const tarifaHora = salarioDiaCalculado > 0 && jornadaNum > 0 ? salarioDiaCalculado / jornadaNum : 0
-  const equivalenteSemanal = salarioDiaCalculado * (diasSemana || 6)
-  const equivalenteMensual = salarioDiaCalculado * 30
 
   // Personas existentes que aún no estén en nómina
   const empleadosPersonales = useMemo(() => (
@@ -155,7 +221,14 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
       .map(c => ({ value: c.id, label: c.nombre }))
   }, [empleadosPersonales, empleadosYaEnNomina])
 
-  const cargando = crear.isPending || actualizar.isPending
+  const cargando = crear.isPending || actualizar.isPending || guardarHorario.isPending
+
+  // Elegir "comisión" implica el puesto de Vendedor; el resto de la modalidad solo
+  // cambia el monto convertido.
+  function seleccionarModalidad(nuevoModo) {
+    if (nuevoModo === 'comision' && !cargo.trim()) setCargo('Vendedor')
+    handleCambioModalidad(nuevoModo)
+  }
 
   function aplicarPresetHorarioEstandar() {
     setHoraInicio('08:00')
@@ -170,14 +243,20 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
     if (!esEdicion && !empleadoId && !nombre.trim()) { setError('Escribe el nombre del empleado'); return }
     if (modalidad !== 'comision' && salarioDiaCalculado <= 0) { setError('El salario debe ser mayor a 0'); return }
     if (modalidad !== 'comision' && Number(horasJornada) <= 0) { setError('La jornada debe ser mayor a 0 horas'); return }
+    // Si nadie tocó la semana, los días activos toman el horario de la ficha.
+    const jornadaFicha = Number(horasJornada) || 8
+    const diasPayload = diasActivosSemana(semana.dias).map(dia => (semanaTocada
+      ? dia
+      : { ...dia, horaInicio: String(horaInicio).slice(0, 5), horaFin: String(horaFin).slice(0, 5), horasJornada: jornadaFicha }))
+    if (!diasPayload.length) {
+      setError('Marca al menos un día laborable. Si esta persona no debe controlar asistencia, desactiva el interruptor de Asistencia en su ficha.')
+      return
+    }
 
     try {
       const salarioFinal = modalidad === 'comision' ? 0 : Math.round(salarioDiaCalculado * 10000) / 10000
-      const prefData = {
-        modalidad,
-        montoInput,
-        diasSemana,
-      }
+      // El divisor no se persiste: se recalcula de los días marcados (F-3).
+      const prefData = { modalidad, montoInput }
       if (esEdicion) {
         const res = await actualizar.mutateAsync({
           id: config.id,
@@ -191,6 +270,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
         saveSalaryPref(targetId, prefData)
         if (config?.id) saveSalaryPref(config.id, prefData)
         if (config?.empleado_id) saveSalaryPref(config.empleado_id, prefData)
+        await guardarSemana(res?.config?.empleado_id || config?.empleado_id, diasPayload)
       } else {
         const res = await crear.mutateAsync({
           empleadoId: empleadoId || undefined, nombre, documento, cargo, fechaIngreso: fechaIngreso || null,
@@ -201,11 +281,28 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
         })
         const targetId = res?.config?.empleado_id || res?.config?.id || empleadoId
         if (targetId) saveSalaryPref(targetId, prefData)
+        await guardarSemana(targetId, diasPayload)
       }
       onClose()
     } catch (err) {
       setError(err.message || 'Error al guardar')
     }
+  }
+
+  // La ficha se guardó: si los días laborables fallan, se avisa sin perder el resto.
+  // El guardado de la semana es idempotente (cada día se actualiza en su fila), así
+  // que reintentar completa el cambio sin duplicar días (F-7).
+  async function guardarSemana(empleadoIdDestino, dias) {
+    if (!empleadoIdDestino || !dias.length) return
+    let res
+    try {
+      res = await guardarHorario.mutateAsync({ empleadoId: empleadoIdDestino, dias })
+    } catch (err) {
+      throw new Error(`La ficha se guardó, pero no se pudieron guardar sus días laborables: ${err.message}`)
+    }
+    // Si el servidor no pudo retirar los días anteriores, la semana nueva igual quedó
+    // guardada: se dice en voz alta en vez de cerrar como si todo hubiera salido bien.
+    if (res?.aviso) throw new Error(res.aviso)
   }
 
   async function ejecutarDarDeBaja() {
@@ -336,111 +433,16 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
           </div>
         </div>
 
-        {/* Modalidad y Salario */}
-        <div className="space-y-2 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-              <DollarSign size={15} className="text-primary" />
-              Modalidad de Salario / Pago (USD)
-            </label>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 rounded-xl bg-slate-200/60 text-xs font-bold">
-            {[
-              { id: 'dia', label: 'Por Día' },
-              { id: 'semana', label: 'Por Semana' },
-              { id: 'mes', label: 'Por Mes' },
-              { id: 'comision', label: 'Por Comisión (Vendedor)' },
-            ].map(m => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => {
-                  if (m.id === 'comision' && !cargo.trim()) {
-                    setCargo('Vendedor')
-                  }
-                  handleCambioModalidad(m.id)
-                }}
-                className={`py-2 px-1 text-center rounded-xl transition-all ${modalidad === m.id ? 'bg-white text-slate-900 shadow-sm font-black' : 'text-slate-500 hover:text-slate-800'}`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-
-          {modalidad === 'comision' ? (
-            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-950 space-y-1.5">
-              <div className="flex items-center gap-1.5 font-black text-amber-900">
-                <Sparkles size={14} className="text-amber-600" />
-                <span>Modalidad: Pago de Comisión (Puesto: Vendedor)</span>
-              </div>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                Asignado a <strong>Vendedores</strong> sin sueldo fijo semanal. Cada comisión cobrada se registra directamente como un <strong>Egreso en Finanzas</strong>.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-              <div className="space-y-1">
-                <span className="text-[11px] font-semibold text-slate-500">
-                  {modalidad === 'dia' ? 'Monto por día (USD) *' : modalidad === 'semana' ? 'Monto por semana (USD) *' : 'Monto mensual (USD) *'}
-                </span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={montoInput}
-                  onChange={e => {
-                    const normalizado = normalizarMontoInput(e.target.value)
-                    if (normalizado !== null) setMontoInput(normalizado)
-                  }}
-                  placeholder={modalidad === 'dia' ? 'Ej: 30.00' : modalidad === 'semana' ? 'Ej: 180.00' : 'Ej: 600.00'}
-                  className={inputCls} disabled={cargando}
-                />
-              </div>
-              {modalidad === 'semana' && (
-                <div className="space-y-1">
-                  <span className="text-[11px] font-semibold text-slate-500">Días laborables / semana</span>
-                  <CustomSelect
-                    value={String(diasSemana)}
-                    onChange={val => setDiasSemana(Number(val))}
-                    options={[
-                      { value: '5', label: '5 días (Lun-Vie)' },
-                      { value: '6', label: '6 días (Lun-Sáb estándar)' },
-                      { value: '7', label: '7 días continuos' },
-                    ]}
-                    disabled={cargando}
-                  />
-                </div>
-              )}
-              {modalidad === 'mes' && (
-                <div className="flex items-center text-[11px] text-slate-400 pt-5">
-                  <span>Base estándar de 30 días mensuales</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Desglose salarial reactivo */}
-          {salarioDiaCalculado > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-2 border-t border-slate-200 min-w-0">
-              <div className="p-2 rounded-xl bg-white border border-slate-100 text-center">
-                <span className="text-[10px] text-slate-400 block font-medium">Por Día</span>
-                <strong className="text-xs font-black text-slate-800">${salarioDiaCalculado.toFixed(2)}</strong>
-              </div>
-              <div className="p-2 rounded-xl bg-white border border-slate-100 text-center">
-                <span className="text-[10px] text-slate-400 block font-medium">Por Hora ({horasJornada}h)</span>
-                <strong className="text-xs font-black text-emerald-600">${tarifaHora.toFixed(2)}</strong>
-              </div>
-              <div className="p-2 rounded-xl bg-white border border-slate-100 text-center">
-                <span className="text-[10px] text-slate-400 block font-medium">Semanal</span>
-                <strong className="text-xs font-black text-slate-800">${equivalenteSemanal.toFixed(2)}</strong>
-              </div>
-              <div className="p-2 rounded-xl bg-white border border-slate-100 text-center">
-                <span className="text-[10px] text-slate-400 block font-medium">Mensual</span>
-                <strong className="text-xs font-black text-slate-800">${equivalenteMensual.toFixed(2)}</strong>
-              </div>
-            </div>
-          )}
-        </div>
+        <ModalidadSalarioSection
+          modalidad={modalidad}
+          montoInput={montoInput}
+          diasSemana={diasSemana}
+          salarioDiaCalculado={salarioDiaCalculado}
+          horasJornada={horasJornada}
+          cargando={cargando}
+          onSeleccionarModalidad={seleccionarModalidad}
+          onCambiarMonto={setMontoInput}
+        />
 
         {/* Horario y Jornada */}
         <div className="space-y-2 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80">
@@ -484,6 +486,14 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
             </div>
           </div>
         </div>
+
+        <SemanaLaborableSection
+          semana={semana}
+          cargando={cargando}
+          onAlternarDia={alternarDiaLaborable}
+          onCambiarJornada={cambiarJornadaDelDia}
+          onCopiarJornada={copiarJornadaAlResto}
+        />
 
         {/* Vinculación con Vendedor en POS */}
         <div className="space-y-2 p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/70">

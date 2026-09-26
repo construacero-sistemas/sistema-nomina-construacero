@@ -4,18 +4,21 @@ import { useCallback } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useAccountQuery as useQuery, useAccountQueryClient as useQueryClient } from '../../compat/lib/accountQueries.js'
 import useAuthStore from '../../compat/store/useAuthStore.js'
-import { authFetch } from '../../compat/services/authFetch.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
 import { tieneCapacidad } from '../config/accesoModulos.js'
 import useFinancialOperation from './useFinancialOperation.js'
-
-const KEY_EMPLEADOS  = ['nomina', 'empleados']
-const KEY_CONFIG     = ['nomina', 'config-empleados']
-const KEY_CONFIG_BAJAS = ['nomina', 'config-empleados-bajas']
-const KEY_ASISTENCIA = ['nomina', 'asistencia']
-const KEY_MARCAJE    = ['nomina', 'marcaje-hoy']
-const KEY_PERIODOS   = ['nomina', 'periodos']
-const KEY_LINEAS     = ['nomina', 'lineas']
+export { useMarcarEntrada, useMarcarSalida, useCorregirMarcaje, useAnularEntradaComoAusencia } from './useNominaMarcaje.js'
+import {
+  KEY_ASISTENCIA,
+  KEY_CONFIG,
+  KEY_CONFIG_BAJAS,
+  KEY_EMPLEADOS,
+  KEY_LINEAS,
+  KEY_MARCAJE,
+  KEY_PERIODOS,
+  apiGet,
+  apiPost,
+} from './nominaApi.js'
 
 // Compuertas derivadas de la matriz única (config/accesoModulos reexporta
 // server/lib/permissions.js): aquí no se escribe ningún rol a mano.
@@ -27,26 +30,6 @@ export function usePuedeVerNomina() {
 export function usePuedeAdminNomina() {
   const perfil = useAuthStore(useCallback(s => s.perfil, []))
   return tieneCapacidad(perfil, 'administrarNomina')
-}
-
-// ── Helper de fetch con manejo de error uniforme ───────────────────────────────
-// authFetch refresca la sesión y reintenta automáticamente en 401.
-async function apiGet(path) {
-  const res = await authFetch(path)
-  const payload = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(payload.error || `Error ${res.status}`)
-  return payload
-}
-
-async function apiPost(path, body) {
-  const res = await authFetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const payload = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(payload.error || `Error ${res.status}`)
-  return payload
 }
 
 // ─── Empleados y configuración ─────────────────────────────────────────────────
@@ -117,9 +100,14 @@ export function useActualizarConfigEmpleado() {
 export function useEliminarConfigEmpleado() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id }) => apiPost('/api/nomina/config-empleado/eliminar', { id }),
+    mutationFn: ({ id, incluirHistorial = false, empleadoId, confirmarNombre }) => apiPost('/api/nomina/config-empleado/eliminar', {
+      id,
+      incluirHistorial,
+      ...(empleadoId ? { empleadoId } : {}),
+      ...(confirmarNombre ? { confirmarNombre } : {}),
+    }),
     onSuccess: () => {
-      showToast.success('Empleado eliminado por completo de la nómina')
+      showToast.success('Trabajador y datos autorizados eliminados definitivamente')
       qc.invalidateQueries({ queryKey: KEY_CONFIG })
       qc.invalidateQueries({ queryKey: KEY_CONFIG_BAJAS })
       qc.invalidateQueries({ queryKey: KEY_EMPLEADOS })
@@ -165,6 +153,7 @@ export function useRegistrarAsistencia() {
     onSuccess: () => {
       showToast.success('Asistencia registrada')
       qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
+      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
     },
     onError: (e) => showToast.error(e.message || 'Error al registrar asistencia'),
   })
@@ -180,43 +169,6 @@ export function useMarcajeHoy() {
   })
 }
 
-function makeIdempotencyKey(tipo, empleadoId) {
-  const random = typeof crypto !== 'undefined' && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  return `${tipo}-${empleadoId}-${random}`
-}
-
-export function useMarcarEntrada() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ empleadoId, nota }) => apiPost('/api/nomina/marcaje/entrada', {
-      empleadoId, nota, idempotencyKey: makeIdempotencyKey('entrada', empleadoId),
-    }),
-    onSuccess: () => {
-      showToast.success('Entrada marcada')
-      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
-      qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
-    },
-    onError: (e) => showToast.error(e.message || 'Error al marcar entrada'),
-  })
-}
-
-export function useMarcarSalida() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ empleadoId, nota }) => apiPost('/api/nomina/marcaje/salida', {
-      empleadoId, nota, idempotencyKey: makeIdempotencyKey('salida', empleadoId),
-    }),
-    onSuccess: () => {
-      showToast.success('Salida marcada')
-      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
-      qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
-    },
-    onError: (e) => showToast.error(e.message || 'Error al marcar salida'),
-  })
-}
-
 export function useRegistrarAsistenciaMasivo() {
   const qc = useQueryClient()
   return useMutation({
@@ -224,6 +176,7 @@ export function useRegistrarAsistenciaMasivo() {
     onSuccess: (data) => {
       showToast.success(`Asistencia registrada para ${data.registros} empleado(s)`)
       qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
+      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
     },
     onError: (e) => showToast.error(e.message || 'Error al registrar asistencia masiva'),
   })
@@ -236,6 +189,7 @@ export function useEliminarAsistencia() {
     onSuccess: () => {
       showToast.success('Registro eliminado')
       qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
+      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
     },
     onError: (e) => showToast.error(e.message || 'Error al eliminar registro'),
   })
@@ -269,7 +223,10 @@ export function useCrearPeriodo() {
 export function useCalcularPeriodo() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (periodoId) => apiPost('/api/nomina/periodos/calcular', { periodoId }),
+    // Acepta el id o el cuerpo completo: `{ periodoId, confirmarJornadasAbiertas }`
+    // cuando el operador decide liquidar un período con jornadas sin salida.
+    mutationFn: (vars) => apiPost('/api/nomina/periodos/calcular',
+      typeof vars === 'string' ? { periodoId: vars } : vars),
     onSuccess: (data) => {
       const extra = data.lineas_preservadas > 0
         ? ` (${data.lineas_preservadas} ya pagado(s) sin cambios)`
@@ -278,7 +235,12 @@ export function useCalcularPeriodo() {
       qc.invalidateQueries({ queryKey: KEY_PERIODOS })
       qc.invalidateQueries({ queryKey: KEY_LINEAS })
     },
-    onError: (e) => showToast.error(e.message || 'Error al calcular nómina'),
+    onError: (e) => {
+      // El 409 de jornadas abiertas no es un error de red: la pestaña de períodos
+      // abre el diálogo de confirmación con la lista y decide si avisar aquí.
+      if (Array.isArray(e?.payload?.jornadas_abiertas)) return
+      showToast.error(e.message || 'Error al calcular nómina')
+    },
   })
 }
 
@@ -417,6 +379,38 @@ export function useCrearHorario() {
       qc.invalidateQueries({ queryKey: ['nomina', 'horarios'] })
     },
     onError: e => showToast.error(e.message || 'Error al guardar horario'),
+  })
+}
+
+// Semana laboral del empleado (qué días trabaja y con qué jornada cada uno).
+// Es la fuente del estado «Libre» en asistencia y en el reloj real.
+export function useGuardarHorarioEmpleado() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ empleadoId, dias }) => apiPost('/api/nomina/calendario/horarios/empleado', { empleadoId, dias }),
+    onSuccess: () => {
+      showToast.success('Días laborables guardados')
+      qc.invalidateQueries({ queryKey: KEY_CONFIG })
+      qc.invalidateQueries({ queryKey: KEY_CONFIG_BAJAS })
+      qc.invalidateQueries({ queryKey: ['nomina', 'horarios'] })
+      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
+    },
+    onError: e => showToast.error(e.message || 'No se pudieron guardar los días laborables'),
+  })
+}
+
+// Ausencia del día con su reversa. Solo escribe sobre días laborables del empleado
+// y nunca borra horas reales del reloj (eso vive en «Corregir marcaje»).
+export function useMarcarAusencia() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ empleadoId, quitar = false }) => apiPost('/api/nomina/marcaje/ausencia', { empleadoId, quitar }),
+    onSuccess: (_, variables) => {
+      showToast.success(variables?.quitar ? 'Ausencia deshecha' : 'Ausencia registrada')
+      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
+      qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
+    },
+    onError: e => showToast.error(e.message || 'No se pudo actualizar la ausencia'),
   })
 }
 

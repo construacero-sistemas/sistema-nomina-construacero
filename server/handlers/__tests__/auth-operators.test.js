@@ -144,6 +144,24 @@ describe('handleGetCurrentProfile — resuelve el operador desde la metadata', (
     expect(result.body.operators[0]).not.toHaveProperty('pin_hash')
   })
 
+  it('si una columna de presentación falta en PostgREST, reintenta con el contrato mínimo seguro', async () => {
+    sessionUser = { id: ACCOUNT_ID, operator_id: FINANZAS_ID, email: 'cuenta@example.invalid' }
+    mock = installFetchMock([
+      { match: /select=id,nombre,rol,color,markup_pct,comision_pct,comision_pct_cabilla,es_externo/, method: 'GET', respond: { __raw: { code: '42703', message: 'column usuarios.comision_pct_cabilla does not exist' }, ok: false, status: 400 } },
+      { match: /select=id,nombre,rol&/, method: 'GET', respond: [{ id: FINANZAS_ID, nombre: 'Finanzas', rol: 'finanzas' }] },
+    ])
+
+    const result = await readResponse(await H.handleGetCurrentProfile(profileRequest(), ENV))
+
+    expect(result.status).toBe(200)
+    expect(result.body.profile).toMatchObject({ id: FINANZAS_ID, nombre: 'Finanzas', rol: 'finanzas', cuenta_id: ACCOUNT_ID })
+    expect(result.body.profile).not.toHaveProperty('comision_pct_cabilla')
+    expect(mock.calls).toHaveLength(2)
+    expect(mock.calls[1].url).toContain('select=id,nombre,rol')
+    expect(mock.calls[1].url).toContain(`cuenta_id=eq.${ACCOUNT_ID}`)
+    expect(mock.calls[1].url).toContain('activo=eq.true')
+  })
+
   it('cuenta multi-operador sin selección: OPERADOR_REQUERIDO con la lista pública', async () => {
     mock = installFetchMock([{
       match: '/rest/v1/usuarios?activo=eq.true',

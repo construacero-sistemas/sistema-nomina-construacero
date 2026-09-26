@@ -332,7 +332,8 @@ function Shell() {
           <Suspense fallback={<Loading />}>
             <Outlet />
           </Suspense>
-          {/* El espacio del nav inferior se calcula una sola vez en app-main-safe. */}
+          {/* Hueco tangible del nav móvil: el padding de un contenedor flex con scroll no es fiable. */}
+          <div className="app-nav-spacer" aria-hidden="true" />
         </div>
       </main>
 

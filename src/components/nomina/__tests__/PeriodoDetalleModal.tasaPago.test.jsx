@@ -71,11 +71,11 @@ describe('PeriodoDetalleModal — Bs congelado al pagar (migración 241)', () =>
       tasa_pago_usd_ves: 804.81,
       total_pagado_bs: 40240.5, // 50 × 804.81, congelado al pagar
     }))
-    await screen.findByText('pedro perez', { exact: false })
+    await screen.findAllByText('pedro perez', { exact: false })
 
     // El Bs congelado aparece en la celda de neto con su tasa documentada
     // (el Modal renderiza en portal: buscar en document.body, no en container)
-    expect(screen.getByText(/40\.240,50 Bs/)).toBeTruthy()
+    expect(screen.getAllByText(/40\.240,50 Bs/).length).toBeGreaterThan(0)
     expect(document.body.querySelector('[title*="804.81"]')).toBeTruthy()
     // La conversión en vivo (50 × 100 del mock) NO debe aparecer en la celda neto
     const celdasNeto = document.body.querySelectorAll('td')
@@ -87,7 +87,7 @@ describe('PeriodoDetalleModal — Bs congelado al pagar (migración 241)', () =>
 
   it('recibo sin pagar: sigue mostrando el Bs calculado con la tasa activa', async () => {
     const { container } = renderModal(lineaBase({ pagado: false, total_neto_usd: 50 }))
-    await screen.findByText('pedro perez', { exact: false })
+    await screen.findAllByText('pedro perez', { exact: false })
 
     // 50 × 100 (tasa mock) = Bs en vivo en la celda de neto, sin tasa congelada
     void container
@@ -98,7 +98,7 @@ describe('PeriodoDetalleModal — Bs congelado al pagar (migración 241)', () =>
 
   it('recibo pagado antes de la migración 241 (tasa NULL): cae a Bs en vivo sin romper', async () => {
     renderModal(lineaBase({ pagado: true, tasa_pago_usd_ves: null, total_pagado_bs: null }))
-    await screen.findByText('pedro perez', { exact: false })
+    await screen.findAllByText('pedro perez', { exact: false })
     const esperado = (50).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const netoCell = [...document.body.querySelectorAll('td')].find(td => td.textContent.includes(esperado))
     expect(netoCell).toBeTruthy()
@@ -106,7 +106,19 @@ describe('PeriodoDetalleModal — Bs congelado al pagar (migración 241)', () =>
 
   it('muestra el sueldo mensual (salario_dia × 30) bajo el nombre', async () => {
     renderModal(lineaBase({ salario_dia_usd_snap: 10 }))
-    await screen.findByText('pedro perez', { exact: false })
-    expect(screen.getByText(/Sueldo mensual: \$300,00/)).toBeTruthy()
+    await screen.findAllByText('pedro perez', { exact: false })
+    expect(screen.getAllByText(/Sueldo mensual: \$300,00/).length).toBeGreaterThan(0)
+  })
+
+  it('presenta en móvil una ficha legible y un resumen con total neto', async () => {
+    renderModal(lineaBase({ horas_normales: 8, horas_extra: 2, monto_normal_usd: 40, total_neto_usd: 45, bonos_usd: 5 }))
+    await screen.findAllByText('pedro perez', { exact: false })
+
+    const recibo = screen.getByRole('article', { name: 'Recibo de Pedro Perez' })
+    expect(within(recibo).getByText('Horas normales')).toBeTruthy()
+    expect(within(recibo).getByText('2.0h')).toBeTruthy()
+    expect(within(recibo).getByText('$40,00')).toBeTruthy()
+    expect(screen.getByText('Total del período')).toBeTruthy()
+    expect(screen.getAllByText('Deducciones').length).toBeGreaterThan(0)
   })
 })

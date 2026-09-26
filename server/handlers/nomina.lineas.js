@@ -4,9 +4,8 @@ import { json, jsonError, isValidUuid } from '../lib/utils.js'
 import { validateOperator } from '../lib/auth.js'
 import { handleFinancialMutation } from './finanzas.operaciones.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
+import { requireCapacidad } from '../lib/permissions.js'
 import {
-  ROLES_ADMIN,
-  ROLES_NOMINA,
   ajusteNominaValido,
   r4,
   svcHeaders,
@@ -18,7 +17,8 @@ export async function handleGetLineas(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  if (!ROLES_NOMINA.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoVer = requireCapacidad(operador, 'verNomina', request)
+  if (denegadoVer) return denegadoVer
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
 
@@ -45,7 +45,8 @@ export async function handleAjustarLinea(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
 

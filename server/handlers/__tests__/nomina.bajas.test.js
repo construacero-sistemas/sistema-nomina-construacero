@@ -35,6 +35,7 @@ describe('bajas de empleados — listar y reactivar', () => {
     operadorActual = OPERADORES.administracion
     mock = installFetchMock([
       { match: '/nomina_config_empleado', respond: [configRow()] },
+      { match: '/nomina_horarios', method: 'GET', respond: [] },
     ])
 
     const res = await readResponse(await H.handleGetConfigEmpleados(makeRequest(undefined, {
@@ -53,6 +54,7 @@ describe('bajas de empleados — listar y reactivar', () => {
     const baja = configRow({ id: IDS.config, activo: false, nombre: 'Luis Baja' })
     mock = installFetchMock([
       { match: '/nomina_config_empleado', respond: [baja] },
+      { match: '/nomina_horarios', method: 'GET', respond: [] },
     ])
 
     const res = await readResponse(await H.handleGetConfigEmpleados(makeRequest(undefined, {
@@ -105,10 +107,10 @@ describe('bajas de empleados — listar y reactivar', () => {
     it('bloquea (409) la eliminación si el empleado tiene marcajes en registro_asistencia', async () => {
       operadorActual = OPERADORES.administracion
       mock = installFetchMock([
-        { match: '/nomina_config_empleado', respond: [{ id: IDS.config, empleado_id: IDS.empleado, cargo: 'Chofer' }] },
-        { match: '/registro_asistencia', respond: [{ id: 'asist-1' }] },
-        { match: '/nomina_lineas', respond: [] },
-        { match: '/nomina_comisiones', respond: [] },
+        { match: '/nomina_config_empleado', method: 'GET', respond: [{ id: IDS.config, empleado_id: IDS.empleado, cargo: 'Chofer' }] },
+        { match: '/registro_asistencia', method: 'GET', respond: [{ id: 'asist-1' }] },
+        { match: '/nomina_lineas', method: 'GET', respond: [] },
+        { match: '/nomina_horarios', method: 'GET', respond: [] },
       ])
 
       const res = await readResponse(await H.handleEliminarConfigEmpleado(makeRequest({
@@ -122,9 +124,12 @@ describe('bajas de empleados — listar y reactivar', () => {
     it('bloquea (409) la eliminación si el empleado tiene recibos en nomina_lineas', async () => {
       operadorActual = OPERADORES.administracion
       mock = installFetchMock([
-        { match: '/nomina_config_empleado', respond: [{ id: IDS.config, empleado_id: IDS.empleado, cargo: 'Vendedor' }] },
-        { match: '/registro_asistencia', respond: [] },
-        { match: '/nomina_lineas', respond: [{ id: 'recibo-1' }] },
+        { match: '/nomina_config_empleado', method: 'GET', respond: [{ id: IDS.config, empleado_id: IDS.empleado, cargo: 'Vendedor' }] },
+        { match: '/registro_asistencia', method: 'GET', respond: [] },
+        { match: '/nomina_lineas', method: 'GET', respond: [{ id: 'recibo-1', periodo_id: IDS.periodo, pagado: false, total_neto_usd: 0 }] },
+        { match: '/nomina_horarios', method: 'GET', respond: [] },
+        { match: '/nomina_periodos', method: 'GET', respond: [{ id: IDS.periodo, nombre: 'Prueba', estado: 'abierto' }] },
+        { match: '/nomina_linea_conceptos', method: 'GET', respond: [] },
         { match: '/nomina_comisiones', respond: [] },
       ])
 
@@ -139,13 +144,14 @@ describe('bajas de empleados — listar y reactivar', () => {
     it('elimina exitosamente (200) al empleado si está completamente limpio de historial', async () => {
       operadorActual = OPERADORES.administracion
       mock = installFetchMock([
-        { match: '/nomina_config_empleado', respond: [{ id: IDS.config, empleado_id: IDS.empleado, cargo: 'Prueba' }] },
-        { match: '/registro_asistencia', respond: [] },
-        { match: '/nomina_lineas', respond: [] },
-        { match: '/nomina_comisiones', respond: [] },
+        { match: '/nomina_config_empleado', method: 'GET', respond: [{ id: IDS.config, empleado_id: IDS.empleado, cargo: 'Prueba', empleado: { id: IDS.empleado, nombre: 'Pedro Pérez', tipo_cliente: 'personal' } }] },
+        { match: '/registro_asistencia', method: 'GET', respond: [] },
+        { match: '/nomina_lineas', method: 'GET', respond: [] },
+        { match: '/nomina_horarios', method: 'GET', respond: [] },
         { match: '/nomina_horarios', method: 'DELETE', respond: [] },
-        { match: '/nomina_config_empleado', method: 'DELETE', respond: [] },
+        { match: '/nomina_config_empleado', method: 'DELETE', respond: [{ id: IDS.config }] },
         { match: '/clientes', method: 'DELETE', respond: [] },
+        { match: '/registro_asistencia', method: 'DELETE', respond: [] },
       ])
 
       const res = await readResponse(await H.handleEliminarConfigEmpleado(makeRequest({
@@ -156,6 +162,76 @@ describe('bajas de empleados — listar y reactivar', () => {
       expect(res.body.ok).toBe(true)
       expect(res.body.eliminado).toBe(true)
       expect(mock.calls.some(c => c.method === 'DELETE' && c.url.includes('/nomina_config_empleado'))).toBe(true)
+    })
+
+    it('permite borrar recibos no pagados solo de períodos abiertos, dejando auditoría y sin tocar el libro financiero', async () => {
+      const name = 'José Ramírez'
+      const lineId = '30000000-0000-4000-8000-000000000001'
+      const employeeId = IDS.empleado
+      const calls = []
+      operadorActual = OPERADORES.administracion
+      mock = installFetchMock([
+        { match: '/nomina_config_empleado', method: 'GET', respond: [{
+          id: IDS.config, empleado_id: employeeId, cargo: 'Chofer', activo: false,
+          empleado: { id: employeeId, nombre: name, tipo_cliente: 'personal' },
+        }] },
+        { match: '/registro_asistencia', method: 'GET', respond: [{ id: 'attendance-1', fecha: '2026-08-01' }] },
+        { match: '/nomina_lineas', method: 'GET', respond: [{ id: lineId, periodo_id: IDS.periodo, pagado: false, total_neto_usd: 0 }] },
+        { match: '/nomina_horarios', method: 'GET', respond: [] },
+        { match: '/nomina_periodos', method: 'GET', respond: [{ id: IDS.periodo, nombre: 'Semana abierta', estado: 'abierto' }] },
+        { match: '/nomina_linea_conceptos', method: 'GET', respond: [] },
+        { match: '/nomina_lineas', method: 'DELETE', respond: [{ id: lineId }] },
+        { match: '/registro_asistencia', method: 'DELETE', respond: [] },
+        { match: '/nomina_config_empleado', method: 'DELETE', respond: [{ id: IDS.config }] },
+        { match: '/clientes', method: 'DELETE', respond: [] },
+        { match: '/auditoria', method: 'POST', respond: [] },
+      ])
+
+      const result = await readResponse(await H.handleEliminarConfigEmpleado(makeRequest({
+        id: IDS.config, incluirHistorial: true, empleadoId: employeeId, confirmarNombre: name,
+      }), ENV))
+
+      expect(result.status).toBe(200)
+      expect(result.body).toMatchObject({ eliminado: true, empleadoId: IDS.empleado })
+      expect(mock.calls.some(call => call.method === 'DELETE' && call.url.includes('/nomina_lineas?id=in.'))).toBe(true)
+      expect(mock.calls.some(call => call.method === 'DELETE' && call.url.includes('/finanzas_movimientos'))).toBe(false)
+      expect(mock.calls.some(call => call.method === 'DELETE' && call.url.includes('/auditoria'))).toBe(false)
+    })
+
+    it('rechaza la confirmación si el nombre no coincide sin borrar nada', async () => {
+      const employeeId = IDS.empleado
+      operadorActual = OPERADORES.administracion
+      mock = installFetchMock([{
+        match: '/nomina_config_empleado', method: 'GET', respond: [{
+          id: IDS.config, empleado_id: employeeId, cargo: 'Chofer', activo: false,
+          empleado: { id: employeeId, nombre: 'José Ramírez', tipo_cliente: 'personal' },
+        }],
+      }])
+      const result = await readResponse(await H.handleEliminarConfigEmpleado(makeRequest({
+        id: IDS.config, incluirHistorial: true, empleadoId: employeeId, confirmarNombre: 'Luis Ramírez',
+      }), ENV))
+      expect(result.status).toBe(400)
+      expect(mock.calls.some(call => call.method === 'DELETE')).toBe(false)
+    })
+
+    it('rechaza historial de períodos cerrados y no borra ningún dato', async () => {
+      const employeeId = IDS.empleado
+      operadorActual = OPERADORES.administracion
+      mock = installFetchMock([
+        { match: '/nomina_config_empleado', method: 'GET', respond: [{
+          id: IDS.config, empleado_id: employeeId, cargo: 'Chofer', activo: false,
+          empleado: { id: employeeId, nombre: 'José Ramírez', tipo_cliente: 'personal' },
+        }] },
+        { match: '/registro_asistencia', method: 'GET', respond: [] },
+        { match: '/nomina_lineas', method: 'GET', respond: [{ id: 'recibo-1', periodo_id: IDS.periodo, pagado: false }] },
+        { match: '/nomina_horarios', method: 'GET', respond: [] },
+        { match: '/nomina_periodos', method: 'GET', respond: [{ id: IDS.periodo, estado: 'cerrado' }] },
+      ])
+      const result = await readResponse(await H.handleEliminarConfigEmpleado(makeRequest({
+        id: IDS.config, incluirHistorial: true, empleadoId: employeeId, confirmarNombre: 'José Ramírez',
+      }), ENV))
+      expect(result.status).toBe(409)
+      expect(mock.calls.some(call => call.method === 'DELETE')).toBe(false)
     })
 
     it('rechaza con 400 si el id no es UUID válido', async () => {
@@ -169,7 +245,7 @@ describe('bajas de empleados — listar y reactivar', () => {
     it('rechaza con 404 si la configuración de empleado no existe', async () => {
       operadorActual = OPERADORES.administracion
       mock = installFetchMock([
-        { match: '/nomina_config_empleado', respond: [] },
+        { match: '/nomina_config_empleado', method: 'GET', respond: [] },
       ])
 
       const res = await readResponse(await H.handleEliminarConfigEmpleado(makeRequest({

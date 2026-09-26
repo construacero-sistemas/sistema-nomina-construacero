@@ -77,6 +77,21 @@ export function calcularCamposAsistencia(fecha, horaEntrada, horaSalida, horasJo
 }
 
 /**
+ * ¿La fila es una jornada que quedó abierta? (marcó entrada y no hay salida)
+ *
+ * Contrato único compartido por el motor y `handleCalcularPeriodo`: una jornada
+ * abierta NO se paga y NO es una ausencia. El cálculo debe detenerse con 409 y
+ * exigir confirmación explícita antes de liquidar un período que las contenga,
+ * porque el importe depende de que el operador corrija el marcaje.
+ * @param {object} asistencia - fila de registro_asistencia (o recorte equivalente)
+ * @returns {boolean}
+ */
+export function esJornadaAbierta(asistencia) {
+  if (!asistencia || asistencia.es_ausencia) return false
+  return asistencia.estado_marcaje === 'entrada' || (!!asistencia.hora_entrada && !asistencia.hora_salida)
+}
+
+/**
  * Calcula la línea de nómina de un empleado para un período.
  * @param {Array}  asistencias    - registros de registro_asistencia del período
  * @param {object} configEmpleado - fila de nomina_config_empleado
@@ -116,22 +131,26 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
   let diasFeriado    = 0
   let diasAusencia   = 0
 
+  // Cada fila responde dos preguntas distintas y NINGUNA se infiere de qué
+  // columnas pidió el llamador (antes el resultado cambiaba según la consulta
+  // incluyera `horas_trabajadas` o no):
+  //   1. ¿es una ausencia declarada?          → no paga.
+  //   2. ¿es una jornada que quedó abierta?   → no paga y NO es una ausencia:
+  //      la persona marcó entrada y se fue sin marcar salida, así que el pago
+  //      depende de que el operador corrija el marcaje. `handleCalcularPeriodo`
+  //      exige confirmación explícita antes de liquidar un período con estas
+  //      jornadas, para que nadie cobre (ni deje de cobrar) por accidente.
+  // Un día cerrado o un registro manual sin horas se siguen pagando como día
+  // trabajado, que es el comportamiento histórico.
   for (const a of asistencias) {
-    const tieneHorasExplicitas = a.horas_trabajadas !== undefined && a.horas_trabajadas !== null
-    const horasTrabajadas = tieneHorasExplicitas
-      ? Number(a.horas_trabajadas)
-      : Number(a.horas_normales || 0) + Number(a.horas_extra || 0)
-
-    if (a.es_ausencia || (tieneHorasExplicitas && (!Number.isFinite(horasTrabajadas) || horasTrabajadas <= 0))) {
+    if (a.es_ausencia) {
       diasAusencia += 1
       continue
     }
-    if (a.es_feriado) {
-      diasFeriado += 1
-      diasTrabajados += 1
-    } else {
-      diasTrabajados += 1
-    }
+    if (esJornadaAbierta(a)) continue
+
+    diasTrabajados += 1
+    if (a.es_feriado) diasFeriado += 1
     if (a.es_sabado) {
       diasSabado += 1
       // Un sábado que también es feriado lo maneja el modo de feriado; evita

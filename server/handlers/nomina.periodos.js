@@ -2,15 +2,17 @@
 import { json, jsonError, isValidUuid } from '../lib/utils.js'
 import { validateOperator } from '../lib/auth.js'
 import { registrarAuditoria } from '../lib/audit.js'
-import { calcularLineaNomina } from '../lib/nominaUtils.js'
+import { calcularLineaNomina, esJornadaAbierta } from '../lib/nominaUtils.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
-import { ROLES_ADMIN, ROLES_NOMINA, fechaNominaValida, fetchConfigNomina, r4, svcHeaders, tenantGuard, textoNominaValido } from './nomina.shared.js'
+import { requireCapacidad } from '../lib/permissions.js'
+import { fechaNominaValida, fetchConfigNomina, r4, svcHeaders, tenantGuard, textoNominaValido } from './nomina.shared.js'
 
 export async function handleGetPeriodos(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  if (!ROLES_NOMINA.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoVer = requireCapacidad(operador, 'verNomina', request)
+  if (denegadoVer) return denegadoVer
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   const account = nominaTenantFilter(operador.cuenta_id)
@@ -18,22 +20,24 @@ export async function handleGetPeriodos(request, env) {
   if (!response.ok) return jsonError('Error al leer períodos', 500, request)
   const periods = await response.json()
   if (!periods.length) return json(periods, 200, request)
-  const lineResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=in.(${periods.map(period => period.id).join(',')})${account}&select=periodo_id,total_bruto_usd,total_neto_usd,pagado`, { headers })
+  const lineResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=in.(${periods.map(period => period.id).join(',')})${account}&select=periodo_id,total_bruto_usd,total_neto_usd,deducciones_usd,pagado`, { headers })
   if (lineResponse.ok) {
     const aggregate = new Map()
     for (const line of await lineResponse.json()) {
-      const totals = aggregate.get(line.periodo_id) || { empleados: 0, bruto: 0, neto: 0, pagados: 0 }
+      const totals = aggregate.get(line.periodo_id) || { empleados: 0, bruto: 0, neto: 0, deducciones: 0, pagados: 0 }
       totals.empleados += 1
       totals.bruto += Number(line.total_bruto_usd || 0)
       totals.neto += Number(line.total_neto_usd || 0)
+      totals.deducciones += Number(line.deducciones_usd || 0)
       if (line.pagado) totals.pagados += 1
       aggregate.set(line.periodo_id, totals)
     }
     for (const period of periods) {
-      const totals = aggregate.get(period.id) || { empleados: 0, bruto: 0, neto: 0, pagados: 0 }
+      const totals = aggregate.get(period.id) || { empleados: 0, bruto: 0, neto: 0, deducciones: 0, pagados: 0 }
       period.total_empleados = totals.empleados
       period.total_bruto_usd = r4(totals.bruto)
       period.total_neto_usd = r4(totals.neto)
+      period.total_deducciones_usd = r4(totals.deducciones)
       period.lineas_pagadas = totals.pagados
     }
   }
@@ -44,7 +48,8 @@ export async function handleCrearPeriodo(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body
@@ -70,7 +75,8 @@ export async function handleCalcularPeriodo(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers, ip } = v
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body
@@ -85,7 +91,11 @@ export async function handleCalcularPeriodo(request, env) {
   const [configResponse, payrollConfig, attendanceResponse, previousResponse] = await Promise.all([
     fetch(`${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?activo=eq.true${account}&select=empleado_id,cargo,salario_dia_usd,horas_jornada`, { headers }),
     fetchConfigNomina(env, headers, operador.cuenta_id),
-    fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?fecha=gte.${period.desde}&fecha=lte.${period.hasta}${account}&select=empleado_id,fecha,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia`, { headers }),
+    // El contrato del motor (lib/nominaUtils.js) exige estas columnas: sin ellas el
+    // resultado de una línea cambiaría según qué pidió el llamador. `horas_trabajadas`
+    // ya no decide el pago, pero `estado_marcaje`/`hora_entrada`/`hora_salida` sí
+    // identifican las jornadas abiertas que bloquean el cálculo (409 más abajo).
+    fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?fecha=gte.${period.desde}&fecha=lte.${period.hasta}${account}&select=empleado_id,fecha,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,horas_trabajadas,estado_marcaje,hora_entrada,hora_salida`, { headers }),
     fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&select=empleado_id,bonos_usd,deducciones_usd,nota_bonos,nota_deducciones,comisiones_pos_usd,comisiones_despachos_ids,pagado`, { headers }),
   ])
   if (!configResponse.ok) return jsonError('Error al leer empleados', 500, request)
@@ -95,6 +105,31 @@ export async function handleCalcularPeriodo(request, env) {
   const attendance = await attendanceResponse.json()
   const previous = await previousResponse.json()
   if (!employees.length) return jsonError('No hay empleados activos con configuración de nómina', 400, request)
+  // Jornadas abiertas: nadie cobra ni queda como ausente hasta que el operador
+  // corrija el marcaje o confirme explícitamente que se liquidan sin pago.
+  const jornadasAbiertas = attendance.filter(esJornadaAbierta)
+  if (jornadasAbiertas.length && body?.confirmarJornadasAbiertas !== true) {
+    const ids = [...new Set(jornadasAbiertas.map(jornada => jornada.empleado_id))]
+    const nombres = new Map()
+    const nombresResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/clientes?tipo_cliente=eq.personal&id=in.(${ids.join(',')})${account}&select=id,nombre`, { headers })
+    if (nombresResponse.ok) {
+      for (const persona of await nombresResponse.json()) nombres.set(persona.id, persona.nombre)
+    }
+    const detalle = [...jornadasAbiertas]
+      .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))
+      .slice(0, 50)
+      .map(jornada => ({
+        empleado_id: jornada.empleado_id,
+        empleado_nombre: nombres.get(jornada.empleado_id) || null,
+        fecha: jornada.fecha,
+        hora_entrada: jornada.hora_entrada || null,
+      }))
+    return json({
+      error: `Hay ${jornadasAbiertas.length} jornada(s) con entrada y sin salida. Corrige el marcaje o confirma el cálculo: sin esa confirmación no se liquidan.`,
+      jornadas_abiertas: detalle,
+      total_jornadas_abiertas: jornadasAbiertas.length,
+    }, 409, request)
+  }
   const byEmployee = new Map()
   for (const row of attendance) {
     if (!byEmployee.has(row.empleado_id)) byEmployee.set(row.empleado_id, [])
@@ -133,7 +168,7 @@ export async function handleCalcularPeriodo(request, env) {
     const deleteResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&empleado_id=in.(${obsoleteIds.join(',')})`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') })
     if (!deleteResponse.ok) return jsonError('No se pudieron retirar líneas obsoletas', 500, request)
   }
-  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CALCULAR_PERIODO', entidadTipo: 'nomina_periodo', entidadId: periodoId, meta: { periodo: period.nombre, lineas: toInsert.length, preservadas: paidIds.size, obsoletas: obsoleteIds.length }, ip }).catch(() => {})
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CALCULAR_PERIODO', entidadTipo: 'nomina_periodo', entidadId: periodoId,    meta: { periodo: period.nombre, lineas: toInsert.length, preservadas: paidIds.size, obsoletas: obsoleteIds.length, jornadas_abiertas: jornadasAbiertas.length }, ip }).catch(() => {})
   return json({ ok: true, lineas_generadas: toInsert.length, lineas_preservadas: paidIds.size }, 200, request)
 }
 
@@ -141,7 +176,8 @@ export async function handleCerrarPeriodo(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers, ip } = v
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body
@@ -165,7 +201,8 @@ export async function handleReabrirPeriodo(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers, ip } = v
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body
@@ -190,7 +227,8 @@ export async function handleEliminarPeriodo(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers, ip } = v
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body

@@ -68,7 +68,7 @@ export function HolidayFormModal({ initialDate, existingDates, onClose, onSubmit
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm sm:p-4" onClick={onClose}>
       <div
         className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] sm:max-h-[85vh] overflow-y-auto flex flex-col animate-in fade-in slide-in-from-bottom-6 duration-200"
         onClick={e => e.stopPropagation()}
@@ -239,7 +239,7 @@ export function HolidayFormModal({ initialDate, existingDates, onClose, onSubmit
           )}
 
           {/* ═══ ACCIONES DEL FORMULARIO ═══ */}
-          <div className="flex gap-2.5 pt-2 border-t border-slate-100">
+          <div className="flex gap-2.5 pt-2 border-t border-slate-100" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
             <button
               type="button"
               onClick={onClose}
@@ -288,7 +288,7 @@ export function BatchImportModal({ existingDates, onClose, onSubmit, pending }) 
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm sm:p-4" onClick={onClose}>
       <div
         className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto flex flex-col animate-in fade-in slide-in-from-bottom-6 duration-200"
         onClick={e => e.stopPropagation()}
@@ -372,7 +372,7 @@ export function BatchImportModal({ existingDates, onClose, onSubmit, pending }) 
           )}
         </div>
 
-        <div className="flex gap-2.5 p-4 sm:p-5 border-t border-slate-100 bg-white">
+        <div className="flex gap-2.5 p-4 sm:p-5 border-t border-slate-100 bg-white" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}>
           <button
             type="button"
             onClick={onClose}
@@ -399,7 +399,7 @@ export function BatchImportModal({ existingDates, onClose, onSubmit, pending }) 
 
 export function ConfirmModal({ title, message, confirmLabel, onConfirm, onCancel, pending, danger }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onCancel}>
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onCancel}>
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4 animate-in fade-in duration-150"
         onClick={e => e.stopPropagation()}

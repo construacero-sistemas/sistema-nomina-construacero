@@ -20,15 +20,27 @@ const TABS = [
 
 export default function NominaView() {
   const perfil = useAuthStore(s => s.perfil)
-  // Los tabs de período e historial son administración de nómina (matriz única).
+  // OJO: `administrarNomina` es la capacidad del MÓDULO (lectura, marcaje y registro
+  // de asistencia). No sirve para gatear acciones de escritura: 31 de las rutas del
+  // Worker exigen `gestionarUsuarios` y 2 exigen `operarFinanzas`, y el rol `nomina`
+  // no tiene ninguna de las dos. Cada acción usa la MISMA llave que su endpoint.
   const esAdmin = tieneCapacidad(perfil, 'administrarNomina')
+  // Escrituras administrativas de nómina y de personal: períodos, líneas, catálogos,
+  // carga masiva, eliminaciones, alta/edición/baja de empleados (ROLES_ADMIN).
+  const puedeGestionarNomina = tieneCapacidad(perfil, 'gestionarUsuarios')
+  // Pagar nómina y pagar comisión registran egresos en Finanzas
+  // (POST /api/nomina/lineas/pagar y /api/finanzas/movimientos/crear exigen
+  // `operarFinanzas`): la interfaz usa la misma capacidad para no ofrecer una acción
+  // que el servidor va a rechazar.
+  const puedePagarNomina = tieneCapacidad(perfil, 'operarFinanzas')
+  const puedePagarComision = puedePagarNomina
   const tabsVisibles = TABS.filter(t => !t.soloNomina || esAdmin)
   const [tab, setTab] = useState(esAdmin ? 'empleados' : 'asistencia')
   const tabActivo = tabsVisibles.some(t => t.id === tab) ? tab : tabsVisibles[0].id
   const navegarTabs = useTablistNav(tabsVisibles.map(t => t.id), tabActivo, setTab)
 
   return (
-    <div className="p-3 sm:p-4 md:p-5 lg:p-6 space-y-3 sm:space-y-4 md:space-y-5 pb-12 md:pb-4">
+    <div className="p-3 sm:p-4 md:p-5 lg:p-6 space-y-3 sm:space-y-4 md:space-y-5 pb-4">
       <PageHeader
         icon={Wallet}
         title="Nómina"
@@ -51,9 +63,22 @@ export default function NominaView() {
       </div>
 
       <div id={`nomina-panel-${tabActivo}`} role="tabpanel" aria-labelledby={tabActivo} tabIndex={-1}>
-        {tabActivo === 'empleados' && <TabEmpleados esAdmin={esAdmin} />}
-        {tabActivo === 'asistencia' && <TabAsistencia esAdmin={esAdmin} />}
-        {tabActivo === 'periodos' && esAdmin && <TabPeriodos esAdmin={esAdmin} />}
+        {tabActivo === 'empleados' && (
+          <TabEmpleados
+            esAdmin={esAdmin}
+            puedePagarComision={puedePagarComision}
+            puedeGestionarNomina={puedeGestionarNomina}
+          />
+        )}
+        {tabActivo === 'asistencia' && (
+          <TabAsistencia esAdmin={esAdmin} puedeGestionarNomina={puedeGestionarNomina} />
+        )}
+        {tabActivo === 'periodos' && esAdmin && (
+          <TabPeriodos
+            puedeGestionarNomina={puedeGestionarNomina}
+            puedePagarNomina={puedePagarNomina}
+          />
+        )}
         {tabActivo === 'historial' && esAdmin && <TabHistorial />}
       </div>
     </div>

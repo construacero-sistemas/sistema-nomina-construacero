@@ -49,10 +49,14 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
     defaultOptions: { queries: { retry: false } },
   })
 
-  function renderTab(esAdmin = true) {
+  function renderTab(esAdmin = true, puedePagarComision = true, puedeGestionarNomina = true) {
     return render(
       <QueryClientProvider client={qc}>
-        <TabEmpleados esAdmin={esAdmin} />
+        <TabEmpleados
+          esAdmin={esAdmin}
+          puedePagarComision={puedePagarComision}
+          puedeGestionarNomina={puedeGestionarNomina}
+        />
       </QueryClientProvider>
     )
   }
@@ -132,6 +136,109 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
     expect(mockActualizarMutate).toHaveBeenCalledWith({ id: 'cfg-2', activo: true })
   })
 
+  it('oculta Pagar Comisión al rol de nómina: pagar una comisión exige operar Finanzas en el servidor', () => {
+    mockClientes = [{ id: 'emp-1', nombre: 'Niki Ramirez', tipo_cliente: 'personal', activo: true }]
+    mockAllConfigs = [
+      { id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Vendedor', salario_dia_usd: 0, horas_jornada: 8, activo: true, empleado: mockClientes[0] },
+    ]
+
+    renderTab(true, false, true)
+
+    expect(screen.queryByRole('button', { name: /Pagar Comisión/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /Configurar/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Baja/i })).toBeTruthy()
+  })
+
+  it('oculta alta, edición, baja y el interruptor a quien no puede gestionar personal (el servidor le responde 403)', () => {
+    mockClientes = [{ id: 'emp-1', nombre: 'Alejandra Hidalgo', tipo_cliente: 'personal', activo: true }]
+    mockAllConfigs = [
+      { id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Administración', salario_dia_usd: 15, horas_jornada: 8, activo: true, empleado: mockClientes[0] },
+      { id: 'cfg-2', empleado_id: 'emp-2', cargo: 'Chofer', salario_dia_usd: 12, horas_jornada: 8, activo: false, empleado: { id: 'emp-2', nombre: 'Jose Chofer', tipo_cliente: 'personal' } },
+    ]
+
+    renderTab(true, false, false)
+
+    expect(screen.queryByRole('button', { name: /Nuevo Empleado/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Configurar/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Baja$/ })).toBeNull()
+    expect(screen.queryByRole('switch')).toBeNull()
+    expect(screen.queryByText(/sin configurar en nómina/i)).toBeNull()
+
+    // La lectura de la plantilla sigue disponible para ese rol.
+    expect(screen.getByText('Todos (1)')).toBeTruthy()
+    expect(screen.getByText('Alejandra Hidalgo')).toBeTruthy()
+
+    // En Bajas tampoco hay acciones de escritura, pero la ficha se puede consultar.
+    fireEvent.click(screen.getByRole('button', { name: /Bajas \(1\)/i }))
+    expect(screen.getByText('Jose Chofer')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Reactivar/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Eliminar/i })).toBeNull()
+  })
+
+  it('muestra Pagar Comisión en la barra y en la ficha cuando el operador puede operar Finanzas', () => {
+    mockClientes = [{ id: 'emp-1', nombre: 'Niki Ramirez', tipo_cliente: 'personal', activo: true }]
+    mockAllConfigs = [
+      { id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Vendedor', salario_dia_usd: 0, horas_jornada: 8, activo: true, empleado: mockClientes[0] },
+    ]
+
+    renderTab(true, true)
+
+    // Barra de acciones + barra inferior de la ficha del vendedor.
+    expect(screen.getAllByRole('button', { name: /Pagar Comisión/i })).toHaveLength(2)
+  })
+
+  it('muestra en la ficha qué días trabaja cada persona y avisa cuando no está fijado', () => {
+    mockClientes = [
+      { id: 'emp-1', nombre: 'Niki Ramirez', tipo_cliente: 'personal', activo: true },
+      { id: 'emp-2', nombre: 'Josue Marciales', tipo_cliente: 'personal', activo: true },
+    ]
+    mockAllConfigs = [
+      { id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Vendedor', salario_dia_usd: 0, horas_jornada: 8, activo: true, empleado: mockClientes[0], dias_laborables: [1, 2, 3, 4, 5, 6], horario_configurado: true },
+      { id: 'cfg-2', empleado_id: 'emp-2', cargo: 'Vendedor', salario_dia_usd: 0, horas_jornada: 8, activo: true, empleado: mockClientes[1], dias_laborables: [1, 2, 3, 4, 5], horario_configurado: false },
+    ]
+
+    renderTab(true, true, true)
+
+    expect(screen.getByText('Trabaja: Lun a Sáb')).toBeTruthy()
+    expect(screen.getByText('Trabaja: Lun a Vie')).toBeTruthy()
+    expect(screen.getByText('(sin fijar)')).toBeTruthy()
+  })
+
+  it('el interruptor de Asistencia aplica el cambio directo cuando el perfil cobra por comisión', () => {
+    mockClientes = [{ id: 'emp-1', nombre: 'Niki Ramirez', tipo_cliente: 'personal', activo: true }]
+    mockAllConfigs = [
+      { id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Vendedor', salario_dia_usd: 0, horas_jornada: 8, activo: true, empleado: mockClientes[0] },
+    ]
+
+    renderTab(true, true, true)
+
+    fireEvent.click(screen.getByRole('switch', { name: /Quitar a Niki Ramirez de la zona de Asistencia/i }))
+
+    expect(mockActualizarMutate).toHaveBeenCalledWith({ id: 'cfg-1', controlaAsistencia: false })
+  })
+
+  it('pide confirmación antes de quitar de Asistencia a un perfil con salario fijo y no lo aplica si se cancela', () => {
+    mockClientes = [{ id: 'emp-1', nombre: 'Alejandra Hidalgo', tipo_cliente: 'personal', activo: true }]
+    mockAllConfigs = [
+      { id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Administración', salario_dia_usd: 15, horas_jornada: 8, activo: true, empleado: mockClientes[0] },
+    ]
+
+    renderTab(true, true)
+
+    fireEvent.click(screen.getByRole('switch', { name: /Quitar a Alejandra Hidalgo de la zona de Asistencia/i }))
+
+    // Aún no se toca nada: primero se explica que su período quedaría en $0.
+    expect(mockActualizarMutate).not.toHaveBeenCalled()
+    expect(screen.getByText(/tiene un salario fijo de/i)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Cancelar$/i }))
+    expect(mockActualizarMutate).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('switch', { name: /Quitar a Alejandra Hidalgo de la zona de Asistencia/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Quitar de Asistencia/i }))
+    expect(mockActualizarMutate).toHaveBeenCalledWith({ id: 'cfg-1', controlaAsistencia: false })
+  })
+
   it('al hacer clic en Eliminar en Bajas abre el modal de confirmación y llama a eliminarConfig', async () => {
     mockClientes = [
       { id: 'emp-1', nombre: 'Alejandra Hidalgo', tipo_cliente: 'personal', activo: true },
@@ -162,6 +269,8 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
     const btnConfirmar = screen.getByRole('button', { name: /Eliminar definitivamente/i })
     fireEvent.click(btnConfirmar)
 
-    expect(mockEliminarMutate).toHaveBeenCalledWith({ id: 'cfg-2' })
+    expect(mockEliminarMutate).toHaveBeenCalledWith({
+      id: 'cfg-2', incluirHistorial: false, empleadoId: 'emp-2', confirmarNombre: '',
+    })
   })
 })

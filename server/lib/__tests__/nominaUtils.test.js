@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calcularCamposAsistencia, calcularLineaNomina } from '../nominaUtils'
+import { calcularCamposAsistencia, calcularLineaNomina, esJornadaAbierta } from '../nominaUtils'
 
 // Fechas de referencia (2026): 2026-08-03 = lunes, 2026-08-08 = sábado, 2026-08-09 = domingo
 const LUNES   = '2026-08-03'
@@ -339,14 +339,19 @@ describe('calcularLineaNomina — ausencias', () => {
     expect(r.monto_normal_usd).toBe(60)
   })
 
-  it('un registro explícito de cero horas no se paga como día trabajado', () => {
+  it('un día registrado con 0 horas aporta 0 h pero no se convierte en ausencia', () => {
+    // Contrato F-1: el importe no puede depender de si la consulta pidió
+    // `horas_trabajadas`. El modelo sigue siendo por día registrado: quien no vino
+    // se declara con `es_ausencia` y quien se fue sin marcar queda como jornada
+    // abierta (bloque «contrato horas / ausencia / jornada abierta»).
     const r = calcularLineaNomina(
-      [asis({ horas_trabajadas: 0, horas_normales: 0, horas_extra: 0, es_feriado: true })],
+      [asis({ horas_trabajadas: 0, horas_normales: 0, horas_extra: 0 })],
       EMPLEADO, CONFIG_FACTORES
     )
-    expect(r.dias_trabajados).toBe(0)
-    expect(r.dias_feriado).toBe(0)
-    expect(r.total_bruto_usd).toBe(0)
+    expect(r.dias_trabajados).toBe(1)
+    expect(r.horas_normales).toBe(0)
+    expect(r.dias_ausencia).toBe(0)
+    expect(r.total_bruto_usd).toBe(30)
   })
 
   it('una ausencia en sábado no genera recargo', () => {
@@ -425,5 +430,68 @@ describe('calcularLineaNomina — bordes numéricos', () => {
     )
     // tarifa = 30/6 = 5 ; extra = 2 × 5 × 1.5 = 15
     expect(r.monto_extra_usd).toBe(15)
+  })
+})
+
+// ─── Contrato horas / ausencia / jornada abierta (hallazgo F-1) ──────────────
+// Antes el motor decidía con `tieneHorasExplicitas`, así que la misma fila pagaba
+// un día completo o $0 según si la consulta pedía `horas_trabajadas`. Estas pruebas
+// fijan las tres formas de fila y el caso de la jornada que quedó abierta.
+describe('calcularLineaNomina — contrato horas / ausencia / jornada abierta', () => {
+  it('la fila SIN horas_trabajadas y la fila con horas_trabajadas: 0 dan el mismo resultado', () => {
+    const sinCampo = calcularLineaNomina([asis()], EMPLEADO, CONFIG_FACTORES)
+    const conCero  = calcularLineaNomina(
+      [asis({ horas_trabajadas: 0, estado_marcaje: 'manual' })], EMPLEADO, CONFIG_FACTORES
+    )
+    expect(conCero.dias_trabajados).toBe(sinCampo.dias_trabajados)
+    expect(conCero.horas_normales).toBe(sinCampo.horas_normales)
+    expect(conCero.total_bruto_usd).toBe(sinCampo.total_bruto_usd)
+    expect(sinCampo.total_bruto_usd).toBe(30)
+  })
+
+  it('una jornada abierta no paga el día ni cuenta como ausencia', () => {
+    const abierta = asis({
+      estado_marcaje: 'entrada', hora_entrada: '08:00', hora_salida: null,
+      horas_trabajadas: 0, horas_normales: 0,
+    })
+    const r = calcularLineaNomina([abierta, asis()], EMPLEADO, CONFIG_FACTORES)
+    expect(r.dias_trabajados).toBe(1)      // solo el día cerrado
+    expect(r.dias_ausencia).toBe(0)        // se fue sin marcar ≠ falta
+    expect(r.horas_normales).toBe(8)
+    expect(r.total_bruto_usd).toBe(30)
+  })
+
+  it('detecta la jornada abierta por la entrada sin salida aunque el estado sea corregido', () => {
+    const r = calcularLineaNomina(
+      [asis({ estado_marcaje: 'corregido', hora_entrada: '08:00', hora_salida: null, horas_trabajadas: 0, horas_normales: 0 })],
+      EMPLEADO, CONFIG_FACTORES
+    )
+    expect(r.dias_trabajados).toBe(0)
+    expect(r.dias_ausencia).toBe(0)
+    expect(r.total_bruto_usd).toBe(0)
+  })
+
+  it('la ausencia declarada sigue sin pagar y no se confunde con una jornada abierta', () => {
+    const r = calcularLineaNomina(
+      [asis({ es_ausencia: true, horas_trabajadas: 0, horas_normales: 0 })],
+      EMPLEADO, CONFIG_FACTORES
+    )
+    expect(r.dias_trabajados).toBe(0)
+    expect(r.dias_ausencia).toBe(1)
+    expect(r.total_bruto_usd).toBe(0)
+  })
+})
+
+describe('esJornadaAbierta — contrato compartido con handleCalcularPeriodo', () => {
+  it('marca abierta una fila en estado entrada o con entrada y sin salida', () => {
+    expect(esJornadaAbierta({ estado_marcaje: 'entrada' })).toBe(true)
+    expect(esJornadaAbierta({ estado_marcaje: 'completo', hora_entrada: '08:00', hora_salida: null })).toBe(true)
+  })
+
+  it('nunca marca una ausencia ni una jornada cerrada', () => {
+    expect(esJornadaAbierta({ es_ausencia: true, estado_marcaje: 'entrada' })).toBe(false)
+    expect(esJornadaAbierta({ estado_marcaje: 'completo', hora_entrada: '08:00', hora_salida: '17:00' })).toBe(false)
+    expect(esJornadaAbierta({ estado_marcaje: 'manual', hora_entrada: null, hora_salida: null })).toBe(false)
+    expect(esJornadaAbierta(null)).toBe(false)
   })
 })

@@ -3633,6 +3633,109 @@ En dispositivos móviles, la cuadrilla semanal intentaba encajar 7 días en 360p
 
 **Pendiente de despliegue:** aplicar migraciones 241–242 al remoto (la 242 debe ir ANTES de crear usuarios con rol finanzas/nomina, porque el CHECK de la BD los rechaza), deploy del worker y QA manual con los 3 roles.
 
+## 118. Control de asistencia por empleado y alineación de las acciones de personal con la capacidad real (2026-09-25)
+
+**Problema 1 — dos preguntas pegadas en una columna.** `nomina_config_empleado.activo` respondía a la vez "¿está en nómina?" y "¿se le controla la asistencia?". Los tres vendedores a comisión (`salario_dia_usd = 0`) nunca marcan, pero no se les podía sacar de Asistencia sin darlos de baja y perderles el puesto en nómina: la zona de Asistencia arrastraba siempre 3 pendientes que nadie iba a llenar.
+
+**Problema 2 — botones que el servidor rechaza (visto en la app real).** La UI ofrecía alta, edición, baja, reactivación y eliminación de personal al rol `nomina`, pero los tres handlers de `nomina.empleados.js` exigen `ROLES_ADMIN` (`gestionarUsuarios`), que ese rol no tiene. Cada clic respondía 403, y `compat/services/authFetch.js` trata todo 403 como revocación de rol (`denyAccess`), así que la pantalla caía en «No pudimos abrir tu cuenta» con la sesión barrida. Se reprodujo en el preview con el operador real: `POST /api/nomina/config-empleado/actualizar → 403` al usar el interruptor.
+
+**Migración 246 (`supabase/migrations/246_nomina_control_asistencia.sql`):** `controla_asistencia BOOLEAN NOT NULL DEFAULT true`. El default conserva el comportamiento previo; el apagado es explícito por empleado desde su ficha.
+
+**Backend:**
+- `nomina.empleados.js`: expone y valida `controla_asistencia` en el listado y en `POST /api/nomina/config-empleado/actualizar` (`booleanNominaValido`).
+- `nomina.shared.js` → `fetchConfigsConControl()`: lee la configuración junto con la bandera y, **si la migración no está aplicada** (PostgREST 42703), reintenta sin la columna y asume `true` en vez de romper la asistencia. Es el mismo patrón de respaldo ya usado para `tasa_usd_ves` (224) y las columnas de la 226 en Finanzas.
+- `nomina.registro.js` (manual e individual) y `nomina.asistencia.js` (marcaje real) rechazan escribir para quien tiene la asistencia apagada, con mensaje que dice dónde activarla.
+- El `PATCH` de configuración devuelve 409 con la causa exacta si la columna no existe todavía, en lugar de un 500 genérico.
+
+**UI:**
+- `ControlAsistenciaToggle.jsx` (nuevo): interruptor `role="switch"` en la ficha de cada empleado; si el perfil tiene salario fijo > 0 pide confirmación explicando que su período quedaría en $0 (la nómina se paga por día registrado).
+- `NominaView` / `TabEmpleados`: alta, edición, baja, reactivación, eliminación e interruptor se gatean con `gestionarUsuarios` (la MISMA llave del servidor), igual que `Pagar Comisión` usa `operarFinanzas`. La lectura de plantilla, montos y la vista de Bajas siguen disponibles para el rol `nomina`.
+
+**Guardarraíles:** `check:project` exige la migración 246 con su columna y `DEFAULT true`, el respaldo `fetchConfigsConControl` en `nomina.shared.js` y la llave `gestionarUsuarios` en `NominaView` / `puedeGestionarPersonal` en `TabEmpleados`; la suite de responsividad cubre el área táctil del interruptor.
+
+**Tests:**
+- `server/handlers/__tests__/nomina.control-asistencia-compat.test.js` (nuevo, 4): respaldo sin la columna, respeto de la bandera cuando existe, y no inventar banderas ante otros errores.
+- `src/components/nomina/__tests__/TabEmpleados.test.jsx` (+2, 9 en total): oculta las acciones de personal cuando falta la capacidad y las mantiene cuando está.
+- Marcaje real y carga masiva rechazan perfiles sin control de asistencia.
+
+**Verificación:** `npm test` 102 archivos / 1068 pruebas, `test:qa` 22/22, `test:responsive` 41/41, `lint` limpio, `check:project` OK (40 migraciones, 355 archivos) y comprobación en el preview con el operador `nomina`: 0 botones que el servidor vaya a rechazar.
+
+**Pendiente:** aplicar la migración 246 en Supabase. Sin ella, el listado funciona (respaldo) y toda la plantilla queda con asistencia activada por defecto; el interruptor responde 409 con el motivo.
+
+## 119. Auditoría de capacidades UI ↔ servidor y plan de alineación (2026-09-25)
+
+**Objetivo:** explicar por qué el rol `nomina` recibía 403 en acciones que la pantalla le ofrecía, medir el alcance real y dejar un plan de corrección con guardarraíles.
+
+**Método:** se cruzaron las **80 rutas del Worker** (79 handlers) con la compuerta que aplica cada una, el gate de cada acción en el front (props `esAdmin`, `puedePagarComision`, `tieneCapacidad`) y el resultado visible en la app real con el operador `nomina` (solo render; ninguna mutación).
+
+**Causa raíz:** `NominaView` calcula `esAdmin = tieneCapacidad(perfil, 'administrarNomina')` —la capacidad del **módulo**— y la usa como si fuera la capacidad de **cada acción**. 31 de las 80 rutas exigen `gestionarUsuarios` (solo jefe/desarrollador) y 7 exigen `operarFinanzas` (jefe/desarrollador/finanzas, dos de ellas de nómina); el rol `nomina` no tiene ninguna de las dos.
+
+**Hallazgos verificados (rol `nomina`):** períodos crear/calcular/cerrar/eliminar y «Pagar Recibos»; ajustar línea; pagar y revertir nómina; importar comisiones POS; carga masiva de horario («Aplicar a 3 pendientes»); eliminar un registro de asistencia. En vivo se vieron esos controles renderizados con ese rol, y el 403 real de `POST /api/nomina/config-empleado/actualizar`.
+
+**Agravante:** `compat/services/authFetch.js` trata **cualquier** 403 como revocación de rol (`denyAccess()`): un permiso insuficiente para una acción borra el perfil y deja la pantalla «No pudimos abrir tu cuenta».
+
+**Sin hallazgos:** marcaje real, registro individual de asistencia, todo lo que vive en Sistema (feriados, horarios generales, conceptos, reglas legales, tasas, retención), tesorería/cuentas de custodia (`verSaldos`) y el módulo Finanzas, donde UI y servidor ya coinciden.
+
+**Hueco de pruebas que lo permitió:** `nomina.permisos.test.js` cubre los roles **sin** módulo (403 en todas las rutas) y solo la **lectura** para jefe/desarrollador/`nomina`; ninguna aserción sobre el rol `nomina` en escrituras.
+
+**Entregable de este turno:** `docs/PLAN_ALINEACION_CAPACIDADES_UI.md` con tres fases (gates por acción, contrato escrito en pruebas + guardarraíl de paridad, y 403 de capacidad que no cierra sesión), criterios de salida y las tres decisiones que solo puede tomar el negocio (quién administra personal, quién paga nómina, si el 403 sigue forzando revalidación).
+
+**Estado:** auditoría y plan documentados; no se modificó código funcional en este turno. La única corrección ya aplicada es la de empleados (entrada #118).
+
+## 120. Ejecución del plan de alineación UI ↔ servidor (2026-09-25)
+
+**Objetivo:** ejecutar `docs/PLAN_ALINEACION_CAPACIDADES_UI.md` completo (las tres fases) para que la interfaz no ofrezca ninguna acción que el servidor rechace y para que un 403 de capacidad no cierre la sesión.
+
+**Fase 1 — gates por acción.** `NominaView` ahora deriva tres llaves y cada una se usa solo donde corresponde: `esAdmin` (`administrarNomina`) para lectura y marcaje, `puedeGestionarNomina` (`gestionarUsuarios`) para toda escritura administrativa y `puedePagarNomina` (`operarFinanzas`) para pagar o revertir. Cambios: `TabPeriodos` (crear/calcular/cerrar/eliminar y «Pagar Recibos»), `PeriodoDetalleModal` (importar comisiones y ajustar bonos → gestionar; «Pagar Recibos Pendientes», «Pagar», «Revertir Pago» → pagar), `TabAsistencia` + `AsistenciaDiariaMovil` (carga masiva), `AsistenciaModal` (solo el borrado; registrar y corregir siguen disponibles para el rol `nomina`) y `TabEmpleados` (rename del prop a `puedeGestionarNomina`). El `esAdmin` que ya no gateaba nada se retiró de `TabPeriodos` y `PeriodoDetalleModal` en vez de dejarlo muerto; `TabHistorial` abre el detalle sin ninguna llave (solo consulta).
+
+**Fase 2 — contrato escrito.** `nomina.permisos.test.js`: 17 pruebas nuevas que exigen al rol `nomina` un 403 **con la marca**, sin consultar la base, en las 15 rutas administrativas y en las 2 de pago, más el reverso (jefe/desarrollador no reciben 403 de capacidad). Ese era el hueco exacto: la suite solo cubría la lectura para ese rol. `check:project` gana un guardarraíl de paridad `acción → capacidad` por archivo (marcadores requeridos y prohibidos); se comprobó que **falla de verdad** metiendo `esAdmin` a propósito en `PeriodoDetalleModal` y revirtiendo el cambio.
+
+**Fase 3 — el 403 de capacidad ya no cierra la sesión.** `CODIGO_CAPACIDAD_INSUFICIENTE` vive en `compat/api/lib/utils.js` (módulo compartido que ya cruzaba al cliente), `requireCapacidad` (`server/lib/permissions.js`) lo emite en su 403 y `authFetch` solo llama a `denyAccess()` cuando la respuesta **no** trae la marca: una revocación de rol real (validateOperator) sigue cerrando sesión. Para que la marca cubra todo el módulo, las **32 compuertas** `ROLES_*.includes(operador.rol)` de los 7 handlers de nómina se reemplazaron por `requireCapacidad(...)` con la misma capacidad (mismo criterio, ahora legible), y se podaron los imports que quedaron sin uso. `check:project` vigila la marca en los dos extremos.
+
+**Tests:** `compat/services/__tests__/authFetch.session-fix.test.jsx` (+2, 21): 403 de capacidad → sesión intacta y error legible; 403 sin marca → se revoca el perfil como antes. `src/components/nomina/__tests__/TabPeriodos.test.jsx` (nuevo, 3): las dos capacidades habilitan todo, ninguna habilita lo del otro, y sin ellas queda solo «Ver Recibos». `AsistenciaModal`/`AsistenciaDiariaMovil` suman el caso negativo (acción oculta, tarea propia intacta).
+
+**Verificación:** `lint` limpio · `npm test` **103 archivos / 1093 pruebas** · `test:qa` 22/22 · `test:responsive` 41/41 · `test:bundle-size` PASS · `build` OK · `check:project` OK (40 migraciones, 356 archivos). En vivo con el operador `nomina` (preview, Vite 5173 + Wrangler 8788): Empleados sin ninguna acción de escritura, Períodos con «Ver Recibos» y nada más, Asistencia completa (78 controles de registro y marcaje) sin la carga masiva. Antes de esta entrada, ese mismo rol veía «Crear Nuevo Período», «Calcular», «Eliminar período» y «Aplicar a 3 pendientes».
+
+**Pendiente:** las tres decisiones de negocio del plan (quién administra personal, quién paga nómina, si el 403 sigue forzando revalidación) y aplicar la migración 246.
+
+## 121. Días laborables por empleado, estado «Día libre» y ausencia con reversa (2026-09-25)
+
+**Objetivo:** dos huecos de operación diaria. (1) El sábado, la mayoría del personal no viene, pero Asistencia y el marcaje real los trataban como laborables para todos: aparecían en rojo y la única salida era registrar una ausencia falsa. (2) El panel «Marcaje real de hoy» solo ofrecía «Marcar entrada», sin forma de marcar que alguien no vino ni de deshacerlo.
+
+**Hallazgo:** la tabla `nomina_horarios` (migración 215) ya existía con endpoints y hooks (`useHorarios`/`useCrearHorario`) pero **ningún componente la usaba**. La regla vivía incrustada en el cálculo de asistencia como «lun–sáb laborable para todos».
+
+**Qué se decidió:** los días laborables son **por empleado y con horas por día** (no un horario único por empresa), y el **domingo nunca es laborable** — se sigue pagando como feriado (`esFeriadoEfectivo = esFeriado || esDomingo`), y el sábado trabajado conserva su `factor_sabado` 1.25× sin descanso. El horario se guarda como **permanente** (`semana_ciclo` y `fecha_hasta` nulos, `fecha_desde='2000-01-01'`) para que la matriz semanal sea estable; sin filas propias se asume el horario histórico **Lun–Sáb**, así que a nadie le cambia la lista hasta que se configure.
+
+**Servidor.** `server/lib/nominaHorarios.js` (nuevo) es la fuente de verdad: `diaSemanaDeFecha` (UTC, sin depender del TZ del runtime), `diasLaborablesResueltos`, `trabajaEnFecha` (domingo siempre `false`), `fetchDiasLaborablesPorEmpleado` y `empleadosLibresEseDia`. `nomina.horarios.js` (nuevo, extraído de `nomina.asistencia.js`) añade dos handlers: `handleGuardarHorarioEmpleado` (`POST /api/nomina/calendario/horarios/empleado`, gate `gestionarUsuarios`: valida días Lun–Sáb sin repetidos, horas y jornada, borra la semana permanente anterior y escribe el lote, auditoría `GUARDAR_DIAS_LABORABLES`) y `handleMarcarAusencia` (`POST /api/nomina/marcaje/ausencia`, gate `administrarNomina` porque es una acción del reloj). La ausencia es **idempotente** si ya está, responde 409 si esa persona ya tiene marcaje real del reloj o un registro manual, y su reversa (`quitar: true`) borra **solo** la fila con `es_ausencia=true AND estado_marcaje='manual'`: nunca se borran horas reales desde aquí (eso sigue en «Corregir marcaje»). La carga masiva de asistencia ahora consulta los días laborables de los seleccionados y responde 409 con cuántos de cuántos quedarían fuera, en vez de escribir en un día libre. El listado de configuración entrega `dias_laborables` y `horario_configurado` por persona.
+
+**Front.** `src/utils/diasLaborables.js` (nuevo) espeja el resolutor para pintar sin consultar por vista. `MarcajeLogisticaPanel`: nuevo estado **Día libre** (no suma pendientes), botón **«Marcar ausente»** en «Sin entrada» y **«Deshacer ausencia»** cuando ya está marcada; en día libre el texto explica «Hoy no le toca trabajar (Sáb). Si vino, márcalo igual.» y la entrada se ofrece en secundario. `TabAsistencia` y `AsistenciaDiariaMovil` muestran «Libre» (antes «Descanso»/«Sábado rotativo») y un cuarto filtro «Día libre». `EmpleadoConfigModal` gana la sección **«Días que trabaja»** (6 toggles Lun–Sáb, hora de entrada/salida y jornada por día, «usar el mismo horario en todos los días marcados», aviso de «sin semana guardada»), que se guarda junto con la ficha; `TabEmpleados` muestra «Trabaja: Lun a Sáb». Hooks nuevos: `useGuardarHorarioEmpleado` y `useMarcarAusencia`.
+
+**Guardarraíl de tamaño.** Los cambios empujaron tres archivos por encima de las 600 líneas que exige `check:project`, así que se dividieron en módulos del mismo dominio: `server/handlers/nomina.horarios.js`, `src/hooks/nominaApi.js` (claves de caché + `apiGet`/`apiPost`) y —desde `EmpleadoConfigModal`— `ModalidadSalarioSection.jsx` y `SemanaLaborableSection.jsx`.
+
+**Tests.** Servidor: `nomina.asistencia.manual.test.js` (nuevo, días libres + ausencia válida/409/rollback/reversa mal dirigida), más los mocks de `/nomina_horarios` en bajas, permisos y marcaje. Front: `MarcajeLogisticaPanel.test.jsx` (11) cubre «marcar ausente → deshacer», que la jornada real no se deshace desde ahí y el sábado/domingo como Día libre; `AsistenciaDiariaMovil.test.jsx` (5) y `TabEmpleados.test.jsx` (10) suman el estado libre, el conteo «en día libre» y la línea «Trabaja: … (sin fijar)». El script determinístico necesitó declarar `/nomina_horarios` en su base en memoria (sin semanas propias = Lun–Sáb).
+
+**Verificación:** `lint` limpio · `npm test` **104 archivos / 1103 pruebas** · `test:nomina-deterministic` 28/28 · `test:finanzas-deterministic` 125 aserciones · `test:qa` 22/22 · `test:responsive` 41/41 · `test:bundle-size` PASS · `build` OK · `check:project` OK.
+
+**Pendiente:** probar en vivo el ciclo Marcar ausente → Deshacer ausencia con el operador real (los servidores de desarrollo no sobreviven al reinicio del entorno) y aplicar la migración 246.
+
+## 122. Ejecución del plan de flujo de nómina: los 13 hallazgos (2026-09-26)
+
+**Objetivo:** ejecutar `docs/PLAN_FIXEO_FLUJO_NOMINA.md` completo (4 fases) para cerrar los huecos que la auditoría del flujo encontró entre la asistencia, el cálculo y el pago. Ninguno lo detectaba la suite: el más grave vivía en el borde entre la consulta de liquidación y el motor de cálculo.
+
+**Decisiones adoptadas** (las cuatro «pendientes de negocio» del plan, con su recomendación): una **jornada abierta bloquea** el cálculo con 409 hasta que se corrija la salida o el operador confirme explícitamente; la **ausencia en feriado no laborable se bloquea**, igual que en un día libre; el **divisor del salario semanal se deriva** de los días marcados en «Días que trabaja»; los **días libres siguen sin pagarse** (el modelo paga por día registrado).
+
+**Fase 1 — que el dinero cuadre.** (F-1) `handleCalcularPeriodo` no pedía `horas_trabajadas`: el motor decidía con «¿vino la columna?» y la misma fila daba 10 h o $0 según quién la leyera. Ahora el select trae `horas_trabajadas,estado_marcaje,hora_entrada,hora_salida` y el motor dejó de mirar la forma del dato: cuenta **día trabajado**, **ausencia** o **jornada abierta** (entrada sin salida: no se paga y **no** es ausencia). El cálculo responde **409 con la lista** de jornadas abiertas (nombre, fecha, hora de entrada) y `total_jornadas_abiertas`; con `confirmarJornadasAbiertas: true` liquida sin pagarlas y lo deja en auditoría (`CALCULAR_PERIODO` con `jornadas_abiertas`). El registro manual exige ahora **entrada y salida** (o ausencia): antes una fila sin horas se guardaba como día completo con 0 h. En el front, `src/utils/asistenciaOperativa.js` centraliza «jornada abierta», `TabAsistencia` avisa «N marcajes tienen la entrada y no la salida» y `TabPeriodos` abre el diálogo con la lista («Corregir marcajes» / «Calcular sin pagarlas») en vez de un error de red.
+
+**Fase 2 — guardarraíles y fuentes de verdad.** (F-2) El guardarraíl de egress y de `select=*` de `check:project` usaba `path.startsWith('server/')` sobre rutas compuestas con `path.join`, que en Windows llegan con separador invertido: ahí **no protegía nada** (en CI sí). Se normaliza la ruta una sola vez y se añadió la prueba del guardarraíl en `qa-guards`. `server/lib/nominaHorarios.js` paginaba con `limit=1000` (prohibido): ahora pagina de 500 en 500 con techo duro y aviso. (F-3) El divisor semanal tenía dos fuentes: el selector 5/6/7 de la ficha y los días marcados. Queda **una**: los días de «Días que trabaja», visibles en el desglose («5 días — se toma de «Días que trabaja»»). (F-4) «Registrados» contaba días libres; (F-5) el sábado de quien **sí** trabaja se pintaba «Libre» porque `esFinde` era sábado/domingo para todos; ahora cada celda decide con la semana de esa persona. (F-6) El reloj real y la vista diaria ya reciben el feriado: un feriado no laborable no suma pendientes, no ofrece «Marcar ausente» y el servidor rechaza esa ausencia. (F-7) Guardar la semana laboral **borraba y luego insertaba**: si el insert fallaba, la persona se quedaba sin filas y caía al histórico Lun–Sáb en silencio. Ahora cada día se escribe en su propia fila (PATCH de los existentes, POST de los nuevos) y **solo después** se retiran los días que salieron; si el retiro falla, la semana nueva queda y se avisa. Con eso llega la migración **247**: índice único parcial `(empleado_id, dia_semana) WHERE semana_ciclo IS NULL AND fecha_hasta IS NULL` con limpieza previa de duplicados. (F-8) Los modales de día y de lote proponen las horas configuradas (la semana de la persona y el horario general de la empresa) en vez de un 08:00–17:00 con «medio sábado» fijo.
+
+**Fase 3-4 — bordes.** (F-9) `fecha_desde` se respeta: un horario programado a futuro no resuelve la semana de hoy, el editor solo toca la vigente y el espejo del front filtra igual. (F-10) «Manual nómina» ya no inventa faltas: una ausencia en día libre o feriado no laborable responde 400 (las **horas** sí se pueden cargar en cualquier fecha, para historia). (F-11) La lectura de asistencia se paginaba en una sola página de 500 filas: desde ~71 empleados los últimos días desaparecían en silencio. Ahora pagina (500 por página, orden `fecha, empleado_id` para un offset estable) y devuelve `{ registros, truncado }`; la vista avisa cuando el rango quedó corto en vez de mostrar totales incompletos. (F-12) El campo pasa a decir **«Monto fijo por feriado trabajado (USD)»**, que es lo que el motor paga. (F-13) La fecha operativa (`src/utils/fechaOperativa.js`, America/Caracas) la usan el reloj real, la vista diaria y la grilla semanal: antes «hoy» salía del reloj del navegador.
+
+**Tests.** Nuevos: `nomina.periodos-jornadas.test.js` (409 con lista, confirmación explícita con auditoría), `nomina.horarios-semana.test.js` (PATCH/POST antes del DELETE, sin retiros si la escritura falla, aviso si falla el retiro, filtro de vigencia, día repetido), `nomina.asistencia.lectura.test.js` (paginación real, dos páginas, techo con `truncado`, error en la segunda página), `nomina.ausencia.test.js` (ausencia válida, feriado no laborable), `nominaHorarios.test.js` (resolución de días, vigencia por fecha, paginación) y `diasLaborables.test.js` (semana editable y payload). Ampliados: `nominaUtils.test.js` (50), `nomina.asistencia.manual.test.js` (+4: horas↔ausencia y F-10), `nomina.flujo.test.js`, `EmpleadoConfigModal.test.jsx` (+1 aviso), `TabAsistencia.test.jsx` (+1 truncado), `AsistenciaModal`/`AsistenciaMasivaModal` (horas configuradas).
+
+**Verificación:** `lint` limpio · `npm test` **111 archivos / 1158 pruebas** · `test:nomina-deterministic` 28/28 · `test:finanzas-deterministic` 125 aserciones · `test:qa` 23/23 · `test:responsive` 41/41 · `test:bundle-size` PASS · `build` OK · `check:project` OK (41 migraciones, 373 archivos).
+
+**Pendiente:** aplicar las migraciones **246** y **247**; el recorrido en vivo del reloj real (día laborable, día libre, feriado) y de calcular un período con jornadas abiertas con el operador real. Fuera de alcance por auditoría: comisiones POS y el motor financiero/RPC más allá de su idempotencia.
+
 
 
 

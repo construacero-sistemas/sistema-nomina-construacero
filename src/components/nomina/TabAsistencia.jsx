@@ -1,8 +1,8 @@
 // src/components/nomina/TabAsistencia.jsx
-// Grilla semanal de asistencia visual e intuitiva con marcaje rápido masivo.
+// Grilla semanal de horarios manuales y asistencia, separada del reloj real de hoy.
 import { useState, useMemo } from 'react'
-import { ChevronLeft, ChevronRight, CalendarClock, Users, Clock, CalendarPlus, Sparkles, ChevronDown } from 'lucide-react'
-import { useConfigEmpleados, useAsistencia, useFeriados } from '../../hooks/useNomina'
+import { ChevronLeft, ChevronRight, CalendarClock, Users, Clock, Sparkles, LogIn, AlertTriangle } from 'lucide-react'
+import { useConfigEmpleados, useAsistencia, useFeriados, useConfigNomina } from '../../hooks/useNomina'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
 import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
@@ -11,6 +11,9 @@ import AsistenciaModal from './AsistenciaModal'
 import AsistenciaMasivaModal from './AsistenciaMasivaModal'
 import MarcajeLogisticaPanel from './MarcajeLogisticaPanel'
 import AsistenciaDiariaMovil from './AsistenciaDiariaMovil'
+import { trabajaEseDia } from '../../utils/diasLaborables.js'
+import { jornadasAbiertasDe } from '../../utils/asistenciaOperativa.js'
+import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
 
 const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
@@ -31,13 +34,19 @@ function fmtCorto(d) {
   return d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })
 }
 
-export default function TabAsistencia({ esAdmin }) {
-  const [inicioSemana, setInicioSemana] = useState(() => lunesDe(new Date()))
+// `esAdmin` (administrarNomina) controla las vistas de asistencia y el marcaje real,
+// que ese rol sí puede operar. La carga masiva y la eliminación de registros exigen
+// `gestionarUsuarios` en el servidor, así que se gatean con `puedeGestionarNomina`.
+export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false }) {
+  // La fecha operativa sale de un único helper (America/Caracas): el reloj del
+  // navegador puede estar en otra zona y pintar «hoy» en el día equivocado (F-13).
+  const hoyIso = fechaOperativaHoy()
+  const hoy = useMemo(() => new Date(`${hoyIso}T12:00:00`), [hoyIso])
+  const [inicioSemana, setInicioSemana] = useState(() => lunesDe(new Date(`${fechaOperativaHoy()}T12:00:00`)))
   const [modal, setModal]             = useState(null) // { empleado, fecha, registro }
   const [modalMasivo, setModalMasivo] = useState(null) // fecha
-  const [modoVistaMovil, setModoVistaMovil] = useState('diario') // 'diario' | 'semanal'
-  const [fechaSeleccionada, setFechaSeleccionada] = useState(() => iso(new Date()))
-  const [verRelojMovil, setVerRelojMovil] = useState(false)
+  const [modoVistaMovil, setModoVistaMovil] = useState(esAdmin ? 'reloj' : 'manual') // 'reloj' | 'manual' | 'semanal'
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(() => fechaOperativaHoy())
 
   // 7 días desde el lunes
   const dias = useMemo(() => {
@@ -51,9 +60,29 @@ export default function TabAsistencia({ esAdmin }) {
   const desde = iso(dias[0])
   const hasta = iso(dias[6])
 
-  const { data: empleados = [], isLoading: empCargando, isError: empError, refetch: retryEmpleados } = useConfigEmpleados()
-  const { data: registros = [], isLoading: asisCargando, isError: asisError, refetch: retryAsistencia } = useAsistencia({ desde, hasta })
-  const { data: feriados = [], isLoading: feriadosCargando, isError: feriadosError, refetch: retryFeriados } = useFeriados(desde, hasta)
+  const { data: configsEmpleados = [], isLoading: empCargando, isFetching: empActualizando, isError: empError, refetch: retryEmpleados } = useConfigEmpleados()
+  // Control de asistencia por empleado: quien está configurado como "sin asistencia"
+  // (cobro por comisión o monto fijo) no aparece en esta zona ni suma pendientes.
+  const empleados = useMemo(
+    () => (configsEmpleados || []).filter(config => config.controla_asistencia !== false),
+    [configsEmpleados],
+  )
+  const empleadosSinControl = useMemo(
+    () => (configsEmpleados || []).filter(config => config.controla_asistencia === false),
+    [configsEmpleados],
+  )
+  // La lectura llega paginada desde el servidor (F-11): `registros` es el listado y
+  // `truncado` avisa si el rango superó el techo de lectura y falta información.
+  const { data: asistencia, isLoading: asisCargando, isError: asisError, refetch: retryAsistencia } = useAsistencia({ desde, hasta })
+  const registros = asistencia?.registros ?? []
+  const asistenciaTruncada = asistencia?.truncado === true
+  // El reloj real muestra HOY aunque la semana visible sea otra: el rango de feriados
+  // se ensancha para incluir la fecha operativa (la fija el servidor en America/Caracas)
+  // y el panel no quede sin su feriado al navegar a otra semana.
+  const feriadosDesde = desde < hoyIso ? desde : hoyIso
+  const feriadosHasta = hasta > hoyIso ? hasta : hoyIso
+  const { data: feriados = [], isLoading: feriadosCargando, isError: feriadosError, refetch: retryFeriados } = useFeriados(feriadosDesde, feriadosHasta)
+  const { data: configNomina } = useConfigNomina()
 
   const feriadosPorFecha = useMemo(
     () => new Map(feriados.map(f => [f.fecha, f])),
@@ -77,7 +106,16 @@ export default function TabAsistencia({ esAdmin }) {
     return { horas, extras, ausencias }
   }, [registros])
 
+  // Jornadas abiertas de la semana visible: al calcular la nómina no se pagan y el
+  // servidor responde 409 hasta que se corrija la salida o el operador confirme.
+  const salidasPendientes = useMemo(() => jornadasAbiertasDe(registros).length, [registros])
+
   const cargando = empCargando || asisCargando || feriadosCargando
+
+  function irAHoy() {
+    setInicioSemana(lunesDe(hoy))
+    setFechaSeleccionada(hoyIso)
+  }
 
   function moverSemana(delta) {
     const d = new Date(inicioSemana)
@@ -93,86 +131,95 @@ export default function TabAsistencia({ esAdmin }) {
     }
   }
 
-  const esSemanaActual = iso(lunesDe(new Date())) === desde
-  const hoyIso = iso(new Date())
+  const esSemanaActual = iso(lunesDe(hoy)) === desde
 
-  if (empError || asisError || feriadosError) return <div role="alert" className="p-4 rounded-2xl border border-rose-200 bg-rose-50 text-rose-800 space-y-3">
-    <p>No se pudo comprobar la asistencia, la plantilla o los feriados. No se muestran ausencias ni totales en cero como si fueran datos confirmados.</p>
-    <button type="button" onClick={() => { retryEmpleados(); retryAsistencia(); retryFeriados() }} className="min-h-11 px-4 py-2 rounded-xl border border-rose-300 bg-white font-bold">Volver a intentar</button>
+  const marcajeOperativo = esAdmin ? (
+    <MarcajeLogisticaPanel
+      empleados={empleados}
+      feriadosPorFecha={feriadosPorFecha}
+      empleadosCargando={empCargando}
+      empleadosActualizando={empActualizando}
+      empleadosError={empError}
+      onReintentarEmpleados={retryEmpleados}
+    />
+  ) : null
+
+  const selectorModoMovil = (
+    <div className={`grid ${esAdmin ? 'grid-cols-3' : 'grid-cols-2'} gap-1 rounded-2xl bg-slate-100 p-1 md:hidden`} role="group" aria-label="Vista de asistencia">
+      {[
+        ...(esAdmin ? [{ id: 'reloj', label: 'Marcaje real', Icon: LogIn }] : []),
+        { id: 'manual', label: 'Manual nómina', Icon: Sparkles },
+        { id: 'semanal', label: 'Semana', Icon: CalendarClock },
+      ].map(({ id, label, Icon }) => {
+        const seleccionado = modoVistaMovil === id
+        return (
+          <button key={id} type="button" onClick={() => setModoVistaMovil(id)} aria-pressed={seleccionado}
+            style={{ touchAction: 'manipulation' }}
+            className={`flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-black transition-all ${seleccionado ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}>
+            <Icon size={14} className={seleccionado ? 'text-primary' : 'text-slate-400'} aria-hidden="true" />
+            <span className="truncate">{label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+  const panelMarcaje = <div className={`${modoVistaMovil === 'reloj' ? 'block' : 'hidden'} md:block`}>{marcajeOperativo}</div>
+
+  if (empError || asisError || feriadosError) return <div className="min-w-0 space-y-4">
+    {selectorModoMovil}
+    {panelMarcaje}
+    <div role="alert" className="p-4 rounded-2xl border border-rose-200 bg-rose-50 text-rose-800 space-y-3">
+      <p>No se pudo comprobar la asistencia, la plantilla o los feriados. No se muestran ausencias ni totales en cero como si fueran datos confirmados.</p>
+      <button type="button" onClick={() => { retryEmpleados(); retryAsistencia(); retryFeriados() }} className="min-h-11 px-4 py-2 rounded-xl border border-rose-300 bg-white font-bold">Volver a intentar</button>
+    </div>
   </div>
 
   return (
-    <div className="space-y-4">
-      {/* Reloj operativo en vivo (en desktop siempre visible; en móvil colapsable para ahorrar espacio) */}
-      <div className="hidden md:block">
-        <MarcajeLogisticaPanel />
-      </div>
+    <div className="min-w-0 space-y-4">
+      {/* En móvil cada flujo se muestra por separado para evitar confundir horas reales con previstas. */}
+      {selectorModoMovil}
+      {panelMarcaje}
 
-      {esAdmin && (
-        <div className="block md:hidden">
-          <button
-            type="button"
-            onClick={() => setVerRelojMovil(v => !v)}
-            style={{ touchAction: 'manipulation' }}
-            className="w-full min-h-11 px-3.5 py-2.5 rounded-2xl border border-slate-200 bg-white text-slate-700 text-xs font-bold flex items-center justify-between shadow-2xs hover:bg-slate-50 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <Clock size={15} className="text-primary" />
-              <span>Reloj en tiempo real (Entrada / Salida)</span>
-            </div>
-            <div className="flex items-center gap-1 text-slate-400 text-[11px]">
-              <span>{verRelojMovil ? 'Ocultar' : 'Abrir'}</span>
-              <ChevronDown size={14} className={`transition-transform duration-200 ${verRelojMovil ? 'rotate-180' : ''}`} />
-            </div>
-          </button>
-          {verRelojMovil && (
-            <div className="pt-2">
-              <MarcajeLogisticaPanel />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Selector de Modo en Móvil: Pasar Lista vs Resumen Semanal */}
-      <div className="flex md:hidden items-center gap-1 p-1 bg-slate-100 rounded-2xl">
-        <button
-          type="button"
-          onClick={() => setModoVistaMovil('diario')}
-          style={{ touchAction: 'manipulation' }}
-          className={`flex-1 min-h-11 py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
-            modoVistaMovil === 'diario'
-              ? 'bg-white text-slate-900 shadow-xs'
-              : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Sparkles size={14} className={modoVistaMovil === 'diario' ? 'text-primary' : 'text-slate-400'} />
-          <span>Pasar Lista</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setModoVistaMovil('semanal')}
-          style={{ touchAction: 'manipulation' }}
-          className={`flex-1 min-h-11 py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
-            modoVistaMovil === 'semanal'
-              ? 'bg-white text-slate-900 shadow-xs'
-              : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <CalendarClock size={14} className={modoVistaMovil === 'semanal' ? 'text-primary' : 'text-slate-400'} />
-          <span>Resumen Semanal</span>
-        </button>
-      </div>
-
-      {/* KPIs de la semana */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard icon={Users}         label="Personal en Nómina" value={empleados.length} color="indigo" />
+      {/* Los KPIs semanales no desplazan el marcaje real en el primer scroll de iPhone. */}
+      <div className={`${modoVistaMovil === 'semanal' ? 'grid' : 'hidden md:grid'} grid-cols-2 lg:grid-cols-4 gap-3`}>
+        <KpiCard icon={Users}         label="Personal en Nómina" value={configsEmpleados.length} color="indigo" />
         <KpiCard icon={Clock}         label="Horas normales"     value={`${totales.horas.toFixed(1)}h`} color="slate" />
         <KpiCard icon={Clock}         label="Horas extra"        value={`${totales.extras.toFixed(1)}h`} color="amber" />
         <KpiCard icon={CalendarClock} label="Ausencias / Faltas" value={totales.ausencias} color={totales.ausencias > 0 ? 'red' : 'green'} />
       </div>
 
-      {/* Barra de Navegación y Acciones Rápidas */}
-      <div className={`${modoVistaMovil === 'diario' ? 'hidden md:flex' : 'flex'} flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5`}>
+      {asistenciaTruncada && (
+        <div role="alert" className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-rose-900">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-rose-600" aria-hidden="true" />
+          <p className="text-[11px] font-semibold leading-snug">
+            Este rango tiene más asistencia de la que se puede cargar de una vez: la lista y los totales
+            están incompletos. Consulta por semana (o por empleado) para verlos completos.
+          </p>
+        </div>
+      )}
+
+      {salidasPendientes > 0 && (
+        <div role="status" className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-amber-900">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" aria-hidden="true" />
+          <p className="text-[11px] font-semibold leading-snug">
+            {salidasPendientes === 1
+              ? '1 marcaje tiene la entrada y no la salida'
+              : `${salidasPendientes} marcajes tienen la entrada y no la salida`}
+            : al calcular la nómina no se pagan hasta que corrijas la salida en el reloj real (o confirmes el cálculo).
+          </p>
+        </div>
+      )}
+
+      {empleadosSinControl.length > 0 && (
+        <p className={`${modoVistaMovil === 'semanal' ? 'block' : 'hidden md:block'} text-[11px] font-semibold text-slate-500`}>
+          {empleadosSinControl.length === 1
+            ? '1 perfil de nómina no controla asistencia (cobro por comisión o monto fijo): no aparece en esta zona.'
+            : `${empleadosSinControl.length} perfiles de nómina no controlan asistencia (cobro por comisión o monto fijo): no aparecen en esta zona.`}
+        </p>
+      )}
+
+      {/* Navegación del resumen semanal y acceso al horario manual masivo. */}
+      <div className={`${modoVistaMovil === 'semanal' ? 'flex' : 'hidden md:flex'} flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5`}>
         {/* Navegación semanal */}
         <div className="flex items-center justify-between sm:justify-start gap-1.5 bg-white border border-slate-200 rounded-2xl p-1 shadow-xs">
           <button onClick={() => moverSemana(-1)} aria-label="Semana anterior"
@@ -190,51 +237,33 @@ export default function TabAsistencia({ esAdmin }) {
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {!esSemanaActual && (
-            <button onClick={() => setInicioSemana(lunesDe(new Date()))}
-              className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 shadow-xs transition-colors"
-              style={{ touchAction: 'manipulation' }}>
-              Semana actual
-            </button>
-          )}
-
-          {/* Acciones de marcaje rápido */}
-          {esAdmin && empleados.length > 0 && (
-            <>
-              <button
-                onClick={() => setModalMasivo(hoyIso)}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white text-xs font-bold shadow-md shadow-emerald-950/20 transition-all active:scale-95"
-                style={{ touchAction: 'manipulation' }}>
-                <Sparkles size={14} />
-                <span>Marcar hoy (8 a 5)</span>
-              </button>
-              <button
-                onClick={() => setModalMasivo(desde)}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold shadow-xs transition-all"
-                style={{ touchAction: 'manipulation' }}>
-                <CalendarPlus size={14} />
-                <span>Otro día</span>
-              </button>
-            </>
-          )}
-        </div>
+        {!esSemanaActual && (
+          <button onClick={() => { setInicioSemana(lunesDe(hoy)); setFechaSeleccionada(hoyIso) }}
+            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-xs transition-colors hover:bg-slate-50"
+            style={{ touchAction: 'manipulation' }}>
+            Volver a hoy
+          </button>
+        )}
       </div>
 
-      {/* Grilla Semanal */}
+      {/* Registro manual y resumen se ocultan en móvil cuando está seleccionado el reloj real. */}
+      <div className={`${modoVistaMovil !== 'reloj' ? 'block' : 'hidden md:block'}`}>
+      {/* Grilla semanal / registro manual por horario fijo */}
       {cargando ? (
         <Skeleton className="h-64 rounded-2xl" />
       ) : empleados.length === 0 ? (
         <EmptyState
           icon={Users}
-          title="No hay empleados en nómina"
-          description="Configura primero los empleados en la pestaña Empleados."
+          title={empleadosSinControl.length > 0 ? 'Sin personal con control de asistencia' : 'No hay empleados en nómina'}
+          description={empleadosSinControl.length > 0
+            ? 'Los perfiles activos están marcados como “sin asistencia”. Actívalo en su ficha de la pestaña Empleados para registrarlos aquí.'
+            : 'Configura primero los empleados en la pestaña Empleados.'}
         />
       ) : (
         <>
-          {/* ═══ VISTA MÓVIL: Modo Diario (Pasar Lista) o Modo Semanal ═══ */}
-          <div className="block md:hidden">
-            {modoVistaMovil === 'diario' ? (
+          {/* Vista móvil: registro manual por día o resumen semanal. */}
+          <div className={`${modoVistaMovil === 'semanal' ? 'hidden' : 'block'} md:hidden`}>
+            {modoVistaMovil === 'manual' ? (
               <AsistenciaDiariaMovil
                 empleados={empleados}
                 registrosPorEmpleado={indice}
@@ -244,7 +273,10 @@ export default function TabAsistencia({ esAdmin }) {
                 diasSemana={dias}
                 onMoverSemana={moverSemana}
                 esAdmin={esAdmin}
+                puedeGestionarNomina={puedeGestionarNomina}
                 onAbrirDetalle={setModal}
+                onAbrirMasivo={payload => setModalMasivo(payload)}
+                onIrHoy={irAHoy}
               />
             ) : (
               <div className="space-y-3">
@@ -282,6 +314,9 @@ export default function TabAsistencia({ esAdmin }) {
                           const esHoy = fecha === hoyIso
                           const feriado = feriadosPorFecha.get(fecha)
                           const finde = d.getDay() === 0 || d.getDay() === 6
+                          // Día no laborable para esta persona según su ficha: se pinta
+                          // como Libre en vez de pendiente de registro.
+                          const libre = !trabajaEseDia(emp, fecha)
 
                           return (
                             <div key={fecha} className="flex flex-col items-center gap-1 min-w-0">
@@ -294,13 +329,17 @@ export default function TabAsistencia({ esAdmin }) {
                               <CeldaAsistencia
                                 registro={reg}
                                 feriado={feriado}
-                                esFinde={finde}
+                                // F-5: el fin de semana solo es descanso si esa persona no trabaja
+                                // ese día; el sábado de quien sí trabaja queda como pendiente.
+                                esFinde={finde && libre}
                                 esSabado={d.getDay() === 6}
+                                libre={libre}
                                 isMobile={true}
                                 onClick={() => setModal({
                                   empleado: emp,
                                   fecha,
-                                  registro: reg,
+                                  registro: ['entrada', 'completo', 'corregido'].includes(reg?.estado_marcaje) ? null : reg,
+                                  lectura: ['entrada', 'completo', 'corregido'].includes(reg?.estado_marcaje),
                                   feriado,
                                 })}
                               />
@@ -315,8 +354,8 @@ export default function TabAsistencia({ esAdmin }) {
             )}
           </div>
 
-          {/* ═══ VISTA DESKTOP: Tabla Matricial Completa ═══ */}
-          <HorizontalScroll className="hidden md:block" contentClassName="bg-white border border-slate-200 rounded-2xl shadow-xs">
+          {/* Vista de escritorio: resumen matricial semanal. */}
+          <HorizontalScroll className={`${modoVistaMovil === 'semanal' ? 'block' : 'hidden'} md:block`} contentClassName="bg-white border border-slate-200 rounded-2xl shadow-xs">
             <table className="w-full min-w-[780px] text-xs" aria-label="Asistencia semanal">
               <thead className="bg-slate-50/80 text-slate-500 text-[10px] uppercase tracking-wider border-b border-slate-100">
                 <tr>
@@ -366,12 +405,16 @@ export default function TabAsistencia({ esAdmin }) {
                             <CeldaAsistencia
                               registro={reg}
                               feriado={feriadosPorFecha.get(fecha)}
-                              esFinde={d.getDay() === 0 || d.getDay() === 6}
+                              // F-5: mismo criterio que la vista móvil — el descanso de fin de
+                              // semana solo aplica a quien no trabaja ese día.
+                              esFinde={(d.getDay() === 0 || d.getDay() === 6) && !trabajaEseDia(emp, fecha)}
                               esSabado={d.getDay() === 6}
+                              libre={!trabajaEseDia(emp, fecha)}
                               onClick={() => setModal({
                                 empleado: emp,
                                 fecha,
-                                registro: reg,
+                                registro: ['entrada', 'completo', 'corregido'].includes(reg?.estado_marcaje) ? null : reg,
+                                lectura: ['entrada', 'completo', 'corregido'].includes(reg?.estado_marcaje),
                                 feriado: feriadosPorFecha.get(fecha),
                               })}
                             />
@@ -391,8 +434,9 @@ export default function TabAsistencia({ esAdmin }) {
         </>
       )}
 
+      </div>
       {/* Leyenda de estados */}
-      <div className="flex flex-wrap items-center gap-3.5 p-3 rounded-2xl bg-white border border-slate-100 text-[11px] text-slate-600 shadow-sm">
+      <div className={`${modoVistaMovil === 'semanal' ? 'flex' : 'hidden md:flex'} flex-wrap items-center gap-3.5 p-3 rounded-2xl bg-white border border-slate-100 text-[11px] text-slate-600 shadow-sm`}>
         <span className="flex items-center gap-1.5 font-medium">
           <span className="w-3.5 h-3.5 rounded-lg bg-emerald-100 border border-emerald-300" /> Jornada estándar (8h)
         </span>
@@ -406,12 +450,12 @@ export default function TabAsistencia({ esAdmin }) {
           <span className="w-3.5 h-3.5 rounded-lg bg-purple-100 border border-purple-300" /> Día Feriado
         </span>
         <span className="flex items-center gap-1.5 font-medium">
-          <span className="w-3.5 h-3.5 rounded-lg bg-slate-100 border border-slate-300 text-slate-500 text-[9px] font-bold px-1 py-0.5" /> Descanso / Libre
+          <span className="w-3.5 h-3.5 rounded-lg bg-slate-100 border border-slate-300 text-slate-500 text-[9px] font-bold px-1 py-0.5" /> Libre (día no laborable suyo)
         </span>
         <span className="flex items-center gap-1.5 font-medium">
           <span className="w-3.5 h-3.5 rounded-lg bg-slate-50 border border-dashed border-slate-300" /> Sin registro
         </span>
-        <span className="text-slate-400 ml-auto italic">Toca cualquier celda para ver o editar.</span>
+        <span className="text-slate-400 ml-auto italic">Las celdas permiten ajustar el horario previsto o la ausencia; el reloj real se marca en el panel superior.</span>
       </div>
 
       {modal && (
@@ -419,16 +463,21 @@ export default function TabAsistencia({ esAdmin }) {
           empleado={modal.empleado}
           fecha={modal.fecha}
           registro={modal.registro}
+          soloLectura={modal.lectura}
+          horasDescansoDefault={configNomina?.nomina_horas_descanso ?? 1}
           feriado={modal.feriado}
           esAdmin={esAdmin}
+          puedeGestionarNomina={puedeGestionarNomina}
           onClose={() => setModal(null)}
         />
       )}
 
       {modalMasivo && (
         <AsistenciaMasivaModal
-          fechaInicial={modalMasivo}
-          totalEmpleados={empleados.length}
+          fechaInicial={modalMasivo.fecha}
+          empleadoIds={modalMasivo.empleadoIds}
+          empleados={empleados}
+          registrosPorEmpleado={indice}
           onClose={() => setModalMasivo(null)}
         />
       )}
@@ -436,19 +485,23 @@ export default function TabAsistencia({ esAdmin }) {
   )
 }
 
-function CeldaAsistencia({ registro, feriado, esFinde = false, esSabado = false, onClick, isMobile = false }) {
+function CeldaAsistencia({ registro, feriado, esFinde = false, esSabado = false, libre = false, onClick, isMobile = false }) {
   if (!registro) {
-    if (esFinde) {
+    if (libre || esFinde) {
       return (
         <button
           type="button"
           onClick={onClick}
-          aria-label={feriado ? `Feriado: ${feriado.nombre}` : (esSabado ? 'Sábado rotativo: Descanso (toca para marcar si asistió)' : 'Descanso')}
-          title={esSabado ? 'Sábado rotativo: Día de descanso (toca si vino a trabajar)' : 'Día de descanso'}
+          aria-label={feriado ? `Feriado: ${feriado.nombre}` : (libre
+            ? 'Día no laborable para este empleado (toca para registrar si vino)'
+            : (esSabado ? 'Descanso (toca para marcar si vino)' : 'Descanso'))}
+          title={libre
+            ? 'Día no laborable según su ficha (toca si vino a trabajar)'
+            : (esSabado ? 'Día de descanso (toca si vino a trabajar)' : 'Día de descanso')}
           style={{ touchAction: 'manipulation' }}
           className={`w-full ${isMobile ? 'h-11 py-0.5' : 'py-1'} px-0.5 rounded-xl border border-slate-200/80 bg-slate-100/60 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-800 text-slate-400 text-[10px] font-bold transition-all group`}
         >
-          <span className="block text-[9px] group-hover:hidden text-slate-400 font-semibold">{isMobile ? 'Libre' : 'Descanso'}</span>
+          <span className="block text-[9px] group-hover:hidden text-slate-400 font-semibold">Libre</span>
           <span className="hidden group-hover:block text-[9px] text-amber-700 font-bold">+ Marcar</span>
         </button>
       )

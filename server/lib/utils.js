@@ -13,5 +13,6 @@ export {
   sanitizeSearch,
   json,
   jsonError,
+  CODIGO_CAPACIDAD_INSUFICIENTE,
   removeAccents,
 } from '../../compat/api/lib/utils.js'
