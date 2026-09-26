@@ -4,11 +4,9 @@ import { json, jsonError, isValidUuid } from '../lib/utils.js'
 import { validateOperator } from '../lib/auth.js'
 import { registrarAuditoria } from '../lib/audit.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
+import { requireCapacidad } from '../lib/permissions.js'
 import { fetchPosVendedores, fetchComisionesLiberadasPos } from '../lib/posSyncHelper.js'
 import {
-  ROLES_ADMIN,
-  ROLES_NOMINA,
-  ROLES_VER,
   r4,
   svcHeaders,
   tenantGuard,
@@ -22,7 +20,8 @@ export async function handleListarPosVendedores(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador } = v
-  if (!ROLES_VER.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoVer = requireCapacidad(operador, 'verNomina', request)
+  if (denegadoVer) return denegadoVer
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
 
@@ -43,7 +42,8 @@ export async function handlePreviewComisionesPos(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  if (!ROLES_NOMINA.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoVer = requireCapacidad(operador, 'verNomina', request)
+  if (denegadoVer) return denegadoVer
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
 
@@ -146,7 +146,8 @@ export async function handleAplicarComisionesPos(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers, ip } = v
-  if (!ROLES_ADMIN.includes(operador.rol)) return jsonError('Acceso denegado', 403, request)
+  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
 
@@ -154,114 +155,140 @@ export async function handleAplicarComisionesPos(request, env) {
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
   const { periodoId, aplicaciones } = body || {}
   if (!periodoId || !isValidUuid(periodoId)) return jsonError('periodoId inválido', 400, request)
-  if (!Array.isArray(aplicaciones)) return jsonError('aplicaciones debe ser un array', 400, request)
-
-  // 1. Validar período abierto
-  const periodResponse = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/nomina_periodos?id=eq.${periodoId}` +
-      `${nominaTenantFilter(operador.cuenta_id)}&select=id,nombre,estado&limit=1`,
-    { headers },
-  )
-  const [periodo] = periodResponse.ok ? await periodResponse.json() : []
-  if (!periodo) return jsonError('Período no encontrado', 404, request)
-  if (periodo.estado !== 'abierto') {
-    return jsonError(`El período "${periodo.nombre}" está ${periodo.estado}. Debe estar abierto para aplicar comisiones.`, 400, request)
+  if (!Array.isArray(aplicaciones) || aplicaciones.length < 1 || aplicaciones.length > 500) {
+    return jsonError('Selecciona entre 1 y 500 aplicaciones de comisión', 400, request)
   }
-
-  // 2. Obtener líneas existentes de este período
-  const linesResponse = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}` +
-      `${nominaTenantFilter(operador.cuenta_id)}` +
-      '&select=id,empleado_id,monto_normal_usd,monto_extra_usd,monto_sabado_usd,monto_feriado_usd,bonos_usd,deducciones_usd,comisiones_pos_usd,comisiones_despachos_ids,pagado&limit=500',
-    { headers },
-  )
-  const lineas = linesResponse.ok ? await linesResponse.json() : []
-  if (!lineas.length) {
-    return jsonError('El período no tiene líneas calculadas. Debes calcular la nómina antes de aplicar comisiones.', 400, request)
-  }
-  const lineaPorEmpleado = new Map(lineas.map(l => [l.empleado_id, l]))
-
-  // 3. Validar y actualizar cada empleado
-  const actualizados = []
-  let totalComisionesAplicadas = 0
-
+  const vistos = new Set()
+  const limpias = []
   for (const item of aplicaciones) {
-    const { empleadoId, comisionesUsd, despachosIds } = item || {}
-    if (!empleadoId || !isValidUuid(empleadoId)) continue
-    if (comisionesUsd !== undefined && comisionesUsd !== null && (typeof comisionesUsd === 'boolean' || !Number.isFinite(Number(comisionesUsd)) || Number(comisionesUsd) < 0)) {
+    const empleadoId = String(item?.empleadoId || '').toLowerCase()
+    if (!isValidUuid(empleadoId) || vistos.has(empleadoId)) {
+      return jsonError('Cada empleado debe ser válido y aparecer una sola vez', 400, request)
+    }
+    vistos.add(empleadoId)
+    if (typeof item.comisionesUsd === 'boolean' || item.comisionesUsd == null
+      || !Number.isFinite(Number(item.comisionesUsd)) || Number(item.comisionesUsd) < 0
+      || Number(item.comisionesUsd) > 99999999.9999) {
       return jsonError(`Monto de comisión inválido para empleado ${empleadoId}`, 400, request)
     }
-
-    const linea = lineaPorEmpleado.get(empleadoId)
-    if (!linea) continue
-    if (linea.pagado) {
-      return jsonError('No se pueden modificar comisiones de un recibo ya pagado. Revierte el pago primero.', 400, request)
+    if (!Array.isArray(item.despachosIds) || item.despachosIds.length > 5000
+      || item.despachosIds.some(id => typeof id !== 'string' || !id.trim())
+      || new Set(item.despachosIds).size !== item.despachosIds.length) {
+      return jsonError(`Lista de despachos inválida para empleado ${empleadoId}`, 400, request)
     }
-
-    const nuevaComision = r4(Number(comisionesUsd) || 0)
-    const despachosLimpios = Array.isArray(despachosIds) ? despachosIds : []
-
-    const montoNormal = Number(linea.monto_normal_usd || 0)
-    const montoExtra = Number(linea.monto_extra_usd || 0)
-    const montoSabado = Number(linea.monto_sabado_usd || 0)
-    const montoFeriado = Number(linea.monto_feriado_usd || 0)
-    const bonos = Number(linea.bonos_usd || 0)
-    const deducciones = Number(linea.deducciones_usd || 0)
-
-    const base = montoNormal + montoExtra + montoSabado + montoFeriado + bonos + nuevaComision
-    const totalBruto = r4(base)
-    const totalNeto = r4(Math.max(0, totalBruto - deducciones))
-
-    const patchRes = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/nomina_lineas?id=eq.${linea.id}${nominaTenantFilter(operador.cuenta_id)}`,
-      {
-        method: 'PATCH',
-        headers: svcHeaders(env),
-        body: JSON.stringify({
-          comisiones_pos_usd: nuevaComision,
-          comisiones_despachos_ids: despachosLimpios,
-          total_bruto_usd: totalBruto,
-          total_neto_usd: totalNeto,
-        }),
-      },
-    )
-
-    if (!patchRes.ok) {
-      return jsonError(`Error actualizando línea de nómina para empleado ${empleadoId}`, 500, request)
-    }
-
-    actualizados.push({
-      empleado_id: empleadoId,
-      linea_id: linea.id,
-      comisiones_pos_usd: nuevaComision,
-      despachos_count: despachosLimpios.length,
-      total_neto_usd: totalNeto,
+    limpias.push({
+      empleadoId,
+      comisionesUsd: String(item.comisionesUsd),
+      despachosIds: item.despachosIds,
     })
-    totalComisionesAplicadas = r4(totalComisionesAplicadas + nuevaComision)
   }
 
-  // 4. Registro de auditoría
-  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), {
-    usuarioId: operador.id,
-    usuarioNombre: operador.nombre,
-    usuarioRol: operador.rol,
-    cuentaId: operador.cuenta_id,
-    categoria: 'NOMINA',
-    accion: 'APLICAR_COMISIONES_POS',
-    entidadTipo: 'nomina_periodo',
-    entidadId: periodoId,
-    meta: {
-      periodo: periodo.nombre,
-      empleados_actualizados: actualizados.length,
-      total_comisiones_usd: totalComisionesAplicadas,
-    },
-    ip,
-  }).catch(() => {})
+  // Never trust amounts or dispatch ids supplied by the browser. Resolve the
+  // open period, tenant-owned POS links, and currently released commissions
+  // server-side; the atomic RPC below still rechecks period/receipt state.
+  const account = nominaTenantFilter(operador.cuenta_id)
+  let periodResponse
+  try {
+    periodResponse = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/nomina_periodos?id=eq.${periodoId}${account}&select=id,nombre,desde,hasta,estado&limit=1`,
+      { headers },
+    )
+  } catch {
+    return jsonError('No se pudo comprobar el período de nómina', 503, request)
+  }
+  if (!periodResponse.ok) return jsonError('No se pudo comprobar el período de nómina', 503, request)
+  const [periodo] = await periodResponse.json().catch(() => [])
+  if (!periodo) return jsonError('Período no encontrado', 404, request)
+  if (periodo.estado !== 'abierto') return jsonError(`El período "${periodo.nombre}" debe estar abierto para aplicar comisiones.`, 409, request)
 
-  return json({
-    ok: true,
-    actualizados: actualizados.length,
-    total_comisiones_usd: totalComisionesAplicadas,
-    detalle: actualizados,
-  }, 200, request)
+  const employeeIds = limpias.map(item => item.empleadoId)
+  let configResponse
+  try {
+    configResponse = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?activo=eq.true&pos_vendedor_id=not.is.null${account}` +
+        `&empleado_id=in.(${employeeIds.join(',')})&select=empleado_id,pos_vendedor_id&limit=500`,
+      { headers },
+    )
+  } catch {
+    return jsonError('No se pudieron validar los vendedores vinculados al POS', 503, request)
+  }
+  if (!configResponse.ok) return jsonError('No se pudieron validar los vendedores vinculados al POS', 503, request)
+  const configurations = await configResponse.json().catch(() => null)
+  if (!Array.isArray(configurations)) return jsonError('No se pudieron validar los vendedores vinculados al POS', 503, request)
+  const configByEmployee = new Map(configurations.map(config => [config.empleado_id, config]))
+  if (configByEmployee.size !== limpias.length) return jsonError('Algún empleado ya no tiene un vendedor activo vinculado al POS', 409, request)
+
+  if (new Set(configurations.map(config => config.pos_vendedor_id)).size !== configurations.length) {
+    return jsonError('Un vendedor del POS está vinculado a más de un empleado. Corrige los vínculos antes de importar.', 409, request)
+  }
+  const posVendedorIds = [...new Set(configurations.map(config => config.pos_vendedor_id))]
+  const posResult = await fetchComisionesLiberadasPos(env, {
+    posVendedorIds,
+    desde: periodo.desde,
+    hasta: periodo.hasta,
+  })
+  if (!posResult.ok) return jsonError('No se pudieron verificar las comisiones liberadas en el POS', 502, request)
+  const liberacionesPorVendedor = new Map()
+  for (const liberacion of posResult.liberaciones || []) {
+    const grupo = liberacionesPorVendedor.get(liberacion.vendedor_id) || []
+    grupo.push(liberacion)
+    liberacionesPorVendedor.set(liberacion.vendedor_id, grupo)
+  }
+
+  const verificadas = []
+  for (const aplicacion of limpias) {
+    const config = configByEmployee.get(aplicacion.empleadoId)
+    const disponibles = liberacionesPorVendedor.get(config.pos_vendedor_id) || []
+    const seleccion = new Set(aplicacion.despachosIds)
+    const elegibles = disponibles.filter(liberacion => seleccion.has(liberacion.id))
+    if (elegibles.length !== seleccion.size) {
+      return jsonError(`Las comisiones seleccionadas para el empleado ${aplicacion.empleadoId} ya no están liberadas en el POS`, 409, request)
+    }
+    const totalVerificado = r4(elegibles.reduce((total, liberacion) => total + (Number(liberacion.monto_usd) || 0), 0))
+    if (Math.abs(totalVerificado - Number(aplicacion.comisionesUsd)) > 0.0001) {
+      return jsonError(`El monto de comisión del empleado ${aplicacion.empleadoId} no coincide con el POS`, 409, request)
+    }
+    verificadas.push({ ...aplicacion, comisionesUsd: String(totalVerificado) })
+  }
+
+  try {
+    const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/nomina_aplicar_comisiones_pos`, {
+      method: 'POST',
+      headers: svcHeaders(env),
+      body: JSON.stringify({
+        p_cuenta_id: operador.cuenta_id,
+        p_operador_id: operador.id,
+        p_periodo_id: periodoId,
+        p_aplicaciones: verificadas,
+        p_ip: ip || null,
+      }),
+    })
+    const result = await response.json().catch(() => null)
+    if (!response.ok) {
+      const code = result?.code
+      const errors = {
+        PT400: [400, 'Las aplicaciones o los montos de comisión no son válidos.'],
+        PT403: [403, 'Acceso denegado para aplicar comisiones.'],
+        PT404: [404, 'No se encontró el período o alguna línea de nómina.'],
+        PT409: [409, 'El período o alguno de los recibos cambió. Actualiza y revisa antes de reintentar.'],
+        PGRST202: [503, 'Es necesario actualizar la base antes de aplicar comisiones.'],
+      }
+      const [status, message] = errors[code] || [503, 'No se confirmó la aplicación. Actualiza y verifica las líneas antes de reintentar.']
+      return jsonError(message, status, request)
+    }
+    const expectedTotal = r4(verificadas.reduce((total, item) => total + Number(item.comisionesUsd), 0))
+    const detailsValid = Array.isArray(result?.detalle) && result.detalle.length === verificadas.length
+      && verificadas.every(item => result.detalle.some(detail => detail.empleado_id === item.empleadoId
+        && Number(detail.comisiones_pos_usd) === Number(item.comisionesUsd)
+        && detail.despachos_count === item.despachosIds.length))
+    if (result?.ok !== true || result.actualizados !== verificadas.length
+      || !Number.isFinite(Number(result.total_comisiones_usd))
+      || Math.abs(Number(result.total_comisiones_usd) - expectedTotal) > 0.0001
+      || !detailsValid) {
+      return jsonError('La respuesta no confirma la aplicación completa de comisiones.', 503, request)
+    }
+    return json(result, 200, request)
+  } catch {
+    return jsonError('No se confirmó la aplicación. Actualiza las líneas antes de reintentar.', 503, request)
+  }
 }

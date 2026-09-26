@@ -317,36 +317,57 @@ export async function fetchComisionesLiberadasPos(env, { posVendedorIds = [], de
   }
 
   try {
-    const url = `${supaUrl}/rest/v1/comision_liberaciones?vendedor_id=in.(${posVendedorIds.join(',')})&creado_en=gte.${desde}T00:00:00&creado_en=lte.${hasta}T23:59:59.999&select=id,comision_id,despacho_id,vendedor_id,monto,tipo,creado_en&order=creado_en.asc`
-    const res = await fetch(url, { headers })
-    if (!res.ok) {
-      return { ok: false, error: `Error consultando liberaciones de comisiones del POS (${res.status})` }
+    const liberaciones = []
+    const pageSize = 500
+    let offset = 0
+    while (true) {
+      const query = new URLSearchParams({
+        vendedor_id: `in.(${posVendedorIds.join(',')})`,
+        creado_en: `gte.${desde}T00:00:00`,
+        select: 'id,comision_id,despacho_id,vendedor_id,monto,tipo,creado_en',
+        order: 'creado_en.asc,id.asc',
+        limit: String(pageSize),
+        offset: String(offset),
+      })
+      query.append('creado_en', `lte.${hasta}T23:59:59.999`)
+      const response = await fetch(`${supaUrl}/rest/v1/comision_liberaciones?${query}`, { headers })
+      if (!response.ok) return { ok: false, error: `Error consultando liberaciones de comisiones del POS (${response.status})` }
+      const page = await response.json()
+      if (!Array.isArray(page)) return { ok: false, error: 'Respuesta inválida consultando liberaciones de comisiones del POS' }
+      liberaciones.push(...page)
+      if (page.length < pageSize) break
+      if (offset + page.length >= 10000) return { ok: false, error: 'El período supera el límite seguro de liberaciones; divide la consulta antes de importar' }
+      offset += page.length
     }
+    if (!liberaciones.length) return { ok: true, liberaciones: [] }
 
-    const liberaciones = await res.json()
-    if (!Array.isArray(liberaciones) || !liberaciones.length) {
-      return { ok: true, liberaciones: [] }
-    }
-
-    // Consultar información de los despachos asociados
+    // Fail closed if the lookup response is incomplete: the caller needs the
+    // authoritative release date and seller relationship for every commission.
     const despIds = [...new Set(liberaciones.map(l => l.despacho_id).filter(Boolean))]
     const mapaDespachos = new Map()
 
     if (despIds.length > 0) {
-      const despUrl = `${supaUrl}/rest/v1/notas_despacho?id=in.(${despIds.join(',')})&select=id,numero,creado_en,cliente:clientes!notas_despacho_cliente_id_fkey(nombre)`
-      const despRes = await fetch(despUrl, { headers })
-      if (despRes.ok) {
-        const despachos = await despRes.json()
-        if (Array.isArray(despachos)) {
-          for (const d of despachos) {
-            mapaDespachos.set(d.id, {
-              numero: d.numero ? `DSP-${d.numero}` : '—',
-              cliente: d.cliente?.nombre || 'Cliente General',
-              fecha: d.creado_en ? String(d.creado_en).slice(0, 10) : '',
-            })
-          }
-        }
+      const despachos = []
+      for (let index = 0; index < despIds.length; index += pageSize) {
+        const query = new URLSearchParams({
+          id: `in.(${despIds.slice(index, index + pageSize).join(',')})`,
+          select: 'id,numero,creado_en,cliente:clientes!notas_despacho_cliente_id_fkey(nombre)',
+          limit: String(pageSize),
+        })
+        const dispatchResponse = await fetch(`${supaUrl}/rest/v1/notas_despacho?${query}`, { headers })
+        if (!dispatchResponse.ok) return { ok: false, error: `Error consultando despachos asociados en el POS (${dispatchResponse.status})` }
+        const page = await dispatchResponse.json()
+        if (!Array.isArray(page)) return { ok: false, error: 'Respuesta inválida consultando despachos del POS' }
+        despachos.push(...page)
       }
+      for (const despacho of despachos) {
+        mapaDespachos.set(despacho.id, {
+          numero: despacho.numero ? `DSP-${despacho.numero}` : '—',
+          cliente: despacho.cliente?.nombre || 'Cliente General',
+          fecha: despacho.creado_en ? String(despacho.creado_en).slice(0, 10) : '',
+        })
+      }
+      if (mapaDespachos.size !== despIds.length) return { ok: false, error: 'Faltan despachos asociados a comisiones liberadas en el POS' }
     }
 
     const liberacionesEnriquecidas = liberaciones.map(lib => {
@@ -366,7 +387,7 @@ export async function fetchComisionesLiberadasPos(env, { posVendedorIds = [], de
     })
 
     return { ok: true, liberaciones: liberacionesEnriquecidas }
-  } catch (err) {
-    return { ok: false, error: err.message }
+  } catch {
+    return { ok: false, error: 'No se pudieron consultar las comisiones liberadas del POS' }
   }
 }

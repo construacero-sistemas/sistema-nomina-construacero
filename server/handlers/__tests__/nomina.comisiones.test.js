@@ -1,5 +1,6 @@
 // server/handlers/__tests__/nomina.comisiones.test.js
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CODIGO_CAPACIDAD_INSUFICIENTE } from '../../../compat/api/lib/utils.js'
 import { ENV, IDS, OPERADORES, authOk, installFetchMock, makeRequest, readResponse } from './_harness'
 
 let operadorActual = OPERADORES.administracion
@@ -38,6 +39,19 @@ afterEach(() => {
 const POS_VENDEDOR_ID = '99999999-9999-4999-8999-999999999999'
 
 describe('nómina — comisiones POS', () => {
+  it('el rol finanzas puede previsualizar pero no aplicar comisiones', async () => {
+    operadorActual = OPERADORES.finanzas
+    mock = installFetchMock([])
+    const response = await H.handleAplicarComisionesPos(makeRequest({
+      periodoId: IDS.periodo,
+      aplicaciones: [{ empleadoId: IDS.empleado, comisionesUsd: 10, despachosIds: ['d-1'] }],
+    }), ENV)
+    const { status, body } = await readResponse(response)
+    expect(status).toBe(403)
+    expect(body.code).toBe(CODIGO_CAPACIDAD_INSUFICIENTE)
+    expect(mock.calls).toHaveLength(0)
+  })
+
   describe('handleListarPosVendedores', () => {
     it('retorna 403 para un rol no autorizado', async () => {
       operadorActual = OPERADORES.vendedor
@@ -195,9 +209,65 @@ describe('nómina — comisiones POS', () => {
   })
 
   describe('handleAplicarComisionesPos', () => {
+    const aplicaciones = [{ empleadoId: IDS.empleado, comisionesUsd: 85.5, despachosIds: ['dsp-1', 'dsp-2'] }]
+
+    it('valida estructura y rechaza duplicados, montos negativos o despachos duplicados antes del RPC', async () => {
+      mock = installFetchMock([])
+      for (const aplicacionesInvalidas of [
+        [{ empleadoId: IDS.empleado, comisionesUsd: 10, despachosIds: [] }, { empleadoId: IDS.empleado, comisionesUsd: 20, despachosIds: [] }],
+        [{ empleadoId: IDS.empleado, comisionesUsd: -1, despachosIds: [] }],
+        [{ empleadoId: IDS.empleado, comisionesUsd: true, despachosIds: [] }],
+        [{ empleadoId: IDS.empleado, comisionesUsd: 10, despachosIds: ['d-1', 'd-1'] }],
+        [{ empleadoId: 'not-uuid', comisionesUsd: 10, despachosIds: [] }],
+      ]) {
+        const response = await H.handleAplicarComisionesPos(makeRequest({ periodoId: IDS.periodo, aplicaciones: aplicacionesInvalidas }), ENV)
+        expect((await readResponse(response)).status).toBe(400)
+      }
+      expect(mock.calls).toHaveLength(0)
+    })
+
+    it('delega el lote entero a una sola RPC transaccional', async () => {
+      const result = { ok: true, actualizados: 1, total_comisiones_usd: 85.5, detalle: [{ empleado_id: IDS.empleado, linea_id: IDS.linea, comisiones_pos_usd: 85.5, despachos_count: 2 }] }
+      mock = installFetchMock([
+        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', desde: '2026-08-01', hasta: '2026-08-07', estado: 'abierto' }] },
+        { match: 'nomina_config_empleado?', respond: [{ empleado_id: IDS.empleado, pos_vendedor_id: POS_VENDEDOR_ID }] },
+        { match: '/rpc/nomina_aplicar_comisiones_pos', method: 'POST', respond: result },
+      ])
+      mockFetchComisionesLiberadasPos.mockResolvedValueOnce({ ok: true, liberaciones: [
+        { id: 'dsp-1', vendedor_id: POS_VENDEDOR_ID, monto_usd: 35.5 },
+        { id: 'dsp-2', vendedor_id: POS_VENDEDOR_ID, monto_usd: 50 },
+      ] })
+      const response = await H.handleAplicarComisionesPos(makeRequest({ periodoId: IDS.periodo, aplicaciones }), ENV)
+      const parsed = await readResponse(response)
+      expect(parsed).toEqual({ status: 200, body: result })
+      expect(mock.calls.filter(call => call.url.includes('/rpc/'))).toHaveLength(1)
+      expect(mock.calls.at(-1).body).toMatchObject({
+        p_cuenta_id: OPERADORES.administracion.cuenta_id,
+        p_operador_id: OPERADORES.administracion.id,
+        p_periodo_id: IDS.periodo,
+        p_aplicaciones: [{ empleadoId: IDS.empleado, comisionesUsd: '85.5', despachosIds: ['dsp-1', 'dsp-2'] }],
+      })
+    })
+
+    it('no reporta éxito cuando RPC no confirma el lote completo', async () => {
+      mock = installFetchMock([
+        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', desde: '2026-08-01', hasta: '2026-08-07', estado: 'abierto' }] },
+        { match: 'nomina_config_empleado?', respond: [{ empleado_id: IDS.empleado, pos_vendedor_id: POS_VENDEDOR_ID }] },
+        { match: '/rpc/nomina_aplicar_comisiones_pos', method: 'POST', respond: { ok: true, actualizados: 0, total_comisiones_usd: 0, detalle: [] } },
+      ])
+      mockFetchComisionesLiberadasPos.mockResolvedValueOnce({ ok: true, liberaciones: [
+        { id: 'dsp-1', vendedor_id: POS_VENDEDOR_ID, monto_usd: 35.5 },
+        { id: 'dsp-2', vendedor_id: POS_VENDEDOR_ID, monto_usd: 50 },
+      ] })
+      const response = await H.handleAplicarComisionesPos(makeRequest({ periodoId: IDS.periodo, aplicaciones }), ENV)
+      const parsed = await readResponse(response)
+      expect(parsed.status).toBe(503)
+      expect(parsed.body).not.toHaveProperty('ok', true)
+    })
+
     it('rechaza si el período no está abierto', async () => {
       mock = installFetchMock([
-        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', estado: 'cerrado' }] },
+        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', desde: '2026-08-01', hasta: '2026-08-07', estado: 'cerrado' }] },
       ])
       const req = makeRequest({
         periodoId: IDS.periodo,
@@ -205,114 +275,92 @@ describe('nómina — comisiones POS', () => {
       })
       const res = await H.handleAplicarComisionesPos(req, ENV)
       const { status, body } = await readResponse(res)
-      expect(status).toBe(400)
+      expect(status).toBe(409)
       expect(body.error).toMatch(/abierto/i)
     })
 
     it('rechaza si no hay líneas calculadas en el período', async () => {
       mock = installFetchMock([
-        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', estado: 'abierto' }] },
-        { match: 'nomina_lineas?periodo_id=eq.', respond: [] },
+        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', desde: '2026-08-01', hasta: '2026-08-07', estado: 'abierto' }] },
+        { match: 'nomina_config_empleado?', respond: [{ empleado_id: IDS.empleado, pos_vendedor_id: POS_VENDEDOR_ID }] },
       ])
+      mockFetchComisionesLiberadasPos.mockResolvedValueOnce({ ok: true, liberaciones: [] })
       const req = makeRequest({
         periodoId: IDS.periodo,
         aplicaciones: [{ empleadoId: IDS.empleado, comisionesUsd: 100, despachosIds: ['dsp-1'] }],
       })
       const res = await H.handleAplicarComisionesPos(req, ENV)
       const { status, body } = await readResponse(res)
-      expect(status).toBe(400)
-      expect(body.error).toMatch(/calcular la nómina antes/i)
+      expect(status).toBe(409)
+      expect(body.error).toMatch(/ya no están liberadas/i)
     })
 
-    it('rechaza si la línea ya fue pagada', async () => {
+    it('rechaza si el POS no devuelve todas las liberaciones elegidas', async () => {
       mock = installFetchMock([
-        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', estado: 'abierto' }] },
-        {
-          match: 'nomina_lineas?periodo_id=eq.',
-          respond: [
-            {
-              id: IDS.linea,
-              empleado_id: IDS.empleado,
-              monto_normal_usd: 100,
-              bonos_usd: 0,
-              deducciones_usd: 0,
-              pagado: true,
-            },
-          ],
-        },
+        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', desde: '2026-08-01', hasta: '2026-08-07', estado: 'abierto' }] },
+        { match: 'nomina_config_empleado?', respond: [{ empleado_id: IDS.empleado, pos_vendedor_id: POS_VENDEDOR_ID }] },
       ])
+      mockFetchComisionesLiberadasPos.mockResolvedValueOnce({ ok: true, liberaciones: [] })
       const req = makeRequest({
         periodoId: IDS.periodo,
         aplicaciones: [{ empleadoId: IDS.empleado, comisionesUsd: 50, despachosIds: ['dsp-1'] }],
       })
       const res = await H.handleAplicarComisionesPos(req, ENV)
       const { status, body } = await readResponse(res)
-      expect(status).toBe(400)
-      expect(body.error).toMatch(/ya pagado/i)
+      expect(status).toBe(409)
+      expect(body.error).toMatch(/ya no están liberadas/i)
+      expect(mock.calls).toHaveLength(2)
+    })
+
+    it('rechaza si el monto enviado difiere del total verificado en POS', async () => {
+      mock = installFetchMock([
+        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', desde: '2026-08-01', hasta: '2026-08-07', estado: 'abierto' }] },
+        { match: 'nomina_config_empleado?', respond: [{ empleado_id: IDS.empleado, pos_vendedor_id: POS_VENDEDOR_ID }] },
+      ])
+      mock = installFetchMock([
+        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', desde: '2026-08-01', hasta: '2026-08-07', estado: 'abierto' }] },
+        { match: 'nomina_config_empleado?', respond: [{ empleado_id: IDS.empleado, pos_vendedor_id: POS_VENDEDOR_ID }] },
+      ])
+      mockFetchComisionesLiberadasPos.mockResolvedValueOnce({ ok: true, liberaciones: [
+        { id: 'dsp-1', vendedor_id: POS_VENDEDOR_ID, monto_usd: 35.5 },
+        { id: 'dsp-2', vendedor_id: POS_VENDEDOR_ID, monto_usd: 50 },
+      ] })
+      const res = await H.handleAplicarComisionesPos(makeRequest({
+        periodoId: IDS.periodo,
+        aplicaciones: [{ empleadoId: IDS.empleado, comisionesUsd: 100, despachosIds: ['dsp-1'] }],
+      }), ENV)
+      const { status, body } = await readResponse(res)
+      expect(status).toBe(409)
+      expect(body.error).toMatch(/no coincide con el POS/i)
+      expect(mock.calls.some(call => call.url.includes('/rpc/'))).toBe(false)
     })
 
     it('aplica comisiones y recalcula total_bruto_usd y total_neto_usd correctamente', async () => {
+      const result = {
+        ok: true, actualizados: 1, total_comisiones_usd: 85.5,
+        detalle: [{ empleado_id: IDS.empleado, linea_id: IDS.linea, comisiones_pos_usd: 85.5,
+          despachos_count: 2, total_neto_usd: 225.5 }],
+      }
       mock = installFetchMock([
-        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', estado: 'abierto' }] },
-        {
-          match: 'nomina_lineas?periodo_id=eq.',
-          respond: [
-            {
-              id: IDS.linea,
-              empleado_id: IDS.empleado,
-              monto_normal_usd: 120,
-              monto_extra_usd: 30,
-              monto_sabado_usd: 0,
-              monto_feriado_usd: 0,
-              bonos_usd: 10,
-              deducciones_usd: 20,
-              comisiones_pos_usd: 0,
-              comisiones_despachos_ids: [],
-              pagado: false,
-            },
-          ],
-        },
-        {
-          match: 'nomina_lineas?id=eq.',
-          method: 'PATCH',
-          respond: [{ id: IDS.linea }],
-        },
+        { match: 'nomina_periodos?id=eq.', respond: [{ id: IDS.periodo, nombre: 'S1 Agosto', desde: '2026-08-01', hasta: '2026-08-07', estado: 'abierto' }] },
+        { match: 'nomina_config_empleado?', respond: [{ empleado_id: IDS.empleado, pos_vendedor_id: POS_VENDEDOR_ID }] },
+        { match: '/rpc/nomina_aplicar_comisiones_pos', method: 'POST', respond: result },
       ])
-
-      const req = makeRequest({
-        periodoId: IDS.periodo,
-        aplicaciones: [
-          { empleadoId: IDS.empleado, comisionesUsd: 85.50, despachosIds: ['dsp-1', 'dsp-2'] },
-        ],
-      })
-
+      mockFetchComisionesLiberadasPos.mockResolvedValueOnce({ ok: true, liberaciones: [
+        { id: 'dsp-1', vendedor_id: POS_VENDEDOR_ID, monto_usd: 35.5 },
+        { id: 'dsp-2', vendedor_id: POS_VENDEDOR_ID, monto_usd: 50 },
+      ] })
+      const req = makeRequest({ periodoId: IDS.periodo, aplicaciones })
       const res = await H.handleAplicarComisionesPos(req, ENV)
       const { status, body } = await readResponse(res)
       expect(status).toBe(200)
-      expect(body.ok).toBe(true)
-      expect(body.actualizados).toBe(1)
-      expect(body.total_comisiones_usd).toBe(85.50)
-
-      // Verificar que el PATCH envió el cálculo correcto:
-      // bruto = 120 + 30 + 0 + 0 + 10 + 85.50 = 245.50
-      // neto = 245.50 - 20 = 225.50
-      const patchCall = mock.calls.find(c => c.method === 'PATCH' && c.url.includes('nomina_lineas?id=eq.'))
-      expect(patchCall).toBeDefined()
-      expect(patchCall.body.comisiones_pos_usd).toBe(85.50)
-      expect(patchCall.body.comisiones_despachos_ids).toEqual(['dsp-1', 'dsp-2'])
-      expect(patchCall.body.total_bruto_usd).toBe(245.50)
-      expect(patchCall.body.total_neto_usd).toBe(225.50)
-
-      // Verificar registro de auditoría
-      expect(auditoriaSpy).toHaveBeenCalledWith(
-        ENV,
-        expect.anything(),
-        expect.objectContaining({
-          accion: 'APLICAR_COMISIONES_POS',
-          categoria: 'NOMINA',
-          entidadId: IDS.periodo,
-        }),
-      )
+      expect(body).toEqual(result)
+      expect(mock.calls.filter(call => call.url.includes('/rpc/'))).toHaveLength(1)
+      expect(mock.calls.at(-1).body.p_aplicaciones[0]).toEqual({
+        empleadoId: IDS.empleado,
+        comisionesUsd: '85.5',
+        despachosIds: ['dsp-1', 'dsp-2'],
+      })
     })
   })
 })
