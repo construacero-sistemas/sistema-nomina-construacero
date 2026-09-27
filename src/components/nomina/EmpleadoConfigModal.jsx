@@ -1,12 +1,11 @@
 import { useState, useMemo, useEffect } from 'react'
-import { RefreshCw, Clock, Calendar, Sparkles, ShoppingBag, Trash2, AlertTriangle } from 'lucide-react'
+import { RefreshCw, Clock, Calendar, Sparkles, Trash2, AlertTriangle } from 'lucide-react'
 import {
   useNominaEmpleados,
   useCrearConfigEmpleado,
   useActualizarConfigEmpleado,
   useGuardarHorarioEmpleado,
   useHorarios,
-  usePosVendedores,
 } from '../../hooks/useNomina'
 import { diasActivosSemana, semanaEditable } from '../../utils/diasLaborables.js'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
@@ -73,17 +72,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const [documento, setDocumento] = useState(config?.empleado?.documento ?? '')
   const [cargo, setCargo]           = useState(config?.cargo ?? '')
   const [fechaIngreso, setFechaIngreso] = useState(config?.fecha_ingreso ?? '')
-  const [posVendedorId, setPosVendedorId] = useState(config?.pos_vendedor_id ?? '')
-
-  const { data: posVendedores = [], isLoading: posVendedoresCargando } = usePosVendedores()
-
-  const opcionesVendedoresPos = useMemo(() => [
-    { value: '', label: 'Sin vincular al POS' },
-    ...(Array.isArray(posVendedores) ? posVendedores : []).map(v => ({
-      value: v.id,
-      label: `${v.nombre}${v.codigo ? ` (${v.codigo})` : ''}`,
-    })),
-  ], [posVendedores])
+  const [posVendedorId] = useState(config?.pos_vendedor_id ?? '')
 
   const empKey = config?.empleado_id || config?.id
   const savedPref = useMemo(() => getSavedSalaryPref(empKey), [empKey])
@@ -494,35 +483,6 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
           onCambiarJornada={cambiarJornadaDelDia}
           onCopiarJornada={copiarJornadaAlResto}
         />
-
-        {/* Vinculación con Vendedor en POS */}
-        <div className="space-y-2 p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/70">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-black text-amber-900 flex items-center gap-1.5">
-              <ShoppingBag size={15} className="text-amber-700" />
-              Vendedor en Sistema POS (Opcional)
-            </label>
-            {posVendedorId && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                Vinculado
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-amber-800/80 leading-relaxed">
-            Asocia a este empleado con su usuario vendedor en el POS para importar automáticamente sus comisiones liberadas por ventas y cobranzas en cada nómina.
-          </p>
-          {posVendedoresCargando ? (
-            <div className="text-xs text-slate-400 py-2">Cargando vendedores del POS...</div>
-          ) : (
-            <CustomSelect
-              value={posVendedorId}
-              onChange={setPosVendedorId}
-              options={opcionesVendedoresPos}
-              placeholder="Seleccionar vendedor del POS..."
-              disabled={cargando}
-            />
-          )}
-        </div>
 
         {/* Activo (solo al editar) */}
         {esEdicion && (
