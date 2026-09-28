@@ -16,6 +16,12 @@ self.addEventListener('activate', event => {
   })())
 })
 
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
+})
+
 self.addEventListener('fetch', event => {
   const request = event.request
   const url = new URL(request.url)
@@ -32,6 +38,15 @@ self.addEventListener('fetch', event => {
   event.respondWith(response)
   event.waitUntil(response.then(async fetched => {
     if (fetched.ok && fetched.type !== 'opaque') {
+      // Detectar si un asset JS/CSS sirvió HTML (stale hash tras deploy).
+      // Si el contenido es text/html cuando esperábamos script/style, forzar
+      // actualización del SW para que la próxima navegación cargue la versión nueva.
+      const ct = fetched.headers.get('content-type') || ''
+      if (/\.(?:js|mjs)$/.test(url.pathname) && ct.includes('text/html')) {
+        self.registration.update()
+        self.skipWaiting()
+        return
+      }
       const cache = await caches.open(CACHE)
       await cache.put(request, fetched.clone())
     }

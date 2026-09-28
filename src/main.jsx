@@ -25,9 +25,36 @@ if (typeof localStorage !== 'undefined' && localStorage.getItem('modo-accesible'
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(registration => {
-    const notify = () => { if (registration.waiting) window.dispatchEvent(new Event('app-update-ready')) }
+    const activateNewSw = () => {
+      if (registration.waiting) {
+        // Enviar SKIP_WAITING al SW para que llame self.skipWaiting() y
+        // luego self.clients.claim() en su evento activate. Esto fuerza
+        // que todas las pestañas pasen a la nueva versión inmediatamente,
+        // evitando errores de MIME type por hashes de assets obsoletos.
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' })
+      }
+    }
+    const notify = () => {
+      if (registration.waiting) {
+        window.dispatchEvent(new Event('app-update-ready'))
+        // Auto-activar sin esperar interacción del usuario
+        activateNewSw()
+      }
+    }
     notify()
-    registration.addEventListener('updatefound', () => registration.installing?.addEventListener('statechange', notify))
+    registration.addEventListener('updatefound', () => {
+      registration.installing?.addEventListener('statechange', (e) => {
+        if (e.target.state === 'installed') notify()
+      })
+    })
+    // Si otra pestaña ya activó un nuevo SW, recargar para obtener los assets correctos
+    let refreshing = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true
+        window.location.reload()
+      }
+    })
   }).catch(() => undefined), { once: true })
 }
 
