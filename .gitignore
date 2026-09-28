@@ -29,3 +29,6 @@ backups/
 
 # Datos operativos reales de scripts operativos (nunca en el repo)
 scripts/conciliacion-agosto.datos.json
+
+# Respaldos locales de operación (migraciones/backup de producción)
+local-backups/

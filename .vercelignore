@@ -1,0 +1,4 @@
+# Respaldos y artefactos locales de operación: nunca suben al deploy.
+local-backups/
+backup_*.sql
+backup_*.json
