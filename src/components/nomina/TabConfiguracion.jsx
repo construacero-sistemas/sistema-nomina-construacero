@@ -1,5 +1,6 @@
 import { Children, useState } from 'react'
-import { DollarSign, Plus, ShieldCheck, Sparkles, Clock, CalendarDays, Pencil } from 'lucide-react'
+import { CheckCircle2, DollarSign, Plus, ShieldCheck, Sparkles, Clock, CalendarDays, Pencil, TrendingUp } from 'lucide-react'
+import { RateSelector } from './RateSelector.jsx'
 import { useConfigNomina, useGuardarConfigNomina } from '../../hooks/useNomina.js'
 import {
   useCrearConcepto,
@@ -7,6 +8,7 @@ import {
   useFeriados,
   useNominaConceptos,
   useReglasLegales,
+  useTasasSnapshots,
 } from '../../hooks/useNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
@@ -36,6 +38,7 @@ export default function TabConfiguracion() {
   const secciones = [
     { id: 'calendario', label: 'Horarios y calendario', description: 'Jornada estándar de empresa y feriados' },
     { id: 'recargos', label: 'Horas extra y recargos', description: 'Montos fijos en USD por hora extra, sábado y feriado' },
+    { id: 'tasas', label: 'Tasas de cambio', description: 'BCV dólar, BCV euro, USDT o manual' },
     { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales' },
     { id: 'retencion', label: 'Almacenamiento', description: 'Retención y purga inteligente de la base' },
   ]
@@ -43,7 +46,7 @@ export default function TabConfiguracion() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-2" role="tablist" aria-label="Objetivos de configuración" onKeyDown={navegarSecciones}>
+      <div className="flex flex-wrap sm:grid sm:grid-cols-2 lg:grid-cols-5 gap-2" role="tablist" aria-label="Objetivos de configuración" onKeyDown={navegarSecciones}>
         {secciones.map(item => {
           const activo = seccion === item.id
           return <button
@@ -70,6 +73,7 @@ export default function TabConfiguracion() {
           onRefresh={() => feriados.refetch()}
         />}
         {seccion === 'recargos' && <SurchargesPanel config={configNomina} />}
+        {seccion === 'tasas' && <TasasPanel />}
         {seccion === 'reglas' && <CatalogPanel conceptos={conceptos} reglas={reglas} />}
         {seccion === 'retencion' && <RetencionCard />}
       </div>
@@ -87,9 +91,7 @@ function CalendarPanel({ feriados, configNomina, onRefresh }) {
 }
 
 function StandardScheduleCard({ configNomina }) {
-  const guardar = useGuardarConfigNomina()
   const loaded = configNomina.data?.config || configNomina.data || {}
-  const [tipoPeriodo, setTipoPeriodo] = useState(loaded.nomina_tipo_periodo || 'semanal')
   const [modalHorarioAbierto, setModalHorarioAbierto] = useState(false)
   const [error, setError] = useState('')
 
@@ -97,15 +99,6 @@ function StandardScheduleCard({ configNomina }) {
   const horaFin = loaded.nomina_hora_fin || '17:00'
   const horasJornada = loaded.nomina_horas_jornada != null ? Number(loaded.nomina_horas_jornada) : 8.0
   const horasDescanso = loaded.nomina_horas_descanso != null ? Number(loaded.nomina_horas_descanso) : 1.0
-
-  async function guardarPeriodoDefault(nuevoTipo) {
-    setTipoPeriodo(nuevoTipo)
-    try {
-      await guardar.mutateAsync({ nomina_tipo_periodo: nuevoTipo })
-    } catch (e) {
-      setError(e.message)
-    }
-  }
 
   return (
     <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
@@ -154,16 +147,10 @@ function StandardScheduleCard({ configNomina }) {
           <DollarSign size={20} className="text-amber-600 shrink-0" />
           <div className="flex-1 min-w-0">
             <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">Frecuencia por defecto</span>
-            <CustomSelect
-              value={tipoPeriodo}
-              onChange={guardarPeriodoDefault}
-              disabled={guardar.isPending}
-              options={[
-                { value: 'semanal', label: 'Semanal (Lunes a Sábado)' },
-                { value: 'quincenal', label: 'Quincenal (1–15 / 16–fin)' },
-                { value: 'mensual', label: 'Mensual (30 días)' },
-              ]}
-            />
+            <span className="inline-flex items-center gap-1.5 text-sm font-black text-slate-800 rounded-lg bg-emerald-50 border border-emerald-200 px-2.5 py-1">
+              <CheckCircle2 size={14} className="text-emerald-600" />
+              Semanal (Lunes a Sábado)
+            </span>
           </div>
         </div>
       </div>
@@ -211,10 +198,9 @@ function SurchargesPanel({ config }) {
       return
     }
 
+    // Construacero opera con MONTOS FIJOS (USD). No se envían los
+    // nomina_factor_* para evitar ambigüedad: un solo modo de pago.
     const payload = {
-      nomina_factor_hora_extra: Number(values.nomina_factor_hora_extra || 1.5),
-      nomina_factor_sabado: Number(values.nomina_factor_sabado || 1.25),
-      nomina_factor_feriado: Number(values.nomina_factor_feriado || 2.0),
       nomina_monto_hora_extra_usd: montoExtra,
       nomina_monto_sabado_usd: montoSabado,
       nomina_monto_feriado_usd: montoFeriado,
@@ -229,8 +215,13 @@ function SurchargesPanel({ config }) {
 
   return (
     <Panel icon={DollarSign} title="Pago de horas extra, sábados y feriados">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-700">
+          <CheckCircle2 size={12} /> Modo: montos fijos (USD)
+        </span>
+      </div>
       <p className="text-xs text-slate-500">
-        Configura los montos directos en dólares para horas extras, sábados y días feriados trabajados. Si dejas una casilla vacía, se calcula automáticamente según el sueldo proporcional.
+        Construacero paga estos conceptos con montos directos en dólares. Si dejas una casilla vacía, se calcula automáticamente según el sueldo proporcional.
       </p>
       <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label={`Monto fijo por hora extra (USD) · actual ${formateaMonto(values.nomina_monto_hora_extra_usd)}`}>
@@ -287,6 +278,41 @@ function SurchargesPanel({ config }) {
           </button>
         </div>
       </form>
+    </Panel>
+  )
+}
+
+function TasasPanel() {
+  const [desde] = useState(monthStart)
+  const [hasta] = useState(monthEnd)
+  const snapshots = useTasasSnapshots(desde, hasta)
+  const congeladas = (snapshots.data || []).filter(s => s.periodo_id)
+  return (
+    <Panel icon={TrendingUp} title="Tasas de cambio">
+      <p className="text-xs text-slate-500">
+        Construacero trabaja con cuatro tasas: <strong>BCV dólar</strong>, <strong>BCV euro</strong>, <strong>USDT</strong> o <strong>manual</strong>. La tasa que elijas aquí se usa de referencia en los cálculos secundarios en bolívares (Bs).
+      </p>
+      <div className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-xs font-black text-white">Tasa secundaria de referencia</p>
+          <p className="text-[11px] text-slate-400 mt-0.5">Se usa en los cálculos que entregan montos en Bolívares.</p>
+        </div>
+        <RateSelector />
+      </div>
+      <p className="mt-2 text-[11px] text-slate-400">
+        La tasa se congela al cerrar cada período: una actualización posterior del mercado no altera nóminas ya calculadas. La tasa manual queda registrada con quién la fijó, cuándo y por qué.
+      </p>
+      <div className="mt-3">
+        <DataList title="Tasas congeladas al cierre" loading={snapshots.isLoading} error={snapshots.isError} onRetry={() => snapshots.refetch()}>
+          {congeladas.map(item => (
+            <ListRow
+              key={item.id}
+              title={`${item.fecha} · ${item.moneda_origen} → Bs · ${Number(item.valor).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              detail={`${item.fuente}${item.fijada_por_nombre ? ` · fijada por ${item.fijada_por_nombre}` : ''}${item.motivo ? ` · ${item.motivo}` : ''}`}
+            />
+          ))}
+        </DataList>
+      </div>
     </Panel>
   )
 }

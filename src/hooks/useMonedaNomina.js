@@ -2,9 +2,16 @@
 // Hook reactivo para gestión unificada de monedas y tasas en el sistema de Nómina.
 // Regla: La moneda principal es SIEMPRE USD ($), y la secundaria es Bs, calculada
 // según la tasa activa seleccionada (BCV Dólar, BCV Euro, USDT o Manual).
-import { useMemo, useCallback } from 'react'
+//
+// La tasa MANUAL es única por cuenta y vive en el servidor (trazable: quién, cuándo
+// y por qué); el localStorage solo conserva un respaldo local. Cuando la tasa
+// elegida no tiene dato de mercado, se usa la del BCV dólar y se avisa con
+// `tasaFallback` para que la interfaz nunca muestre un número mentiroso.
+import { useMemo, useCallback, useEffect } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import useTasaCambioNomina from './useTasaCambioNomina.js'
 import { useTasaNominaStore } from '../store/useTasaNominaStore.js'
+import { apiGet, apiPost } from './nominaApi.js'
 
 export function formatUsd(n) {
   return `$${(Number(n) || 0).toLocaleString('es-VE', {
@@ -27,9 +34,44 @@ export const OPCIONES_TASA = [
   { id: 'manual',  label: 'Tasa Manual',    shortLabel: 'Manual' },
 ]
 
+const KEY_TASA_MANUAL = ['nomina', 'tasa-manual']
+
 export default function useMonedaNomina() {
   const marketRates = useTasaCambioNomina()
-  const { tipoTasa, tasaManual, setTipoTasa, setTasaManual } = useTasaNominaStore()
+  const { tipoTasa, tasaManual: tasaManualLocal, setTipoTasa, setTasaManual, hidratarTasaManual } = useTasaNominaStore()
+  const queryClient = useQueryClient()
+
+  // Tasa manual del servidor (una por cuenta, con quién/cuándo/por qué). Si la
+  // consulta falla (sin red, permisos), se usa el respaldo local en silencio.
+  const tasaManualQuery = useQuery({
+    queryKey: KEY_TASA_MANUAL,
+    queryFn: () => apiGet('/api/nomina/tasa-manual'),
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  })
+  const tasaManualInfo = tasaManualQuery.data?.tasa || null
+  const tasaManualServidor = Number(tasaManualInfo?.valor) || 0
+
+  useEffect(() => {
+    if (tasaManualServidor > 0) hidratarTasaManual(tasaManualServidor)
+  }, [tasaManualServidor, hidratarTasaManual])
+
+  const tasaManual = tasaManualServidor > 0 ? tasaManualServidor : Number(tasaManualLocal) || 0
+
+  const guardarTasaManual = useMutation({
+    mutationFn: ({ valor, motivo }) => apiPost('/api/nomina/tasa-manual', { valor, motivo }),
+    onSuccess: data => {
+      queryClient.setQueryData(KEY_TASA_MANUAL, { tasa: data?.tasa || null })
+      const valor = Number(data?.tasa?.valor) || 0
+      if (valor > 0) setTasaManual(valor) // también activa tipoTasa = 'manual'
+    },
+  })
+
+  const fijarTasaManual = useCallback(
+    (valor, motivo) => guardarTasaManual.mutateAsync({ valor, motivo }),
+    [guardarTasaManual],
+  )
 
   // Determinar el valor numérico exacto de la tasa efectiva
   const tasaActiva = useMemo(() => {
@@ -40,10 +82,22 @@ export default function useMonedaNomina() {
       return Number(marketRates.usdt) || Number(marketRates.usd) || 0
     }
     if (tipoTasa === 'manual') {
-      return Number(tasaManual) > 0 ? Number(tasaManual) : (Number(marketRates.usd) || 0)
+      return tasaManual > 0 ? tasaManual : (Number(marketRates.usd) || 0)
     }
     // Default: bcv_usd
     return Number(marketRates.usd) || 0
+  }, [tipoTasa, tasaManual, marketRates.usd, marketRates.eur, marketRates.usdt])
+
+  // Aviso de respaldo: si la tasa elegida no tiene dato, el número mostrado
+  // viene del BCV dólar y hay que decirlo (no mostrar un valor mentiroso).
+  const tasaFallback = useMemo(() => {
+    const usd = Number(marketRates.usd) || 0
+    const elegida = tipoTasa === 'bcv_eur' ? Number(marketRates.eur) || 0
+      : tipoTasa === 'usdt' ? Number(marketRates.usdt) || 0
+      : tipoTasa === 'manual' ? tasaManual
+      : usd
+    if (elegida > 0) return null
+    return usd > 0 ? 'bcv_usd' : 'sin_datos'
   }, [tipoTasa, tasaManual, marketRates.usd, marketRates.eur, marketRates.usdt])
 
   const nombreTasa = useMemo(() => {
@@ -90,6 +144,16 @@ export default function useMonedaNomina() {
     nombreTasa,
     shortLabelTasa,
     opcionesTasa: OPCIONES_TASA,
+
+    // Tasa manual trazable (servidor): quién la fijó, cuándo y por qué
+    tasaManualInfo,
+    fijarTasaManual,
+    guardandoTasaManual: guardarTasaManual.isPending,
+    errorTasaManual: guardarTasaManual.error?.message || '',
+
+    // 'bcv_usd' si la tasa elegida no tiene dato y se muestra la del dólar BCV;
+    // 'sin_datos' si no hay ninguna tasa disponible; null si todo es real.
+    tasaFallback,
 
     // Tasas disponibles del mercado
     tasasMercado: {

@@ -7,6 +7,7 @@ import useAuthStore from '../../compat/store/useAuthStore.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
 import { tieneCapacidad } from '../config/accesoModulos.js'
 import useFinancialOperation from './useFinancialOperation.js'
+import useTasaCambioNomina from './useTasaCambioNomina.js'
 export { useMarcarEntrada, useMarcarSalida, useCorregirMarcaje, useAnularEntradaComoAusencia } from './useNominaMarcaje.js'
 import {
   KEY_ASISTENCIA,
@@ -246,14 +247,38 @@ export function useCalcularPeriodo() {
 
 export function useCerrarPeriodo() {
   const qc = useQueryClient()
+  const rates = useTasaCambioNomina()
   return useMutation({
-    mutationFn: (periodoId) => apiPost('/api/nomina/periodos/cerrar', { periodoId }),
-    onSuccess: () => {
-      showToast.success('Período cerrado')
+    // El cierre congela la tasa del mercado en este momento (quién y cuándo):
+    // el servidor guarda el snapshot ANTES de cerrar y, si no puede, no cierra.
+    mutationFn: (periodoId) => apiPost('/api/nomina/periodos/cerrar', {
+      periodoId,
+      tasas: {
+        usd: Number(rates.usd) || 0,
+        eur: Number(rates.eur) || 0,
+        usdt: Number(rates.usdt) || 0,
+      },
+    }),
+    onSuccess: (data) => {
+      showToast.success(data?.tasa_congelada ? 'Período cerrado · tasa del cierre congelada' : 'Período cerrado')
       qc.invalidateQueries({ queryKey: KEY_PERIODOS })
       qc.invalidateQueries({ queryKey: KEY_LINEAS })
+      qc.invalidateQueries({ queryKey: ['nomina', 'tasas'] })
     },
     onError: (e) => showToast.error(e.message || 'Error al cerrar período'),
+  })
+}
+
+// Tasas congeladas al cierre de un período (snapshots con periodo_id). Se usan
+// para mostrar el Bs histórico tal como quedó al cerrar, sin importar el mercado actual.
+export function useTasasPeriodo(periodoId) {
+  const perfil = useAuthStore(useCallback(s => s.perfil, []))
+  const puede = tieneCapacidad(perfil, 'verNomina')
+  return useQuery({
+    queryKey: ['nomina', 'tasas', 'periodo', periodoId],
+    queryFn: () => apiGet(`/api/nomina/tasas-snapshots?periodoId=${periodoId}`),
+    enabled: !!perfil && puede && !!periodoId,
+    staleTime: 1000 * 60 * 10,
   })
 }
 
@@ -351,10 +376,10 @@ export function useGuardarConfigNomina() {
   return useMutation({
     mutationFn: campos => apiPost('/api/config', campos),
     onSuccess: () => {
-      showToast.success('Recargos guardados')
+      showToast.success('Configuración guardada')
       qc.invalidateQueries({ queryKey: ['nomina', 'configuracion'] })
     },
-    onError: e => showToast.error(e.message || 'Error al guardar recargos'),
+    onError: e => showToast.error(e.message || 'Error al guardar la configuración'),
   })
 }
 

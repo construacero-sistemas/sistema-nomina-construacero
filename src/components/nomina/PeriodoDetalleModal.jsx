@@ -3,7 +3,7 @@
 // Regla: Moneda principal es SIEMPRE USD ($) y secundaria es Bs (calculada según la tasa activa).
 import { useState, useMemo } from 'react'
 import { FileText, Pencil, RotateCcw, Wallet, CheckCircle2, DollarSign, Users, Sparkles, ShoppingBag } from 'lucide-react'
-import { useNominaLineas, useRevertirPagoLinea } from '../../hooks/useNomina'
+import { useNominaLineas, useRevertirPagoLinea, useTasasPeriodo } from '../../hooks/useNomina'
 import useMonedaNomina, { formatBs, formatUsd } from '../../hooks/useMonedaNomina.js'
 import { useConfigNegocio } from '../../../compat/hooks/useConfigNegocio.js'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
@@ -89,7 +89,7 @@ function ReciboMovilCard({ linea, abierto, puedeGestionarNomina, puedePagarNomin
 export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = false, puedePagarNomina = false, onClose }) {
   const { data: lineas = [], isLoading, isError, refetch } = useNominaLineas(periodo.id)
   const { data: configNegocio } = useConfigNegocio()
-  const { aBs, fmtBs, tasaActiva, shortLabelTasa } = useMonedaNomina()
+  const { aBs, fmtBs, tasaActiva, shortLabelTasa, tipoTasa } = useMonedaNomina()
   const revertir = useRevertirPagoLinea()
 
   const [liquidando, setLiquidando]   = useState(null)
@@ -104,6 +104,20 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
   const [importandoComisiones, setImportandoComisiones] = useState(false)
 
   const abierto = periodo.estado === 'abierto'
+
+  // Tasa congelada al cierre del período: los montos en Bs históricos se muestran
+  // tal como quedaron al cerrar, sin que el mercado actual los reescriba.
+  const { data: tasasCierre = [] } = useTasasPeriodo(abierto ? null : periodo.id)
+  const tasaCongelada = useMemo(() => {
+    if (abierto || !tasasCierre.length) return null
+    const monedaOrigen = tipoTasa === 'bcv_eur' ? 'EUR' : tipoTasa === 'usdt' ? 'USDT' : 'USD'
+    return tasasCierre.find(t => t.moneda_origen === monedaOrigen)
+      || tasasCierre.find(t => t.moneda_origen === 'USD')
+      || null
+  }, [abierto, tasasCierre, tipoTasa])
+  const fmtBsPeriodo = tasaCongelada
+    ? (monto) => formatBs((Number(monto) || 0) * (Number(tasaCongelada.valor) || 0))
+    : fmtBs
 
   const totales = useMemo(() => ({
     empleados: lineas.length,
@@ -179,7 +193,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
               </div>
               <span className="text-sm font-black text-emerald-800 mt-0.5 block">${fmt(totales.neto)}</span>
               <span className="text-[11px] text-emerald-700 font-mono font-bold block">
-                {fmtBs(totales.neto)}
+                {fmtBsPeriodo(totales.neto)}
               </span>
             </div>
           </div>
@@ -193,7 +207,16 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
               <span className="text-slate-300">·</span>
               <div className="flex items-center gap-1">
                 <span className="text-[11px] text-slate-500 font-medium">Tasa:</span>
-                <RateSelector />
+                {tasaCongelada ? (
+                  <span
+                    title={`Tasa congelada al cierre el ${tasaCongelada.fecha} (${tasaCongelada.fuente})`}
+                    className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-black text-emerald-800"
+                  >
+                    {Number(tasaCongelada.valor).toLocaleString('es-VE')} Bs/$ · cierre
+                  </span>
+                ) : (
+                  <RateSelector />
+                )}
               </div>
             </div>
 
@@ -237,6 +260,11 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
               El período está <strong>abierto</strong>. Puedes ajustar bonos y deducciones; para registrar pagos oficiales cierra el período.
             </div>
           )}
+          {tasaCongelada && (
+            <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-3.5 text-xs text-emerald-900 leading-relaxed">
+              Los montos en Bs de este período usan la tasa congelada al cierre ({Number(tasaCongelada.valor).toLocaleString('es-VE')} Bs/$ · {tasaCongelada.fuente} · {tasaCongelada.fecha}); no cambian con el mercado actual.
+            </div>
+          )}
 
           {/* Tabla de recibos */}
           {isLoading ? (
@@ -255,7 +283,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                     abierto={abierto}
                     puedeGestionarNomina={puedeGestionarNomina}
                     puedePagarNomina={puedePagarNomina}
-                    fmtBs={fmtBs}
+                    fmtBs={fmtBsPeriodo}
                     onDescargar={exportarRecibo}
                     onAjustar={setLiquidando}
                     onPagar={linea => setPagando({ lineas: [linea] })}
@@ -272,7 +300,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                   <div className="min-w-0 rounded-lg border border-primary/20 bg-white px-2.5 py-2">
                     <span className="block text-[10px] font-semibold text-primary/75">Neto</span>
                     <span className="block truncate text-xs font-black tabular-nums text-primary">${fmt(totales.neto)}</span>
-                    <span className="block truncate text-[10px] font-semibold tabular-nums text-slate-600">{fmtBs(totales.neto)}</span>
+                    <span className="block truncate text-[10px] font-semibold tabular-nums text-slate-600">{fmtBsPeriodo(totales.neto)}</span>
                   </div>
                 </div>
               </div>
@@ -354,7 +382,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                             </div>
                           ) : (
                             <div className="text-[10px] text-slate-400 font-mono font-normal">
-                              {fmtBs(l.total_neto_usd)}
+                              {fmtBsPeriodo(l.total_neto_usd)}
                             </div>
                           )}
                         </td>
@@ -417,7 +445,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                     <td className="text-right px-3 py-3 font-black text-emerald-800 text-sm">
                       <div>${fmt(totales.neto)}</div>
                       <div className="text-[10px] text-emerald-700 font-mono font-bold">
-                        {fmtBs(totales.neto)}
+                        {fmtBsPeriodo(totales.neto)}
                       </div>
                     </td>
                     <td />

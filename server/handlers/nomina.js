@@ -40,6 +40,8 @@ export {
   handleCrearConcepto,
   handleGetTasasSnapshots,
   handleCrearTasaSnapshot,
+  handleGetTasaManual,
+  handleFijarTasaManual,
   handleGetReglasLegales,
   handleCrearReglaLegal,
 } from './nomina.catalogos.js'

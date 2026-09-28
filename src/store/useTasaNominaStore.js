@@ -52,4 +52,22 @@ export const useTasaNominaStore = create((set, get) => ({
       // Ignorar errores de escritura en localStorage
     }
   },
+
+  // Hidratación desde el servidor: actualiza el valor (respaldo local) SIN tocar
+  // la preferencia de tasa de este navegador. La tasa manual es única por cuenta
+  // (trazable en nomina_tasas_snapshot); cada quien elige cuál de las 4 usar.
+  hidratarTasaManual: (tasaManual) => {
+    const val = Number(tasaManual) || 0
+    if (!(val > 0)) return
+    const current = get()
+    set({ tasaManual: val })
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        tipoTasa: current.tipoTasa,
+        tasaManual: val,
+      }))
+    } catch {
+      // Ignorar errores de escritura en localStorage
+    }
+  },
 }))

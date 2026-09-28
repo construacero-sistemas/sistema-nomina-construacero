@@ -5,8 +5,9 @@ import { normalizarConcepto } from '../lib/nominaConceptos.js'
 import { normalizarReglaLegal } from '../lib/nominaLegal.js'
 import { normalizarTasa } from '../lib/tasasCambio.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
-import { requireCapacidad } from '../lib/permissions.js'
-import { fechaNominaValida, svcHeaders, tenantGuard } from './nomina.shared.js'
+import { requireCapacidad, tieneCapacidad } from '../lib/permissions.js'
+import { registrarAuditoria } from '../lib/audit.js'
+import { fechaNominaValida, fechaOperativaNomina, svcHeaders, tenantGuard, textoNominaValido } from './nomina.shared.js'
 
 export async function handleGetConceptos(request, env) {
   const v = await validateOperator(request, env)
@@ -40,6 +41,24 @@ export async function handleCrearConcepto(request, env) {
   return json({ ok: true, concepto: row }, 201, request)
 }
 
+const SELECT_TASAS = 'id,fecha,moneda_origen,moneda_destino,valor,fuente,observado_en,aprobado,aprobado_por,periodo_id,motivo,fijada_por_nombre'
+// Compatibilidad: mientras la migración 249 no esté aplicada, PostgREST responde
+// 42703 por las columnas nuevas. Se reintenta sin ellas (patrón de 246) para no
+// romper la lectura de snapshots históricos.
+const SELECT_TASAS_LEGADO = 'id,fecha,moneda_origen,moneda_destino,valor,fuente,observado_en,aprobado,periodo_id'
+
+async function fetchTasasSnapshot(env, headers, filtro) {
+  const url = select => `${env.SUPABASE_URL}/rest/v1/nomina_tasas_snapshot?${filtro}&select=${select}&order=fecha.desc,observado_en.desc&limit=500`
+  let response = await fetch(url(SELECT_TASAS), { headers })
+  if (response.status === 400) {
+    const detalle = await response.text().catch(() => '')
+    if (detalle.includes('motivo') || detalle.includes('fijada_por_nombre')) {
+      response = await fetch(url(SELECT_TASAS_LEGADO), { headers })
+    }
+  }
+  return response
+}
+
 export async function handleGetTasasSnapshots(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
@@ -51,12 +70,99 @@ export async function handleGetTasasSnapshots(request, env) {
   const url = new URL(request.url)
   const desde = url.searchParams.get('desde')
   const hasta = url.searchParams.get('hasta')
-  if (!fechaNominaValida(desde) || !fechaNominaValida(hasta)) return jsonError('Rango de fechas inválido', 400, request)
-  const range = new Date(`${hasta}T12:00:00Z`) - new Date(`${desde}T12:00:00Z`)
-  if (range < 0 || range > 31 * 86400000) return jsonError('El rango debe estar entre 0 y 31 días', 400, request)
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_tasas_snapshot?fecha=gte.${desde}&fecha=lte.${hasta}${nominaTenantFilter(operador.cuenta_id)}&select=id,fecha,moneda_origen,moneda_destino,valor,fuente,observado_en,aprobado,periodo_id&order=fecha.desc&limit=500`, { headers })
+  const periodoId = url.searchParams.get('periodoId')
+  let filtro
+  if (periodoId) {
+    if (!isValidUuid(periodoId)) return jsonError('periodoId inválido', 400, request)
+    filtro = `periodo_id=eq.${periodoId}`
+  } else {
+    if (!fechaNominaValida(desde) || !fechaNominaValida(hasta)) return jsonError('Rango de fechas inválido', 400, request)
+    const range = new Date(`${hasta}T12:00:00Z`) - new Date(`${desde}T12:00:00Z`)
+    if (range < 0 || range > 31 * 86400000) return jsonError('El rango debe estar entre 0 y 31 días', 400, request)
+    filtro = `fecha=gte.${desde}&fecha=lte.${hasta}`
+  }
+  const response = await fetchTasasSnapshot(env, headers, `${filtro}${nominaTenantFilter(operador.cuenta_id)}`)
   if (!response.ok) return jsonError('Error al leer snapshots de tasa', 500, request)
   return json(await response.json() ?? [], 200, request)
+}
+
+// ── Tasa manual trazable ──────────────────────────────────────────────────────
+// La tasa manual del selector (BCV $, €, USDT o manual) era local a cada
+// navegador. Ahora vive en nomina_tasas_snapshot (fuente = 'MANUAL') con quién,
+// cuándo y por qué, y todos los navegadores leen el mismo valor.
+
+export async function handleGetTasaManual(request, env) {
+  const v = await validateOperator(request, env)
+  if (v.error) return v.error
+  const { operador, headers } = v
+  // La tasa manual alimenta equivalencias en Bs de Nómina y Finanzas: basta con
+  // operar cualquiera de los dos módulos para leerla.
+  if (!tieneCapacidad(operador, 'verNomina') && !tieneCapacidad(operador, 'verFinanzas')) {
+    return requireCapacidad(operador, 'verNomina', request)
+  }
+  const tenantError = tenantGuard(operador, request)
+  if (tenantError) return tenantError
+  const filtro = `fuente=eq.MANUAL&periodo_id=is.null${nominaTenantFilter(operador.cuenta_id)}`
+  let response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_tasas_snapshot?${filtro}&select=valor,motivo,fijada_por_nombre,observado_en&order=observado_en.desc&limit=1`, { headers })
+  if (response.status === 400) {
+    const detalle = await response.text().catch(() => '')
+    if (detalle.includes('motivo') || detalle.includes('fijada_por_nombre')) {
+      response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_tasas_snapshot?${filtro}&select=valor,observado_en&order=observado_en.desc&limit=1`, { headers })
+    }
+  }
+  if (!response.ok) return jsonError('No se pudo leer la tasa manual', 500, request)
+  const [tasa] = await response.json()
+  return json({ tasa: tasa || null }, 200, request)
+}
+
+export async function handleFijarTasaManual(request, env) {
+  const v = await validateOperator(request, env)
+  if (v.error) return v.error
+  const { operador, headers, ip } = v
+  // Fijar la tasa manual la afecta tanto en Nómina como en Finanzas: la autoriza
+  // cualquiera que administre nómina u opere finanzas (jefe/desarrollador, ambos).
+  if (!tieneCapacidad(operador, 'administrarNomina') && !tieneCapacidad(operador, 'operarFinanzas')) {
+    return requireCapacidad(operador, 'administrarNomina', request)
+  }
+  const tenantError = tenantGuard(operador, request)
+  if (tenantError) return tenantError
+  let body
+  try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
+  const valorTexto = String(body?.valor ?? '').trim().replace(',', '.')
+  if (!/^\d+(\.\d{1,8})?$/.test(valorTexto) || !(Number(valorTexto) > 0) || Number(valorTexto) > 1000000) {
+    return jsonError('valor de tasa inválido', 400, request)
+  }
+  const motivo = typeof body?.motivo === 'string' ? body.motivo.trim() : ''
+  if (motivo.length < 3 || motivo.length > 300) {
+    return jsonError('El motivo es obligatorio (entre 3 y 300 caracteres)', 400, request)
+  }
+  if (!textoNominaValido(motivo, 300)) return jsonError('Motivo demasiado largo', 400, request)
+  const fila = {
+    fecha: fechaOperativaNomina(env),
+    moneda_origen: 'USD',
+    moneda_destino: 'VES',
+    valor: valorTexto,
+    fuente: 'MANUAL',
+    observado_en: new Date().toISOString(),
+    // Quien tiene permiso para fijarla la aprueba en el mismo acto.
+    aprobado: true,
+    aprobado_por: operador.id,
+    motivo,
+    fijada_por_nombre: operador.nombre || null,
+    periodo_id: null,
+    cuenta_id: operador.cuenta_id,
+  }
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_tasas_snapshot`, { method: 'POST', headers: { ...svcHeaders(env), Prefer: 'return=representation' }, body: JSON.stringify(fila) })
+  if (!response.ok) {
+    const detalle = await response.text().catch(() => '')
+    if (detalle.includes('motivo') || detalle.includes('fijada_por_nombre')) {
+      return jsonError('La base aún no admite tasa manual trazable; aplica la migración 249', 503, request)
+    }
+    return jsonError('No se pudo guardar la tasa manual', 409, request)
+  }
+  const [tasa] = await response.json()
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'FIJAR_TASA_MANUAL', entidadTipo: 'nomina_tasas_snapshot', entidadId: tasa?.id || null, meta: { valor: valorTexto, motivo }, ip }).catch(() => {})
+  return json({ ok: true, tasa }, 201, request)
 }
 
 export async function handleCrearTasaSnapshot(request, env) {

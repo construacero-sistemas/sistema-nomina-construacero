@@ -5,7 +5,7 @@ import { registrarAuditoria } from '../lib/audit.js'
 import { calcularLineaNomina, esJornadaAbierta } from '../lib/nominaUtils.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
 import { requireCapacidad } from '../lib/permissions.js'
-import { fechaNominaValida, fetchConfigNomina, r4, svcHeaders, tenantGuard, textoNominaValido } from './nomina.shared.js'
+import { fechaNominaValida, fechaOperativaNomina, fetchConfigNomina, r4, svcHeaders, tenantGuard, textoNominaValido } from './nomina.shared.js'
 
 export async function handleGetPeriodos(request, env) {
   const v = await validateOperator(request, env)
@@ -191,10 +191,41 @@ export async function handleCerrarPeriodo(request, env) {
   if (period.estado !== 'abierto') return jsonError(`El período ya está ${period.estado}`, 400, request)
   const linesResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&select=id&limit=1`, { headers })
   if (!(linesResponse.ok ? await linesResponse.json() : []).length) return jsonError('Calcula la nómina antes de cerrar el período', 400, request)
+  // Congelar la tasa del cierre: si el llamador envía `tasas` (la observación del
+  // mercado en este momento), se guarda como snapshot del período ANTES de cerrar.
+  // Si el snapshot no se puede escribir, el período NO se cierra (fail-closed):
+  // un período cerrado siempre conserva la tasa con la que se cerró.
+  const tasasCierre = []
+  if (body.tasas !== undefined) {
+    if (!body.tasas || typeof body.tasas !== 'object' || Array.isArray(body.tasas)) return jsonError('tasas inválidas', 400, request)
+    const fuentes = { usd: ['USD', 'BCV'], eur: ['EUR', 'EURO'], usdt: ['USDT', 'USDT'] }
+    for (const [clave, [moneda, fuente]] of Object.entries(fuentes)) {
+      const bruto = body.tasas[clave]
+      if (bruto === undefined || bruto === null || bruto === '') continue
+      const valor = Number(bruto)
+      if (!Number.isFinite(valor) || valor <= 0 || valor > 10000000) return jsonError(`Tasa ${clave} inválida para congelar`, 400, request)
+      tasasCierre.push({
+        fecha: fechaOperativaNomina(env),
+        moneda_origen: moneda,
+        moneda_destino: 'VES',
+        valor,
+        fuente,
+        observado_en: new Date().toISOString(),
+        aprobado: true,
+        aprobado_por: operador.id,
+        periodo_id: periodoId,
+        cuenta_id: operador.cuenta_id,
+      })
+    }
+    if (tasasCierre.length) {
+      const freeze = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_tasas_snapshot?on_conflict=cuenta_id,fecha,moneda_origen,fuente,periodo_id`, { method: 'POST', headers: svcHeaders(env, 'resolution=merge-duplicates,return=minimal'), body: JSON.stringify(tasasCierre) })
+      if (!freeze.ok) return jsonError('No se pudo congelar la tasa del período; no se cerró', 500, request)
+    }
+  }
   const update = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_periodos?id=eq.${periodoId}${account}`, { method: 'PATCH', headers: svcHeaders(env, 'return=minimal'), body: JSON.stringify({ estado: 'cerrado', cerrado_en: new Date().toISOString(), cerrado_por: operador.id }) })
   if (!update.ok) return jsonError('Error al cerrar período', 500, request)
-  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CERRAR_PERIODO', entidadTipo: 'nomina_periodo', entidadId: periodoId, meta: { periodo: period.nombre }, ip }).catch(() => {})
-  return json({ ok: true }, 200, request)
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CERRAR_PERIODO', entidadTipo: 'nomina_periodo', entidadId: periodoId, meta: { periodo: period.nombre, tasas_congeladas: tasasCierre.length }, ip }).catch(() => {})
+  return json({ ok: true, tasa_congelada: tasasCierre.length > 0 }, 200, request)
 }
 
 export async function handleReabrirPeriodo(request, env) {

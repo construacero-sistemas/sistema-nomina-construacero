@@ -73,6 +73,8 @@ describe('Worker E2E determinista', () => {
     'GET /api/nomina/conceptos',
     'GET /api/nomina/reglas-legales',
     'GET /api/nomina/tasas-snapshots?desde=2026-08-01&hasta=2026-08-31',
+    'GET /api/nomina/tasa-manual',
+    'POST /api/nomina/tasa-manual',
     'GET /api/nomina/lineas?periodoId=10000000-0000-4000-8000-000000000001',
     'POST /api/nomina/asistencia/registrar',
     'POST /api/nomina/asistencia/registrar-masivo',
