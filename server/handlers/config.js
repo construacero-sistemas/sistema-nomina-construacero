@@ -84,6 +84,8 @@ export async function handleUpdateConfig(request, env) {
     const value = Number(body[field])
     if (!Number.isFinite(value) || value <= 0 || value > MAX_MONTO) return jsonError(`${field} inválido`, 400, request)
     fields[field] = value
+    // Construacero opera con un SOLO modo: montos fijos USD.
+    fields.nomina_feriado_modo = 'monto_fijo'
   }
 
   if (body?.nomina_feriado_modo !== undefined) {
@@ -94,10 +96,11 @@ export async function handleUpdateConfig(request, env) {
   }
 
   if (body?.nomina_tipo_periodo !== undefined) {
-    if (!['semanal', 'quincenal', 'mensual'].includes(body.nomina_tipo_periodo)) {
-      return jsonError('nomina_tipo_periodo inválido', 400, request)
+    // Construacero opera en ciclos semanales: la frecuencia no se modifica.
+    if (body.nomina_tipo_periodo !== 'semanal') {
+      return jsonError('Construacero opera en nómina semanal; no se admite otra frecuencia', 400, request)
     }
-    fields.nomina_tipo_periodo = body.nomina_tipo_periodo
+    fields.nomina_tipo_periodo = 'semanal'
   }
 
   if (body?.nomina_horas_extra_max_semana !== undefined) {

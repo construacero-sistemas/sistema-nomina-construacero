@@ -45,13 +45,13 @@ describe('config handler', () => {
     expect(body.nomina_monto_hora_extra_usd).toBe(4.0)
   })
 
-  it('actualiza el tipo de período y montos fijos en USD', async () => {
+  it('fija la frecuencia semanal de Construacero y actualiza montos fijos en USD', async () => {
     mock = installFetchMock([
       {
         match: '/configuracion_negocio',
         method: 'PATCH',
         respond: [{
-          nomina_tipo_periodo: 'quincenal',
+          nomina_tipo_periodo: 'semanal',
           nomina_monto_hora_extra_usd: 5.0,
           nomina_monto_sabado_usd: 35.0,
           nomina_monto_feriado_usd: 40.0,
@@ -70,19 +70,48 @@ describe('config handler', () => {
     )
 
     const { status, body } = await readResponse(res)
+    expect(status).toBe(400)
+    expect(String(body.error)).toMatch(/semanal/i)
+  })
+
+  it('acepta frecuencia semanal explícita y actualiza montos fijos en USD', async () => {
+    mock = installFetchMock([
+      {
+        match: '/configuracion_negocio',
+        method: 'PATCH',
+        respond: [{
+          nomina_tipo_periodo: 'semanal',
+          nomina_monto_hora_extra_usd: 5.0,
+          nomina_monto_sabado_usd: 35.0,
+          nomina_monto_feriado_usd: 40.0,
+        }],
+      },
+    ])
+
+    const res = await handleUpdateConfig(
+      makeRequest({
+        nomina_tipo_periodo: 'semanal',
+        nomina_monto_hora_extra_usd: 5.0,
+        nomina_monto_sabado_usd: 35.0,
+        nomina_monto_feriado_usd: 40.0,
+      }),
+      ENV
+    )
+
+    const { status, body } = await readResponse(res)
     expect(status).toBe(200)
-    expect(body.nomina_tipo_periodo).toBe('quincenal')
+    expect(body.nomina_tipo_periodo).toBe('semanal')
     expect(body.nomina_monto_hora_extra_usd).toBe(5.0)
   })
 
-  it('valida tipo de período inválido', async () => {
+  it('rechaza frecuencia distinta a la semanal', async () => {
     const res = await handleUpdateConfig(
-      makeRequest({ nomina_tipo_periodo: 'invalido' }),
+      makeRequest({ nomina_tipo_periodo: 'quincenal' }),
       ENV
     )
     const { status, body } = await readResponse(res)
     expect(status).toBe(400)
-    expect(String(body.error)).toMatch(/nomina_tipo_periodo/i)
+    expect(String(body.error)).toMatch(/semanal/i)
   })
 
   it('actualiza el horario general estándar de la empresa', async () => {
