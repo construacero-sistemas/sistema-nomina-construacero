@@ -19,6 +19,49 @@
 }
 
 :root { --bottom-navigation-height: 5.25rem; }
+
+/* ── Sistema de diseño: legibilidad y datos (paridad con POS Cotizaciones) ── */
+
+/* Piso de legibilidad: ningún texto por debajo de 12px. Cubre clases Tailwind
+   (text-[9/10/11px]) y estilos inline (font-size: 9/10/11px) en todo el sistema. */
+.text-\[9px\], .text-\[10px\], .text-\[11px\],
+.text-\[9\.5px\], .text-\[10\.5px\], .text-\[11\.5px\] {
+  font-size: 0.75rem !important;
+  line-height: 1.125rem !important;
+}
+[style*="font-size:9px"], [style*="font-size: 9px"],
+[style*="font-size:10px"], [style*="font-size: 10px"],
+[style*="font-size:11px"], [style*="font-size: 11px"] {
+  font-size: 0.75rem !important;
+  line-height: 1.125rem !important;
+}
+
+/* Cifras alineadas: columnas de montos, horas e inputs con dígitos de ancho
+   fijo para que las filas se puedan comparar de un vistazo. */
+table td, table th, input, textarea, .tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Densidad unificada de tablas: mismo padding, encabezado y separadores en
+   nómina, asistencia, finanzas y usuarios (los estilos por clase de Tailwind
+   siguen ganando; esto estandariza las tablas sin estilo propio). */
+table { border-collapse: collapse; width: 100%; }
+table th {
+  padding: 0.625rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #5A6B7F;              /* content.secondary */
+  text-align: left;
+  border-bottom: 1px solid #E2E6EC;  /* border.subtle */
+}
+table td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid #E2E6EC;
+}
+table tbody tr:last-child td { border-bottom: none; }
+table th.num, table td.num { text-align: right; }
 .app-main-safe { padding-bottom: 0.75rem; }
 @media (min-width: 768px) { .app-main-safe { padding-bottom: 1rem; } }
 /* Reserva real del nav inferior: el padding-bottom de un contenedor flex con scroll no siempre

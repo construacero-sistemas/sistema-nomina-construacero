@@ -250,6 +250,21 @@ if (!authLibSource.includes('CODIGO_OPERADOR_INVALIDO')) {
 if (!authFetchSource.includes('CODIGO_OPERADOR_INVALIDO') || !authFetchSource.includes('denyAccess')) {
   fail('authFetch solo debe invalidar la sesión ante un 403 marcado OPERADOR_INVALIDO')
 }
+// Sistema de diseño (paridad con POS Cotizaciones): la paleta institucional
+// debe seguir definida en tailwind.config.js y el kit UI compartido debe existir
+// como superficie única de componentes (src/components/ui).
+const tailwindDesignSource = await read('tailwind.config.js')
+for (const token of ['#1B365D', '#B8860B', 'content:', 'status:', 'border:', 'fontFamily']) {
+  if (!tailwindDesignSource.includes(token)) fail(`tailwind.config.js perdió el token de diseño: ${token}`)
+}
+const kitUiSource = await read('src/components/ui/index.js')
+if (!kitUiSource.includes('Button') || !kitUiSource.includes('Card') || !kitUiSource.includes('Switch')) {
+  fail('src/components/ui/index.js debe exportar el kit UI compartido (Button, Card, Switch)')
+}
+if (!(await read('src/modo-accesible.css')).includes('modo-accesible')) {
+  fail('src/modo-accesible.css debe mantener el modo accesible portado del POS')
+}
+
 // El espejo SQL final de la matriz (migración 245) no puede divergir de la fuente JS:
 // si alguien agrega o quita un rol en cualquiera de los dos lados, esto falla.
 const rolesSqlSource = await read('supabase/migrations/245_converge_administracion_to_jefe.sql')

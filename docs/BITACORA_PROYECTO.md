@@ -6,6 +6,18 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Sistema de diseño: legibilidad tipo POS Cotizaciones — 28/09/2026
+
+Se aplicaron las 4 fases de mejora visual comparada contra el sistema POS Cotizaciones (mismos dueños, misma marca):
+
+1. **Inter real cargada** (`@fontsource/inter` auto-hospedada 400–700 + `fontFamily.sans` en Tailwind): antes Inter solo estaba declarada y el navegador caía a `system-ui`. Al ser auto-hospedada funciona offline en el PWA.
+2. **Piso de legibilidad global** (`compat/styles/base.css`): ningún texto por debajo de 12px — cubre las 313 apariciones de textos de 9–11px (clases Tailwind y estilos inline) con una regla única. Además `tabular-nums` en tablas e inputs (cifras alineadas) y densidad unificada de tablas (padding, encabezados en versalitas, separadores `border.subtle`).
+3. **Tokens del POS portados** (`tailwind.config.js`): `app`, `surface`, `content`, `status`, `border` + escala Navy completa; las paletas por defecto `blue/indigo/sky` se remapean a Navy para que todo color nuevo quede de marca. Estado semántico ya cubierto por equivalencia: `emerald-600/red-600/amber-600` coinciden con `status.success/danger/warning` del POS.
+4. **Modo accesible portado** (`src/modo-accesible.css`, 239 líneas del POS) + interruptor en Configuración → Accesibilidad, persistido por dispositivo (`localStorage`, arranque en `main.jsx` sin parpadeo).
+5. **Kit UI compartido** (`src/components/ui/`: `Button`, `Card`, `Switch` con tokens + barrel que reexporta `Modal`/`CustomSelect`/toast de compat) — superficie única para código nuevo; el panel de Accesibilidad ya lo usa. Guardraíl en `check-project`: la paleta y el kit no pueden desaparecer sin romper la verificación.
+
+**Verificación:** 115 archivos · 1219 pruebas en verde · build OK · guardas responsive 100% · qa-guards 23/23 · check-project OK (399 archivos, nueva guardraíl de paridad del sistema de diseño).
+
 ## Falso cierre de sesión al desactivar un usuario — 27/09/2026
 
 **Problema real:** al desactivar un usuario desde Sistema → Usuarios, la app mostraba la pantalla de bloqueo «No pudimos abrir tu cuenta» y borraba el perfil.

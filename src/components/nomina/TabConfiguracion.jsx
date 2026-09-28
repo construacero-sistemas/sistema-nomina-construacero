@@ -12,6 +12,7 @@ import {
 } from '../../hooks/useNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
+import { Card, CardTitle, CardDescription, Switch } from '../ui/index.js'
 import useTablistNav from '../../../compat/hooks/useTablistNav.js'
 import HolidaySummaryCard from './HolidaySummaryCard.jsx'
 import RetencionCard from './RetencionCard.jsx'
@@ -41,12 +42,13 @@ export default function TabConfiguracion() {
     { id: 'tasas', label: 'Tasas de cambio', description: 'BCV dólar, BCV euro, USDT o manual' },
     { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales' },
     { id: 'retencion', label: 'Almacenamiento', description: 'Retención y purga inteligente de la base' },
+    { id: 'accesibilidad', label: 'Accesibilidad', description: 'Modo accesible: texto grande y alto contraste' },
   ]
   const navegarSecciones = useTablistNav(secciones.map(item => item.id), seccion, setSeccion)
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap sm:grid sm:grid-cols-2 lg:grid-cols-5 gap-2" role="tablist" aria-label="Objetivos de configuración" onKeyDown={navegarSecciones}>
+      <div className="flex flex-wrap sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-2" role="tablist" aria-label="Objetivos de configuración" onKeyDown={navegarSecciones}>
         {secciones.map(item => {
           const activo = seccion === item.id
           return <button
@@ -76,8 +78,40 @@ export default function TabConfiguracion() {
         {seccion === 'tasas' && <TasasPanel />}
         {seccion === 'reglas' && <CatalogPanel conceptos={conceptos} reglas={reglas} />}
         {seccion === 'retencion' && <RetencionCard />}
+        {seccion === 'accesibilidad' && <AccesibilidadPanel />}
       </div>
     </div>
+  )
+}
+
+function AccesibilidadPanel() {
+  const [activo, setActivo] = useState(() =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('modo-accesible')
+  )
+
+  function alternar() {
+    const nuevo = !activo
+    setActivo(nuevo)
+    document.documentElement.classList.toggle('modo-accesible', nuevo)
+    try {
+      localStorage.setItem('modo-accesible', nuevo ? '1' : '0')
+    } catch { /* modo privado: la preferencia dura solo esta sesión */ }
+  }
+
+  return (
+    <Card>
+      <div>
+        <CardTitle>Modo accesible</CardTitle>
+        <CardDescription>
+          Aumenta el tamaño del texto, mejora el contraste y amplía los botones para tocar con precisión.
+          Útil si revisas la nómina desde el celular o con poca luz. La preferencia se guarda en este dispositivo.
+        </CardDescription>
+      </div>
+      <label className="flex items-center justify-between gap-4 rounded-xl border border-border-subtle p-3">
+        <span className="text-sm font-semibold text-content-main">Texto grande y alto contraste</span>
+        <Switch checked={activo} onChange={alternar} label="Modo accesible" />
+      </label>
+    </Card>
   )
 }
 
