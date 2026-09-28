@@ -41,11 +41,22 @@ export class ErrorBoundary extends React.Component {
               Ocurrió un error inesperado. Intenta recargar la página.
             </p>
             <button
-              onClick={() => window.location.reload()}
+              onClick={async () => {
+                // Borrar caches y desregistrar SW antes de recargar
+                if ('caches' in window) {
+                  const keys = await caches.keys()
+                  await Promise.all(keys.map(k => caches.delete(k)))
+                }
+                if ('serviceWorker' in navigator) {
+                  const regs = await navigator.serviceWorker.getRegistrations()
+                  await Promise.all(regs.map(r => r.unregister()))
+                }
+                window.location.reload()
+              }}
               className="px-6 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90"
               style={{ background: 'linear-gradient(135deg, #1B365D, #B8860B)' }}
             >
-              Recargar página
+              Borrar caché y recargar
             </button>
             {import.meta.env.DEV && this.state.error && (
               <pre className="mt-4 text-left text-xs text-rose-600 bg-rose-50 p-3 rounded-lg overflow-auto max-h-40">

@@ -39,12 +39,21 @@ self.addEventListener('fetch', event => {
   event.waitUntil(response.then(async fetched => {
     if (fetched.ok && fetched.type !== 'opaque') {
       // Detectar si un asset JS/CSS sirvió HTML (stale hash tras deploy).
-      // Si el contenido es text/html cuando esperábamos script/style, forzar
-      // actualización del SW para que la próxima navegación cargue la versión nueva.
+      // Si el contenido es text/html cuando esperábamos script/style, destruir
+      // este SW obsoleto y recargar la pestaña para obtener la versión nueva.
+      // El usuario no necesita borrar caché manualmente.
       const ct = fetched.headers.get('content-type') || ''
-      if (/\.(?:js|mjs)$/.test(url.pathname) && ct.includes('text/html')) {
-        self.registration.update()
-        self.skipWaiting()
+      if (/\.(?:js|mjs|css)$/.test(url.pathname) && ct.includes('text/html')) {
+        event.waitUntil((async () => {
+          // Borrar todas las caches de esta app
+          const keys = await caches.keys()
+          await Promise.all(keys.filter(k => k.startsWith('nomina-shell-')).map(k => caches.delete(k)))
+          // Desregistrar este SW para que la próxima carga instale el nuevo
+          await self.registration.unregister()
+          // Forzar reload en todas las pestañas controladas
+          const clients = await self.clients.matchAll({ type: 'window' })
+          clients.forEach(client => client.navigate(client.url))
+        })())
         return
       }
       const cache = await caches.open(CACHE)
