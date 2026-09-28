@@ -266,19 +266,24 @@ if (!(await read('src/modo-accesible.css')).includes('modo-accesible')) {
   fail('src/modo-accesible.css debe mantener el modo accesible portado del POS')
 }
 
-// El espejo SQL final de la matriz (migración 245) no puede divergir de la fuente JS:
-// si alguien agrega o quita un rol en cualquiera de los dos lados, esto falla.
-const rolesSqlSource = await read('supabase/migrations/245_converge_administracion_to_jefe.sql')
+// El espejo SQL de la matriz (migraciones 245 y 250) no puede divergir de la
+// fuente JS: si alguien agrega o quita una capacidad en cualquiera de los dos
+// lados, esto falla. Se verifican TODAS las ocurrencias del espejo: 245 lo
+// declara base y 250 lo reemplaza ampliado con `purgarRegistros`.
+const rolesSqlSource = (await read('supabase/migrations/245_converge_administracion_to_jefe.sql'))
+  + (await read('supabase/migrations/250_mantenimiento_purga_registros.sql'))
 for (const capacidad of CAPACIDADES) {
-  const bloque = rolesSqlSource.match(new RegExp(`WHEN '${capacidad}'\\s*THEN ARRAY\\[([^\\]]*)\\]`))
-  if (!bloque) {
-    fail(`El espejo SQL de roles (migración 245) no declara la capacidad ${capacidad}`)
+  const bloques = [...rolesSqlSource.matchAll(new RegExp(`WHEN '${capacidad}'\\s*THEN ARRAY\\[([^\\]]*)\\]`, 'g'))]
+  if (bloques.length === 0) {
+    fail(`El espejo SQL de roles (migraciones 245/250) no declara la capacidad ${capacidad}`)
     continue
   }
-  const rolesSql = [...bloque[1].matchAll(/'([^']+)'/g)].map(match => match[1]).sort().join(',')
   const rolesJs = [...rolesConCapacidad(capacidad)].sort().join(',')
-  if (rolesSql !== rolesJs) {
-    fail(`El espejo SQL de '${capacidad}' no coincide con la matriz única: SQL [${rolesSql}] vs JS [${rolesJs}]`)
+  for (const bloque of bloques) {
+    const rolesSql = [...bloque[1].matchAll(/'([^']+)'/g)].map(match => match[1]).sort().join(',')
+    if (rolesSql !== rolesJs) {
+      fail(`El espejo SQL de '${capacidad}' no coincide con la matriz única: SQL [${rolesSql}] vs JS [${rolesJs}]`)
+    }
   }
 }
 // El CHECK final de la migración 245 es la tercera fuente: debe cubrir

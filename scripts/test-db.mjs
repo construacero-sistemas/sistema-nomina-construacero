@@ -558,6 +558,12 @@ try {
   const asignaCustodiaSql = operador => actorAceptado(
     'SELECT finanzas_asignar_custodia($1,$2,$3::uuid[],$4,NULL) AS value',
     [tenant, operador.id, [], usd])
+  // La purga de mantenimiento es destructiva y exclusiva del jefe: su guardián
+  // de actor se mide igual (PT403 si el actor no pasa; PT400 si pasa y el sobre
+  // es inválido — aquí un módulo inexistente, que falla antes de escribir nada).
+  const purgaSql = operador => actorAceptado(
+    'SELECT mantenimiento_purgar($1,$2::text[],$3,$4,$5,$6::date,$7::date) AS value',
+    [tenant, ['modulo-inexistente'], operador.id, 'Paridad', null, null, null])
 
   const esperadoCapacidad = capacidad => operador => tieneCapacidad({ rol: operador.rol }, capacidad)
   const esperadoOperativo = operador => tieneAccesoOperativo(operador.rol)
@@ -572,6 +578,7 @@ try {
     { nombre: 'finanzas_operar:pagar_nomina (guardián de actor)', esperado: esperadoCapacidad('administrarNomina'), medir: operador => operaFinanzasSql(operador, 'pagar_nomina') },
     { nombre: 'finanzas_operar:revertir_nomina (guardián de actor)', esperado: esperadoCapacidad('administrarNomina'), medir: operador => operaFinanzasSql(operador, 'revertir_nomina') },
     { nombre: 'finanzas_asignar_custodia (guardián de actor)', esperado: esperadoCapacidad('operarFinanzas'), medir: operador => asignaCustodiaSql(operador) },
+    { nombre: 'mantenimiento_purgar (guardián de actor)', esperado: esperadoCapacidad('purgarRegistros'), medir: operador => purgaSql(operador) },
   ]
 
   const mediciones = []

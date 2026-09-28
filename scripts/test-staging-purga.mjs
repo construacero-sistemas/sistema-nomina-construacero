@@ -5,14 +5,18 @@
 // Flujo:
 //   1. Preflight: ambos configs apuntan SOLO al staging y con claves de staging.
 //   2. Login sintético + semilla de registros transaccionales sintéticos
-//      (asistencia, movimiento, período, línea, concepto, operación + asignación).
-//   3. Candados del endpoint: frase incorrecta (400) y nómina sola con pagos
-//      vinculados (409) NO borran nada.
-//   4. Purga real por el endpoint con el jefe sintético (200 + backup_id).
-//   5. Verificación: tablas operativas en cero, MAESTROS intactos (cuentas,
+//      (enero: asistencia, movimiento, período, línea, concepto, operación +
+//      asignación; marzo: grupo FUERA de rango que debe sobrevivir).
+//   3. Candados del endpoint: frase incorrecta (400), nómina sola con pagos
+//      vinculados (409) y nómina sola por rango (409) NO borran nada.
+//   4. Purga por RANGO DE FECHAS (enero–febrero): solo lo del rango, previo ==
+//      purga (misma cuenta por tabla), respaldo con fechas y el grupo de marzo
+//      intacto.
+//   5. Purga TOTAL por el endpoint con el jefe sintético (200 + backup_id).
+//   6. Verificación: tablas operativas en cero, MAESTROS intactos (cuentas,
 //      empleados, configuraciones, catálogos, carteras), tasa manual global viva,
 //      respaldo exacto en purga_backups y ejecución en purga_log.
-//   6. Restaura los fixtures estándar (seed-staging-fixtures) para que smoke y
+//   7. Restaura los fixtures estándar (seed-staging-fixtures) para que smoke y
 //      determinista sigan funcionando.
 import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -121,9 +125,13 @@ async function main() {
   const countRows = async (table, extra = '') => (await readRows(`/rest/v1/${table}?select=id&${tenant}${extra ? `&${extra}` : ''}`)).length
 
   // ── Operador y empleado sintéticos ────────────────────────────────────────
-  const [operador] = await readRows(`/rest/v1/usuarios?select=id,nombre,rol,activo&${tenant}&limit=5`)
-  assert(operador?.activo && (operador.rol === 'jefe' || operador.rol === 'desarrollador'),
-    `El operador sintético debe ser jefe/desarrollador activo (es '${operador?.rol}').`)
+  // La purga es EXCLUSIVA del rol jefe (capacidad purgarRegistros): el operador
+  // sintético debe serlo, y la sesión queda ligada a él validando su PIN.
+  const operadores = await readRows(`/rest/v1/usuarios?select=id,nombre,rol,activo&${tenant}&limit=10`)
+  const operador = operadores.find(o => o.activo && o.rol === 'jefe')
+  assert(operador, `El operador sintético debe ser un jefe activo (roles: ${operadores.map(o => o.rol).join(', ') || 'ninguno'}).`)
+  const eleccion = await workerJson('/api/auth/switch-operator', { operator_id: operador.id, pin: frontend.STAGING_TEST_PIN })
+  assert(eleccion.status === 200, `La selección del operador jefe falló (${eleccion.status}): ${JSON.stringify(eleccion.payload)}`)
   const [empleado] = await readRows(`/rest/v1/clientes?select=id,nombre&${tenant}&limit=5`)
   assert(empleado, 'No hay empleado sintético en staging.')
 
@@ -221,7 +229,32 @@ async function main() {
     valor: TASA_SUPERVIVIENTE, fuente: 'MANUAL', observado_en: '2020-01-01T00:00:00Z',
     aprobado: false, periodo_id: null, motivo: 'Purga QA (debe sobrevivir)', fijada_por_nombre: 'Purga QA',
   })
-  console.log('[purga] Semilla sintética creada (asistencia, movimiento, período cerrado, línea, concepto, pago real con operación+asignación, tasa manual).')
+
+  // ── Grupo FUERA del rango de prueba (marzo): debe sobrevivir a la purga por
+  //    rango y solo desaparecer en la purga total. ───────────────────────────
+  const asistenciaMarzo = await insert('registro_asistencia', {
+    cuenta_id: accountId, empleado_id: empleado.id, fecha: '2026-03-10',
+    horas_trabajadas: 8, horas_normales: 8, horas_extra: 0,
+    nota: 'purga-qa asistencia fuera de rango', registrado_por: operador.id,
+  })
+  const movimientoMarzo = await insert('finanzas_movimientos', {
+    cuenta_id: accountId, fecha: '2026-03-10', tipo: 'egreso', categoria: 'Purga QA',
+    concepto: 'Registro sintético fuera de rango', monto: 1, moneda: 'USD', tasa_ves: 1,
+    fuente_tasa: 'BCV', idempotency_key: `purga-qa-${randomUUID()}`, creado_por: operador.id,
+  })
+  const periodoMarzo = await insert('nomina_periodos', {
+    cuenta_id: accountId, nombre: 'Purga QA marzo', desde: '2026-03-02', hasta: '2026-03-08',
+    tipo: 'semanal', estado: 'abierto',
+  })
+  const lineaMarzo = await insert('nomina_lineas', {
+    cuenta_id: accountId, periodo_id: periodoMarzo.id, empleado_id: empleado.id,
+    total_bruto_usd: 1, total_neto_usd: 1, dias_trabajados: 1,
+  })
+  await insert('nomina_linea_conceptos', {
+    cuenta_id: accountId, linea_id: lineaMarzo.id, codigo_snap: 'PURGA-QA-MARZO',
+    nombre_snap: 'Concepto purga QA marzo', tipo_snap: 'ingreso', monto: 1,
+  })
+  console.log('[purga] Semilla creada: grupo ENERO (asistencia, movimiento, período cerrado, línea, concepto, pago real con operación+asignación), grupo MARZO fuera de rango y tasa manual.')
 
   // ── Candado 1: frase incorrecta no borra nada ────────────────────────────
   const falsa = await workerJson('/api/mantenimiento/purgar', { modulos: ['nomina', 'finanzas'], confirmacion: 'ELIMINAR!' })
@@ -231,20 +264,66 @@ async function main() {
   // ── Candado 2: nómina sola con pagos vinculados → 409 y nada se borra ────
   const soloNomina = await workerJson('/api/mantenimiento/purgar', { modulos: ['nomina'], confirmacion: 'ELIMINAR' })
   assert(soloNomina.status === 409, `Nómina sola con pagos vinculados debió ser 409 y fue ${soloNomina.status}.`)
-  assert(await countRows('nomina_lineas') >= 1, 'El candado de pagos vinculados borró datos: candado roto.')
+  assert(await countRows('nomina_lineas') >= 2, 'El candado de pagos vinculados borró datos: candado roto.')
+
+  // ── Candado 3: nómina sola CON rango y pago vinculado en él → 409 ────────
+  const soloNominaRango = await workerJson('/api/mantenimiento/purgar',
+    { modulos: ['nomina'], confirmacion: 'ELIMINAR', desde: '2026-01-01', hasta: '2026-02-28' })
+  assert(soloNominaRango.status === 409, `Nómina sola por rango con pagos vinculados debió ser 409 y fue ${soloNominaRango.status}.`)
+  assert(await countRows('nomina_lineas') >= 2, 'El candado de rango borró datos: candado roto.')
 
   // ── Previo por endpoint (jefe sintético) ─────────────────────────────────
   const previo = await workerJson('/api/mantenimiento/purga-preview?modulos=nomina,finanzas')
   assert(previo.status === 200 && previo.payload?.ok, `Previo de purga falló (${previo.status}).`)
-  assert(previo.payload.conteos.registro_asistencia >= 1 && previo.payload.conteos.finanzas_movimientos >= 1,
-    'El previo no contó los registros sembrados.')
+  assert(previo.payload.conteos.registro_asistencia >= 2 && previo.payload.conteos.finanzas_movimientos >= 2,
+    'El previo no contó los registros sembrados (enero + marzo).')
 
-  // ── Purga real por endpoint ──────────────────────────────────────────────
+  // ── Purga por RANGO DE FECHAS (enero–febrero): solo lo del rango ─────────
+  const previoRango = await workerJson('/api/mantenimiento/purga-preview?modulos=nomina,finanzas&desde=2026-01-01&hasta=2026-02-28')
+  assert(previoRango.status === 200 && previoRango.payload?.ok, `Previo por rango falló (${previoRango.status}).`)
+  assert(previoRango.payload.conteos.registro_asistencia === 1 && previoRango.payload.conteos.nomina_periodos === 1
+    && previoRango.payload.conteos.nomina_lineas === 1 && previoRango.payload.conteos.nomina_linea_conceptos === 1
+    && previoRango.payload.conteos.finanzas_movimientos >= 1
+    && previoRango.payload.conteos.finanzas_nomina_asignaciones >= 1,
+  `El previo por rango no refleja exactamente el grupo de enero: ${JSON.stringify(previoRango.payload.conteos)}`)
+
+  const purgaRango = await workerJson('/api/mantenimiento/purgar',
+    { modulos: ['nomina', 'finanzas'], confirmacion: 'ELIMINAR', desde: '2026-01-01', hasta: '2026-02-28' })
+  assert(purgaRango.status === 200 && purgaRango.payload?.ok, `La purga por rango falló (${purgaRango.status}): ${JSON.stringify(purgaRango.payload)}`)
+  assert(purgaRango.payload.rango?.desde === '2026-01-01' && purgaRango.payload.rango?.hasta === '2026-02-28',
+    'La purga por rango no devolvió el rango aplicado.')
+  assert(JSON.stringify(purgaRango.payload.por_tabla) === JSON.stringify(previoRango.payload.conteos),
+    `El previo y la purga por rango divergen: ${JSON.stringify(previoRango.payload.conteos)} vs ${JSON.stringify(purgaRango.payload.por_tabla)}`)
+
+  // El grupo de enero desapareció; el de marzo sobrevive intacto.
+  assert(await countRows('registro_asistencia', 'fecha=eq.2026-01-15') === 0, 'La asistencia de enero debió eliminarse con el rango.')
+  assert(await countRows('registro_asistencia', 'fecha=eq.2026-03-10') === 1, 'La asistencia de marzo debió sobrevivir al rango.')
+  assert(await countRows('nomina_periodos', 'nombre=eq.Purga%20QA%20staging') === 0, 'El período de enero debió eliminarse con el rango.')
+  assert(await countRows('nomina_periodos', 'nombre=eq.Purga%20QA%20marzo') === 1, 'El período de marzo debió sobrevivir al rango.')
+  assert(await countRows('nomina_lineas', `periodo_id=eq.${periodoMarzo.id}`) === 1, 'La línea de marzo debió sobrevivir al rango.')
+  const [respaldoRango] = await readRows(`/rest/v1/purga_backups?select=id,desde,hasta,payload&${tenant}&id=eq.${purgaRango.payload.backup_id}`)
+  assert(respaldoRango?.desde === '2026-01-01' && respaldoRango.hasta === '2026-02-28', 'El respaldo del rango no registra las fechas aplicadas.')
+  assert(respaldoRango.payload.registro_asistencia?.some(fila => fila.id === asistencia.id),
+    'El respaldo del rango no contiene la asistencia de enero.')
+  assert(respaldoRango.payload.finanzas_movimientos?.some(fila => fila.id === movimiento.id),
+    'El respaldo del rango no contiene el movimiento de enero.')
+  assert(respaldoRango.payload.nomina_lineas?.some(fila => fila.id === linea.id),
+    'El respaldo del rango no contiene la línea de enero.')
+  assert((respaldoRango.payload.finanzas_nomina_asignaciones || []).length >= 1,
+    'El respaldo del rango no arrastró el pago vinculado a la línea borrada (cierre por clave foránea).')
+  assert(!(respaldoRango.payload.registro_asistencia || []).some(fila => fila.id === asistenciaMarzo.id),
+    'El respaldo del rango incluyó datos de marzo: el filtro de fechas está roto.')
+  const [bitacoraRango] = await readRows(`/rest/v1/purga_log?select=id,resumen,total_eliminadas&${tenant}&disparador=eq.manual&order=creado_en.desc&limit=1`)
+  assert(bitacoraRango?.resumen?.rango?.desde === '2026-01-01' && bitacoraRango.resumen.rango.hasta === '2026-02-28',
+    'purga_log no registró el rango aplicado.')
+  console.log(`[purga] Rango enero–febrero purgado (${purgaRango.payload.total_eliminadas} filas, respaldo ${purgaRango.payload.backup_id}): el grupo de marzo sobrevive.`)
+
+  // ── Purga TOTAL por endpoint (lo restante) ───────────────────────────────
   const purga = await workerJson('/api/mantenimiento/purgar', { modulos: ['nomina', 'finanzas'], confirmacion: 'ELIMINAR' })
   assert(purga.status === 200 && purga.payload?.ok, `La purga falló (${purga.status}): ${JSON.stringify(purga.payload)}`)
   assert(purga.payload.backup_id, 'La purga no devolvió backup_id.')
-  assert(purga.payload.total_eliminadas >= 8, `La purga eliminó pocas filas (${purga.payload.total_eliminadas}).`)
-  console.log(`[purga] Purga ejecutada: ${purga.payload.total_eliminadas} filas, respaldo ${purga.payload.backup_id}.`)
+  assert(purga.payload.total_eliminadas >= 6, `La purga eliminó pocas filas (${purga.payload.total_eliminadas}).`)
+  console.log(`[purga] Purga total ejecutada: ${purga.payload.total_eliminadas} filas, respaldo ${purga.payload.backup_id}.`)
 
   // ── Verificación post ────────────────────────────────────────────────────
   // El núcleo financiero solo es legible vía RPC (grants cerrados): el previo
@@ -262,14 +341,14 @@ async function main() {
 
   const [respaldo] = await readRows(`/rest/v1/purga_backups?select=id,total_filas,payload&${tenant}&id=eq.${purga.payload.backup_id}`)
   assert(respaldo, 'No existe el respaldo de la purga.')
-  assert(respaldo.payload.registro_asistencia?.some(fila => fila.id === asistencia.id),
-    'El respaldo no contiene la asistencia sembrada.')
-  assert((respaldo.payload.finanzas_nomina_asignaciones || []).length >= 1,
-    'El respaldo no contiene la asignación del pago sintético.')
+  assert(respaldo.payload.registro_asistencia?.some(fila => fila.id === asistenciaMarzo.id),
+    'El respaldo no contiene la asistencia de marzo (lo que faltaba tras el rango).')
+  assert(respaldo.payload.nomina_periodos?.some(fila => fila.id === periodoMarzo.id),
+    'El respaldo no contiene el período de marzo.')
+  assert(respaldo.payload.finanzas_movimientos?.some(fila => fila.id === movimientoMarzo.id),
+    'El respaldo no contiene el movimiento de marzo.')
   assert((respaldo.payload.finanzas_operaciones || []).length >= 1,
-    'El respaldo no contiene la operación del pago sintético.')
-  assert(respaldo.payload.finanzas_movimientos?.some(fila => fila.id === movimiento.id),
-    'El respaldo no contiene el movimiento sembrado.')
+    'El respaldo no contiene la operación del pago (sobrevivió al rango y entra en la purga total).')
 
   const [bitacora] = await readRows(`/rest/v1/purga_log?select=id,resumen,total_eliminadas&${tenant}&disparador=eq.manual&order=creado_en.desc&limit=1`)
   assert(bitacora?.resumen?.tipo === 'mantenimiento', 'purga_log no registró la ejecución de mantenimiento.')

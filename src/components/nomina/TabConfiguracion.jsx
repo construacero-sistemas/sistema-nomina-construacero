@@ -12,6 +12,8 @@ import {
 } from '../../hooks/useNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
+import useAuthStore from '../../../compat/store/useAuthStore.js'
+import { tieneCapacidad } from '../../config/accesoModulos.js'
 import { Card, CardTitle, CardDescription, Switch } from '../ui/index.js'
 import MantenimientoCard from './MantenimientoCard.jsx'
 import useTablistNav from '../../../compat/hooks/useTablistNav.js'
@@ -32,11 +34,15 @@ export default function TabConfiguracion() {
   const [desde] = useState(monthStart)
   const [hasta] = useState(monthEnd)
   const [seccion, setSeccion] = useState('calendario')
+  const perfil = useAuthStore(s => s.perfil)
   const feriados = useFeriados(desde, hasta)
   const conceptos = useNominaConceptos()
   const reglas = useReglasLegales()
   const configNomina = useConfigNomina()
 
+  // La purga de mantenimiento es exclusiva del rol jefe (capacidad
+  // `purgarRegistros` de la matriz única): los demás roles no ven la sección.
+  const puedePurgar = tieneCapacidad(perfil, 'purgarRegistros')
   const secciones = [
     { id: 'calendario', label: 'Horarios y calendario', description: 'Jornada estándar de empresa y feriados' },
     { id: 'recargos', label: 'Horas extra y recargos', description: 'Montos fijos en USD por hora extra, sábado y feriado' },
@@ -44,7 +50,7 @@ export default function TabConfiguracion() {
     { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales' },
     { id: 'retencion', label: 'Almacenamiento', description: 'Retención y purga inteligente de la base' },
     { id: 'accesibilidad', label: 'Accesibilidad', description: 'Modo accesible: texto grande y alto contraste' },
-    { id: 'mantenimiento', label: 'Mantenimiento', description: 'Purgar registros de Nómina y Finanzas con respaldo' },
+    ...(puedePurgar ? [{ id: 'mantenimiento', label: 'Mantenimiento', description: 'Purgar registros de Nómina y Finanzas con respaldo' }] : []),
   ]
   const navegarSecciones = useTablistNav(secciones.map(item => item.id), seccion, setSeccion)
 
@@ -81,7 +87,7 @@ export default function TabConfiguracion() {
         {seccion === 'reglas' && <CatalogPanel conceptos={conceptos} reglas={reglas} />}
         {seccion === 'retencion' && <RetencionCard />}
         {seccion === 'accesibilidad' && <AccesibilidadPanel />}
-        {seccion === 'mantenimiento' && <MantenimientoCard />}
+        {seccion === 'mantenimiento' && puedePurgar && <MantenimientoCard />}
       </div>
     </div>
   )

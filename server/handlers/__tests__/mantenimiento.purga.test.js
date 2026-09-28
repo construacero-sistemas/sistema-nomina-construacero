@@ -1,7 +1,8 @@
 // server/handlers/__tests__/mantenimiento.purga.test.js
 // Zona de mantenimiento: purga de registros Nómina + Finanzas con respaldo.
-// Autorización (solo gestionarUsuarios), frase de confirmación, módulos
-// válidos, contrato del RPC, auditoría y descarga del respaldo. Sin red ni secretos.
+// Autorización (solo rol jefe, capacidad purgarRegistros), frase de confirmación,
+// módulos válidos, rango de fechas, contrato del RPC, auditoría y descarga del
+// respaldo. Sin red ni secretos.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ENV, OPERADORES, installFetchMock, makeRequest, readResponse } from './_harness'
 
@@ -39,24 +40,21 @@ describe('mantenimiento — autorización', () => {
     expect((await readResponse(res)).status).toBe(401)
   })
 
-  it('rechaza roles sin gestionarUsuarios (403) — nomina, finanzas y vendedor', async () => {
-    for (const operador of [OPERADORES.nomina, OPERADORES.finanzas, OPERADORES.vendedor]) {
+  it('rechaza roles sin purgarRegistros (403) — nomina, finanzas, vendedor y desarrollador', async () => {
+    for (const operador of [OPERADORES.nomina, OPERADORES.finanzas, OPERADORES.vendedor, OPERADORES.desarrollador]) {
       operadorActual = operador
       const res = await H.handlePurgarRegistros(makeRequest({ modulos: ['nomina'], confirmacion: 'ELIMINAR' }), ENV)
       expect((await readResponse(res)).status).toBe(403)
     }
   })
 
-  it('permite a jefe y desarrollador (llegan al RPC)', async () => {
-    for (const operador of [OPERADORES.jefe, OPERADORES.desarrollador]) {
-      operadorActual = operador
-      mock = installFetchMock([
-        { match: '/rpc/mantenimiento_purgar', method: 'POST', respond: () => ({ backup_id: 'b1', total_eliminadas: 0, por_tabla: {} }) },
-      ])
-      const res = await H.handlePurgarRegistros(makeRequest({ modulos: ['nomina'], confirmacion: 'ELIMINAR' }), ENV)
-      expect((await readResponse(res)).status).toBe(200)
-      mock.restore()
-    }
+  it('permite SOLO al rol jefe (llega al RPC); la purga es exclusiva del jefe', async () => {
+    operadorActual = OPERADORES.jefe
+    mock = installFetchMock([
+      { match: '/rpc/mantenimiento_purgar', method: 'POST', respond: () => ({ backup_id: 'b1', total_eliminadas: 0, por_tabla: {} }) },
+    ])
+    const res = await H.handlePurgarRegistros(makeRequest({ modulos: ['nomina'], confirmacion: 'ELIMINAR' }), ENV)
+    expect((await readResponse(res)).status).toBe(200)
   })
 })
 
@@ -74,6 +72,21 @@ describe('mantenimiento — validaciones de la purga', () => {
     mock = installFetchMock([])
     for (const modulos of [[], ['todo'], ['nomina', 'contabilidad']]) {
       const res = await H.handlePurgarRegistros(makeRequest({ modulos, confirmacion: 'ELIMINAR' }), ENV)
+      expect((await readResponse(res)).status).toBe(400)
+    }
+    expect(mock.calls.length).toBe(0)
+  })
+
+  it('rechaza fechas mal formadas, imposibles o un rango invertido (400) sin tocar la red', async () => {
+    mock = installFetchMock([])
+    for (const rango of [
+      { desde: '2026-13-01' },
+      { hasta: 'no-es-fecha' },
+      { desde: '2026-02-31' },
+      { desde: '01-01-2026' },
+      { desde: '2026-03-01', hasta: '2026-02-01' },
+    ]) {
+      const res = await H.handlePurgarRegistros(makeRequest({ modulos: ['nomina'], confirmacion: 'ELIMINAR', ...rango }), ENV)
       expect((await readResponse(res)).status).toBe(400)
     }
     expect(mock.calls.length).toBe(0)
@@ -106,12 +119,36 @@ describe('mantenimiento — previo, purga y respaldo', () => {
     expect(enviado.p_modulos).toEqual(['nomina', 'finanzas'])
     expect(enviado.p_operador_id).toBe(OPERADORES.jefe.id)
     expect(enviado.p_cuenta_id).toBe(OPERADORES.jefe.cuenta_id)
+    expect(enviado.p_desde).toBeNull()
+    expect(enviado.p_hasta).toBeNull()
     expect(audit.registrarAuditoria).toHaveBeenCalledTimes(1)
+  })
+
+  it('el rango de fechas viaja al RPC en el previo (query) y en la purga (body)', async () => {
+    mock = installFetchMock([
+      { match: '/rpc/mantenimiento_purge_preview', method: 'POST', respond: () => ({ registro_asistencia: 1 }) },
+      { match: '/rpc/mantenimiento_purgar', method: 'POST', respond: () => ({ backup_id: 'b1', total_eliminadas: 1, por_tabla: { registro_asistencia: 1 } }) },
+    ])
+    const previo = await H.handlePreviewPurga(
+      getRequest('http://worker.test/api/mantenimiento/purga-preview?modulos=nomina&desde=2026-01-01&hasta=2026-02-28'), ENV)
+    expect((await readResponse(previo)).status).toBe(200)
+    expect(mock.calls[0].body.p_desde).toBe('2026-01-01')
+    expect(mock.calls[0].body.p_hasta).toBe('2026-02-28')
+
+    const purga = await H.handlePurgarRegistros(
+      makeRequest({ modulos: ['nomina'], confirmacion: 'ELIMINAR', desde: '2026-01-01', hasta: '2026-02-28' }), ENV)
+    const cuerpo = await readResponse(purga)
+    expect(cuerpo.status).toBe(200)
+    expect(mock.calls[1].body.p_desde).toBe('2026-01-01')
+    expect(mock.calls[1].body.p_hasta).toBe('2026-02-28')
+    const meta = audit.registrarAuditoria.mock.calls[0][2].meta
+    expect(meta.desde).toBe('2026-01-01')
+    expect(meta.hasta).toBe('2026-02-28')
   })
 
   it('una regla de negocio del RPC (pagos vinculados) llega como 409 con el mensaje', async () => {
     mock = installFetchMock([
-      { match: '/rpc/mantenimiento_purgar', method: 'POST', respond: () => ({ __raw: { message: 'Hay 2 pago(s) de nómina vinculados; selecciona también Finanzas' }, ok: false, status: 400 }) },
+      { match: '/rpc/mantenimiento_purgar', method: 'POST', respond: () => ({ __raw: { code: 'PT409', message: 'Hay 2 pago(s) de nómina vinculados; selecciona también Finanzas' }, ok: false, status: 400 }) },
     ])
     const res = await H.handlePurgarRegistros(makeRequest({ modulos: ['nomina'], confirmacion: 'ELIMINAR' }), ENV)
     const body = await readResponse(res)

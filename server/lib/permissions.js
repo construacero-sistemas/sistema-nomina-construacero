@@ -3,7 +3,9 @@
 // MATRIZ DE CAPACIDADES POR ROL — única fuente de verdad de autorización.
 //
 // Reglas del negocio (definidas con el jefe):
-//   * jefe / desarrollador → todo (nómina + finanzas + saldos).
+//   * jefe → todo (nómina + finanzas + saldos + purga de mantenimiento).
+//   * desarrollador → todo menos la purga destructiva de registros: esa
+//     operación es EXCLUSIVA del rol principal (jefe).
 //   * finanzas → solo módulo Finanzas: registra ingresos/egresos y traspasos,
 //     ve el libro de movimientos, pero NUNCA ve saldos ni acumulados.
 //   * nomina → solo módulo Nómina: empleados, asistencia, períodos y pagos;
@@ -32,7 +34,7 @@ export const ROLES_VALIDOS = Object.freeze([
 /** Nombres canónicos de las capacidades; el orden es el de la matriz. */
 export const CAPACIDADES = Object.freeze([
   'verNomina', 'administrarNomina', 'verFinanzas', 'operarFinanzas',
-  'verSaldos', 'gestionarUsuarios', 'administrarSistema',
+  'verSaldos', 'gestionarUsuarios', 'administrarSistema', 'purgarRegistros',
 ])
 
 /** Capacidades de acceso total (jefe y desarrollador). */
@@ -45,7 +47,15 @@ function capacidadesTotales() {
     verSaldos: true,
     gestionarUsuarios: true,
     administrarSistema: true,
+    // La purga de mantenimiento borra histórico de forma irreversible: solo
+    // el rol principal la ejecuta (el soporte técnico la hereda como falso).
+    purgarRegistros: true,
   })
+}
+
+/** Capacidades del rol técnico de soporte: todo, menos la purga destructiva. */
+function capacidadesDesarrollador() {
+  return Object.freeze({ ...capacidadesTotales(), purgarRegistros: false })
 }
 
 /** Capacidades del rol finanzas: opera el libro, jamás ve acumulados. */
@@ -59,6 +69,7 @@ function capacidadesFinanzas() {
     verSaldos: false,
     gestionarUsuarios: false,
     administrarSistema: false,
+    purgarRegistros: false,
   })
 }
 
@@ -74,12 +85,13 @@ function capacidadesNomina() {
     verSaldos: false,
     gestionarUsuarios: false,
     administrarSistema: false,
+    purgarRegistros: false,
   })
 }
 
 const MATRIZ = Object.freeze({
   jefe: capacidadesTotales(),
-  desarrollador: capacidadesTotales(),
+  desarrollador: capacidadesDesarrollador(),
   finanzas: capacidadesFinanzas(),
   nomina: capacidadesNomina(),
 })
@@ -89,6 +101,7 @@ const SIN_ACCESO = Object.freeze({
   verNomina: false, administrarNomina: false,
   verFinanzas: false, operarFinanzas: false,
   verSaldos: false, gestionarUsuarios: false, administrarSistema: false,
+  purgarRegistros: false,
 })
 
 /**

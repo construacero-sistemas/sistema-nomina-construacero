@@ -13,14 +13,14 @@ import {
 // Espejo del frontend: debe ser el MISMO módulo, no una copia paralela.
 import * as espejoFrontend from '../../../src/config/accesoModulos.js'
 
-const CLAVES = ['verNomina', 'administrarNomina', 'verFinanzas', 'operarFinanzas', 'verSaldos', 'gestionarUsuarios', 'administrarSistema']
+const CLAVES = ['verNomina', 'administrarNomina', 'verFinanzas', 'operarFinanzas', 'verSaldos', 'gestionarUsuarios', 'administrarSistema', 'purgarRegistros']
 
 describe('matriz de capacidades — reglas del negocio', () => {
-  it('jefe / desarrollador tienen TODO; administracion ya no es operativo', () => {
-    for (const rol of ['jefe', 'desarrollador']) {
-      const caps = capacidadesDe({ rol })
-      for (const clave of CLAVES) expect(caps[clave], `${rol}.${clave}`).toBe(true)
-    }
+  it('jefe tiene TODO; desarrollador, todo menos la purga destructiva (solo jefe)', () => {
+    const capsJefe = capacidadesDe({ rol: 'jefe' })
+    for (const clave of CLAVES) expect(capsJefe[clave], `jefe.${clave}`).toBe(true)
+    const capsDev = capacidadesDe({ rol: 'desarrollador' })
+    for (const clave of CLAVES) expect(capsDev[clave], `desarrollador.${clave}`).toBe(clave !== 'purgarRegistros')
   })
 
   it('rol finanzas: opera el libro pero NUNCA ve saldos ni nómina ni usuarios', () => {
@@ -32,6 +32,7 @@ describe('matriz de capacidades — reglas del negocio', () => {
     expect(caps.administrarNomina).toBe(false)
     expect(caps.gestionarUsuarios).toBe(false)
     expect(caps.administrarSistema).toBe(false)
+    expect(caps.purgarRegistros).toBe(false)
   })
 
   it('rol nomina: módulo nómina completo, finanzas invisible', () => {
@@ -42,6 +43,7 @@ describe('matriz de capacidades — reglas del negocio', () => {
     expect(caps.operarFinanzas).toBe(false)
     expect(caps.verSaldos).toBe(false)
     expect(caps.gestionarUsuarios).toBe(false)
+    expect(caps.purgarRegistros).toBe(false)
   })
 
   it('roles sin entrada en la matriz (vendedor, supervisor, logistica, desconocido) no tienen nada', () => {
@@ -119,6 +121,9 @@ describe('compuertas derivadas — ninguna lista de roles escrita a mano', () =>
     expect(rolesConCapacidad('verSaldos')).toEqual(['desarrollador', 'jefe'])
     expect(rolesConCapacidad('verSaldos')).not.toContain('finanzas')
     expect(rolesConCapacidad('gestionarUsuarios')).toEqual(['desarrollador', 'jefe'])
+    // La purga de mantenimiento es EXCLUSIVA del rol jefe (decisión del negocio).
+    expect(rolesConCapacidad('purgarRegistros')).toEqual(['jefe'])
+    expect(rolesConCapacidad('purgarRegistros')).not.toContain('desarrollador')
   })
 
   it('ROLES_OPERATIVOS excluye los roles heredados y ROLES_ASIGNABLES la cuenta técnica', () => {
