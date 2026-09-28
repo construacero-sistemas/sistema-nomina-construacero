@@ -35,7 +35,7 @@ async function walk(directory, output = []) {
 
   for (const entry of entries) {
     const relativePath = join(directory, entry.name)
-    if (['node_modules', 'dist', 'coverage', '.git', '.freebuff', '.wrangler', 'outputs', '.workbuddy-ai', 'backups'].includes(entry.name)) continue
+    if (['node_modules', 'dist', 'coverage', '.git', '.freebuff', '.wrangler', 'outputs', '.workbuddy-ai', 'backups', 'local-backups'].includes(entry.name)) continue
     // Las rutas se acumulan normalizadas a `/`: con `path.join` en Windows usan
     // `\` y las reglas que comparan contra `server/...` o `src/...` nunca
     // disparaban (F-2 del plan de flujo de nómina). La recursión sigue usando la

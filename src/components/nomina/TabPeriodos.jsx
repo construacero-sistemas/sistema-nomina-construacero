@@ -56,7 +56,7 @@ export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNo
           <p className="text-xs text-slate-500 font-medium hidden sm:block">Genera los períodos de pago basados en la asistencia registrada.</p>
           <div className="hidden md:flex items-center gap-1">
             <span className="text-[11px] text-slate-400 font-medium">Tasa:</span>
-            <RateSelector />
+            <RateSelector light />
           </div>
         </div>
         {puedeGestionarNomina && (

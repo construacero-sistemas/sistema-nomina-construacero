@@ -205,7 +205,7 @@ export default function TabEmpleados({ esAdmin, puedePagarComision = false, pued
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           <div className="hidden xl:flex items-center gap-1">
             <span className="text-[11px] text-slate-400 font-medium">Tasa:</span>
-            <RateSelector />
+            <RateSelector light />
           </div>
 
           {puedePagarComision && kpis.vendedoresCount > 0 && (

@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, DollarSign, Edit2, RefreshCw } from 'lucide-react'
 import useMonedaNomina, { formatBs } from '../../hooks/useMonedaNomina.js'
 
-export function RateSelector({ className = '', compact = false }) {
+export function RateSelector({ className = '', compact = false, light = false }) {
   const {
     tipoTasa,
     setTipoTasa,
@@ -104,17 +104,17 @@ export function RateSelector({ className = '', compact = false }) {
         ref={triggerRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:py-1 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white transition-all text-xs font-bold active:scale-95 min-h-11 sm:min-h-0 ${compact ? 'text-[11px] px-2' : ''}`}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:py-1 rounded-xl ${light ? 'bg-white hover:bg-slate-50 border border-slate-300 text-slate-800' : 'bg-white/10 hover:bg-white/15 border border-white/15 text-white'} transition-all text-xs font-bold active:scale-95 min-h-11 sm:min-h-0 ${compact ? 'text-[11px] px-2' : ''}`} 
         style={{ touchAction: 'manipulation' }}
         title="Cambiar tasa de conversión a Bolívares"
         aria-label={`Cambiar tasa de conversión: ${shortLabelTasa} ${formatBs(tasaActiva)}`}
         aria-expanded={open}
       >
-        <span className="text-white/60 font-semibold">{shortLabelTasa}:</span>
+        <span className={`${light ? 'text-slate-600' : 'text-white/60'} font-semibold`}>{shortLabelTasa}:</span>
         <span className="font-black text-amber-300">
           {loading ? '...' : formatBs(tasaActiva).replace('Bs ', '')}
         </span>
-        <ChevronDown size={13} className={`text-white/60 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={13} className={`${light ? 'text-slate-500' : 'text-white/60'} transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Popover / Menú desplegable */}

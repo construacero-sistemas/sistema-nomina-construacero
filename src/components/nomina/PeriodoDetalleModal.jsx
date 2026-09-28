@@ -215,7 +215,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                     {Number(tasaCongelada.valor).toLocaleString('es-VE')} Bs/$ · cierre
                   </span>
                 ) : (
-                  <RateSelector />
+                  <RateSelector light />
                 )}
               </div>
             </div>
