@@ -74,11 +74,19 @@ button, [role="button"], input:not([type="hidden"]):not([type="checkbox"]):not([
   min-height: 44px;
 }
 button, [role="button"] { min-width: 44px; }
-button:focus-visible, [role="button"]:focus-visible, [tabindex]:focus-visible, input:focus-visible, textarea:focus-visible {
+button:focus-visible, [role="button"]:focus-visible, [tabindex]:focus-visible, input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible {
   outline: 2px solid #1d4ed8;
   outline-offset: 2px;
 }
 .dark :focus-visible { outline-color: #93c5fd; }
+/* Campos de texto: el foco se indica con su propio ring/borde (focus:ring-2 de
+   Tailwind o el ring dorado de .login-field-control:focus). El outline global se
+   apilaba encima y al cliquear salían DOS líneas; aquí queda una sola. */
+input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+textarea:focus-visible,
+.dark :is(input:not([type="checkbox"]):not([type="radio"]), textarea):focus-visible {
+  outline: none;
+}
 @media (max-width: 767px), (any-pointer: coarse) {
   input:not([type="hidden"]), select, textarea, [contenteditable="true"] {
     font-size: max(16px, 1rem) !important;
