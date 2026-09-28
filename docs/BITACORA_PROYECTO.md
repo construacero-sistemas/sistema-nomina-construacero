@@ -6,6 +6,18 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Zona de mantenimiento: purga de registros con respaldo — 28/09/2026
+
+Se agregó el botón de purga de registros (Configuración → Mantenimiento) para borrar el histórico de Nómina y Finanzas sin tocar cuentas ni empleados, probado de punta a punta en el staging aislado:
+
+1. **Migración 250** (`purga_backups` + RPCs `mantenimiento_purge_preview` / `mantenimiento_purgar`): respaldo obligatorio previo (copia exacta en `purga_backups`), borrado atómico en orden de claves foráneas, bitácora en `purga_log`, grants cerrados (solo service_role) y capacidad derivada de la matriz única (`roles_capacidad('gestionarUsuarios')`). Los entrelazados contables (mig. 220/238) que prohíben borrar movimientos ligados y nómina pagada se desactivan SOLO dentro de la transacción de purga: es la excepción explícita documentada, con respaldo ineludible (rompe deliberadamente la «regla de oro» de la mig. 227 por petición del usuario).
+2. **Endpoint** (`server/handlers/mantenimiento.js` + 3 rutas): previo de conteos, purga con frase de confirmación «ELIMINAR» y descarga del respaldo JSON; solo gestión de usuarios, auditoría `PURGA_REGISTROS`.
+3. **UI** (`MantenimientoCard.jsx`): selección de módulos (Nómina/Finanzas), vista previa de filas a borrar, confirmación con frase, resultado y descarga del respaldo. Nunca toca cuentas, empleados, configuraciones, catálogos ni carteras.
+4. **Candados probados en staging** (`npm run test:staging:purga`): frase incorrecta → 400 sin borrar; nómina sola con pagos vinculados → 409 sin borrar; purga real con pago generado por el flujo real de pago → tablas operativas en cero, maestros intactos, tasa manual global viva y respaldo exacto verificado fila a fila. Tres correcciones reales salieron de los entrelazados: orden de FK (movimientos antes que operaciones), insertar líneas antes de cerrar el período y triggers por nombre (no `TRIGGER ALL`, que exige superuser).
+5. **Verificación local**: 116 archivos · 1228 pruebas (+9), build OK, QA 23/23, check-project OK (404 archivos, guardraíl de roles literales cumplida), DB local 33 comprobaciones · 44 migraciones, smoke de staging en verde tras restaurar fixtures.
+
+**Pendiente de decisión del usuario:** implementar en producción (código + migración 250). No se publica sin su confirmación.
+
 ## Sistema de diseño: legibilidad tipo POS Cotizaciones — 28/09/2026
 
 Se aplicaron las 4 fases de mejora visual comparada contra el sistema POS Cotizaciones (mismos dueños, misma marca):

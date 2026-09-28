@@ -13,6 +13,7 @@ import {
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import { Card, CardTitle, CardDescription, Switch } from '../ui/index.js'
+import MantenimientoCard from './MantenimientoCard.jsx'
 import useTablistNav from '../../../compat/hooks/useTablistNav.js'
 import HolidaySummaryCard from './HolidaySummaryCard.jsx'
 import RetencionCard from './RetencionCard.jsx'
@@ -43,6 +44,7 @@ export default function TabConfiguracion() {
     { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales' },
     { id: 'retencion', label: 'Almacenamiento', description: 'Retención y purga inteligente de la base' },
     { id: 'accesibilidad', label: 'Accesibilidad', description: 'Modo accesible: texto grande y alto contraste' },
+    { id: 'mantenimiento', label: 'Mantenimiento', description: 'Purgar registros de Nómina y Finanzas con respaldo' },
   ]
   const navegarSecciones = useTablistNav(secciones.map(item => item.id), seccion, setSeccion)
 
@@ -79,6 +81,7 @@ export default function TabConfiguracion() {
         {seccion === 'reglas' && <CatalogPanel conceptos={conceptos} reglas={reglas} />}
         {seccion === 'retencion' && <RetencionCard />}
         {seccion === 'accesibilidad' && <AccesibilidadPanel />}
+        {seccion === 'mantenimiento' && <MantenimientoCard />}
       </div>
     </div>
   )

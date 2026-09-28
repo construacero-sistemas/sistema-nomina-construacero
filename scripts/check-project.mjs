@@ -79,6 +79,7 @@ const requiredFiles = [
   'supabase/migrations/223_finanzas_resumen_filtros.sql',
   'supabase/migrations/246_nomina_control_asistencia.sql',
   'supabase/migrations/248_nomina_comisiones_atomicas.sql',
+  'supabase/migrations/250_mantenimiento_purga_registros.sql',
   'server/handlers/nomina.js',
   'server/handlers/nomina.lineas.js',
   'server/handlers/finanzas.js',

@@ -64,7 +64,7 @@ async function main() {
 
   const migrationDir = path.join('supabase', 'migrations')
   const migrations = fs.readdirSync(migrationDir).filter(file => /^\d+_.+\.sql$/.test(file)).sort()
-  if (migrations.length !== 42 || migrations[0] !== '001_nomina_base_contract.sql' || migrations.at(-1) !== '248_nomina_comisiones_atomicas.sql') {
+  if (migrations.length !== 44 || migrations[0] !== '001_nomina_base_contract.sql' || migrations.at(-1) !== '250_mantenimiento_purga_registros.sql') {
     throw new Error(`Inventario inesperado de migraciones (${migrations.length}); cancelado.`)
   }
   const migrationNames = new Set(migrations.map(file => file.replace(/\.sql$/, '')))

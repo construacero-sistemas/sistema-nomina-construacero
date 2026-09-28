@@ -59,22 +59,27 @@ async function main() {
     || !projects.some(item => (item.id || item.ref) === 'wlxcclidnwketrghqaxs')) {
     throw new Error('El destino no es el proyecto staging aislado esperado.')
   }
-  if (migrations.length === 41 && migrations.at(-1)?.name === '247_nomina_horarios_unico') {
-    const migrationName = '248_nomina_comisiones_atomicas'
-    const migrationResponse = await management(token, '/database/migrations', {
+  // Aplica al staging cualquier migración local pendiente (en orden) y exige
+  // que el historial quede exactamente igual al inventario local.
+  const localMigrations = fs.readdirSync('supabase/migrations').filter(f => /^\d+_.+\.sql$/.test(f)).sort()
+  const appliedNames = new Set(migrations.map(m => m.name))
+  for (const file of localMigrations) {
+    const name = file.replace(/\.sql$/, '')
+    if (appliedNames.has(name)) continue
+    const applyResponse = await management(token, '/database/migrations', {
       method: 'POST',
-      body: JSON.stringify({
-        name: migrationName,
-        query: fs.readFileSync('supabase/migrations/248_nomina_comisiones_atomicas.sql', 'utf8'),
-      }),
+      body: JSON.stringify({ name, query: fs.readFileSync(`supabase/migrations/${file}`, 'utf8') }),
     })
-    if (!migrationResponse.ok) throw new Error(`No se pudo aplicar la migración ${migrationName} al staging (${migrationResponse.status}).`)
-    const verifyResponse = await management(token, '/database/migrations')
-    if (!verifyResponse.ok) throw new Error('No se pudo verificar el historial después de la migración de staging.')
-    migrations = await verifyResponse.json()
+    if (!applyResponse.ok) throw new Error(`No se pudo aplicar la migración ${name} al staging (${applyResponse.status}).`)
+    appliedNames.add(name)
+    console.log(`Migración aplicada al staging: ${name}`)
   }
-  if (migrations.length !== 42 || migrations.at(-1)?.name !== '248_nomina_comisiones_atomicas') {
-    throw new Error(`El esquema staging está incompleto o fuera de secuencia (${migrations.length}/42 migraciones).`)
+  const verifyResponse = await management(token, '/database/migrations')
+  if (!verifyResponse.ok) throw new Error('No se pudo verificar el historial después de las migraciones de staging.')
+  migrations = await verifyResponse.json()
+  const lastName = localMigrations.at(-1).replace(/\.sql$/, '')
+  if (migrations.length !== localMigrations.length || migrations.at(-1)?.name !== lastName) {
+    throw new Error(`El esquema staging está incompleto o fuera de secuencia (${migrations.length}/${localMigrations.length} migraciones).`)
   }
 
   let secret = keys.find(key => key.name === 'nomina_staging_worker' && key.type === 'secret')?.api_key
@@ -225,7 +230,7 @@ async function main() {
     'NOMINA_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173',
     '',
   ].join('\n'), { mode: 0o600 })
-  console.log(`Staging verified: ${project.name}; 42/42 migrations.`)
+  console.log(`Staging verified: ${project.name}; ${migrations.length}/${localMigrations.length} migrations.`)
   console.log('Synthetic account, employee, schedule, holiday and open period are ready.')
   console.log('Test credentials exist only in ignored .env.staging.local; Worker key is in .dev.vars.staging.')
 }

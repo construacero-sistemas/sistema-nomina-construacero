@@ -53,6 +53,11 @@ import {
   handleConfigurarRetencion,
 } from './server/handlers/retencion.js'
 import {
+  handlePreviewPurga,
+  handlePurgarRegistros,
+  handleDescargarBackupPurga,
+} from './server/handlers/mantenimiento.js'
+import {
   cacheResponse,
   clearEgressCache,
   egressRequestKey,
@@ -104,6 +109,9 @@ const routes = new Map([
   ['GET /api/retencion/uso', handleGetRetencionUso],
   ['POST /api/retencion/purgar', handlePurgarRetencion],
   ['POST /api/retencion/configurar', handleConfigurarRetencion],
+  ['GET /api/mantenimiento/purga-preview', handlePreviewPurga],
+  ['POST /api/mantenimiento/purgar', handlePurgarRegistros],
+  ['GET /api/mantenimiento/purga-backup', handleDescargarBackupPurga],
   ['GET /api/nomina/empleados', handleGetEmpleados],
   ['GET /api/nomina/config-empleados', handleGetConfigEmpleados],
   ['POST /api/nomina/config-empleado/crear', handleCrearConfigEmpleado],

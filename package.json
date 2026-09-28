@@ -12,6 +12,7 @@
     "test:staging:smoke": "node scripts/test-staging-smoke.mjs",
     "test:staging:deterministic": "node scripts/test-staging-deterministic.mjs",
     "test:staging:concurrency": "node scripts/test-staging-concurrency.mjs",
+    "test:staging:purga": "node scripts/test-staging-purga.mjs",
     "dev:vite": "vite --config vite.config.js",
     "dev:api": "npm run check:local && wrangler dev --config wrangler.toml --port 8788 --local",
     "build": "vite build --config vite.config.js",
