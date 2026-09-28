@@ -32,3 +32,4 @@ scripts/conciliacion-agosto.datos.json
 
 # Respaldos locales de operación (migraciones/backup de producción)
 local-backups/
+.vercel

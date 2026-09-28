@@ -1,4 +1,16 @@
-# Respaldos y artefactos locales de operación: nunca suben al deploy.
+# Exclusiones del deploy a Vercel (si existe .vercelignore, el CLI NO hereda
+# .gitignore: hay que declarar TODO lo que no debe subir).
+node_modules/
+.git/
+.vercel/
+dist/
+outputs/
+backups/
 local-backups/
 backup_*.sql
 backup_*.json
+.wrangler/
+coverage/
+*.log
+.env.staging.local
+.dev.vars.staging
