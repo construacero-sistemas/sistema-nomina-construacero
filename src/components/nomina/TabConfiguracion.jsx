@@ -47,12 +47,24 @@ export default function TabConfiguracion() {
     { id: 'calendario', label: 'Horarios y calendario', description: 'Jornada estándar de empresa y feriados' },
     { id: 'recargos', label: 'Horas extra y recargos', description: 'Montos fijos en USD por hora extra, sábado y feriado' },
     { id: 'tasas', label: 'Tasas de cambio', description: 'BCV dólar, BCV euro, USDT o manual' },
-    { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales' },
+    // { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales' }, // Oculto temporalmente
     { id: 'retencion', label: 'Almacenamiento', description: 'Retención y purga inteligente de la base' },
     { id: 'accesibilidad', label: 'Accesibilidad', description: 'Modo accesible: texto grande y alto contraste' },
     ...(puedePurgar ? [{ id: 'mantenimiento', label: 'Mantenimiento', description: 'Purgar registros de Nómina y Finanzas con respaldo' }] : []),
   ]
   const navegarSecciones = useTablistNav(secciones.map(item => item.id), seccion, setSeccion)
+
+  // Scroll al top del panel cuando cambia la sección (mejora UX móvil)
+  const handleSeccionChange = (nuevaSeccion) => {
+    setSeccion(nuevaSeccion)
+    // Pequeño delay para que el DOM se actualice antes de hacer scroll
+    setTimeout(() => {
+      const panel = document.getElementById(`config-panel-${nuevaSeccion}`)
+      if (panel) {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }, 50)
+  }
 
   return (
     <div className="space-y-4">
@@ -67,7 +79,7 @@ export default function TabConfiguracion() {
             role="tab"
             aria-selected={activo}
             aria-controls={`config-panel-${item.id}`}
-            onClick={() => setSeccion(item.id)}
+            onClick={() => handleSeccionChange(item.id)}
             className={`flex-1 min-w-[200px] sm:min-w-0 rounded-2xl border p-3 text-left transition-all ${activo ? 'border-primary bg-primary text-white shadow-md' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
           >
             <span className="block text-xs font-black">{item.label}</span>
