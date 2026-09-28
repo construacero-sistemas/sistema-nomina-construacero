@@ -27,8 +27,8 @@ export default function SistemaView() {
     <div className="p-3 sm:p-4 md:p-5 lg:p-6 space-y-4 md:space-y-5 pb-4">
       <PageHeader
         icon={Settings2}
-        title="Sistema"
-        subtitle="Configuración general, calendario laboral, reglas de recargos y tasas"
+        title="Configuración"
+        subtitle="Ajustes de empresa y accesos: calendario laboral, reglas de recargos, tasas y usuarios"
       />
 
       {/* Banner informativo: personal centralizado en Nómina */}

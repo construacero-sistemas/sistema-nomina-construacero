@@ -24,7 +24,7 @@ const FinanzasView = lazy(() => import('./components/finanzas/FinanzasView.jsx')
 const NAV = [
   { to: '/nomina', label: 'Nómina', desc: 'Salarios, asistencia y recibos', icon: Wallet },
   { to: '/finanzas', label: 'Finanzas', desc: 'Movimientos, bancos y balances', icon: Landmark },
-  { to: '/sistema', label: 'Sistema', desc: 'Personal y configuración general', icon: Settings2 },
+  { to: '/sistema', label: 'Configuración', desc: 'Ajustes de empresa y accesos', icon: Settings2 },
 ]
 
 function Loading() {

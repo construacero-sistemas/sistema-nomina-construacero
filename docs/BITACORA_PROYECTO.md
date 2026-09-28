@@ -6,6 +6,41 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Corrección de los 5 hallazgos de la auditoría de tasas — 27/09/2026
+
+Se corrigieron los cinco hallazgos de la auditoría determinista del flujo de tasas de cambio:
+
+1. **Congelado de tasa al cerrar el período** (`server/handlers/nomina.periodos.js`): `POST /api/nomina/periodos/cerrar` acepta `tasas` (usd/eur/usdt) y guarda los snapshots del período **antes** de cerrar (`nomina_tasas_snapshot` con `periodo_id`, `aprobado`, `aprobado_por`). Si el snapshot no se puede escribir, el período NO se cierra (fail-closed). Respuesta: `tasa_congelada: true/false`. `useCerrarPeriodo` envía siempre las tasas del mercado al cerrar; `PeriodoDetalleModal` muestra la tasa congelada y convierte el Bs histórico con ella (los recibos pagados siguen con su `total_pagado_bs`); `TabConfiguracion` → Tasas de cambio lista las tasas congeladas al cierre (nueva consulta `?periodoId=` en `GET /api/nomina/tasas-snapshots`).
+2. **Tasa manual trazable y sincronizada** (migración `249_nomina_tasas_trazabilidad.sql` + `nomina.catalogos.js`): nuevos endpoints `GET/POST /api/nomina/tasa-manual`. La tasa manual vive en `nomina_tasas_snapshot` (fuente `MANUAL`) con motivo obligatorio, quién la fijó y cuándo; todos los navegadores leen el mismo valor (el localStorage queda solo como respaldo). `RateSelector` exige motivo y muestra quién la fijó. Auditoría `FIJAR_TASA_MANUAL`.
+3. **Avisos de tasa de respaldo** (`useMonedaNomina` + `RateSelector`): si la tasa elegida (euro, USDT o manual sin valor) no tiene dato, se muestra la del BCV dólar **con aviso visible** (`tasaFallback`), las opciones sin dato dicen "Sin dato" y se avisa cuando las tasas vienen desactualizadas.
+4. **Scroll horizontal del desplegable en móvil**: ya corregido en código local (popover acotado a la pantalla, `overflow-x-hidden`, fila del tasa manual con contención); ahora cubierto por **regresión determinista** en `src/components/nomina/__tests__/RateSelector.test.jsx`.
+5. **Cobertura de pruebas del flujo de tasas**: nuevos `server/handlers/__tests__/rates.test.js` (fuentes BCV/respaldo/DolarAPI, caché HIT, refresh, stale, 503, USDT) y `src/hooks/__tests__/useMonedaNomina.test.jsx` (respaldos + sincronización), más las pruebas de tasa manual, congelado al cierre y permisos ampliadas en `nomina.tasas.test.js`.
+
+**Verificación del snapshot:** Vitest 115 suites / 1217 pruebas en verde (+1 todo preexistente); nómina determinista 28/28; `test:db` 33 comprobaciones / 43 migraciones (incluye 249) sin brechas de permisos; responsividad 41/41; guardas QA 23/23; guardrail de proyecto OK (386 archivos); build OK. Sin commit/push/deploy.
+
+**Pendiente de publicación:** la migración 249 debe aplicarse en staging/producción junto con el despliegue (la lectura de snapshots tolera su ausencia con reintento legado, pero el guardado de tasa manual exige la columna `motivo`). El desplegable de tasas corregido también llega a producción con el próximo deploy.
+
+## Contexto de negocio único — Construacero y recomendaciones priorizadas — 27/09/2026
+
+**Contexto clave:** el sistema lo usa **solo Construacero** (negocio único). Por tanto **no** se necesita multi-negocio, ni flags de visibilidad por cliente, ni configurar módulos opcionales por cliente. Las mejoras van hacia consolidar las reglas que Construacero ya definió, simplificar y corregir ambigüedades.
+
+**Cambio ya aplicado (frecuencia semanal fija):** El usuario decide que Construacero trabaja **semanal por ahora**. Se fijó la frecuencia en semanal:
+- UI (`src/components/nomina/TabConfiguracion.jsx`): la tarjeta de frecuencia ya no muestra un selector editable; muestra un badge fijo "Semanal (Lunes a Sábado)". Se eliminaron las funciones muertas `guardarPeriodoDefault`/`setTipoPeriodo`/`guardar` de `StandardScheduleCard` y se añadió el import de `CheckCircle2`.
+- Servidor (`server/handlers/config.js`): al recibir `nomina_tipo_periodo`, solo se acepta `'semanal'`; cualquier otro valor responde 400 con el mensaje "Construacero opera en nómina semanal; no se admite otra frecuencia".
+- Tests (`server/handlers/__tests__/config.test.js`): 6/6 en verde; se actualizaron para reflejar el nuevo comportamiento (rechazo de frecuencias distintas y aceptación explícita de semanal).
+
+**Recomendaciones priorizadas (candidatas a implementar en fases siguientes):**
+1. **Bloquear/mostrar advertencia al cambiar la frecuencia si hay períodos en progreso** (evita corrupción de datos: períodos quincenales/mensuales abiertos si se cambia a semanal). Mayor impacto.
+2. **Unificar modo de pago: montos fijos vs. factores.** Hoy el payload manda ambos a la vez (`nomina_factor_*` y `nomina_monto_*_usd`); el formulario solo edita montos fijos. Decidir un solo modo y limpiar el otro.
+3. **Tasas de cambio en Configuración (elección y trazabilidad; SIN ISR por ahora).** El sistema trabaja con **4 tasas: BCV dólar, BCV euro, USDT y manual**. Recomendación ajustada: NO añadir otra casilla de "tasa del dólar" ni tocar ISR. En Configuración debe quedar claro cuál de las 4 tasas se usa, de dónde sale y cuándo se aplica; y Nómina debe guardar la tasa usada al cerrar cada período para que una actualización posterior no altere pagos ya calculados. Si se usa tasa manual, registrar quién la ingresó y cuándo. **DECIDIDO: el ISR NO se implementa por ahora.** (Descartado: tocarlo en esta fase.)
+4. **Texto dinámico del régimen** en la tarjeta (el texto fijo "Sábados: asistencia rotativa" contradice un selector que ofrecía quincenal/mensual). Si se deja fijo semanal, alinear todo el texto para que no haya contradicciones.
+5. **Eliminar banner "Gestión de Personal Centralizada"** de SistemaView (ocupa espacio; sin multi-negocio no es contenido de configuración).
+6. **Consolidar el flujo de aprobación de Reglas legales** (hoy quedan en "Pendiente" sin pantalla de aprobación clara). Definir quién aprueba y dónde.
+7. **Agrupar la zona de Configuración en pestañas/acordeón** (Horario/período, Recargos/montos, Conceptos/reglas, Usuarios/accesos) para menos scroll y menos errores.
+8. **Auditoría de cambios** (quién y cuándo cambió recargos, tasas o frecuencia) — barato y muy útil con varias personas (jefe/finanzas/nómina).
+
+Esta entrada es informativa: documenta el contexto y las recomendaciones; la implementación de cada una queda en fases posteriores. No se hizo commit ni push.
+
 ## Continuación de release roles/PIN: fixtures y verificación local — 22/09/2026
 
 **Objetivo:** continuar el roadmap sin usar producción como staging y resolver el primer gate local del snapshot compartido.
