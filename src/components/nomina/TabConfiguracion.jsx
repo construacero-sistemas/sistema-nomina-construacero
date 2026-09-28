@@ -49,7 +49,7 @@ export default function TabConfiguracion() {
     { id: 'tasas', label: 'Tasas de cambio', description: 'BCV dólar, BCV euro, USDT o manual' },
     // { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales' }, // Oculto temporalmente
     { id: 'retencion', label: 'Almacenamiento', description: 'Retención y purga inteligente de la base' },
-    { id: 'accesibilidad', label: 'Accesibilidad', description: 'Modo accesible: texto grande y alto contraste' },
+    // { id: 'accesibilidad', label: 'Accesibilidad', description: 'Modo accesible: texto grande y alto contraste' }, // Oculto temporalmente
     ...(puedePurgar ? [{ id: 'mantenimiento', label: 'Mantenimiento', description: 'Purgar registros de Nómina y Finanzas con respaldo' }] : []),
   ]
   const navegarSecciones = useTablistNav(secciones.map(item => item.id), seccion, setSeccion)
