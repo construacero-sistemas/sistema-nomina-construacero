@@ -167,6 +167,15 @@ botón condenado a 403; `npm test` verde; bitácora actualizada.
   y, si no hay sesión, expira.
 - **Criterio:** un clic sin permiso muestra el mensaje y deja la sesión intacta.
 
+> **Actualización (2026-09-27):** la regla se INVIRTIÓ y quedó más estricta tras el caso real
+> «desactivar un usuario → No pudimos abrir tu cuenta». Ahora `authFetch` SOLO cierra la sesión
+> cuando el 403 trae `code: 'OPERADOR_INVALIDO'` (emitido por `validateOperator` por operador
+> inactivo o rol revocado); cualquier otro 403 (capacidad, permiso de administración, tenant,
+> RPC financiera PT403…) llega a la interfaz con la sesión intacta. Además, ningún usuario puede
+> desactivarse a sí mismo (guard en `gestionar-operadores` + botón deshabilitado en el panel de
+> usuarios), porque dejaría su operador inactivo y el siguiente 403 cerraría su sesión de forma
+> legítima. Contrato cubierto por `authFetch.session-fix.test.jsx` y `gestionar-operadores.test.js`.
+
 ---
 
 ## Decisiones pendientes (solo el negocio)

@@ -1,7 +1,7 @@
 import supabase, { createRequestScope } from './supabase/client'
 import { apiUrl } from './apiBase'
 import useAuthStore from '../store/useAuthStore'
-import { CODIGO_CAPACIDAD_INSUFICIENTE } from '../api/lib/utils.js'
+import { CODIGO_OPERADOR_INVALIDO } from '../api/lib/utils.js'
 
 const DEFAULT_TIMEOUT = 15000
 let refreshPromise = null
@@ -13,15 +13,20 @@ function assertSession(original) {
   }
 }
 
-// Un 403 por CAPACIDAD insuficiente (`requireCapacidad`) significa «esta acción no es
-// tuya», no «tu rol fue revocado»: se devuelve el error a la UI sin borrar el perfil.
-// Los 403 de validateOperator (rol revocado, operador inactivo) no traen la marca y sí
-// cierran la sesión, que es el comportamiento que ya existía.
-async function esDenegacionPorCapacidad(response) {
+// Un 403 SOLO cierra la sesión cuando el servidor lo marca como
+// `OPERADOR_INVALIDO` (operador inactivo o rol revocado, emitidos por
+// `validateOperator`). Cualquier otro 403 es un error de ACCIÓN — capacidad
+// insuficiente, permiso de administración, cuenta sin tenant, RPC financiera
+// (PT403)… — y se entrega a la interfaz con la sesión intacta. Antes bastaba
+// cualquier 403 sin marca para barrer la sesión («No pudimos abrir tu cuenta»
+// al desactivar un usuario); eso no debe volver a pasar.
+async function esSesionInvalida(response) {
   try {
     const payload = await response.clone().json()
-    return payload?.code === CODIGO_CAPACIDAD_INSUFICIENTE
+    return payload?.code === CODIGO_OPERADOR_INVALIDO
   } catch {
+    // Sin JSON legible no se asume revocación: un error en la interfaz es
+    // preferible a un falso cierre de sesión.
     return false
   }
 }
@@ -71,7 +76,7 @@ export async function authFetch(path, options = {}) {
     if ([401, 403].includes(response.status)) {
       // Invalidación de rol; no restaurar el perfil administrativo cacheado.
       if (response.status === 401) original.expireSession?.('La sesión terminó. Inicia sesión nuevamente.')
-      else if (!(await esDenegacionPorCapacidad(response))) original.denyAccess?.('Tu cuenta no tiene autorización para esta operación.')
+      else if (await esSesionInvalida(response)) original.denyAccess?.('Tu cuenta no tiene autorización para esta operación.')
     }
     return response
   } catch (error) {

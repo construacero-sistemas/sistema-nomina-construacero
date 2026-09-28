@@ -6,6 +6,20 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Falso cierre de sesión al desactivar un usuario — 27/09/2026
+
+**Problema real:** al desactivar un usuario desde Sistema → Usuarios, la app mostraba la pantalla de bloqueo «No pudimos abrir tu cuenta» y borraba el perfil.
+
+**Diagnóstico determinista:** `authFetch` cerraba la sesión ante **cualquier** 403 sin marca. Un error de acción (permiso, tenant, RPC financiera PT403…) o el 403 legítimo de «Operador no encontrado o inactivo» (que aparece justo después de desactivarse a uno mismo) barrían el perfil. Se rastrearon todas las fuentes de 403 del Worker: `validateOperator` (2 estructurales), `requireCapacidad`, `requireSupervisor`, guard de tenant, `auth-operators` (selección de operador) y RPCs financieras.
+
+**Correcciones:**
+
+1. **Contrato invertido y endurecido** (`compat/services/authFetch.js`, `compat/api/lib/auth.js`, `compat/api/lib/utils.js`): solo un 403 marcado `code: 'OPERADOR_INVALIDO'` cierra la sesión (operador inactivo o rol revocado, emitidos por `validateOperator`); los 403 de `requireCapacidad` (`CAPACIDAD_INSUFICIENTE`) y cualquier otro llegan a la interfaz con la sesión intacta. Un 401 sin refresh posible sigue expirando la sesión (ese sí es legítimo).
+2. **Nadie se desactiva a sí mismo** (`server/handlers/gestionar-operadores.js`): `PATCH estado` rechaza con 409 «No puedes desactivar tu propio usuario. Pídeselo a otro jefe» y el botón del panel queda deshabilitado con explicación (`UsuariosPanel.jsx`). Así se elimina el caso que produjo el error real.
+3. **Auditoría de «otros casos»:** con el nuevo contrato, ninguna acción de negocio puede ya tumbar la sesión; solo la revocación estructural del operador/rol (marcada) y el 401 tras refresh fallido.
+
+**Verificación:** 115 archivos · 1219 pruebas en verde (+3 nuevas: revocación solo con marca, 403 de acción conserva sesión, auto-desactivación rechazada), build OK.
+
 ## Corrección de los 5 hallazgos de la auditoría de tasas — 27/09/2026
 
 Se corrigieron los cinco hallazgos de la auditoría determinista del flujo de tasas de cambio:

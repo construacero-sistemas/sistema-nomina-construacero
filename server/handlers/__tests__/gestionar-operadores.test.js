@@ -189,6 +189,14 @@ describe('gestionar-operadores — estado / pin / rol', () => {
     expect(againBody.body.idempotente).toBe(true)
   })
 
+  it('no permite desactivar el propio usuario (evita quedarse sin operador activo)', async () => {
+    operadorActual = { ...OPERADORES.jefe }
+    mock = installFetchMock([]) // el guard rechaza antes de tocar la BD
+    const res = await H.handleCambiarEstadoOperador(makeRequest({ id: OPERADORES.jefe.id, activo: false }), ENV)
+    const body = await readResponse(res)
+    expect(body.status).toBe(409)
+  })
+
   it('al reactivar respeta el máximo por rol', async () => {
     operadorActual = { ...OPERADORES.jefe }
     mock = installFetchMock([

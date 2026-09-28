@@ -17,6 +17,7 @@ import {
   useCambiarPinOperador, useCambiarRolOperador, useCambiarNombreOperador,
 } from '../../hooks/useGestionOperadores.js'
 import { etiquetaRol, ROLES_CREABLES, longitudPin } from '../../config/accesoModulos.js'
+import useAuthStore from '../../../compat/store/useAuthStore'
 
 // Los roles ofrecibles y sus etiquetas derivan de la matriz única
 // (config/accesoModulos reexporta server/lib/permissions.js).
@@ -126,7 +127,15 @@ export default function UsuariosPanel({ open, onClose }) {
 
   const usuarios = data?.usuarios || []
 
+  // Nadie puede desactivarse a sí mismo desde la pantalla: se quedaría sin
+  // operador activo y cada pantalla respondería «sin autorización» (el 403 de
+  // operador inválido cierra la sesión) hasta que otro jefe lo reactive.
+  const perfil = useAuthStore(s => s.perfil)
+  const propioId = perfil?.operador_id || perfil?.id || null
+  const esPropio = (u) => Boolean(propioId) && u.id === propioId
+
   async function toggleEstado(u) {
+    if (esPropio(u)) return
     try {
       await cambiarEstado.mutateAsync({ id: u.id, activo: !u.activo })
       showToast(u.activo ? `${u.nombre} desactivado` : `${u.nombre} reactivado`, 'success')
@@ -243,10 +252,10 @@ export default function UsuariosPanel({ open, onClose }) {
                   <button
                     type="button"
                     onClick={() => toggleEstado(u)}
-                    disabled={cambiarEstado.isPending}
+                    disabled={cambiarEstado.isPending || esPropio(u)}
                     className={`min-h-11 min-w-11 inline-flex items-center justify-center rounded-xl border ${u.activo ? 'border-rose-200 text-rose-600' : 'border-emerald-200 text-emerald-600'}`}
-                    title={u.activo ? 'Desactivar usuario' : 'Reactivar usuario'}
-                    aria-label={`${u.activo ? 'Desactivar' : 'Reactivar'} a ${u.nombre}`}
+                    title={esPropio(u) ? 'No puedes desactivar tu propio usuario' : (u.activo ? 'Desactivar usuario' : 'Reactivar usuario')}
+                    aria-label={esPropio(u) ? 'No puedes desactivar tu propio usuario' : `${u.activo ? 'Desactivar' : 'Reactivar'} a ${u.nombre}`}
                   >
                     {u.activo ? <ShieldOff size={16} /> : <ShieldCheck size={16} />}
                   </button>

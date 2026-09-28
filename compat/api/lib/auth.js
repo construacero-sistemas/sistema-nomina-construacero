@@ -1,5 +1,5 @@
 // api/lib/auth.js
-import { jsonError, isValidUuid } from './utils.js'
+import { json, jsonError, isValidUuid, CODIGO_OPERADOR_INVALIDO } from './utils.js'
 import { ROLES_OPERATIVOS, rolesConCapacidad } from '../../../server/lib/permissions.js'
 
 // Roles con acceso operativo y roles de acceso total (migración 245).
@@ -204,14 +204,18 @@ export async function validateOperator(request, env, { requireSupervisor = false
     }
 
     if (!operador) {
-      return { error: jsonError('Operador no encontrado o inactivo', 403, request) };
+      // 403 que invalida la sesión (marca CODIGO_OPERADOR_INVALIDO): sin este
+      // operador activo ninguna petición puede funcionar. El cliente solo cierra
+      // sesión con esta marca; los demás 403 son errores de acción.
+      return { error: json({ error: 'Operador no encontrado o inactivo', code: CODIGO_OPERADOR_INVALIDO }, 403, request) };
     }
     // Roles operativos del sistema (migración 245 + matriz de permissions.js):
     // jefe/desarrollador = total; finanzas y nomina = módulo propio.
     // Qué puede HACER cada rol lo decide la matriz; aquí solo se exige que
     // el rol sea operativo (tenga entrada en la matriz con acceso).
     if (!OPERATIONAL_ROLES.has(operador.rol)) {
-      return { error: jsonError('Este rol no tiene acceso operativo al sistema', 403, request) };
+      // Rol revocado: también invalida la sesión (misma marca).
+      return { error: json({ error: 'Este rol no tiene acceso operativo al sistema', code: CODIGO_OPERADOR_INVALIDO }, 403, request) };
     }
     if (requireSupervisor && !ROLES_TOTALES.has(operador.rol)) {
       return { error: jsonError('Se requiere un rol de acceso total (jefe)', 403, request) };

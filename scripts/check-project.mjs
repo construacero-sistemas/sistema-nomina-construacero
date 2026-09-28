@@ -234,14 +234,21 @@ for (const [archivo, requeridos, prohibidos] of paridadGates) {
   }
 }
 
-// La marca de capacidad tiene que viajar del servidor al cliente: si se pierde en
-// cualquiera de los dos lados, un «no tienes permiso» vuelve a cerrar la sesión.
+// El contrato de la sesión: SOLO un 403 marcado OPERADOR_INVALIDO (operador
+// inactivo o rol revocado, emitido por validateOperator) cierra la sesión; los
+// demás 403 son errores de acción y llegan a la interfaz sin tocarla. La marca
+// tiene que viajar del servidor al cliente: si se pierde en cualquiera de los
+// dos lados, un error de acción vuelve a cerrar la sesión.
 const authFetchSource = await read('compat/services/authFetch.js')
+const authLibSource = await read('compat/api/lib/auth.js')
 if (!permissionsGuardSource.includes('CODIGO_CAPACIDAD_INSUFICIENTE')) {
   fail('requireCapacidad debe marcar sus 403 con CODIGO_CAPACIDAD_INSUFICIENTE')
 }
-if (!authFetchSource.includes('CODIGO_CAPACIDAD_INSUFICIENTE') || !authFetchSource.includes('denyAccess')) {
-  fail('authFetch debe distinguir el 403 por capacidad antes de invalidar la sesión')
+if (!authLibSource.includes('CODIGO_OPERADOR_INVALIDO')) {
+  fail('validateOperator debe marcar sus 403 de revocación con CODIGO_OPERADOR_INVALIDO')
+}
+if (!authFetchSource.includes('CODIGO_OPERADOR_INVALIDO') || !authFetchSource.includes('denyAccess')) {
+  fail('authFetch solo debe invalidar la sesión ante un 403 marcado OPERADOR_INVALIDO')
 }
 // El espejo SQL final de la matriz (migración 245) no puede divergir de la fuente JS:
 // si alguien agrega o quita un rol en cualquiera de los dos lados, esto falla.

@@ -91,8 +91,13 @@ describe('Authenticated request boundaries', () => {
     expect(state.expireSession).toHaveBeenCalledTimes(1)
   })
 
-  it('forbidden responses revoke profile access without trying a token refresh', async () => {
-    fetch.mockResolvedValue(reply(403))
+  // Solo un 403 marcado como OPERADOR_INVALIDO (operador inactivo o rol
+  // revocado) invalida la sesión; es el contrato con validateOperator.
+  it.each([
+    { error: 'Operador no encontrado o inactivo', code: 'OPERADOR_INVALIDO' },
+    { error: 'Este rol no tiene acceso operativo al sistema', code: 'OPERADOR_INVALIDO' },
+  ])('an operator-invalid 403 ($error) revokes profile access without trying a token refresh', async body => {
+    fetch.mockResolvedValue(reply(403, body))
     expect((await authFetch('/api/example')).status).toBe(403)
     expect(state.denyAccess).toHaveBeenCalledTimes(1)
     expect(mocks.auth.refreshSession).not.toHaveBeenCalled()
@@ -114,10 +119,16 @@ describe('Authenticated request boundaries', () => {
     expect(mocks.auth.refreshSession).not.toHaveBeenCalled()
   })
 
-  it('a 403 without the capability mark still revokes the profile', async () => {
-    fetch.mockResolvedValue(reply(403, { error: 'Este rol no tiene acceso operativo al sistema' }))
+  // Un 403 sin marca es un error de ACCIÓN (permiso de administración, tenant,
+  // RPC financiera PT403…): llega a la interfaz y la sesión sigue viva. Solo
+  // OPERADOR_INVALIDO revoca; nada más debe tumbar la sesión (caso real:
+  // «No pudimos abrir tu cuenta» al desactivar un usuario).
+  it('a 403 without marks (action-level error) keeps the session and delivers the error', async () => {
+    fetch.mockResolvedValue(reply(403, { error: 'Requiere permiso de Administración' }))
     expect((await authFetch('/api/example')).status).toBe(403)
-    expect(state.denyAccess).toHaveBeenCalledTimes(1)
+    expect(state.denyAccess).not.toHaveBeenCalled()
+    expect(state.expireSession).not.toHaveBeenCalled()
+    expect(mocks.auth.refreshSession).not.toHaveBeenCalled()
   })
 
   it('preserves caller cancellation while session lookup is stalled', async () => {

@@ -262,6 +262,14 @@ export async function handleCambiarEstadoOperador(request, env) {
   if (!isValidUuid(id)) return jsonError('id inválido', 400, request)
   if (typeof activo !== 'boolean') return jsonError('activo debe ser booleano', 400, request)
 
+  // Nadie puede desactivar su propio usuario desde su sesión: dejaría su
+  // operador inactivo y el siguiente request recibiría el 403 de operador
+  // inválido, que sí cierra la sesión («No pudimos abrir tu cuenta») hasta
+  // que otro jefe lo reactive.
+  if (!activo && String(id) === String(context.operador?.id || '')) {
+    return jsonError('No puedes desactivar tu propio usuario. Pídeselo a otro jefe.', 409, request)
+  }
+
   const lookup = await fetch(
     `${env.SUPABASE_URL}/rest/v1/usuarios?id=eq.${encodeURIComponent(id)}` +
       `&cuenta_id=eq.${encodeURIComponent(context.user.id)}&select=id,nombre,rol,activo&limit=1`,

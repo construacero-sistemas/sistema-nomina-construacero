@@ -99,6 +99,13 @@ export function jsonError(message, status = 400, request = null) {
 // `compat/services/authFetch.js` la consulta antes de invalidar la sesión.
 export const CODIGO_CAPACIDAD_INSUFICIENTE = 'CAPACIDAD_INSUFICIENTE'
 
+// Marca de un 403 que INVALIDA la sesión del cliente (operador inactivo o rol
+// revocado, emitidos por validateOperator en api/lib/auth.js). compat/services/
+// authFetch.js SOLO borra la sesión con esta marca: cualquier otro 403
+// (capacidad, permiso, tenant, RPC financiera…) es un error de ACCIÓN y llega
+// a la interfaz sin cerrar la sesión.
+export const CODIGO_OPERADOR_INVALIDO = 'OPERADOR_INVALIDO'
+
 
 export function removeAccents(str) {
   if (!str) return '';
