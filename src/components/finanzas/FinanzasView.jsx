@@ -50,7 +50,7 @@ export default function FinanzasView() {
   const perfil = useAuthStore(state => state.perfil)
   const puede = usePuedeFinanzas()
   const puedeVerSaldos = tieneCapacidad(perfil, 'verSaldos')
-  const puedeEditar = tieneCapacidad(perfil, 'administrarSistema')
+  const puedeEditar = tieneCapacidad(perfil, 'operarFinanzas')
   const { tasaActiva, nombreTasa } = useMonedaNomina()
 
   // Pestaña activa: 'movimientos' (operación diaria) o 'tesoreria' (saldos y carteras)

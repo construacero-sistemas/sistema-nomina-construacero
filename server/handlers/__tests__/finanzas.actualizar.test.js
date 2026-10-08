@@ -28,15 +28,40 @@ const activeMovement = {
   referencia: 'Factura 101',
 }
 
-describe('finanzas — actualización de movimientos (exclusivo jefe)', () => {
-  it('deniega acceso con 403 a rol finanzas (solo jefe puede editar)', async () => {
-    operadorActual = OPERADORES.finanzas
+describe('finanzas — actualización de movimientos (jefe y finanzas)', () => {
+  it('deniega acceso con 403 a roles sin operarFinanzas (ej. nomina)', async () => {
+    operadorActual = OPERADORES.nomina
     const response = await H.handleActualizarFinanzasMovimiento(
       makeRequest({ id: IDS.linea, categoria: 'Servicios', concepto: 'Luz eléctrica' }),
       ENV,
     )
     const result = await readResponse(response)
     expect(result.status).toBe(403)
+  })
+
+  it('permite a rol finanzas actualizar categoría y concepto exitosamente', async () => {
+    operadorActual = OPERADORES.finanzas
+    let patchBody
+    mock = installFetchMock([
+      { match: `finanzas_movimientos?id=eq.${IDS.linea}`, method: 'GET', respond: [activeMovement] },
+      {
+        match: `finanzas_movimientos?id=eq.${IDS.linea}`,
+        method: 'PATCH',
+        respond: (url, init) => {
+          patchBody = JSON.parse(init.body)
+          return [{ ...activeMovement, ...patchBody }]
+        },
+      },
+    ])
+    const response = await H.handleActualizarFinanzasMovimiento(
+      makeRequest({ id: IDS.linea, categoria: 'Servicios', concepto: 'Luz eléctrica corregida' }),
+      ENV,
+    )
+    const result = await readResponse(response)
+    expect(result.status).toBe(200)
+    expect(result.body.ok).toBe(true)
+    expect(patchBody.categoria).toBe('Servicios')
+    expect(patchBody.concepto).toBe('Luz eléctrica corregida')
   })
 
   it('valida parámetros de entrada (id, categoría y concepto)', async () => {

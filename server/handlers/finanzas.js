@@ -350,9 +350,9 @@ export async function handleRevertirAnulacionMovimiento(request, env) {
 }
 
 // POST /api/finanzas/movimientos/actualizar
-// Edición directa de categoría, concepto y referencia (exclusivo jefe).
+// Edición directa de categoría, concepto y referencia (operadores financieros: jefe y finanzas).
 export async function handleActualizarFinanzasMovimiento(request, env) {
-  const context = await jefeContext(request, env)
+  const context = await operarContext(request, env)
   if (context.error) return context.error
   const parsed = await readBody(request)
   if (parsed.error) return parsed.error

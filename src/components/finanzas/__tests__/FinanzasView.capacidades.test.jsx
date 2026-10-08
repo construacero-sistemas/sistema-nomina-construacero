@@ -62,7 +62,7 @@ describe('FinanzasView — acceso por capacidad', () => {
     expect(screen.queryByRole('button', { name: /Tesorería/ })).not.toBeInTheDocument()
     expect(screen.queryByTestId('tesoreria-consolidado')).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Resumen financiero' })).not.toBeInTheDocument()
-    expect(screen.getByText('Tabla de movimientos (sin edición)')).toBeInTheDocument()
+    expect(screen.getByText('Tabla de movimientos (con edición)')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Nuevo movimiento/ }))
     expect(screen.getByRole('dialog', { name: 'Nuevo movimiento' })).toHaveTextContent('2 cuentas disponibles')
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar formulario' }))
@@ -81,7 +81,7 @@ describe('FinanzasView — acceso por capacidad', () => {
 
     expect(screen.queryByRole('button', { name: /Tesorería/ })).not.toBeInTheDocument()
     expect(screen.queryByTestId('tesoreria-consolidado')).not.toBeInTheDocument()
-    expect(screen.getByText('Tabla de movimientos (sin edición)')).toBeInTheDocument()
+    expect(screen.getByText('Tabla de movimientos (con edición)')).toBeInTheDocument()
   })
 
   it('jefe conserva acceso a operaciones, tesorería y resumen', () => {
