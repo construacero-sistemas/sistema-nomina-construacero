@@ -14,6 +14,7 @@ vi.mock('../../../hooks/useFinanzas.js', () => ({
   useFinanzasResumen: () => ({ data: { resumen: { ingresos_usd: 100 } }, isLoading: false, isError: false, refetch: vi.fn() }),
   useAnularMovimiento: () => ({ mutate: vi.fn(), isPending: false }),
   useRevertirAnulacion: () => ({ mutate: vi.fn() }),
+  useActualizarMovimiento: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
   useEliminarCategoria: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, variables: null }),
   useRestaurarCategoria: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, variables: null }),
   useCrearCategoria: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -29,7 +30,8 @@ vi.mock('../../../../compat/components/ui/DatePicker.jsx', () => ({ default: () 
 vi.mock('../../../../compat/components/ui/CustomSelect.jsx', () => ({ default: () => <div /> }))
 vi.mock('../FinanzasFiltrosUI.jsx', () => ({ FinanzasFiltrosSeccion: () => <div>Filtros</div>, InlineError: ({ message }) => <div>{message}</div> }))
 vi.mock('../MovimientoForm.jsx', () => ({ default: ({ onClose, cuentas = [] }) => <div role="dialog" aria-label="Nuevo movimiento">Formulario movimiento · {cuentas.length} cuentas disponibles <button onClick={onClose}>Cerrar formulario</button></div> }))
-vi.mock('../MovimientoTable.jsx', () => ({ default: () => <div>Tabla de movimientos</div> }))
+vi.mock('../MovimientoTable.jsx', () => ({ default: ({ onEditar }) => <div>Tabla de movimientos {onEditar ? '(con edición)' : '(sin edición)'}</div> }))
+vi.mock('../MovimientoEditarModal.jsx', () => ({ default: () => null }))
 vi.mock('../SyncPosModal.jsx', () => ({ default: () => null }))
 vi.mock('../CarterasHeader.jsx', () => ({ default: () => <div data-testid="tesoreria-consolidado">Consolidado de tesorería</div> }))
 vi.mock('../TransferenciaCarterasModal.jsx', () => ({ default: ({ validarFondosEnServidor }) => <div role="dialog" aria-label="Mover entre carteras">El servidor validará los fondos: {String(validarFondosEnServidor)}</div> }))
@@ -60,7 +62,7 @@ describe('FinanzasView — acceso por capacidad', () => {
     expect(screen.queryByRole('button', { name: /Tesorería/ })).not.toBeInTheDocument()
     expect(screen.queryByTestId('tesoreria-consolidado')).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Resumen financiero' })).not.toBeInTheDocument()
-    expect(screen.getByText('Tabla de movimientos')).toBeInTheDocument()
+    expect(screen.getByText('Tabla de movimientos (sin edición)')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Nuevo movimiento/ }))
     expect(screen.getByRole('dialog', { name: 'Nuevo movimiento' })).toHaveTextContent('2 cuentas disponibles')
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar formulario' }))
@@ -79,7 +81,7 @@ describe('FinanzasView — acceso por capacidad', () => {
 
     expect(screen.queryByRole('button', { name: /Tesorería/ })).not.toBeInTheDocument()
     expect(screen.queryByTestId('tesoreria-consolidado')).not.toBeInTheDocument()
-    expect(screen.getByText('Tabla de movimientos')).toBeInTheDocument()
+    expect(screen.getByText('Tabla de movimientos (sin edición)')).toBeInTheDocument()
   })
 
   it('jefe conserva acceso a operaciones, tesorería y resumen', () => {
@@ -89,5 +91,26 @@ describe('FinanzasView — acceso por capacidad', () => {
     expect(screen.getByRole('button', { name: /Nuevo movimiento/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Tesorería/ })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Resumen financiero' })).toBeInTheDocument()
+    expect(screen.getByText('Tabla de movimientos (con edición)')).toBeInTheDocument()
+  })
+
+  it('permite alternar entre reporte Resumido y Completo', () => {
+    renderView()
+    const btnResumido = screen.getByRole('button', { name: 'Resumido' })
+    const btnCompleto = screen.getByRole('button', { name: 'Completo' })
+
+    expect(btnResumido).toBeInTheDocument()
+    expect(btnCompleto).toBeInTheDocument()
+    expect(btnResumido).toHaveAttribute('aria-pressed', 'true')
+    expect(btnCompleto).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(btnCompleto)
+    expect(btnResumido).toHaveAttribute('aria-pressed', 'false')
+    expect(btnCompleto).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(btnResumido)
+    expect(btnResumido).toHaveAttribute('aria-pressed', 'true')
+    expect(btnCompleto).toHaveAttribute('aria-pressed', 'false')
   })
 })
+

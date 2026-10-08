@@ -99,15 +99,18 @@ async function generarFinanzasResumenPDFImpl({
   nombreTasa = '',
   action = 'download',
   printWindow = null,
+  tipoReporte = 'completo',
 }) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' })
   const logoData = await cargarLogo(config.logo_url)
 
-  const titulo = resumen.tipoFiltro === 'ingreso'
+  const esResumido = tipoReporte === 'resumido'
+  const tituloBase = resumen.tipoFiltro === 'ingreso'
     ? 'Reporte de Ingresos'
     : resumen.tipoFiltro === 'egreso'
       ? 'Reporte de Egresos'
       : 'Reporte de Ingresos y Egresos'
+  const titulo = esResumido ? `${tituloBase} (Resumido)` : tituloBase
 
   const subtituloRango = `${fecha(rango.desde)} – ${fecha(rango.hasta)}`
   const subtituloConTasa = `${subtituloRango} · Tasas históricas guardadas; traspasos internos fuera de totales operativos`
@@ -290,10 +293,6 @@ async function generarFinanzasResumenPDFImpl({
     y += 5
   }
 
-  // ═══ 5. DETALLE DE MOVIMIENTOS DESGLOSADO POR CATEGORÍA ════════════════════
-  y = checkPage(doc, y, 22)
-  y = drawSectionTitle(doc, y, 'DETALLE DE MOVIMIENTOS POR CATEGORÍA')
-
   // Total ancho: 20 + 12 + 70 + 30 + 26 + 30 = 188 mm (CONTENT_W)
   const cols = [
     { label: 'FECHA',           x: MARGIN,        w: 20 },
@@ -304,151 +303,157 @@ async function generarFinanzasResumenPDFImpl({
     { label: 'CONTRAVALOR',     x: MARGIN + 158,  w: 30 },
   ]
 
-  function movHeaders(yPos) {
-    doc.setFillColor(...C_PRIMARY)
-    doc.rect(MARGIN, yPos, CONTENT_W, 6.5, 'F')
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(6)
-    doc.setTextColor(...C_WHITE)
-    cols.forEach(c => {
-      if (c.label === 'MONTO' || c.label === 'CONTRAVALOR') {
-        doc.text(c.label, c.x + c.w - 2, yPos + 4.5, { align: 'right' })
-      } else {
-        doc.text(c.label, c.x + 1.5, yPos + 4.5)
-      }
-    })
-    return yPos + 7.5
-  }
-
-  categoriasList.forEach((cat) => {
-    // Espacio para banner de categoría + columnas + al menos 1 fila
+  if (!esResumido) {
+    // ═══ 5. DETALLE DE MOVIMIENTOS DESGLOSADO POR CATEGORÍA ════════════════════
     y = checkPage(doc, y, 22)
+    y = drawSectionTitle(doc, y, 'DETALLE DE MOVIMIENTOS POR CATEGORÍA')
 
-    const tieneIngresos = cat.totalIngresosUsd > 0
-    const tieneEgresos = cat.totalEgresosUsd > 0
-    const catColor = tieneIngresos && !tieneEgresos ? C_EMERALD : !tieneIngresos && tieneEgresos ? C_RED : C_PRIMARY
+    function movHeaders(yPos) {
+      doc.setFillColor(...C_PRIMARY)
+      doc.rect(MARGIN, yPos, CONTENT_W, 6.5, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(6)
+      doc.setTextColor(...C_WHITE)
+      cols.forEach(c => {
+        if (c.label === 'MONTO' || c.label === 'CONTRAVALOR') {
+          doc.text(c.label, c.x + c.w - 2, yPos + 4.5, { align: 'right' })
+        } else {
+          doc.text(c.label, c.x + 1.5, yPos + 4.5)
+        }
+      })
+      return yPos + 7.5
+    }
 
-    // Banner de Categoría
-    doc.setFillColor(243, 244, 246)
-    doc.rect(MARGIN, y, CONTENT_W, 6.5, 'F')
-    doc.setFillColor(...catColor)
-    doc.rect(MARGIN, y, 3, 6.5, 'F')
+    categoriasList.forEach((cat) => {
+      // Espacio para banner de categoría + columnas + al menos 1 fila
+      y = checkPage(doc, y, 22)
 
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7.5)
-    doc.setTextColor(...C_DARK)
-    doc.text(`CATEGORÍA: ${cat.nombre.toUpperCase()}`, MARGIN + 5, y + 4.5)
+      const tieneIngresos = cat.totalIngresosUsd > 0
+      const tieneEgresos = cat.totalEgresosUsd > 0
+      const catColor = tieneIngresos && !tieneEgresos ? C_EMERALD : !tieneIngresos && tieneEgresos ? C_RED : C_PRIMARY
 
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.5)
-    doc.setTextColor(...C_GRAY)
-    doc.text(`${cat.movimientos.length} movimiento(s)`, MARGIN + CONTENT_W - 3, y + 4.5, { align: 'right' })
+      // Banner de Categoría
+      doc.setFillColor(243, 244, 246)
+      doc.rect(MARGIN, y, CONTENT_W, 6.5, 'F')
+      doc.setFillColor(...catColor)
+      doc.rect(MARGIN, y, 3, 6.5, 'F')
 
-    y += 7.5
-    y = movHeaders(y)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(7.5)
+      doc.setTextColor(...C_DARK)
+      doc.text(`CATEGORÍA: ${cat.nombre.toUpperCase()}`, MARGIN + 5, y + 4.5)
 
-    cat.movimientos.forEach((m, idx) => {
-      const esIngreso = m.tipo === 'ingreso'
-      const anul = m.estado === 'anulado'
-      const monto = Number(m.monto) || 0
-      const mUsd = calcMontoUsd(m)
-      const mVes = calcMontoVes(m)
-
-      const conceptoStr = capitalizarPalabras(String(m.concepto || '—'))
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(6.5)
-      const maxConceptoW = cols[2].w - 3 // 70 - 3 = 67 mm
-      const lineasConcepto = doc.splitTextToSize(conceptoStr, maxConceptoW)
-      const lineHeight = 3.2
-      const rowHeight = Math.max(6.5, lineasConcepto.length * lineHeight + 2.5)
-
-      y = checkPage(doc, y, rowHeight)
-      if (y < MARGIN + 14) {
-        y = movHeaders(y)
-      }
-
-      if (idx % 2 === 0) {
-        doc.setFillColor(252, 252, 253)
-        doc.rect(MARGIN, y - 1, CONTENT_W, rowHeight, 'F')
-      }
-
-      // Fecha
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(6.5)
       doc.setTextColor(...C_GRAY)
-      doc.text(fecha(m.fecha).replace(/\s/g, ' '), cols[0].x + 1.5, y + 3)
+      doc.text(`${cat.movimientos.length} movimiento(s)`, MARGIN + CONTENT_W - 3, y + 4.5, { align: 'right' })
 
-      // Tipo
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(...(anul ? C_GRAY : esIngreso ? C_EMERALD : C_RED))
-      doc.text(esIngreso ? 'ING' : 'EGR', cols[1].x + 1.5, y + 3)
+      y += 7.5
+      y = movHeaders(y)
 
-      // Concepto Completo (sin recortar con salto de línea)
-      doc.setFont('helvetica', 'normal')
-      doc.setTextColor(...(anul ? C_GRAY : C_DARK))
-      lineasConcepto.forEach((linea, lIdx) => {
-        doc.text(linea, cols[2].x + 1.5, y + 3 + lIdx * lineHeight)
+      cat.movimientos.forEach((m, idx) => {
+        const esIngreso = m.tipo === 'ingreso'
+        const anul = m.estado === 'anulado'
+        const monto = Number(m.monto) || 0
+        const mUsd = calcMontoUsd(m)
+        const mVes = calcMontoVes(m)
+
+        const conceptoStr = capitalizarPalabras(String(m.concepto || '—'))
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(6.5)
+        const maxConceptoW = cols[2].w - 3 // 70 - 3 = 67 mm
+        const lineasConcepto = doc.splitTextToSize(conceptoStr, maxConceptoW)
+        const lineHeight = 3.2
+        const rowHeight = Math.max(6.5, lineasConcepto.length * lineHeight + 2.5)
+
+        y = checkPage(doc, y, rowHeight)
+        if (y < MARGIN + 14) {
+          y = movHeaders(y)
+        }
+
+        if (idx % 2 === 0) {
+          doc.setFillColor(252, 252, 253)
+          doc.rect(MARGIN, y - 1, CONTENT_W, rowHeight, 'F')
+        }
+
+        // Fecha
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(6.5)
+        doc.setTextColor(...C_GRAY)
+        doc.text(fecha(m.fecha).replace(/\s/g, ' '), cols[0].x + 1.5, y + 3)
+
+        // Tipo
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(...(anul ? C_GRAY : esIngreso ? C_EMERALD : C_RED))
+        doc.text(esIngreso ? 'ING' : 'EGR', cols[1].x + 1.5, y + 3)
+
+        // Concepto Completo (sin recortar con salto de línea)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(...(anul ? C_GRAY : C_DARK))
+        lineasConcepto.forEach((linea, lIdx) => {
+          doc.text(linea, cols[2].x + 1.5, y + 3 + lIdx * lineHeight)
+        })
+
+        // Cuenta / Método
+        doc.setFontSize(5.5)
+        doc.setTextColor(...C_GRAY)
+        const cuentaTxt = capitalizarPalabras(String(m.cuenta_origen || m.metodo_pago || '')).substring(0, 24) || '—'
+        doc.text(cuentaTxt, cols[3].x + 1.5, y + 3)
+
+        // Monto
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(6.5)
+        doc.setTextColor(...(anul ? C_GRAY : esIngreso ? C_EMERALD : C_RED))
+        const montoTexto = m.moneda === 'VES'
+          ? fmtBs(monto)
+          : (m.moneda === 'USDT' ? `${fmtUsd(monto).replace('$', '')} USDT` : fmtUsd(monto))
+        doc.text(montoTexto, cols[4].x + cols[4].w - 2, y + 3, { align: 'right' })
+
+        // Contravalor / Equivalente inteligente a la tasa elegida
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(...C_GRAY)
+        const contravalorTexto = m.moneda === 'VES'
+          ? (mUsd == null ? 'Sin tasa' : fmtUsd(mUsd))
+          : (mVes == null ? 'Sin tasa' : fmtBs(mVes))
+        doc.text(contravalorTexto, cols[5].x + cols[5].w - 2, y + 3, { align: 'right' })
+
+        // Tachado si anulado
+        if (anul) {
+          doc.setDrawColor(...C_GRAY)
+          doc.setLineWidth(0.2)
+          doc.line(cols[2].x + 1.5, y + 2, cols[2].x + 1.5 + 44, y + 2)
+        }
+
+        y += rowHeight
       })
 
-      // Cuenta / Método
-      doc.setFontSize(5.5)
-      doc.setTextColor(...C_GRAY)
-      const cuentaTxt = capitalizarPalabras(String(m.cuenta_origen || m.metodo_pago || '')).substring(0, 24) || '—'
-      doc.text(cuentaTxt, cols[3].x + 1.5, y + 3)
+      // Fila de Total de la Categoría
+      y = checkPage(doc, y, 7.5)
+      doc.setFillColor(245, 247, 250)
+      doc.rect(MARGIN, y - 1, CONTENT_W, 6.5, 'F')
+      doc.setDrawColor(220, 226, 235)
+      doc.setLineWidth(0.3)
+      doc.line(MARGIN, y - 1, MARGIN + CONTENT_W, y - 1)
+      doc.line(MARGIN, y + 5.5, MARGIN + CONTENT_W, y + 5.5)
 
-      // Monto
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(6.5)
-      doc.setTextColor(...(anul ? C_GRAY : esIngreso ? C_EMERALD : C_RED))
-      const montoTexto = m.moneda === 'VES'
-        ? fmtBs(monto)
-        : (m.moneda === 'USDT' ? `${fmtUsd(monto).replace('$', '')} USDT` : fmtUsd(monto))
-      doc.text(montoTexto, cols[4].x + cols[4].w - 2, y + 3, { align: 'right' })
+      doc.setTextColor(...C_DARK)
+      doc.text(`TOTAL ${cat.nombre.toUpperCase()}:`, cols[0].x + 2, y + 3)
 
-      // Contravalor / Equivalente inteligente a la tasa elegida
-      doc.setFont('helvetica', 'normal')
+      // Total USD de la categoría
+      const netoCatUsd = cat.totalIngresosUsd - cat.totalEgresosUsd
+      doc.setTextColor(...(netoCatUsd >= 0 ? C_EMERALD : C_RED))
+      doc.text(fmtUsd(netoCatUsd), cols[4].x + cols[4].w - 2, y + 3, { align: 'right' })
+
+      // Total VES de la categoría
+      const netoCatVes = cat.totalIngresosVes - cat.totalEgresosVes
       doc.setTextColor(...C_GRAY)
-      const contravalorTexto = m.moneda === 'VES'
-        ? (mUsd == null ? 'Sin tasa' : fmtUsd(mUsd))
-        : (mVes == null ? 'Sin tasa' : fmtBs(mVes))
-      doc.text(contravalorTexto, cols[5].x + cols[5].w - 2, y + 3, { align: 'right' })
+      doc.text(`Bs ${netoCatVes.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, cols[5].x + cols[5].w - 2, y + 3, { align: 'right' })
 
-      // Tachado si anulado
-      if (anul) {
-        doc.setDrawColor(...C_GRAY)
-        doc.setLineWidth(0.2)
-        doc.line(cols[2].x + 1.5, y + 2, cols[2].x + 1.5 + 44, y + 2)
-      }
-
-      y += rowHeight
+      y += 9.5
     })
-
-    // Fila de Total de la Categoría
-    y = checkPage(doc, y, 7.5)
-    doc.setFillColor(245, 247, 250)
-    doc.rect(MARGIN, y - 1, CONTENT_W, 6.5, 'F')
-    doc.setDrawColor(220, 226, 235)
-    doc.setLineWidth(0.3)
-    doc.line(MARGIN, y - 1, MARGIN + CONTENT_W, y - 1)
-    doc.line(MARGIN, y + 5.5, MARGIN + CONTENT_W, y + 5.5)
-
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(6.5)
-    doc.setTextColor(...C_DARK)
-    doc.text(`TOTAL ${cat.nombre.toUpperCase()}:`, cols[0].x + 2, y + 3)
-
-    // Total USD de la categoría
-    const netoCatUsd = cat.totalIngresosUsd - cat.totalEgresosUsd
-    doc.setTextColor(...(netoCatUsd >= 0 ? C_EMERALD : C_RED))
-    doc.text(fmtUsd(netoCatUsd), cols[4].x + cols[4].w - 2, y + 3, { align: 'right' })
-
-    // Total VES de la categoría
-    const netoCatVes = cat.totalIngresosVes - cat.totalEgresosVes
-    doc.setTextColor(...C_GRAY)
-    doc.text(`Bs ${netoCatVes.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, cols[5].x + cols[5].w - 2, y + 3, { align: 'right' })
-
-    y += 9.5
-  })
+  }
 
   // ═══ 6. GRAN TOTAL CONSOLIDADO ═════════════════════════════════════════════
   y = checkPage(doc, y, 12)
@@ -457,10 +462,17 @@ async function generarFinanzasResumenPDFImpl({
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7)
   doc.setTextColor(...C_WHITE)
-  doc.text('TOTALES GENERALES', cols[0].x + 1.5, y + 5.5)
-  doc.text(`${ingresos.length} ing · ${egresos.length} egr`, cols[2].x + 1.5, y + 5.5)
-  doc.text(fmtUsd(balanceUsd), cols[4].x + cols[4].w - 2, y + 5.5, { align: 'right' })
-  doc.text(`Bs ${balanceVes.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, cols[5].x + cols[5].w - 2, y + 5.5, { align: 'right' })
+  if (esResumido) {
+    doc.text('TOTALES GENERALES', MARGIN + 2, y + 5.5)
+    doc.text(`${ingresos.length} ing · ${egresos.length} egr`, MARGIN + 88 + 11, y + 5.5, { align: 'center' })
+    doc.text(fmtUsd(balanceUsd), MARGIN + 110 + 36 - 2, y + 5.5, { align: 'right' })
+    doc.text(`Bs ${balanceVes.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, MARGIN + 146 + 42 - 2, y + 5.5, { align: 'right' })
+  } else {
+    doc.text('TOTALES GENERALES', cols[0].x + 1.5, y + 5.5)
+    doc.text(`${ingresos.length} ing · ${egresos.length} egr`, cols[2].x + 1.5, y + 5.5)
+    doc.text(fmtUsd(balanceUsd), cols[4].x + cols[4].w - 2, y + 5.5, { align: 'right' })
+    doc.text(`Bs ${balanceVes.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, cols[5].x + cols[5].w - 2, y + 5.5, { align: 'right' })
+  }
 
   y += 14
 
@@ -479,7 +491,8 @@ async function generarFinanzasResumenPDFImpl({
   const safeDesde = String(rango.desde || '').replace(/[^\d-]/g, '') || 'inicio'
   const safeHasta = String(rango.hasta || '').replace(/[^\d-]/g, '') || 'hoy'
   const sufijoTipo = resumen.tipoFiltro === 'ingreso' ? '-ingresos' : resumen.tipoFiltro === 'egreso' ? '-egresos' : ''
-  const nombreArch = `finanzas-${safeDesde}_${safeHasta}${sufijoTipo}.pdf`
+  const prefijo = esResumido ? 'finanzas-resumido' : 'finanzas'
+  const nombreArch = `${prefijo}-${safeDesde}_${safeHasta}${sufijoTipo}.pdf`
   if (action === 'print') {
     if (!printWindow || printWindow.closed) throw new Error('La ventana de impresión no está disponible. Descarga el PDF para imprimirlo.')
     doc.autoPrint()

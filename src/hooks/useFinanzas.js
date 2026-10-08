@@ -143,6 +143,19 @@ export function useRevertirAnulacion() {
   })
 }
 
+export function useActualizarMovimiento() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, categoria, concepto, referencia, observaciones }) =>
+      apiPost('/api/finanzas/movimientos/actualizar', { id, categoria, concepto, referencia, observaciones }),
+    onSuccess: () => {
+      showToast.success('Movimiento actualizado')
+      client.invalidateQueries({ queryKey: BASE_KEY })
+    },
+    onError: error => showToast.error(error.message || 'No se pudo actualizar el movimiento'),
+  })
+}
+
 export function useEliminarCategoria() {
   const client = useQueryClient()
   return useMutation({

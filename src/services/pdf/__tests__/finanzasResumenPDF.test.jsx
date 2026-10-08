@@ -196,4 +196,44 @@ describe('generarFinanzasResumenPDFImpl', () => {
       expect.any(Number)
     )
   })
+
+  it('genera reporte resumido omitiendo detalle de movimientos individuales', async () => {
+    await generarFinanzasResumenPDFImpl({
+      movimientos: MOVIMIENTOS,
+      resumen: RESUMEN,
+      rango: { desde: '2026-09-01', hasta: '2026-09-30' },
+      config: { nombre_negocio: 'Construacero' },
+      action: 'download',
+      tipoReporte: 'resumido',
+    })
+
+    expect(docStub.save).toHaveBeenCalledWith('finanzas-resumido-2026-09-01_2026-09-30.pdf')
+    const textos = docStub.text.mock.calls.map(c => String(c[0]))
+    // Título indica Resumido
+    expect(textos.some(t => t.includes('Reporte de Ingresos y Egresos (Resumido)'))).toBe(true)
+    // Conserva resumen por categoría y totales generales
+    expect(textos.some(t => t.includes('DESGLOSE Y TOTALES POR CATEGORÍA'))).toBe(true)
+    expect(textos.some(t => t.includes('TOTALES GENERALES'))).toBe(true)
+    // Omite la sección de detalle de movimientos línea a línea
+    expect(textos.some(t => t.includes('DETALLE DE MOVIMIENTOS POR CATEGORÍA'))).toBe(false)
+    expect(textos.some(t => t.includes('Cobro cliente X'))).toBe(false)
+  })
+
+  it('genera reporte resumido con filtro de tipo y soporte de impresión', async () => {
+    const printWindow = { closed: false, location: { replace: vi.fn() } }
+    await generarFinanzasResumenPDFImpl({
+      printWindow,
+      movimientos: MOVIMIENTOS.filter(m => m.tipo === 'egreso'),
+      resumen: { ...RESUMEN, tipoFiltro: 'egreso' },
+      rango: { desde: '2026-09-01', hasta: '2026-09-30' },
+      action: 'print',
+      tipoReporte: 'resumido',
+    })
+
+    expect(docStub.autoPrint).toHaveBeenCalledTimes(1)
+    const textos = docStub.text.mock.calls.map(c => String(c[0]))
+    expect(textos.some(t => t === 'Reporte de Egresos (Resumido)')).toBe(true)
+  })
 })
+
+

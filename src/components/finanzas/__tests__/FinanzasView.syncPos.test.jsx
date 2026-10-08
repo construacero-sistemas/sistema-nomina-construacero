@@ -20,6 +20,7 @@ vi.mock('../../../hooks/useFinanzas.js', () => ({
   useFinanzasResumen: () => ({ data: { resumen: null }, isLoading: false, isError: false, refetch: vi.fn() }),
   useAnularMovimiento: () => ({ mutate: vi.fn(), isPending: false }),
   useRevertirAnulacion: () => ({ mutate: vi.fn(), isPending: false }),
+  useActualizarMovimiento: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
   useEliminarCategoria: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, variables: null }),
   useRestaurarCategoria: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, variables: null }),
   useCrearCategoria: () => ({ mutateAsync: vi.fn(), isPending: false }),

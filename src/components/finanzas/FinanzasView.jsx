@@ -2,17 +2,8 @@
 // Libro financiero administrativo: ingresos, egresos, reportes y gestión por Carteras (USD & Bolívares).
 import { useMemo, useRef, useState, useEffect } from 'react'
 import {
-  ArrowRightLeft,
-  BarChart3,
-  Download,
-  FileText,
-  Landmark,
-  Plus,
-  ReceiptText,
-  RefreshCw,
-  Wallet,
-  Printer,
-  Settings2,
+  ArrowRightLeft, BarChart3, Download, FileText, Landmark,
+  Plus, ReceiptText, RefreshCw, Wallet, Printer, Settings2,
 } from 'lucide-react'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
@@ -24,22 +15,16 @@ import useAuthStore from '../../../compat/store/useAuthStore.js'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
 import {
-  useAnularMovimiento,
-  useRevertirAnulacion,
-  useFinanzasCategorias,
-  useFinanzasMovimientos,
-  useFinanzasResumen,
-  usePuedeFinanzas,
-  usePreviewConciliacion,
-  useEliminarCategoria,
-  useRestaurarCategoria,
-  useCrearCategoria,
+  useAnularMovimiento, useRevertirAnulacion, useActualizarMovimiento, useFinanzasCategorias,
+  useFinanzasMovimientos, useFinanzasResumen, usePuedeFinanzas,
+  usePreviewConciliacion, useEliminarCategoria, useRestaurarCategoria, useCrearCategoria,
 } from '../../hooks/useFinanzas.js'
 import { showToast } from '../../../compat/components/ui/toastBus.js'
 import { useCuentasCustodia } from '../../hooks/useCuentasCustodia.js'
 import { tieneCapacidad } from '../../config/accesoModulos.js'
 import MovimientoForm from './MovimientoForm.jsx'
 import MovimientoTable from './MovimientoTable.jsx'
+import MovimientoEditarModal from './MovimientoEditarModal.jsx'
 import CarterasHeader from './CarterasHeader.jsx'
 import TransferenciaCarterasModal from './TransferenciaCarterasModal.jsx'
 import DetalleCuentaModal from './DetalleCuentaModal.jsx'
@@ -65,6 +50,7 @@ export default function FinanzasView() {
   const perfil = useAuthStore(state => state.perfil)
   const puede = usePuedeFinanzas()
   const puedeVerSaldos = tieneCapacidad(perfil, 'verSaldos')
+  const puedeEditar = tieneCapacidad(perfil, 'administrarSistema')
   const { tasaActiva, nombreTasa } = useMonedaNomina()
 
   // Pestaña activa: 'movimientos' (operación diaria) o 'tesoreria' (saldos y carteras)
@@ -85,8 +71,10 @@ export default function FinanzasView() {
   const [cuentaFormOpen, setCuentaFormOpen] = useState(false)
   const [cuentaEditar, setCuentaEditar] = useState(null)
   const [anular, setAnular] = useState(null)
+  const [movimientoEditar, setMovimientoEditar] = useState(null)
   const [conciliacionPreviewOpen, setConciliacionPreviewOpen] = useState(false)
   const [exportandoPdf, setExportandoPdf] = useState(false)
+  const [tipoReportePdf, setTipoReportePdf] = useState('resumido')
   const [exportProgress, setExportProgress] = useState(null)
   const [exportError, setExportError] = useState('')
   const exportController = useRef(null)
@@ -100,6 +88,7 @@ export default function FinanzasView() {
   const resumen = useFinanzasResumen({ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera })
   const anularMutation = useAnularMovimiento()
   const revertirAnulacion = useRevertirAnulacion()
+  const actualizarMutation = useActualizarMovimiento()
   const eliminarCategoriaM = useEliminarCategoria()
   const restaurarCategoriaM = useRestaurarCategoria()
   const crearCategoriaM = useCrearCategoria()
@@ -199,7 +188,7 @@ export default function FinanzasView() {
       if (dataset.summary.movimientos_sin_usd) throw new Error('Hay movimientos sin tasa histórica. Confirma esas tasas antes de emitir un reporte consolidado en USD.')
       const { generarFinanzasResumenPDF } = await import('../../services/pdf/finanzasResumenPDF.js')
       controller.signal.throwIfAborted()
-      await generarFinanzasResumenPDF({ movimientos: dataset.rows, resumen: { ...dataset.summary, tipoFiltro: tipo || '' }, rango: { desde, hasta }, tasaActiva, nombreTasa, action, printWindow })
+      await generarFinanzasResumenPDF({ movimientos: dataset.rows, resumen: { ...dataset.summary, tipoFiltro: tipo || '' }, rango: { desde, hasta }, tasaActiva, nombreTasa, action, printWindow, tipoReporte: tipoReportePdf })
     } catch (error) {
       printWindow?.close()
       if (error.name !== 'AbortError') {
@@ -354,7 +343,27 @@ export default function FinanzasView() {
               <p className="text-xs text-slate-600 font-semibold">
                 El PDF recupera todos los registros de los filtros activos: {fechaCorta(desde)} – {fechaCorta(hasta)}{tipo ? ` · ${tipo === 'ingreso' ? 'ingresos' : 'egresos'}` : ''} · {totalServidor ?? 'total pendiente'} movimiento(s)
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex items-center p-0.5 bg-slate-100 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setTipoReportePdf('resumido')}
+                    className={`min-h-11 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${tipoReportePdf === 'resumido' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                    style={{ touchAction: 'manipulation' }}
+                    aria-pressed={tipoReportePdf === 'resumido'}
+                  >
+                    Resumido
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTipoReportePdf('completo')}
+                    className={`min-h-11 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${tipoReportePdf === 'completo' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                    style={{ touchAction: 'manipulation' }}
+                    aria-pressed={tipoReportePdf === 'completo'}
+                  >
+                    Completo
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => handleExportarPdf('print')}
@@ -409,6 +418,7 @@ export default function FinanzasView() {
                   movimientos={movimientosFiltrados}
                   onAnular={movimiento => setAnular(movimiento)}
                   onRevertir={movimiento => revertirAnulacion.mutate({ id: movimiento.id })}
+                  onEditar={puedeEditar ? setMovimientoEditar : undefined}
                   tasaBcv={tasaActiva}
                   tasaUsdt={usdt}
                 />
@@ -554,6 +564,16 @@ export default function FinanzasView() {
         />
       )}
       {anular && <AnularDialog movimiento={anular} pending={anularMutation.isPending} onClose={() => setAnular(null)} onConfirm={motivo => { anularMutation.mutate({ id: anular.id, motivo }, { onSuccess: () => setAnular(null) }) }} />}
+      {movimientoEditar && (
+        <MovimientoEditarModal
+          open={!!movimientoEditar}
+          movimiento={movimientoEditar}
+          categorias={categoriasVisibles}
+          pending={actualizarMutation.isPending}
+          onClose={() => setMovimientoEditar(null)}
+          onGuardar={async fields => { await actualizarMutation.mutateAsync(fields); setMovimientoEditar(null) }}
+        />
+      )}
       {categoriasOpen && (
         <CategoriasModal
           categorias={categoriasVisibles}

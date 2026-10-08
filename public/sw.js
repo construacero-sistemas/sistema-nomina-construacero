@@ -27,9 +27,20 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url)
   if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/')) return
   if (request.mode === 'navigate') {
-    // Shell de la versión activa: sus assets fueron precargados en install.
-    // Los datos protegidos no están en este caché ni se habilitan sin sesión.
-    event.respondWith(caches.open(CACHE).then(async cache => (await cache.match('/index.html')) || fetch(request)))
+    // Red primero: tras un deploy el shell debe venir fresco del servidor;
+    // el caché solo cubre sin conexión. Servir el shell cacheado era la causa
+    // del bucle "MIME text/html": HTML viejo → hashes viejos → fallback HTML.
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(request)
+        const cache = await caches.open(CACHE)
+        await cache.put('/index.html', fresh.clone())
+        return fresh
+      } catch {
+        const cache = await caches.open(CACHE)
+        return (await cache.match('/index.html')) || new Response('Sin conexión', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
+      }
+    })())
     return
   }
   const allowed = APP_SHELL.includes(url.pathname) || /^\/assets\/[^/]+\.(?:js|css|woff2?|png|svg|webp)$/.test(url.pathname)

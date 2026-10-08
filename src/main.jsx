@@ -63,6 +63,26 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 // No hidratar el caché global anterior antes de resolver la identidad.
 indexedDbPersister.removeClient().catch(() => undefined)
 
+// Auto-recovery en app: si un chunk dinámico falla (hash viejo tras deploy),
+// destruir caches/SW y recargar UNA sola vez para evitar bucles.
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault()
+  const KEY = 'sw-recovery-attempt'
+  if (sessionStorage.getItem(KEY)) return
+  sessionStorage.setItem(KEY, String(Date.now()))
+  ;(async () => {
+    try {
+      const ks = await caches.keys()
+      await Promise.all(ks.map(k => caches.delete(k)))
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        await Promise.all(regs.map(r => r.unregister()))
+      }
+    } catch { /* degradar a reload simple */ }
+    window.location.reload()
+  })()
+})
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary>

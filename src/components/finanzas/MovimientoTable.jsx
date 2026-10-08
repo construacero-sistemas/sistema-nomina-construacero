@@ -9,6 +9,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Eye,
+  Pencil,
   RotateCcw,
 } from 'lucide-react'
 import HorizontalScroll from '../../../compat/components/ui/HorizontalScroll.jsx'
@@ -25,7 +26,7 @@ function date(value) {
 
 const OPCIONES_POR_PAGINA = [10, 25, 50, 100]
 
-export default function MovimientoTable({ movimientos = [], onAnular, onRevertir, tasaBcv = 0, tasaUsdt = 0, hasMore = false, onLoadMore, isLoadingMore = false, loadMoreError = '', totalServidor }) {
+export default function MovimientoTable({ movimientos = [], onAnular, onRevertir, onEditar, tasaBcv = 0, tasaUsdt = 0, hasMore = false, onLoadMore, isLoadingMore = false, loadMoreError = '', totalServidor }) {
   const [pagina, setPagina] = useState(1)
   const [porPagina, setPorPagina] = useState(10)
 
@@ -108,7 +109,7 @@ export default function MovimientoTable({ movimientos = [], onAnular, onRevertir
               </tr>
             ) : (
               movimientosPaginados.map((item) => (
-                <DesktopRow key={item.id} item={item} onAnular={onAnular} onRevertir={onRevertir} tasaBcv={tasaBcv} tasaUsdt={tasaUsdt} />
+                <DesktopRow key={item.id} item={item} onAnular={onAnular} onRevertir={onRevertir} onEditar={onEditar} tasaBcv={tasaBcv} tasaUsdt={tasaUsdt} />
               ))
             )}
           </tbody>
@@ -123,7 +124,7 @@ export default function MovimientoTable({ movimientos = [], onAnular, onRevertir
           </div>
         ) : (
           movimientosPaginados.map((item) => (
-            <MobileRow key={item.id} item={item} onAnular={onAnular} onRevertir={onRevertir} tasaBcv={tasaBcv} tasaUsdt={tasaUsdt} />
+            <MobileRow key={item.id} item={item} onAnular={onAnular} onRevertir={onRevertir} onEditar={onEditar} tasaBcv={tasaBcv} tasaUsdt={tasaUsdt} />
           ))
         )}
       </div>
@@ -233,7 +234,7 @@ export default function MovimientoTable({ movimientos = [], onAnular, onRevertir
   )
 }
 
-function DesktopRow({ item, onAnular, onRevertir, tasaBcv, tasaUsdt }) {
+function DesktopRow({ item, onAnular, onRevertir, onEditar, tasaBcv, tasaUsdt }) {
   const activo = item.estado === 'activo'
   const equiv = calcularEquivalente(item, tasaBcv, tasaUsdt)
   return (
@@ -263,14 +264,27 @@ function DesktopRow({ item, onAnular, onRevertir, tasaBcv, tasaUsdt }) {
       </td>
       <td className="px-4 py-3 text-right whitespace-nowrap">
         {item.operacion_id ? <span className="text-xs text-slate-600">Gestionar desde su operación de origen</span> : activo ? (
-          <button
-            type="button"
-            onClick={() => onAnular?.(item)}
-            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
-            aria-label="Anular movimiento"
-          >
-            <Ban size={13} /> Anular
-          </button>
+          <div className="inline-flex items-center gap-1 justify-end">
+            {onEditar && (
+              <button
+                type="button"
+                onClick={() => onEditar(item)}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-700 hover:text-primary hover:bg-slate-100 border border-transparent hover:border-slate-200 transition-colors cursor-pointer"
+                aria-label="Editar movimiento"
+                title="Editar categoría y concepto"
+              >
+                <Pencil size={12} /> Editar
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onAnular?.(item)}
+              className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
+              aria-label="Anular movimiento"
+            >
+              <Ban size={13} /> Anular
+            </button>
+          </div>
         ) : (
           <button
             type="button"
@@ -287,7 +301,7 @@ function DesktopRow({ item, onAnular, onRevertir, tasaBcv, tasaUsdt }) {
   )
 }
 
-function MobileRow({ item, onAnular, onRevertir, tasaBcv, tasaUsdt }) {
+function MobileRow({ item, onAnular, onRevertir, onEditar, tasaBcv, tasaUsdt }) {
   const activo = item.estado === 'activo'
   const equiv = calcularEquivalente(item, tasaBcv, tasaUsdt)
   return (
@@ -315,18 +329,33 @@ function MobileRow({ item, onAnular, onRevertir, tasaBcv, tasaUsdt }) {
       <div className="mt-3 flex items-center justify-between gap-2 pt-1">
         <StateBadge state={item.estado} />
         {item.operacion_id ? <span className="text-xs text-slate-600">Gestionar desde su operación de origen</span> : activo ? (
-          <button
-            type="button"
-            onClick={() => onAnular?.(item)}
-            className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors cursor-pointer"
-          >
-            <Ban size={14} /> Anular
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onEditar && (
+              <button
+                type="button"
+                onClick={() => onEditar(item)}
+                className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 hover:bg-slate-200 transition-colors cursor-pointer"
+                style={{ touchAction: 'manipulation' }}
+                aria-label="Editar movimiento"
+              >
+                <Pencil size={13} /> Editar
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onAnular?.(item)}
+              className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors cursor-pointer"
+              style={{ touchAction: 'manipulation' }}
+            >
+              <Ban size={14} /> Anular
+            </button>
+          </div>
         ) : (
           <button
             type="button"
             onClick={() => onRevertir?.(item)}
             className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+            style={{ touchAction: 'manipulation' }}
           >
             <RotateCcw size={14} /> Restaurar
           </button>

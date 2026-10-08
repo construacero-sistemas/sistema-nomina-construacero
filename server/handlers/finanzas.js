@@ -48,6 +48,19 @@ function operarContext(request, env) {
   })
 }
 
+// Contexto exclusivo para el jefe/soporte (administrarSistema).
+function jefeContext(request, env) {
+  return validateOperator(request, env).then(result => {
+    if (result.error) return result
+    const denied = requireCapacidad(result.operador, 'administrarSistema', request)
+    if (denied) return { error: denied }
+    if (!isValidUuid(result.operador.cuenta_id)) {
+      return { error: jsonError('Cuenta inválida', 403, request) }
+    }
+    return result
+  })
+}
+
 function serviceHeaders(env, prefer = 'return=representation') {
   return { ...supaServiceHeaders(env), Prefer: prefer }
 }
@@ -334,6 +347,69 @@ export async function handleRevertirAnulacionMovimiento(request, env) {
   }).catch(() => {})
 
   return json({ ok: true, idempotente: false, movimiento: movementResponse(row) }, 200, request)
+}
+
+// POST /api/finanzas/movimientos/actualizar
+// Edición directa de categoría, concepto y referencia (exclusivo jefe).
+export async function handleActualizarFinanzasMovimiento(request, env) {
+  const context = await jefeContext(request, env)
+  if (context.error) return context.error
+  const parsed = await readBody(request)
+  if (parsed.error) return parsed.error
+
+  const id = String(parsed.body?.id || '').trim()
+  const categoria = String(parsed.body?.categoria || '').trim()
+  const concepto = String(parsed.body?.concepto || '').trim()
+  const referencia = parsed.body?.referencia != null ? String(parsed.body.referencia).trim() : null
+  const observaciones = parsed.body?.observaciones != null ? String(parsed.body.observaciones).trim() : null
+
+  if (!isValidUuid(id)) return jsonError('id inválido', 400, request)
+  if (!categoria || categoria.length > 80) return jsonError('Categoría requerida (máx. 80 caracteres)', 400, request)
+  if (!concepto || concepto.length > 180) return jsonError('Concepto requerido (máx. 180 caracteres)', 400, request)
+  if (referencia && referencia.length > 160) return jsonError('Referencia demasiado larga (máx. 160 caracteres)', 400, request)
+  if (observaciones && observaciones.length > 1000) return jsonError('Observaciones demasiado largas (máx. 1000 caracteres)', 400, request)
+
+  const current = await readMovement(env, context.operador.cuenta_id, id)
+  if (current.error) return jsonError('No se pudo leer el movimiento', 500, request)
+  if (!current.row) return jsonError('Movimiento no encontrado', 404, request)
+  if (current.row.estado === 'anulado') {
+    return jsonError('No se puede editar un movimiento anulado', 409, request)
+  }
+
+  const patchData = {
+    categoria,
+    concepto,
+    ...(referencia !== null ? { referencia: referencia || null } : {}),
+    ...(observaciones !== null ? { observaciones: observaciones || null } : {}),
+  }
+
+  const response = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?id=eq.${queryValue(id)}` +
+      `&${accountFilter(context.operador.cuenta_id)}&estado=eq.activo`,
+    {
+      method: 'PATCH',
+      headers: serviceHeaders(env),
+      body: JSON.stringify(patchData),
+    },
+  )
+  if (!response.ok) return jsonError('No se pudo actualizar el movimiento', 409, request)
+  const [row] = await response.json()
+  if (!row) return jsonError('Movimiento no encontrado o no modificable', 409, request)
+
+  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
+    usuarioId: context.operador.id,
+    usuarioNombre: context.operador.nombre,
+    usuarioRol: context.operador.rol,
+    cuentaId: context.operador.cuenta_id,
+    categoria: 'FINANZAS',
+    accion: 'MOVIMIENTO_ACTUALIZADO',
+    entidadTipo: 'finanzas_movimientos',
+    entidadId: row.id,
+    meta: { categoria, concepto, referencia },
+    ip: context.ip,
+  }).catch(() => {})
+
+  return json({ ok: true, movimiento: movementResponse(row) }, 200, request)
 }
 
 // POST /api/finanzas/categorias/eliminar
