@@ -4,9 +4,9 @@ import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import { Settings2, RefreshCw } from 'lucide-react'
 
-export function FilterField({ label, children }) {
+export function FilterField({ label, children, className = '' }) {
   return (
-    <label className="space-y-1 min-w-0">
+    <label className={`space-y-1 min-w-0 ${className}`}>
       <span className="block text-[11px] font-bold text-slate-500">{label}</span>
       <span className="block [&>input]:w-full [&>input]:h-11 [&>input]:rounded-xl [&>input]:border [&>input]:border-slate-200 [&>input]:bg-slate-50 [&>input]:px-2.5 [&>input]:text-xs [&>input]:text-slate-700 [&>select]:w-full [&>select]:h-11 [&>select]:rounded-xl [&>select]:border [&>select]:border-slate-200 [&>select]:bg-slate-50 [&>select]:px-2.5 [&>select]:text-xs [&>select]:text-slate-700">
         {children}
@@ -88,7 +88,7 @@ export function FinanzasFiltrosSeccion({
         ))}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
         <FilterField label="Desde"><DatePicker value={desde} onChange={setDesde} clearable={false} aria-label="Fecha inicial del reporte" /></FilterField>
         <FilterField label="Hasta"><DatePicker value={hasta} onChange={setHasta} clearable={false} aria-label="Fecha final del reporte" /></FilterField>
         <FilterField label="Tipo">
@@ -99,8 +99,16 @@ export function FinanzasFiltrosSeccion({
             options={[{ value: 'ingreso', label: 'Ingresos' }, { value: 'egreso', label: 'Egresos' }]}
           />
         </FilterField>
-        <FilterField label="Categoría">
-          <div className="flex gap-1.5">
+        <FilterField label="Moneda">
+          <Choice
+            value={moneda}
+            onChange={setMoneda}
+            placeholder="Todas"
+            options={['USD', 'VES', 'USDT'].map(value => ({ value, label: value }))}
+          />
+        </FilterField>
+        <FilterField label="Categoría" className="col-span-2 sm:col-span-1 lg:col-span-1">
+          <div className="flex items-center gap-1.5">
             <div className="flex-1 min-w-0">
               <Choice
                 value={categoria}
@@ -121,22 +129,30 @@ export function FinanzasFiltrosSeccion({
               className="shrink-0 h-11 w-11 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700 flex items-center justify-center cursor-pointer"
               aria-label="Gestionar categorías"
               title="Gestionar categorías"
+              style={{ touchAction: 'manipulation' }}
             >
               <Settings2 size={15} />
             </button>
           </div>
         </FilterField>
-        <FilterField label="Moneda">
-          <Choice
-            value={moneda}
-            onChange={setMoneda}
-            placeholder="Todas"
-            options={['USD', 'VES', 'USDT'].map(value => ({ value, label: value }))}
-          />
-        </FilterField>
-        <div className="flex items-end gap-2">
-          <button type="button" onClick={resetFiltros} className="flex-1 h-11 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">Limpiar</button>
-          <button type="button" onClick={onRefresh} className="h-11 w-11 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center cursor-pointer" aria-label="Actualizar reportes"><RefreshCw size={15} /></button>
+        <div className="col-span-2 sm:col-span-1 lg:col-span-1 flex items-end gap-2">
+          <button
+            type="button"
+            onClick={resetFiltros}
+            className="flex-1 h-11 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+            style={{ touchAction: 'manipulation' }}
+          >
+            Limpiar
+          </button>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="h-11 w-11 shrink-0 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center justify-center cursor-pointer"
+            aria-label="Actualizar reportes"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <RefreshCw size={15} />
+          </button>
         </div>
       </div>
 
