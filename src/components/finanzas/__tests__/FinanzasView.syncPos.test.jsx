@@ -28,6 +28,10 @@ vi.mock('../../../hooks/useFinanzas.js', () => ({
   usePreviewConciliacion: () => ({ data: null, isPending: false, reset: vi.fn(), mutate: vi.fn(), mutateAsync: vi.fn() }),
   // El formulario y los modales de cuentas usan estos:
   useCrearMovimiento: () => ({ mutateAsync: vi.fn(async () => ({})), isPending: false }),
+  // FinanzasView consulta el período mensual en cada render:
+  useFinanzasPeriodoMensual: () => ({ data: null, isLoading: false, isError: false }),
+  useOperarFinanzasPeriodoMensual: () => ({ mutateAsync: vi.fn(async () => ({})), isPending: false }),
+  useRegistrarCuentaEnPeriodoMensual: () => ({ mutateAsync: vi.fn(async () => ({})), isPending: false }),
 }))
 
 vi.mock('../../../hooks/useMonedaNomina.js', () => ({
