@@ -1,9 +1,9 @@
 // src/components/finanzas/FinanzasView.jsx
 // Libro financiero administrativo: ingresos, egresos, reportes y gestión por Carteras (USD & Bolívares).
-import { useMemo, useRef, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import {
-  ArrowRightLeft, BarChart3, Download, FileText, Landmark,
-  Plus, ReceiptText, RefreshCw, Wallet, Printer, Settings2,
+  ArrowRightLeft, BarChart3, Download, Landmark,
+  Plus, ReceiptText, RefreshCw, Wallet, Settings2,
 } from 'lucide-react'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
@@ -18,6 +18,7 @@ import {
   useAnularMovimiento, useRevertirAnulacion, useActualizarMovimiento, useFinanzasCategorias,
   useFinanzasMovimientos, useFinanzasResumen, usePuedeFinanzas,
   usePreviewConciliacion, useEliminarCategoria, useRestaurarCategoria, useCrearCategoria,
+  useFinanzasPeriodoMensual, useOperarFinanzasPeriodoMensual, useRegistrarCuentaEnPeriodoMensual,
 } from '../../hooks/useFinanzas.js'
 import { showToast } from '../../../compat/components/ui/toastBus.js'
 import { useCuentasCustodia } from '../../hooks/useCuentasCustodia.js'
@@ -36,12 +37,12 @@ import AnularDialog from './AnularDialog.jsx'
 import { FinanzasFiltrosSeccion, InlineError } from './FinanzasFiltrosUI.jsx'
 import { exportarCsv } from './exportarMovimientosCsv.js'
 import { isoToday, monthStart, RANGOS_RAPIDOS, rangoRapidoActivo, aplicarRangoRapido as resolverRango } from './fechasRapidas.js'
-import { fechaCorta, formatNumber, formatUsd } from './formatos.js'
-import { logClientError } from '../../../compat/utils/errorLogger.js'
+import { formatNumber, formatUsd } from './formatos.js'
 import { contarMovimientosSinCuenta } from '../../utils/carterasHelper.js'
 import { summarizeConfirmedBalances } from '../../utils/confirmedBalances.js'
-import { loadFinanceExport } from './exportData.js'
 import useCustodySave from '../../hooks/useCustodySave.js'
+import PeriodoMensualFinanzas from './PeriodoMensualFinanzas.jsx'
+import FinanzasExportBar from './FinanzasExportBar.jsx'
 
 // Export CSV: oculto por ahora (se reactiva poniendo true).
 const MOSTRAR_CSV = false
@@ -73,16 +74,11 @@ export default function FinanzasView() {
   const [anular, setAnular] = useState(null)
   const [movimientoEditar, setMovimientoEditar] = useState(null)
   const [conciliacionPreviewOpen, setConciliacionPreviewOpen] = useState(false)
-  const [exportandoPdf, setExportandoPdf] = useState(false)
-  const [tipoReportePdf, setTipoReportePdf] = useState('resumido')
-  const [exportProgress, setExportProgress] = useState(null)
-  const [exportError, setExportError] = useState('')
-  const exportController = useRef(null)
-  useEffect(() => () => exportController.current?.abort(), [])
   const [categoriasOpen, setCategoriasOpen] = useState(false)
   const [cuentaTransferir, setCuentaTransferir] = useState(null)
 
-  const { usd, usdt } = useTasaCambioNomina()
+  const marketRates = useTasaCambioNomina()
+  const { usd, usdt } = marketRates
   const categorias = useFinanzasCategorias()
   const movimientos = useFinanzasMovimientos({ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera, mostrarAnulados })
   const resumen = useFinanzasResumen({ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera })
@@ -130,6 +126,10 @@ export default function FinanzasView() {
     saldos: saldoSnapshot, saldosCargando, saldosError, error: cuentasError,
     conciliacionPendiente, refetch: refrescarCuentas,
   } = useCuentasCustodia()
+  const mesActivo = `${isoToday().slice(0, 7)}-01`
+  const periodoMensual = useFinanzasPeriodoMensual(mesActivo)
+  const operarPeriodoMensual = useOperarFinanzasPeriodoMensual()
+  const registrarCuentaEnPeriodo = useRegistrarCuentaEnPeriodoMensual()
 
   const saldosCarteras = useMemo(() => saldosError ? null : summarizeConfirmedBalances(saldoSnapshot, tasaActiva), [saldoSnapshot, saldosError, tasaActiva])
 
@@ -166,40 +166,21 @@ export default function FinanzasView() {
     setMostrarAnulados(false)
   }
 
-  const guardarCuenta = useCustodySave({ agregarCuenta, editarCuenta, usd, usdt })
+  const guardarCuenta = useCustodySave({
+    agregarCuenta, editarCuenta, usd, usdt,
+    registrarAperturaMensual: async ({ cuentaId, amount, operationId }) => {
+      if (cuentaEditar || periodoMensual.data?.estado !== 'abierto') return false
+      if (!(marketRates.usd > 0) || !(marketRates.usdt > 0)) throw new Error('No se puede valorar la cuenta sin tasas de apertura confirmadas.')
+      await registrarCuentaEnPeriodo.mutateAsync({
+        mesInicio: periodoMensual.data.mes, idempotencyKey: `alta-mes:${operationId}`,
+        payload: { cuentaCustodiaId: cuentaId, saldoReal: amount,
+          tasaUsdVes: String(marketRates.usd), tasaUsdtVes: String(marketRates.usdt), motivo: null },
+      })
+      return true
+    },
+  })
   const handleGuardarCuenta = (campos, saldo, clave) => guardarCuenta(campos, saldo, clave, cuentaEditar?.id)
 
-  // Reporte PDF del rango/filtros activos (resumen + detalle línea por línea).
-  const handleExportarPdf = async (action = 'download') => {
-    if (exportController.current) return
-    // Reservar ventana dentro del gesto; no después de imports/red asíncronos.
-    const printWindow = action === 'print' ? window.open('', '_blank') : null
-    if (printWindow) { printWindow.opener = null; printWindow.document.title = 'Preparando reporte financiero' }
-    if (action === 'print' && !printWindow) {
-      setExportError('El navegador bloqueó la ventana. Usa Descargar PDF y ábrelo desde Archivos para imprimir.')
-      return
-    }
-    const controller = new AbortController()
-    exportController.current = controller
-    setExportandoPdf(action); setExportError(''); setExportProgress(null)
-    try {
-      const dataset = await loadFinanceExport({ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera, mostrarAnulados }, { signal: controller.signal, onProgress: setExportProgress })
-      controller.signal.throwIfAborted()
-      if (dataset.summary.movimientos_sin_usd) throw new Error('Hay movimientos sin tasa histórica. Confirma esas tasas antes de emitir un reporte consolidado en USD.')
-      const { generarFinanzasResumenPDF } = await import('../../services/pdf/finanzasResumenPDF.js')
-      controller.signal.throwIfAborted()
-      await generarFinanzasResumenPDF({ movimientos: dataset.rows, resumen: { ...dataset.summary, tipoFiltro: tipo || '' }, rango: { desde, hasta }, tasaActiva, nombreTasa, action, printWindow, tipoReporte: tipoReportePdf })
-    } catch (error) {
-      printWindow?.close()
-      if (error.name !== 'AbortError') {
-        setExportError(error.message || 'No se pudo generar el reporte completo.')
-        logClientError({ mensaje: `Error exportando reporte financiero: ${error?.message || error}`, categoria: 'FINANZAS_PDF' })
-      }
-    } finally {
-      exportController.current = null
-      setExportandoPdf(null); setExportProgress(null)
-    }
-  }
 
   if (!puede) {
     return (
@@ -339,57 +320,14 @@ export default function FinanzasView() {
           />
 
             {/* Exportación del reporte del período filtrado */}
-            <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-slate-600 font-semibold">
-                El PDF recupera todos los registros de los filtros activos: {fechaCorta(desde)} – {fechaCorta(hasta)}{tipo ? ` · ${tipo === 'ingreso' ? 'ingresos' : 'egresos'}` : ''} · {totalServidor ?? 'total pendiente'} movimiento(s)
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex items-center p-0.5 bg-slate-100 rounded-xl border border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setTipoReportePdf('resumido')}
-                    className={`min-h-11 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${tipoReportePdf === 'resumido' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                    style={{ touchAction: 'manipulation' }}
-                    aria-pressed={tipoReportePdf === 'resumido'}
-                  >
-                    Resumido
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTipoReportePdf('completo')}
-                    className={`min-h-11 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${tipoReportePdf === 'completo' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                    style={{ touchAction: 'manipulation' }}
-                    aria-pressed={tipoReportePdf === 'completo'}
-                  >
-                    Completo
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleExportarPdf('print')}
-                  disabled={!fechaValida || !!exportandoPdf || movimientosFiltrados.length === 0}
-                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 min-h-11 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-black text-slate-700 disabled:opacity-40 active:scale-95 transition-all cursor-pointer"
-                  style={{ touchAction: 'manipulation' }}
-                >
-                  <Printer size={14} />
-                  <span>{exportandoPdf === 'print' ? 'Preparando...' : 'Imprimir'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleExportarPdf('download')}
-                  disabled={!fechaValida || !!exportandoPdf || movimientosFiltrados.length === 0}
-                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 min-h-11 rounded-xl bg-primary/10 border border-primary/20 text-xs font-black text-primary hover:bg-primary/20 disabled:opacity-40 active:scale-95 transition-all shadow-xs cursor-pointer"
-                  style={{ touchAction: 'manipulation' }}
-                >
-                  <FileText size={14} />
-                  <span>{exportandoPdf === 'download' ? 'Generando PDF...' : 'Descargar PDF'}</span>
-                </button>
-              </div>
-            </div>
-
-            {exportError && <InlineError message={exportError} onRetry={() => handleExportarPdf('download')} />}
-            {exportandoPdf && <div role="status" className="flex flex-wrap gap-3 items-center text-sm text-slate-700"><span>{exportProgress ? `${exportProgress.loaded} de ${exportProgress.total} registros recuperados` : 'Preparando datos completos...'}</span><button type="button" onClick={() => exportController.current?.abort()} className="min-h-11 px-3 py-2 rounded-xl border border-slate-300">Cancelar preparación</button></div>}
-            {!fechaValida && <p className="mt-2 text-xs font-semibold text-red-600" role="alert">El rango de fechas no es válido.</p>}
+            <FinanzasExportBar
+              filtros={{ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera, mostrarAnulados }}
+              fechaValida={fechaValida}
+              movimientosCount={movimientosFiltrados.length}
+              totalServidor={totalServidor}
+              tasaActiva={tasaActiva}
+              nombreTasa={nombreTasa}
+            />
 
           {/* KPI Cards Globales del período */}
           {puedeVerSaldos && <ResumenPeriodoKpis summary={resumen.isError ? null : summary} loading={resumen.isLoading} moneda={moneda} onSelectMoneda={setMoneda} tasaActiva={tasaActiva} />}
@@ -434,6 +372,18 @@ export default function FinanzasView() {
       {puedeVerSaldos && pestanaVisible === 'tesoreria' && (
         <div className="space-y-5">
           {/* 1. Panel de Carteras Maestras en Vivo (Fichas Resumidas Macro) */}
+          <PeriodoMensualFinanzas
+            periodo={periodoMensual.data}
+            saldos={saldoSnapshot}
+            cuentas={cuentas}
+            loading={periodoMensual.isLoading || saldosCargando}
+            pending={operarPeriodoMensual.isPending || registrarCuentaEnPeriodo.isPending}
+            error={periodoMensual.isError ? periodoMensual.error?.message : ''}
+            rates={marketRates}
+            onRefresh={async () => { await Promise.all([periodoMensual.refetch(), refrescarCuentas()]) }}
+            onOpen={fields => operarPeriodoMensual.mutateAsync(fields)}
+            onClose={fields => operarPeriodoMensual.mutateAsync(fields)}
+          />
           <CarterasHeader
             saldos={saldosCarteras} loading={saldosCargando} error={saldosError} conciliacionPendiente={conciliacionPendiente} onRetry={refrescarCuentas}
             filtroCartera={filtroCartera}

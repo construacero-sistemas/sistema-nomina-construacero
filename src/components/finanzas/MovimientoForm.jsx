@@ -57,6 +57,8 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
   const [observacionTasa, setObservacionTasa] = useState('')
 
   const [referencia, setReferencia] = useState('')
+  const [motivoCoincidencia, setMotivoCoincidencia] = useState('')
+  const [solicitaMotivoCoincidencia, setSolicitaMotivoCoincidencia] = useState(false)
 
   // Creación de categorías personalizadas (inline, sin salir del formulario)
   const [creandoCategoria, setCreandoCategoria] = useState(false)
@@ -213,6 +215,10 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
   }, [modoTasa, tasaManual, usd, usdt, eur])
 
   const montoNum = Number(monto) || 0
+  // Ayuda visual: el servidor y la base imponen la regla de saldo.
+  const carteraEgreso = tipo === 'egreso' && Array.isArray(cuentas) ? cuentas.find(c => c.id === cuentaOrigen) : null
+  const saldoCartera = carteraEgreso?.saldoConfirmado && Number.isFinite(carteraEgreso.saldo) ? carteraEgreso.saldo : null
+  const excedeSaldo = saldoCartera != null && montoNum > 0 && Math.round(montoNum * 1e6) > Math.round(saldoCartera * 1e6)
 
   // Cálculo de equivalencias en tiempo real
   const equivalenteVes = useMemo(() => {
@@ -248,6 +254,9 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
       // reactivaría el banner de conciliación pendiente para todo el libro.
       if (!cuentas.some(c => c.id === cuentaOrigen)) return 'La cuenta seleccionada ya no existe. Vuelve a elegirla.'
     }
+    if (excedeSaldo) return `El egreso supera el saldo disponible (${formatNumber(saldoCartera)} ${carteraEgreso.moneda}).`
+    if (motivoCoincidencia.length > 0 && motivoCoincidencia.trim().length < 8) return 'Explica la coincidencia con al menos 8 caracteres.'
+    if (motivoCoincidencia.trim().length > 300) return 'La justificación no puede superar 300 caracteres.'
     if (partes.length > 0) {
       const sumaPartes = partes.reduce((acc, p) => acc + (Number(p.monto) || 0), 0)
       if (Math.abs(sumaPartes - montoNum) > 0.01) return 'La suma de las partes debe igualar el monto total.'
@@ -289,6 +298,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
           : `Tasa ${fuenteTasaFinal} registrada (${tasaEfectiva.toFixed(2)} Bs/$)`,
         referencia: refFinal,
         observaciones: null,
+        ...(motivoCoincidencia.trim() ? { motivoCoincidencia: motivoCoincidencia.trim() } : {}),
         metodoPago,
         cuentaOrigen: cuentaOrigenFinal ? capitalizarPalabras(cuentaOrigenFinal) : null,
         cuentaCustodiaId: cuentaSeleccionada?.id || null,
@@ -303,6 +313,10 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
       })
       onClose()
     } catch (submitError) {
+      if (submitError.code === 'FINANCIAL_DUPLICATE_SIMILAR') {
+        setMotivoCoincidencia('')
+        setSolicitaMotivoCoincidencia(true)
+      }
       setError(submitError.message || 'No se pudo registrar el movimiento.')
     }
   }
@@ -316,10 +330,13 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
     >
       <form onSubmit={submit} className="space-y-4" aria-busy={disabled}>
         {error && (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700" role="alert">
+          <div className={`rounded-xl border p-3 text-xs font-bold ${solicitaMotivoCoincidencia ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-rose-200 bg-rose-50 text-rose-700'}`} role="alert">
             {error}
           </div>
         )}
+        {solicitaMotivoCoincidencia && <Field label="Justificación de coincidencia (obligatoria, se guardará en el movimiento)">
+          <input value={motivoCoincidencia} onChange={event => setMotivoCoincidencia(event.target.value)} maxLength={300} minLength={8} required disabled={disabled} className={inputClass} placeholder="Explica por qué es una operación distinta" />
+        </Field>}
 
         {/* 1. Selector de Tipo (Ingreso / Egreso) */}
         <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-100/90 rounded-2xl">
@@ -522,6 +539,13 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
           numPartes={partes.length}
         />
 
+        {saldoCartera != null && (
+          <p data-testid="saldo-cartera" className={`text-xs font-semibold ${excedeSaldo ? 'text-rose-700' : 'text-slate-500'}`}>
+            Saldo disponible en {carteraEgreso.nombre}: {formatNumber(saldoCartera)} {carteraEgreso.moneda}
+            {excedeSaldo ? ' — el monto lo supera.' : ''}
+          </p>
+        )}
+
         {/* 7. Botones de acción */}
         <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 pt-3 border-t border-slate-100">
           <button
@@ -534,7 +558,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
           </button>
           <button
             type="submit"
-            disabled={disabled}
+            disabled={disabled || excedeSaldo}
             className="h-11 px-5 rounded-xl bg-primary text-xs font-black text-white hover:bg-primary-hover disabled:opacity-50 active:scale-95 transition-all shadow-md inline-flex items-center justify-center gap-2 cursor-pointer"
             style={{ touchAction: 'manipulation' }}
           >

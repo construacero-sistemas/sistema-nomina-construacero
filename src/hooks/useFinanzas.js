@@ -30,7 +30,7 @@ async function apiPost(path, body) {
     body: JSON.stringify(body),
   })
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.error || `Error ${response.status}`)
+  if (!response.ok) throw Object.assign(new Error(payload.error || `Error ${response.status}`), payload, { status: response.status })
   return payload
 }
 
@@ -112,6 +112,50 @@ export function useCrearMovimiento() {
       client.invalidateQueries({ queryKey: BASE_KEY })
     },
     onError: error => showToast.error(error.message || 'No se pudo registrar el movimiento'),
+  })
+}
+
+export function useFinanzasPeriodoMensual(mes) {
+  const perfil = useAuthStore(useCallback(state => state.perfil, []))
+  const puedeGestionar = tieneCapacidad(perfil, 'gestionarUsuarios')
+  return useQuery({
+    queryKey: [...BASE_KEY, 'periodo-mensual', mes],
+    queryFn: ({ signal }) => apiGet(`/api/finanzas/periodos-mensuales?${new URLSearchParams({ mes })}`, signal),
+    enabled: puedeGestionar && Boolean(mes), staleTime: 0, retry: false,
+  })
+}
+
+export function useOperarFinanzasPeriodoMensual() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ accion, mesInicio, idempotencyKey: key, payload }) => apiPost('/api/finanzas/periodos-mensuales/operar', {
+      accion, mesInicio, idempotencyKey: key, payload,
+    }),
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: [...BASE_KEY, 'periodo-mensual', variables.mesInicio] }),
+        client.invalidateQueries({ queryKey: [...BASE_KEY, 'saldos'] }),
+        client.invalidateQueries({ queryKey: [...BASE_KEY, 'cuentas-custodia'] }),
+        client.invalidateQueries({ queryKey: BASE_KEY }),
+      ])
+    },
+    onError: error => showToast.error(error.message || 'No se confirmó la operación mensual'),
+  })
+}
+
+export function useRegistrarCuentaEnPeriodoMensual() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ mesInicio, idempotencyKey: key, payload }) => apiPost('/api/finanzas/periodos-mensuales/alta-cuenta', {
+      mesInicio, idempotencyKey: key, payload,
+    }),
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: [...BASE_KEY, 'periodo-mensual', variables.mesInicio] }),
+        client.invalidateQueries({ queryKey: [...BASE_KEY, 'saldos'] }),
+      ])
+    },
+    onError: error => showToast.error(error.message || 'No se confirmó la apertura inicial de la cuenta'),
   })
 }
 

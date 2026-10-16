@@ -222,7 +222,7 @@ describe('MovimientoForm', () => {
   it('al seleccionar método USDT, muestra y preselecciona la cuenta de Binance Pay registrada', async () => {
     const user = userEvent.setup()
     const cuentasConBinance = [
-      { id: 'c-bin', nombre: 'Binance Pay (USDT)', banco: 'Binance', tipo: 'cripto_usdt', moneda: 'USDT', saldo: 100, activo: true },
+      { id: 'c-bin', nombre: 'Binance Pay (USDT)', banco: 'Binance', tipo: 'cripto_usdt', moneda: 'USDT', saldo: 500, activo: true },
     ]
     renderForm(cuentasConBinance)
     await fillValidForm(user)

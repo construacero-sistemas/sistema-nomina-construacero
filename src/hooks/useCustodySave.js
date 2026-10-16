@@ -5,7 +5,7 @@ import { isoToday } from '../components/finanzas/fechasRapidas.js'
 
 // La cuenta y su apertura son dos confirmaciones explícitas. Un reintento no
 // vuelve a crear la cuenta ni cambia la clave/cuerpo del movimiento pendiente.
-export default function useCustodySave({ agregarCuenta, editarCuenta, usd, usdt }) {
+export default function useCustodySave({ agregarCuenta, editarCuenta, usd, usdt, registrarAperturaMensual }) {
   const crearMovimiento = useCrearMovimiento()
   const pending = useRef(null)
   return async (fields, amount = 0, operationId, editingId = null) => {
@@ -42,6 +42,11 @@ export default function useCustodySave({ agregarCuenta, editarCuenta, usd, usdt 
       current()
       if (!result?.ok || result.cuenta?.id !== operationId) throw new Error('La creación de la cuenta no pudo verificarse. Reintenta sin cambiar los datos.')
       record.cuenta = result.cuenta
+    }
+    if (typeof registrarAperturaMensual === 'function') {
+      const mensual = await registrarAperturaMensual({ cuentaId: record.cuenta.id, amount: Number(amount) || 0, operationId })
+      current()
+      if (mensual === true) record.movement = null
     }
     if (record.movement) {
       try { await crearMovimiento.mutateAsync(record.movement); current() }
