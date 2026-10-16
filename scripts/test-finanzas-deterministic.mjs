@@ -342,6 +342,17 @@ class InMemoryFinanzasDb {
           siguiente: offset + movimientos.length < rows.length ? offset + movimientos.length : null } })
     }
 
+    if (method === 'POST' && pathname === '/rest/v1/rpc/finanzas_saldos') {
+      const cuentas = this.cuentas_custodia.filter(row => row.cuenta_id === body.p_cuenta_id).map(account => {
+        const saldoNativo = this.finanzas_movimientos
+          .filter(row => row.cuenta_id === body.p_cuenta_id && row.cuenta_custodia_id === account.id
+            && row.moneda === account.moneda && row.estado === 'activo')
+          .reduce((sum, row) => sum + (row.tipo === 'ingreso' ? Number(row.monto) : -Number(row.monto)), 0)
+        return { cuentaCustodiaId: account.id, saldoNativo: String(round6(saldoNativo)) }
+      })
+      return fixtureResponse({ schemaVersion: 1, cuentas })
+    }
+
     if (method === 'POST' && pathname === '/rest/v1/rpc/finanzas_resumen_consistente') {
       const grouped = new Map()
       for (const row of this.filteredRows(body).filter(item => item.origen_operacion !== 'traspaso')) {
@@ -464,6 +475,13 @@ class InMemoryFinanzasDb {
             && account.cuenta_id === body.cuenta_id && account.activo)
           if (!custody || custody.moneda !== body.moneda) return fixtureResponse({ code: 'PT400', message: 'Custody currency mismatch' }, 400)
           if (body.partes?.length) return fixtureResponse({ code: 'PT422', message: 'Split legacy entries require reconciliation' }, 422)
+        }
+        if (body.tipo === 'egreso' && body.cuenta_custodia_id) {
+          const saldo = this.finanzas_movimientos
+            .filter(row => row.cuenta_id === body.cuenta_id && row.cuenta_custodia_id === body.cuenta_custodia_id
+              && row.moneda === body.moneda && row.estado === 'activo')
+            .reduce((sum, row) => sum + (row.tipo === 'ingreso' ? Number(row.monto) : -Number(row.monto)), 0)
+          if (saldo < Number(body.monto)) return fixtureResponse({ code: 'PT402', detail: 'FINANCIAL_INSUFFICIENT_FUNDS' }, 409)
         }
         const mov = this.generatedMovement({ id: body.id || nextFixtureUuid(), estado: 'activo', creado_en: '2026-08-31T12:00:00.000Z', ...body }, true)
         this.finanzas_movimientos.push(mov)

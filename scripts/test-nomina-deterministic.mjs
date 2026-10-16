@@ -117,6 +117,15 @@ class InMemoryDatabase {
     if (pathname === '/rest/v1/rpc/finanzas_operar' && method === 'POST') {
       return jsonResponse(payrollRpcFixture(this, body, IDS))
     }
+    if (pathname === '/rest/v1/rpc/finanzas_saldos' && method === 'POST') {
+      const cuentas = this.cuentas_custodia.filter(cuenta => cuenta.cuenta_id === body.p_cuenta_id).map(cuenta => ({
+        cuentaCustodiaId: cuenta.id,
+        saldoNativo: String(this.finanzas_movimientos.filter(row => row.cuenta_id === body.p_cuenta_id
+          && row.cuenta_custodia_id === cuenta.id && row.estado === 'activo')
+          .reduce((saldo, row) => saldo + (row.tipo === 'ingreso' ? Number(row.monto) : -Number(row.monto)), 0)),
+      }))
+      return jsonResponse({ schemaVersion: 1, cuentas })
+    }
 
     // Autenticación de Supabase Auth
     if (pathname.includes('/auth/v1/user')) {
@@ -796,6 +805,12 @@ async function runAllTests() {
   })
 
   await test('Registrar egreso directo en Finanzas por pago de comisión a comisionista', async () => {
+    const funding = await F.handleCrearFinanzasMovimiento(makeRequest({
+      fecha: '2026-08-20', tipo: 'ingreso', categoria: 'Apertura', concepto: 'Fondos para prueba de comisión',
+      monto: 200, moneda: 'USD', tasaVes: 40.50, fuenteTasa: 'BCV', cuentaCustodiaId: IDS.custodia,
+      idempotencyKey: 'comision-funding-test-001',
+    }), ENV)
+    assertEqual(funding.status, 201, 'Fondos de prueba disponibles en la cuenta de custodia')
     const req = makeRequest({
       fecha: '2026-08-20',
       tipo: 'egreso',

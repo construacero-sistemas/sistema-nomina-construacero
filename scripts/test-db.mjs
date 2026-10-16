@@ -16,9 +16,9 @@ const result = { engine: 'PGlite PostgreSQL embebido', scope: 'SQL/transacciones
 const one = async (sql, params = []) => (await db.query(sql, params)).rows[0]
 async function check(name, run) {
   try { await run(); result.checks.push({ name, passed: true }); console.log(`[PASS] ${name}`) }
-  catch (error) { result.checks.push({ name, passed: false, error: error.message }); throw error }
+  catch (error) { result.checks.push({ name, passed: false, error: error.message }); console.error(`[FAIL] ${name}: ${error.message}`); throw error }
 }
-async function rejects(code, run) { await assert.rejects(run, e => e.code === code) }
+async function rejects(code, run) { await assert.rejects(run, e => e.code === code, `Expected SQLSTATE ${code}`) }
 const historical = {
   tenant: randomUUID(), actor: randomUUID(),
   entries: [
@@ -63,6 +63,10 @@ try {
   for (const [id, account, moneda, tipo] of [[usd, tenant, 'USD', 'efectivo_usd'], [ves, tenant, 'VES', 'banco_ves'], [second, tenant, 'USD', 'zelle'], [usdt, tenant, 'USDT', 'cripto_usdt'], [outside, other, 'USD', 'efectivo_usd']]) {
     await db.query('INSERT INTO cuentas_custodia(id,cuenta_id,nombre,tipo,cartera,moneda,subcuenta_id) VALUES($1,$2,$3,$4,$5,$6,$3)', [id, account, `Cuenta ${id}`, tipo, moneda === 'VES' ? 'VES' : 'USD', moneda])
   }
+  // Saldo inicial para las pruebas existentes de egresos de nómina; el guardrail
+  // 252 ahora exige que cada asiento de salida tenga fondos en la cartera.
+  await db.query(`INSERT INTO finanzas_movimientos(cuenta_id,fecha,tipo,categoria,concepto,monto,moneda,tasa_ves,tasa_usd_ves,fuente_tasa,idempotency_key,cuenta_custodia_id)
+    VALUES($1,'2026-09-12','ingreso','QA','Initial test funding',1000000,'USD',400,400,'BCV',$2,$3)`, [tenant, randomUUID(), usd])
   const period = randomUUID(), lines = [randomUUID(), randomUUID(), randomUUID(), randomUUID()]
   await db.query("INSERT INTO nomina_periodos(id,cuenta_id,nombre,desde,hasta) VALUES($1,$2,'Período QA','2026-09-01','2026-09-07')", [period, tenant])
   for (let index = 0; index < lines.length; index++) {
@@ -71,12 +75,19 @@ try {
     await db.query('INSERT INTO nomina_lineas(id,cuenta_id,periodo_id,empleado_id,total_bruto_usd,total_neto_usd) VALUES($1,$2,$3,$4,$5,$5)', [lines[index], tenant, period, employee, amount])
   }
   const rpc = async (type, payload, key = randomUUID(), account = tenant, user = actor) => (await one('SELECT finanzas_operar($1,$2,$3,$4,$5::jsonb,NULL) AS value', [account, user, type, key, JSON.stringify(payload)])).value
-  const pay = ids => ({ lineaIds: ids, cuentaCustodiaId: usd, metodoPago: 'Efectivo $', tasaBcv: '400', tasaUsdVes: '400', fuenteTasa: 'MANUAL', observacionTasa: 'Tasa de prueba aprobada', referencia: 'QA', zonaHoraria: 'America/Caracas' })
+  const monthlyRpc = async (action, month, payload, key = randomUUID(), account = tenant, user = actor) =>
+    (await one('SELECT finanzas_periodo_mensual_operar($1,$2,$3,$4,$5,$6::jsonb,NULL) AS value',
+      [account, user, action, month, key, JSON.stringify(payload)])).value
+  const monthlyState = async (month, account = tenant) =>
+    (await one('SELECT finanzas_periodo_mensual_estado($1,$2) AS value', [account, month])).value
+  const pay = ids => ({ lineaIds: ids, cuentaCustodiaId: usd, metodoPago: 'Efectivo $', tasaBcv: '400', tasaUsdVes: '400', fuenteTasa: 'MANUAL', observacionTasa: 'Tasa de prueba aprobada', referencia: null, zonaHoraria: 'America/Caracas' })
   const balance = async () => (await one('SELECT finanzas_saldos($1) AS value', [tenant])).value
+  const balancesFor = async account => (await one('SELECT finanzas_saldos($1) AS value', [account])).value
   const ledgerCounts = async () => one('SELECT (SELECT count(*)::int FROM finanzas_operaciones) AS operations,(SELECT count(*)::int FROM finanzas_movimientos) AS movements,(SELECT count(*)::int FROM finanzas_nomina_asignaciones) AS assignments')
   await check('Todas las migraciones compilan desde una base vacía', async () => {
     assert.ok(result.migrations.includes('240_custodia_asignacion_segura.sql'))
     assert.ok(result.migrations.includes('248_nomina_comisiones_atomicas.sql'))
+    assert.ok(result.migrations.includes('253_finanzas_periodos_mensuales.sql'))
   })
   await check('Importación de comisiones POS es atómica, tenant-scoped y exige capacidad administrativa', async () => {
     const commissionPeriod = randomUUID()
@@ -117,7 +128,7 @@ try {
     assert.equal((await one("SELECT count(*)::int AS n FROM auditoria WHERE cuenta_id=$1 AND accion='APLICAR_COMISIONES_POS' AND entidad_id=$2", [tenant, commissionPeriod])).n, 1)
   })
   await check('RPCs privados: anon y authenticated sin EXECUTE; service autorizado', async () => {
-    for (const signature of ['finanzas_resumen(uuid,date,date,text,text,text)', 'finanzas_operar(uuid,uuid,text,text,jsonb,text)', 'finanzas_saldos(uuid)', 'finanzas_operacion_estado(uuid,text,text)', 'finanzas_asignar_custodia(uuid,uuid,uuid[],uuid,text)', 'finanzas_movimientos_pagina(uuid,date,date,text,text,text,text,boolean,integer,integer,text)', 'finanzas_resumen_consistente(uuid,date,date,text,text,text,text)']) {
+    for (const signature of ['finanzas_resumen(uuid,date,date,text,text,text)', 'finanzas_operar(uuid,uuid,text,text,jsonb,text)', 'finanzas_saldos(uuid)', 'finanzas_operacion_estado(uuid,text,text)', 'finanzas_asignar_custodia(uuid,uuid,uuid[],uuid,text)', 'finanzas_movimientos_pagina(uuid,date,date,text,text,text,text,boolean,integer,integer,text)', 'finanzas_resumen_consistente(uuid,date,date,text,text,text,text)', 'finanzas_periodo_mensual_estado(uuid,date)', 'finanzas_periodo_mensual_operar(uuid,uuid,text,date,text,jsonb,text)']) {
       const privileges = await one('SELECT has_function_privilege(\'anon\',$1,\'EXECUTE\') AS anon, has_function_privilege(\'authenticated\',$1,\'EXECUTE\') AS authenticated, has_function_privilege(\'service_role\',$1,\'EXECUTE\') AS service', [signature])
       assert.deepEqual(privileges, { anon: false, authenticated: false, service: true })
     }
@@ -141,6 +152,134 @@ try {
     assert.equal(entries.length, 2)
     assert.ok(entries.every(e => Number(e.monto) === 100 && Number(e.tasa_ves) === 400 && e.moneda === 'USD' && e.metodo_pago === 'Efectivo $' && e.cuenta_custodia_id === usd))
     assert.equal((await one('SELECT estado FROM nomina_periodos WHERE id=$1', [period])).estado, 'cerrado')
+  })
+  const months = await one("SELECT (date_trunc('month',current_date)-interval '1 month')::date::text AS previous,(date_trunc('month',current_date))::date::text AS current")
+  const monthlyTenant = randomUUID(), monthlyActor = randomUUID()
+  await db.query('INSERT INTO auth.users(id) VALUES($1)', [monthlyTenant])
+  await db.query("INSERT INTO usuarios(id,cuenta_id,nombre,rol) VALUES($1,$2,'Monthly QA','jefe')", [monthlyActor, monthlyTenant])
+  const monthlyUsd = await createWallet(monthlyTenant, 'USD'), monthlyVes = await createWallet(monthlyTenant, 'VES')
+  const monthlySecond = await createWallet(monthlyTenant, 'USD'), monthlyUsdt = await createWallet(monthlyTenant, 'USDT')
+  const operateMonthly = (action, month, payload, key = randomUUID(), account = monthlyTenant, user = monthlyActor) => monthlyRpc(action, month, payload, key, account, user)
+  const getMonthlyState = (month, account = monthlyTenant) => monthlyState(month, account)
+  await check('Apertura mensual congela saldo y tasas, hereda el cierre previo y es idempotente', async () => {
+    const month = months.previous, openingKey = randomUUID()
+    const opening = { cuentas: [
+      { cuentaCustodiaId: monthlyUsd, metodo: 'saldo_real', saldoReal: '500', tasaUsdVes: '410', tasaUsdtVes: '450' },
+      { cuentaCustodiaId: monthlyVes, metodo: 'saldo_real', saldoReal: '82000', tasaUsdVes: '410', tasaUsdtVes: '450' },
+      { cuentaCustodiaId: monthlySecond, metodo: 'saldo_real', saldoReal: '0', tasaUsdVes: '410', tasaUsdtVes: '450' },
+      { cuentaCustodiaId: monthlyUsdt, metodo: 'saldo_real', saldoReal: '100', tasaUsdVes: '410', tasaUsdtVes: '450' },
+    ], tasaUsdVes: '410', tasaUsdtVes: '450' }
+    const opened = await operateMonthly('aperturar', month, opening, openingKey)
+    assert.equal(opened.ok, true); assert.equal(opened.estado, 'abierto')
+    const openingRetry = await operateMonthly('aperturar', month, opening, openingKey)
+    assert.equal(openingRetry.idempotente, true); assert.equal(openingRetry.aperturado, true)
+    await rejects('PT409', () => operateMonthly('aperturar', month, { ...opening, tasaUsdVes: '411' }, openingKey))
+    const state = await getMonthlyState(month)
+    assert.equal(Number(state.cuentas.find(row => row.cuentaCustodiaId === monthlyVes).saldoAperturaUsd), 200)
+    assert.equal(Number(state.cuentas.find(row => row.cuentaCustodiaId === monthlyVes).tasaUsdVes), 410)
+    assert.equal(Number(await one("SELECT finanzas_saldo_periodo($1,$2,($3::date + interval '1 month - 1 day')::date) AS value", [monthlyTenant, monthlyVes, month]).then(row => row.value)), 82000)
+    await rejects('PT400', () => operateMonthly('cerrar', month, { cuentas: [], tasaUsdVes: '410', tasaUsdtVes: '450' }))
+    await rejects('PT403', () => operateMonthly('cerrar', month, opening, randomUUID(), monthlyTenant, otherActor))
+  })
+  await check('Cierre mensual valida diferencias, congela USD, impide mutaciones, hereda el siguiente mes y permite altas idempotentes', async () => {
+    const month = months.previous, closeKey = randomUUID()
+    const state = await getMonthlyState(month)
+    const rows = state.cuentas.filter(row => row.saldoApertura != null).map(row => ({
+      cuentaCustodiaId: row.cuentaCustodiaId,
+      saldoReal: String(Number(row.saldoCalculado) + (row.cuentaCustodiaId === monthlyUsd ? 5 : 0)),
+      motivo: row.cuentaCustodiaId === monthlyUsd ? 'Conteo físico documentado' : null,
+      tasaUsdVes: '500', tasaUsdtVes: '600',
+    }))
+    const closing = { cuentas: rows, tasaUsdVes: '500', tasaUsdtVes: '600' }
+    const countsBefore = await ledgerCounts()
+    await rejects('PT400', () => operateMonthly('cerrar', month, { ...closing, cuentas: rows.map(row => ({ ...row, motivo: null })) }))
+    assert.deepEqual(await ledgerCounts(), countsBefore)
+    const closed = await operateMonthly('cerrar', month, closing, closeKey)
+    assert.equal(closed.ok, true); assert.equal(closed.estado, 'cerrado')
+    const closingRetry = await operateMonthly('cerrar', month, closing, closeKey)
+    assert.equal(closingRetry.idempotente, true); assert.equal(closingRetry.cerrado, true)
+    const frozenClose = await one('SELECT saldo_cierre_real,saldo_cierre_usd,tasa_cierre_usd_ves FROM finanzas_periodos_mensuales_cuentas WHERE cuenta_id=$1 AND periodo_id=(SELECT id FROM finanzas_periodos_mensuales WHERE cuenta_id=$1 AND mes_inicio=$2) AND cuenta_custodia_id=$3', [monthlyTenant, month, monthlyUsd])
+    assert.equal(Number(frozenClose.saldo_cierre_real), Number(rows.find(row => row.cuentaCustodiaId === monthlyUsd).saldoReal))
+    assert.equal(Number(frozenClose.saldo_cierre_usd), Number(rows.find(row => row.cuentaCustodiaId === monthlyUsd).saldoReal))
+    assert.equal(Number(frozenClose.tasa_cierre_usd_ves), 500)
+    assert.equal(Number((await getMonthlyState(months.current)).cierreAnterior.find(row => row.cuentaCustodiaId === monthlyVes).saldo), Number(rows.find(row => row.cuentaCustodiaId === monthlyVes).saldoReal))
+    const nextOpen = (await getMonthlyState(months.current)).cuentas.filter(row => row.activo).map(row => ({
+      cuentaCustodiaId: row.cuentaCustodiaId, metodo: 'cierre_anterior',
+      tasaUsdVes: '500', tasaUsdtVes: '600',
+    }))
+    const nextMonthOpening = await operateMonthly('aperturar', months.current, { cuentas: nextOpen, tasaUsdVes: '500', tasaUsdtVes: '600' })
+    assert.equal(nextMonthOpening.ok, true)
+    const newWallet = await createWallet(monthlyTenant, 'USD')
+    const walletKey = 'wallet-opening-idempotent'
+    const added = await operateMonthly('alta_cuenta', months.current, { cuentaCustodiaId: newWallet, saldoReal: '75', tasaUsdVes: '500', tasaUsdtVes: '600' }, walletKey)
+    assert.equal(added.ok, true); assert.equal(Number(added.saldoApertura), 75)
+    const addedRetry = await operateMonthly('alta_cuenta', months.current, { cuentaCustodiaId: newWallet, saldoReal: '75', tasaUsdVes: '500', tasaUsdtVes: '600' }, walletKey)
+    assert.equal(addedRetry.idempotente, true)
+    await rejects('PT409', () => operateMonthly('alta_cuenta', months.current, { cuentaCustodiaId: newWallet, saldoReal: '76', tasaUsdVes: '500', tasaUsdtVes: '600' }, 'wallet-opening-conflict'))
+    const beforeInvalidClose = await ledgerCounts()
+    await rejects('PT409', () => operateMonthly('cerrar', months.current, { cuentas: [], tasaUsdVes: '500', tasaUsdtVes: '600' }))
+    await rejects('PT409', () => db.query(`INSERT INTO finanzas_movimientos(cuenta_id,fecha,tipo,categoria,concepto,monto,moneda,tasa_ves,tasa_usd_ves,fuente_tasa,idempotency_key,cuenta_custodia_id)
+      VALUES($1,$2,'ingreso','QA','Closed period mutation',1,'USD',400,400,'BCV',$3,$4)`, [monthlyTenant, `${month.slice(0,7)}-15`, randomUUID(), monthlyUsd]))
+    assert.deepEqual(await ledgerCounts(), beforeInvalidClose)
+    assert.equal(Number((await getMonthlyState(months.current)).cuentas.find(row => row.cuentaCustodiaId === newWallet).saldoApertura), 75)
+  })
+  await check('Concurrencia: abrir y cerrar el mismo mes en paralelo deja un solo ganador', async () => {
+    const raceTenant = randomUUID(), raceActor = randomUUID()
+    await db.query('INSERT INTO auth.users(id) VALUES($1)', [raceTenant])
+    await db.query("INSERT INTO usuarios(id,cuenta_id,nombre,rol) VALUES($1,$2,'Race QA','jefe')", [raceActor, raceTenant])
+    const raceUsd = await createWallet(raceTenant, 'USD'), raceVes = await createWallet(raceTenant, 'VES')
+    const raceOpen = rate => ({ cuentas: [
+      { cuentaCustodiaId: raceUsd, metodo: 'saldo_real', saldoReal: '100', tasaUsdVes: rate, tasaUsdtVes: '460' },
+      { cuentaCustodiaId: raceVes, metodo: 'saldo_real', saldoReal: '46000', tasaUsdVes: rate, tasaUsdtVes: '460' },
+    ], tasaUsdVes: rate, tasaUsdtVes: '460' })
+    const raceClose = rate => ({ cuentas: [
+      { cuentaCustodiaId: raceUsd, saldoReal: '100', tasaUsdVes: rate, tasaUsdtVes: '460' },
+      { cuentaCustodiaId: raceVes, saldoReal: '46000', tasaUsdVes: rate, tasaUsdtVes: '460' },
+    ], tasaUsdVes: rate, tasaUsdtVes: '460' })
+    // PGlite serializa conexiones: esto fija el CONTRATO de carrera (un solo
+    // ganador, perdedores con SQLSTATE, cero escrituras parciales). La contención
+    // real del advisory lock multi-conexión la cubre test:staging:concurrency.
+    const attempt = (label, run) => run.then(value => ({ label, value }), error => ({ label, code: error.code, message: error.message }))
+    const before = await ledgerCounts()
+    // Fase cierre: dos cierres rivales del mes anterior; exactamente uno confirma.
+    await monthlyRpc('aperturar', months.previous, raceOpen('420'), 'race-prev-open-key-00001', raceTenant, raceActor)
+    const closeOutcomes = await Promise.all([
+      attempt('cierre-A', monthlyRpc('cerrar', months.previous, raceClose('500'), 'race-close-key-0000002', raceTenant, raceActor)),
+      attempt('cierre-B', monthlyRpc('cerrar', months.previous, raceClose('510'), 'race-close-key-0000003', raceTenant, raceActor)),
+    ])
+    const closeWinners = closeOutcomes.filter(outcome => outcome.value?.ok === true)
+    assert.equal(closeWinners.length, 1)
+    assert.equal(closeWinners[0].value.estado, 'cerrado')
+    assert.equal(closeOutcomes.find(outcome => outcome.value?.ok !== true).code, 'PT409')
+    const closeWinnerKey = closeWinners[0].label === 'cierre-A' ? 'race-close-key-0000002' : 'race-close-key-0000003'
+    const closedRow = await one('SELECT estado,cierre_clave FROM finanzas_periodos_mensuales WHERE cuenta_id=$1 AND mes_inicio=$2', [raceTenant, months.previous])
+    assert.equal(closedRow.estado, 'cerrado'); assert.equal(closedRow.cierre_clave, closeWinnerKey)
+    // Fase apertura vs cierre: el mes en curso jamás puede cerrarse, así que la
+    // única ganadora posible es la apertura; el cierre paralelo no deja rastro.
+    const openKeyA = 'race-open-key-00000001', openKeyB = 'race-open-key-00000002', closeKey = 'race-close-key-0000001'
+    const outcomes = await Promise.all([
+      attempt('apertura-A', monthlyRpc('aperturar', months.current, raceOpen('420'), openKeyA, raceTenant, raceActor)),
+      attempt('apertura-B', monthlyRpc('aperturar', months.current, raceOpen('430'), openKeyB, raceTenant, raceActor)),
+      attempt('cierre', monthlyRpc('cerrar', months.current, raceClose('420'), closeKey, raceTenant, raceActor)),
+    ])
+    const winners = outcomes.filter(outcome => outcome.value?.ok === true)
+    assert.equal(winners.length, 1)
+    assert.ok(['apertura-A', 'apertura-B'].includes(winners[0].label), 'La única ganadora debe ser una apertura')
+    assert.equal(winners[0].value.estado, 'abierto')
+    for (const outcome of outcomes.filter(outcome => outcome.value?.ok !== true)) {
+      assert.ok(outcome.code?.startsWith('PT'), `El perdedor ${outcome.label} debe rechazarse con SQLSTATE: ${outcome.message}`)
+    }
+    assert.equal(outcomes.find(outcome => outcome.label === 'cierre').code, 'PT409')
+    const winnerKey = winners[0].label === 'apertura-A' ? openKeyA : openKeyB
+    const winnerRate = winners[0].label === 'apertura-A' ? 420 : 430
+    const periodRow = await one('SELECT estado,apertura_clave FROM finanzas_periodos_mensuales WHERE cuenta_id=$1 AND mes_inicio=$2', [raceTenant, months.current])
+    assert.equal(periodRow.estado, 'abierto'); assert.equal(periodRow.apertura_clave, winnerKey)
+    const walletRows = (await db.query('SELECT cuenta_custodia_id,apertura_clave,tasa_usd_ves FROM finanzas_periodos_mensuales_cuentas WHERE cuenta_id=$1 AND periodo_id=(SELECT id FROM finanzas_periodos_mensuales WHERE cuenta_id=$1 AND mes_inicio=$2)', [raceTenant, months.current])).rows
+    assert.equal(walletRows.length, 2)
+    assert.ok(walletRows.every(row => row.apertura_clave === winnerKey && Number(row.tasa_usd_ves) === winnerRate))
+    assert.deepEqual(await ledgerCounts(), before)
+    await rejects('PT409', () => db.query(`INSERT INTO finanzas_movimientos(cuenta_id,fecha,tipo,categoria,concepto,monto,moneda,tasa_ves,tasa_usd_ves,fuente_tasa,idempotency_key,cuenta_custodia_id)
+      VALUES($1,$2,'ingreso','QA','Race closed month mutation',1,'USD',400,400,'BCV',$3,$4)`, [raceTenant, `${months.previous.slice(0, 7)}-15`, randomUUID(), raceUsd]))
   })
   await check('Misma clave/cuerpo repite resultado, sin duplicar; distinto cuerpo da conflicto', async () => {
     const counts = await ledgerCounts()
@@ -175,7 +314,7 @@ try {
   const deposit = async (wallet, currency, amount, key = randomUUID()) => db.query(`INSERT INTO finanzas_movimientos(cuenta_id,fecha,tipo,categoria,concepto,monto,moneda,tasa_ves,tasa_usd_ves,fuente_tasa,idempotency_key,cuenta_custodia_id)
     VALUES($1,'2026-09-12','ingreso','Saldo inicial','Ingreso QA',$2,$3,$4,400,'BCV',$5,$6)`, [tenant, amount, currency, currency === 'VES' ? 1 : 400, key, wallet])
   await deposit(usd, 'USD', 10000)
-  const transfer = { origenCuentaId: usd, destinoCuentaId: ves, montoOrigen: '10', tasaCambio: '400', tasaUsdVes: '400', fecha: '2026-09-12', referencia: 'QA', observaciones: 'Cambio aprobado' }
+  const transfer = { origenCuentaId: usd, destinoCuentaId: ves, montoOrigen: '10', tasaCambio: '400', tasaUsdVes: '400', fecha: '2026-09-12', referencia: 'QA initial transfer', observaciones: 'Cambio aprobado' }
   await check('Traspaso único: exactamente dos asientos y balance nativo correcto', async () => {
     const before = await balance(); const op = await rpc('traspaso', transfer)
     const rows = (await db.query('SELECT tipo,moneda,monto FROM finanzas_movimientos WHERE operacion_id=$1', [op.operationId])).rows
@@ -188,15 +327,30 @@ try {
     await db.exec(`CREATE FUNCTION qa_fail_transfer_credit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.categoria='Traspasos' AND NEW.tipo='ingreso' THEN RAISE EXCEPTION 'Fallo sintético'; END IF; RETURN NEW; END $$;
       CREATE TRIGGER qa_failure BEFORE INSERT ON finanzas_movimientos FOR EACH ROW EXECUTE FUNCTION qa_fail_transfer_credit();`)
     const counts = await ledgerCounts(), key = randomUUID()
-    await assert.rejects(() => rpc('traspaso', transfer, key), /Fallo sintético/)
+    await assert.rejects(() => rpc('traspaso', { ...transfer, referencia: 'QA rollback test' }, key), /Fallo sintético/)
     assert.deepEqual(await ledgerCounts(), counts)
     assert.equal((await one('SELECT count(*)::int AS n FROM finanzas_operacion_contexto')).n, 0)
     await db.exec('DROP TRIGGER qa_failure ON finanzas_movimientos; DROP FUNCTION qa_fail_transfer_credit();')
   })
+  await check('Guardrail 252: ingreso y egreso dentro del saldo pasan; exceso y anulación de ingreso se bloquean', async () => {
+    const wallet = await createWallet(tenant, 'USD')
+    await deposit(wallet, 'USD', 50)
+    const insertExpense = amount => db.query(`INSERT INTO finanzas_movimientos(cuenta_id,fecha,tipo,categoria,concepto,monto,moneda,tasa_ves,tasa_usd_ves,fuente_tasa,idempotency_key,cuenta_custodia_id)
+      VALUES($1,'2026-09-12','egreso','QA','Guardrail expense',$2,'USD',400,400,'BCV',$3,$4)`, [tenant, amount, randomUUID(), wallet])
+    const credit = (await db.query('SELECT id FROM finanzas_movimientos WHERE cuenta_id=$1 AND cuenta_custodia_id=$2 AND tipo=\'ingreso\' ORDER BY creado_en DESC LIMIT 1', [tenant, wallet])).rows[0]
+    await insertExpense(40)
+    const balance = await one('SELECT sum(CASE WHEN tipo=\'ingreso\' THEN monto ELSE -monto END) AS value FROM finanzas_movimientos WHERE cuenta_id=$1 AND cuenta_custodia_id=$2 AND estado=\'activo\'', [tenant, wallet])
+    assert.equal(Number(balance.value), 10)
+    await rejects('PT402', () => insertExpense(11))
+    await rejects('PT402', () => db.query("UPDATE finanzas_movimientos SET monto=51 WHERE cuenta_id=$1 AND cuenta_custodia_id=$2 AND tipo='egreso'", [tenant, wallet]))
+    await rejects('PT402', () => db.query("UPDATE finanzas_movimientos SET estado='anulado',anulado_en=now(),anulado_por=$2,motivo_anulacion='Would leave wallet negative' WHERE id=$1", [credit.id, actor]))
+    assert.equal(Number((await one('SELECT sum(CASE WHEN tipo=\'ingreso\' THEN monto ELSE -monto END) AS value FROM finanzas_movimientos WHERE cuenta_id=$1 AND cuenta_custodia_id=$2 AND estado=\'activo\'', [tenant, wallet])).value), 10)
+  })
   await check('Fondos insuficientes se rechazan; mismo traspaso no se duplica', async () => {
-    await rejects('PT402', () => rpc('traspaso', { ...transfer, montoOrigen: '999999' }))
-    const key = randomUUID(); const op = await rpc('traspaso', transfer, key); const counts = await ledgerCounts()
-    assert.deepEqual(await rpc('traspaso', transfer, key), op); assert.deepEqual(await ledgerCounts(), counts)
+    const idempotentTransfer = { ...transfer, referencia: 'QA idempotent transfer' }
+    await rejects('PT402', () => rpc('traspaso', { ...idempotentTransfer, referencia: 'QA insufficient transfer', montoOrigen: '1100000' }))
+    const key = randomUUID(); const op = await rpc('traspaso', idempotentTransfer, key); const counts = await ledgerCounts()
+    assert.deepEqual(await rpc('traspaso', idempotentTransfer, key), op); assert.deepEqual(await ledgerCounts(), counts)
     const status = (await one('SELECT finanzas_operacion_estado($1,$2,$3) AS value', [tenant, 'traspaso', key])).value
     assert.equal(status.estado, 'confirmada')
     assert.equal((await one('SELECT finanzas_operacion_estado($1,$2,$3) AS value', [other, 'traspaso', key])).value.estado, 'no_encontrada')
@@ -275,7 +429,8 @@ try {
       if (source.id === destination.id) continue
       const ratio = (source.rate / destination.rate).toFixed(8)
       const result = await rpc('traspaso', { ...transfer, origenCuentaId: source.id, destinoCuentaId: destination.id,
-        montoOrigen: '10', tasaCambio: ratio, tasaUsdtVes: source.moneda === 'USDT' || destination.moneda === 'USDT' ? '440' : null })
+        montoOrigen: '10', tasaCambio: ratio, tasaUsdtVes: source.moneda === 'USDT' || destination.moneda === 'USDT' ? '440' : null,
+        referencia: `QA FX ${source.id} to ${destination.id}` })
       const entries = (await db.query('SELECT tipo,monto,moneda,tasa_ves,tasa_usd_ves FROM finanzas_movimientos WHERE operacion_id=$1', [result.operationId])).rows
       assert.equal(entries.length, 2)
       assert.equal(Number(entries.find(e => e.tipo === 'egreso').tasa_ves), source.rate)
@@ -288,7 +443,6 @@ try {
     [historical.tenant, historical.entries.map(entry => entry.id)])).rows
   const summaryFor = async (account, currency, category) => one(
     "SELECT * FROM finanzas_resumen($1,'2026-09-01','2026-09-30',$2,NULL,$3)", [account, currency, category])
-  const balancesFor = async account => (await one('SELECT finanzas_saldos($1) AS value', [account])).value
 
   await check('Historical 232 backfills remain numeric data, never rate provenance', async () => {
     const rows = await historicalRows()

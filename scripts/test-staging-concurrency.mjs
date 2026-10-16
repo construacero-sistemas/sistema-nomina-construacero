@@ -176,6 +176,75 @@ async function main() {
       assert(periodAfter?.estado === 'abierto', 'Concurrency test changed the synthetic period state.')
     }
   }
+
+  // Carrera mensual: apertura y cierre del mismo mes en paralelo contra
+  // conexiones independientes de PostgreSQL (contención real del advisory lock).
+  // Los períodos mensuales son inmutables por diseño —ni siquiera service_role
+  // puede borrarlos—, así que cada ejecución consume un mes sintético desechable
+  // (año 1000+) sin efecto en saldos, movimientos ni períodos reales.
+  const monthlyState = async mesInicio => {
+    const response = await serviceRequest('/rest/v1/rpc/finanzas_periodo_mensual_estado', {
+      method: 'POST', body: JSON.stringify({ p_cuenta_id: accountId, p_mes_inicio: mesInicio }),
+    })
+    assert(response.ok, `Monthly state read failed (${response.status}).`)
+    return response.json()
+  }
+  const invokeMonthly = (accion, mesInicio, clave, payload) => serviceRequest('/rest/v1/rpc/finanzas_periodo_mensual_operar', {
+    method: 'POST',
+    body: JSON.stringify({
+      p_cuenta_id: accountId, p_operador_id: operators[0].id, p_accion: accion,
+      p_mes_inicio: mesInicio, p_clave: clave, p_payload: payload, p_ip: null,
+    }),
+  })
+  let raceMonth = null
+  for (let year = 1000; year < 1100 && !raceMonth; year++) {
+    const candidate = `${year}-01-01`
+    if ((await monthlyState(candidate)).estado === 'sin_apertura') raceMonth = candidate
+  }
+  assert(raceMonth, 'No disposable synthetic month remains for the monthly race.')
+  const custodyResult = await workerJson('/api/finanzas/cuentas-custodia')
+  const raceWallets = (Array.isArray(custodyResult.payload) ? custodyResult.payload : custodyResult.payload?.cuentas || [])
+    .filter(account => account.activo)
+  assert(custodyResult.status === 200 && raceWallets.length > 0, 'Monthly race needs the synthetic custody catalog.')
+  const openPayload = rate => ({
+    cuentas: raceWallets.map(account => ({ cuentaCustodiaId: account.id, metodo: 'saldo_real', saldoReal: '0', tasaUsdVes: rate, tasaUsdtVes: rate })),
+    tasaUsdVes: rate, tasaUsdtVes: rate,
+  })
+  const settleMonthly = async (label, run) => {
+    const response = await run
+    const body = await response.json().catch(() => null)
+    return { label, status: response.status, body }
+  }
+  const raceOutcomes = await Promise.all([
+    settleMonthly('apertura-A', invokeMonthly('aperturar', raceMonth, `race-open-a-${randomUUID()}`, openPayload('420'))),
+    settleMonthly('apertura-B', invokeMonthly('aperturar', raceMonth, `race-open-b-${randomUUID()}`, openPayload('430'))),
+    settleMonthly('cierre', invokeMonthly('cerrar', raceMonth, `race-close-${randomUUID()}`, openPayload('420'))),
+  ])
+  const raceWinners = raceOutcomes.filter(outcome => outcome.body?.ok === true)
+  assert(raceWinners.length === 1,
+    `Monthly race must leave exactly one winner (${raceOutcomes.map(o => `${o.label}:${o.status}:${o.body?.code ?? o.body?.ok}`).join(', ')}).`)
+  assert(['apertura-A', 'apertura-B'].includes(raceWinners[0].label), 'The only winner must be an opening.')
+  assert(raceWinners[0].body.estado === 'abierto', 'The winning opening must leave the month open.')
+  const raceLosers = raceOutcomes.filter(outcome => outcome.body?.ok !== true)
+  assert(raceLosers.every(outcome => outcome.status >= 400 && String(outcome.body?.code || '').startsWith('PT')),
+    'Every losing monthly operation must be rejected with a SQLSTATE, never a silent success.')
+  const winnerRate = raceWinners[0].label === 'apertura-A' ? 420 : 430
+  const finalState = await monthlyState(raceMonth)
+  assert(finalState.estado === 'abierto' && finalState.cuentas.every(row => Number(row.tasaUsdVes) === winnerRate),
+    'Serialized monthly state must match the single winning opening.')
+
+  console.log(JSON.stringify({
+    target: 'isolated-staging',
+    monthlyRace: {
+      concurrentRequests: 3,
+      winners: raceWinners.map(outcome => outcome.label),
+      losers: raceLosers.map(outcome => `${outcome.label}:${outcome.body?.code}`),
+      winningRate: winnerRate,
+      stateAfterRace: finalState.estado,
+      permanentMonthlyFixture: raceMonth,
+    },
+    productionTouched: false,
+  }, null, 2))
 }
 
 main().catch(error => {
