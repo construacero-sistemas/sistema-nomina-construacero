@@ -12,6 +12,7 @@ vi.mock('../../lib/auth.js', () => ({
 vi.mock('../../lib/audit.js', () => ({ registrarAuditoria: vi.fn(async () => {}) }))
 
 const H = await import('../finanzas.js')
+const M = await import('../finanzas.periodos.js')
 let mock
 
 afterEach(() => {
@@ -30,6 +31,49 @@ const movement = {
   id: IDS.linea, ...movementInput, tasa_ves: 120, monto_ves: 12000,
   fuente_tasa: 'MANUAL', estado: 'activo', creado_en: '2026-08-18T12:00:00Z',
 }
+
+describe('finanzas — períodos mensuales de tesorería', () => {
+  const monthlyRequest = (body, url = 'http://worker.test/api/finanzas/periodos-mensuales/operar') => makeRequest(body, { url })
+  const payload = { cuentas: [{ cuentaCustodiaId: IDS.config, metodo: 'saldo_real', saldoReal: '100', tasaUsdVes: '400', tasaUsdtVes: '450' }], tasaUsdVes: '400', tasaUsdtVes: '450' }
+
+  it('consulta estado mensual con tenant del operador y valida el contrato RPC', async () => {
+    mock = installFetchMock([{ match: '/rpc/finanzas_periodo_mensual_estado', method: 'POST', respond: { schemaVersion: 1, estado: 'abierto', mes: '2026-10-01', cuentas: [] } }])
+    const response = await M.handleGetFinanzasPeriodoMensual(monthlyRequest(undefined, 'http://worker.test/api/finanzas/periodos-mensuales?mes=2026-10-01'), ENV)
+    const result = await readResponse(response)
+    expect(result.status).toBe(200)
+    expect(mock.calls[0].body).toEqual({ p_cuenta_id: OPERADORES.administracion.cuenta_id, p_mes_inicio: '2026-10-01' })
+  })
+
+  it('rechaza mes inválido y roles sin gestión antes de RPC', async () => {
+    mock = installFetchMock([])
+    let response = await M.handleGetFinanzasPeriodoMensual(monthlyRequest(undefined, 'http://worker.test/api/finanzas/periodos-mensuales?mes=2026-13-01'), ENV)
+    expect((await readResponse(response)).status).toBe(400)
+    operadorActual = OPERADORES.finanzas
+    response = await M.handleGetFinanzasPeriodoMensual(monthlyRequest(undefined, 'http://worker.test/api/finanzas/periodos-mensuales?mes=2026-10-01'), ENV)
+    expect((await readResponse(response)).status).toBe(403)
+    expect(mock.calls).toHaveLength(0)
+  })
+
+  it('valida apertura antes de RPC y opera con tenant/operator de sesión', async () => {
+    mock = installFetchMock([{ match: '/rpc/finanzas_periodo_mensual_operar', method: 'POST', respond: { ok: true, estado: 'abierto' } }])
+    const bad = await M.handleOperarFinanzasPeriodoMensual(monthlyRequest({ accion: 'aperturar', mesInicio: '2026-10-01', idempotencyKey: 'monthly-open-key-0001', payload: { ...payload, tasaUsdVes: null } }), ENV)
+    expect((await readResponse(bad)).status).toBe(400)
+    expect(mock.calls).toHaveLength(0)
+    const response = await M.handleOperarFinanzasPeriodoMensual(monthlyRequest({ accion: 'aperturar', mesInicio: '2026-10-01', idempotencyKey: 'monthly-open-key-0001', payload }), ENV)
+    expect((await readResponse(response)).status).toBe(200)
+    expect(mock.calls[0].body).toMatchObject({ p_cuenta_id: OPERADORES.administracion.cuenta_id, p_operador_id: OPERADORES.administracion.id, p_accion: 'aperturar', p_mes_inicio: '2026-10-01' })
+  })
+
+  it('alta de cuenta solo opera con período abierto y confirma clave tenant-scoped', async () => {
+    mock = installFetchMock([
+      { match: '/rpc/finanzas_periodo_mensual_estado', method: 'POST', respond: { schemaVersion: 1, estado: 'abierto', cuentas: [] } },
+      { match: '/rpc/finanzas_periodo_mensual_operar', method: 'POST', respond: { ok: true, idempotente: false, saldoApertura: 25 } },
+    ])
+    const response = await M.handleRegistrarCuentaEnPeriodoMensual(monthlyRequest({ mesInicio: '2026-10-01', idempotencyKey: 'monthly-wallet-key-001', payload: { cuentaCustodiaId: IDS.config, saldoReal: '25', tasaUsdVes: '400', tasaUsdtVes: '450' } }), ENV)
+    expect((await readResponse(response)).body).toMatchObject({ ok: true, aperturaMensual: true, saldoApertura: 25 })
+    expect(mock.calls[1].body).toMatchObject({ p_accion: 'alta_cuenta', p_mes_inicio: '2026-10-01', p_cuenta_id: OPERADORES.administracion.cuenta_id })
+  })
+})
 
 describe('finanzas — guardrails de administración', () => {
   it('rechaza cualquier operador sin acceso a finanzas antes de consultar', async () => {
@@ -85,6 +129,22 @@ describe('finanzas — guardrails de administración', () => {
 })
 
 describe('finanzas — flujo crear, reportar y anular', () => {
+  it('rechaza un egreso que supera el saldo de la cartera sin escribir', async () => {
+    const custodyId = IDS.config
+    mock = installFetchMock([
+      { match: `/cuentas_custodia?id=eq.${custodyId}`, method: 'GET', respond: [{ id: custodyId, nombre: 'Caja USD', moneda: 'USD' }] },
+      { match: 'idempotency_key=eq.', method: 'GET', respond: [] },
+      { match: '/rpc/finanzas_saldos', method: 'POST', respond: { schemaVersion: 1, cuentas: [{ cuentaCustodiaId: custodyId, saldoNativo: '60' }] } },
+      { match: '/finanzas_movimientos?cuenta_id=', method: 'GET', respond: [] },
+    ])
+    const response = await H.handleCrearFinanzasMovimiento(makeRequest({ ...movementInput, cuentaCustodiaId: custodyId }), ENV)
+    const result = await readResponse(response)
+    expect(result.status).toBe(409)
+    expect(result.body).toMatchObject({ code: 'FINANCIAL_INSUFFICIENT_FUNDS', disponible: 60, faltante: 40 })
+    expect(result.body.error).toMatch(/disponible 60,00 USD, faltan 40,00 USD/i)
+    expect(mock.calls.filter(call => call.method === 'POST' && call.url.endsWith('/finanzas_movimientos'))).toHaveLength(0)
+  })
+
   it('rol finanzas registra un movimiento en su tenant sin requerir ver saldos', async () => {
     let sent
     operadorActual = OPERADORES.finanzas
@@ -92,6 +152,8 @@ describe('finanzas — flujo crear, reportar y anular', () => {
     mock = installFetchMock([
       { match: `/cuentas_custodia?id=eq.${custodyId}`, method: 'GET', respond: [{ id: custodyId, nombre: 'Caja USD', moneda: 'USD' }] },
       { match: 'idempotency_key=eq.finanzas-create-test-001', method: 'GET', respond: [] },
+      { match: '/rpc/finanzas_saldos', method: 'POST', respond: { schemaVersion: 1, cuentas: [{ cuentaCustodiaId: custodyId, saldoNativo: '1000' }] } },
+      { match: '/finanzas_movimientos?cuenta_id=', method: 'GET', respond: [] },
       { match: '/finanzas_movimientos', method: 'POST', respond: (url, init) => { sent = JSON.parse(init.body); return [{ ...movement, creado_por: OPERADORES.finanzas.id, cuenta_custodia_id: custodyId }] } },
     ])
 
@@ -109,7 +171,7 @@ describe('finanzas — flujo crear, reportar y anular', () => {
       cuenta_custodia_id: custodyId,
       cuenta_origen: 'Caja USD',
     })
-    expect(mock.calls.filter(call => call.method === 'POST')).toHaveLength(1)
+    expect(mock.calls.filter(call => call.method === 'POST' && call.url.endsWith('/finanzas_movimientos'))).toHaveLength(1)
   })
 
   it('crea un movimiento con cuenta, tasa e idempotencia server-side', async () => {
@@ -118,6 +180,8 @@ describe('finanzas — flujo crear, reportar y anular', () => {
     mock = installFetchMock([
       { match: `/cuentas_custodia?id=eq.${custodyId}`, method: 'GET', respond: [{ id: custodyId, nombre: 'Caja USD', moneda: 'USD' }] },
       { match: 'idempotency_key=eq.movimiento-test-0001', method: 'GET', respond: [] },
+      { match: '/rpc/finanzas_saldos', method: 'POST', respond: { schemaVersion: 1, cuentas: [{ cuentaCustodiaId: custodyId, saldoNativo: '1000' }] } },
+      { match: '/finanzas_movimientos?cuenta_id=', method: 'GET', respond: [] },
       { match: '/finanzas_movimientos', method: 'POST', respond: (url, init) => { sent = JSON.parse(init.body); return [{ ...movement, cuenta_custodia_id: custodyId }] } },
     ])
     const response = await H.handleCrearFinanzasMovimiento(
@@ -142,6 +206,42 @@ describe('finanzas — flujo crear, reportar y anular', () => {
     expect(result.status).toBe(200)
     expect(result.body.idempotente).toBe(true)
     expect(mock.calls.filter(call => call.method === 'POST')).toHaveLength(0)
+  })
+
+  it('bloquea un movimiento exacto aunque se envíe con otra clave', async () => {
+    const custodyId = IDS.config
+    mock = installFetchMock([
+      { match: `/cuentas_custodia?id=eq.${custodyId}`, method: 'GET', respond: [{ id: custodyId, nombre: 'Caja USD', moneda: 'USD' }] },
+      { match: 'idempotency_key=eq.movimiento-otra-clave-0001', method: 'GET', respond: [] },
+      { match: '/rpc/finanzas_saldos', method: 'POST', respond: { schemaVersion: 1, cuentas: [{ cuentaCustodiaId: custodyId, saldoNativo: '1000' }] } },
+      { match: '/finanzas_movimientos?cuenta_id=', method: 'GET', respond: [{ ...movement, fecha: movementInput.fecha, tipo: movementInput.tipo, concepto: movementInput.concepto, monto: movementInput.monto, moneda: movementInput.moneda, referencia: 'TRF-1234', cuenta_custodia_id: custodyId }] },
+    ])
+    const response = await H.handleCrearFinanzasMovimiento(makeRequest({ ...movementInput, referencia: 'TRF-1234', idempotencyKey: 'movimiento-otra-clave-0001', cuentaCustodiaId: custodyId }), ENV)
+    const result = await readResponse(response)
+    expect(result.status).toBe(409)
+    expect(result.body.code).toBe('FINANCIAL_DUPLICATE_EXACT')
+    expect(mock.calls.filter(call => call.method === 'POST' && call.url.endsWith('/finanzas_movimientos'))).toHaveLength(0)
+  })
+
+  it('devuelve advertencia para mismo concepto y referencia con importe distinto; permite excepción justificada', async () => {
+    const custodyId = IDS.config
+    const similar = { ...movement, fecha: movementInput.fecha, tipo: movementInput.tipo, concepto: movementInput.concepto, monto: 99, moneda: movementInput.moneda, referencia: 'TRF-1234', cuenta_custodia_id: custodyId }
+    let sent
+    mock = installFetchMock([
+      { match: `/cuentas_custodia?id=eq.${custodyId}`, method: 'GET', respond: [{ id: custodyId, nombre: 'Caja USD', moneda: 'USD' }] },
+      { match: 'idempotency_key=eq.movimiento-similar-0001', method: 'GET', respond: [] },
+      { match: '/rpc/finanzas_saldos', method: 'POST', respond: { schemaVersion: 1, cuentas: [{ cuentaCustodiaId: custodyId, saldoNativo: '1000' }] } },
+      { match: '/finanzas_movimientos?cuenta_id=', method: 'GET', respond: [similar] },
+      { match: '/rpc/finanzas_saldos', method: 'POST', respond: { schemaVersion: 1, cuentas: [{ cuentaCustodiaId: custodyId, saldoNativo: '1000' }] } },
+      { match: '/finanzas_movimientos', method: 'POST', respond: (url, init) => { sent = JSON.parse(init.body); return [{ ...movement, ...sent, cuenta_custodia_id: custodyId }] } },
+    ])
+    const warning = await H.handleCrearFinanzasMovimiento(makeRequest({ ...movementInput, referencia: 'TRF-1234', idempotencyKey: 'movimiento-similar-0001', cuentaCustodiaId: custodyId }), ENV)
+    const warningBody = await readResponse(warning)
+    expect(warningBody.status).toBe(409)
+    expect(warningBody.body.code).toBe('FINANCIAL_DUPLICATE_SIMILAR')
+    const accepted = await H.handleCrearFinanzasMovimiento(makeRequest({ ...movementInput, referencia: 'TRF-1234', idempotencyKey: 'movimiento-similar-0001', cuentaCustodiaId: custodyId, motivoCoincidencia: 'Factura distinta comprobada' }), ENV)
+    expect((await readResponse(accepted)).status).toBe(201)
+    expect(sent.motivo_coincidencia).toBe('Factura distinta comprobada')
   })
 
   it('resume por RPC acotado al tenant y rango', async () => {

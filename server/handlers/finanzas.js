@@ -5,7 +5,8 @@ import { validateOperator, supaServiceHeaders } from '../lib/auth.js'
 import { registrarAuditoria } from '../lib/audit.js'
 import { requireCapacidad, capacidadesDe } from '../lib/permissions.js'
 import { callFinancialRpc, financialErrorResponse } from '../lib/financialOperations.js'
-import { buildReconciliationPreview } from '../lib/reconciliation.js'
+import { clasificarCoincidenciasMovimiento, motivoCoincidenciaValido } from '../lib/financialDuplicates.js'
+import { evaluarSaldoEgreso, mensajeSaldoInsuficiente, parseInsufficientFundsDetail } from '../lib/financialBalance.js'
 import {
   normalizeMovement,
   normalizeReportQuery,
@@ -19,7 +20,7 @@ const MOVEMENT_SELECT = [
   'referencia', 'observaciones', 'estado', 'creado_en', 'anulado_en',
   'motivo_anulacion', 'metodo_pago', 'cuenta_origen', 'partes',
   // tasa_usd_ves alimenta el contravalor USD del listado (migración 224).
-  'tasa_usd_ves', 'tasa_registrada_en', 'cuenta_custodia_id', 'operacion_id',
+  'tasa_usd_ves', 'tasa_registrada_en', 'cuenta_custodia_id', 'operacion_id', 'motivo_coincidencia', 'idempotency_key',
 ].join(',')
 
 function adminContext(request, env) {
@@ -71,6 +72,15 @@ function accountFilter(accountId) {
 
 function queryValue(value) {
   return encodeURIComponent(String(value))
+}
+
+function insufficientFundsResponse(funds, moneda, request, prefix = '') {
+  const known = Number.isFinite(funds.disponible) && Number.isFinite(funds.faltante)
+  return json({
+    error: prefix + (known ? mensajeSaldoInsuficiente(funds, moneda) : 'Saldo insuficiente en la cartera.'),
+    code: 'FINANCIAL_INSUFFICIENT_FUNDS',
+    ...(known ? { disponible: funds.disponible, faltante: funds.faltante, moneda } : {}),
+  }, 409, request)
 }
 
 async function readBody(request) {
@@ -156,12 +166,52 @@ export async function handleCrearFinanzasMovimiento(request, env) {
   const [custody] = await custodyResponse.json()
   if (!custody || custody.moneda !== movement.moneda) return jsonError('La cuenta no existe o su moneda no corresponde al movimiento', 400, request)
   movement.cuenta_origen = custody.nombre
+  const motivoCoincidencia = String(parsed.body?.motivoCoincidencia || '').trim()
+  if (motivoCoincidencia && !motivoCoincidenciaValido(motivoCoincidencia)) {
+    return jsonError('El motivo para registrar una coincidencia debe tener entre 8 y 300 caracteres.', 400, request)
+  }
   const existing = await readExistingByKey(env, context.operador.cuenta_id, movement.idempotency_key)
   if (existing.error) return jsonError('No se pudo comprobar la idempotencia', 500, request)
   if (existing.row) {
     return json({ ok: true, idempotente: true, movimiento: movementResponse(existing.row) }, 200, request)
   }
-
+  const duplicatesResponse = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?${accountFilter(context.operador.cuenta_id)}` +
+      `&cuenta_custodia_id=eq.${queryValue(custodyId)}&fecha=eq.${queryValue(movement.fecha)}` +
+      `&tipo=eq.${queryValue(movement.tipo)}&moneda=eq.${queryValue(movement.moneda)}` +
+      `&estado=eq.activo&select=id,fecha,tipo,concepto,monto,moneda,referencia,estado,idempotency_key&limit=100`,
+    { headers: serviceHeaders(env, 'return=minimal') },
+  )
+  if (!duplicatesResponse.ok) return jsonError('No se pudo comprobar si existe un movimiento parecido. No se registró nada.', 503, request)
+  const duplicateRows = await duplicatesResponse.json()
+  const duplicateRowsExcludingRetry = duplicateRows.filter(row => row.idempotency_key !== movement.idempotency_key)
+  const duplicateCheck = clasificarCoincidenciasMovimiento(movement, duplicateRowsExcludingRetry)
+  if (duplicateCheck.exact) return json({
+    error: 'Ya existe un movimiento activo con la misma referencia e importe el mismo día, cuenta, tipo y moneda.',
+    code: 'FINANCIAL_DUPLICATE_EXACT',
+    movimientoExistente: movementResponse(duplicateCheck.exact),
+  }, 409, request)
+  if (duplicateCheck.similar.length && !motivoCoincidencia) return json({
+    error: 'Hay movimientos activos con el mismo concepto y referencia el mismo día, pero distinto importe. Confirma si es una operación diferente y escribe el motivo.',
+    code: 'FINANCIAL_DUPLICATE_SIMILAR',
+    coincidencias: duplicateCheck.similar.map(movementResponse),
+  }, 409, request)
+  if (movement.tipo === 'egreso') {
+    let balances
+    try {
+      balances = await callFinancialRpc(env, 'finanzas_saldos', { p_cuenta_id: context.operador.cuenta_id })
+    } catch {
+      return jsonError('No se pudo comprobar el saldo de la cartera. No se registró nada.', 503, request)
+    }
+    if (balances.schemaVersion !== 1 || !Array.isArray(balances.cuentas)) {
+      return jsonError('No se pudo comprobar el saldo de la cartera. No se registró nada.', 503, request)
+    }
+    const wallet = balances.cuentas.find(row => row.cuentaCustodiaId === custodyId)
+    const saldo = Number(wallet?.saldoNativo)
+    if (!wallet || !Number.isFinite(saldo)) return jsonError('No se pudo comprobar el saldo de la cartera. No se registró nada.', 503, request)
+    const shortfall = evaluarSaldoEgreso(saldo, movement.monto)
+    if (shortfall) return insufficientFundsResponse(shortfall, movement.moneda, request)
+  }
   const fuenteTasaDb = movement.fuente_tasa === 'FIJA' ? 'BCV' : (movement.fuente_tasa || 'BCV')
   const payload = {
     cuenta_id: context.operador.cuenta_id,
@@ -178,6 +228,7 @@ export async function handleCrearFinanzasMovimiento(request, env) {
     observacion_tasa: movement.observacion_tasa,
     referencia: movement.referencia,
     observaciones: movement.observaciones,
+    ...(motivoCoincidencia ? { motivo_coincidencia: motivoCoincidencia } : {}),
     idempotency_key: movement.idempotency_key,
     creado_por: context.operador.id,
     // Método de pago, cuenta de origen y tramos — solo si vienen definidos (columnas migración 226).
@@ -198,10 +249,17 @@ export async function handleCrearFinanzasMovimiento(request, env) {
     headers: serviceHeaders(env),
     body: JSON.stringify(payload),
   })
-
   if (!response.ok) {
     const detail = await response.text()
     const detailLower = detail.toLowerCase()
+    if (detail.includes('FINANCIAL_DUPLICATE_EXACT')) {
+      return json({ error: 'Ya existe un movimiento activo con la misma referencia e importe el mismo día, cuenta, tipo y moneda.', code: 'FINANCIAL_DUPLICATE_EXACT' }, 409, request)
+    }
+    if (detail.includes('FINANCIAL_DUPLICATE_SIMILAR')) {
+      return json({ error: 'Hay un movimiento activo con el mismo concepto y referencia el mismo día. Escribe una justificación para registrar otra operación.', code: 'FINANCIAL_DUPLICATE_SIMILAR' }, 409, request)
+    }
+    const funds = parseInsufficientFundsDetail(detail)
+    if (funds) return insufficientFundsResponse(funds, funds.moneda || movement.moneda, request)
     if (detailLower.includes('idempot') || detailLower.includes('unique')) {
       const retry = await readExistingByKey(env, context.operador.cuenta_id, movement.idempotency_key)
       if (retry.row) return json({ ok: true, idempotente: true, movimiento: movementResponse(retry.row) }, 200, request)
@@ -217,6 +275,7 @@ export async function handleCrearFinanzasMovimiento(request, env) {
   }
 
   const [row] = await response.json()
+
   registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
     usuarioId: context.operador.id,
     usuarioNombre: context.operador.nombre,
@@ -269,7 +328,11 @@ export async function handleAnularFinanzasMovimiento(request, env) {
       }),
     },
   )
-  if (!response.ok) return jsonError('No se pudo anular el movimiento', 409, request)
+  if (!response.ok) {
+    const funds = parseInsufficientFundsDetail(await response.text())
+    if (funds) return insufficientFundsResponse(funds, funds.moneda || current.row.moneda, request, 'Anularlo dejaría la cartera en negativo. ')
+    return jsonError('No se pudo anular el movimiento', 409, request)
+  }
   const [row] = await response.json()
   if (!row) return jsonError('Movimiento no encontrado o ya anulado', 409, request)
 
@@ -329,7 +392,11 @@ export async function handleRevertirAnulacionMovimiento(request, env) {
       }),
     },
   )
-  if (!response.ok) return jsonError('No se pudo revertir la anulación', 409, request)
+  if (!response.ok) {
+    const funds = parseInsufficientFundsDetail(await response.text())
+    if (funds) return insufficientFundsResponse(funds, funds.moneda || current.row.moneda, request, 'Restaurarlo dejaría la cartera en negativo. ')
+    return jsonError('No se pudo revertir la anulación', 409, request)
+  }
   const [row] = await response.json()
   if (!row) return jsonError('Movimiento no encontrado o ya activo', 409, request)
 
@@ -453,88 +520,7 @@ export async function handleGetFinanzasResumen(request, env) {
   } catch (error) { return financialErrorResponse(error, request) }
 }
 
-// Re-asignación masiva: fija cuenta_origen (cuenta de custodia) en movimientos
-// activos. La UI lo usa para clasificar los movimientos "sin cuenta asignada".
-// Nunca toca movimientos anulados ni de otra cuenta_id.
-export async function handlePreviewReconciliacionMovimientos(request, env) {
-  const context = await adminContext(request, env)
-  if (context.error) return context.error
-  const url = new URL(request.url)
-  let filters
-  try {
-    filters = normalizeReportQuery(url)
-  } catch (error) {
-    return jsonError(error.message || 'Filtros inválidos', 400, request)
-  }
-
-  try {
-    const movements = []
-    let offset = 0
-    let version = url.searchParams.get('versionLibro') || null
-    let total = null
-    let continuar = true
-    while (continuar) {
-      const page = await callFinancialRpc(env, 'finanzas_movimientos_pagina', {
-        p_cuenta_id: context.operador.cuenta_id,
-        p_desde: filters.desde,
-        p_hasta: filters.hasta,
-        p_tipo: filters.tipo,
-        p_categoria: filters.categoria,
-        p_moneda: filters.moneda,
-        p_cartera: url.searchParams.get('cartera') || null,
-        p_anulados: false,
-        p_limite: 100,
-        p_offset: offset,
-        p_version: version,
-      })
-      version = page.versionLibro || version
-      total = page.paginacion?.total ?? total
-      const batch = Array.isArray(page.movimientos) ? page.movimientos : []
-      movements.push(...batch)
-      const next = page.paginacion?.siguiente
-      if (next == null || batch.length === 0 || movements.length >= 100000) continuar = false
-      else offset = next
-    }
-
-    const accountsResponse = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/cuentas_custodia?${accountFilter(context.operador.cuenta_id)}` +
-        '&activo=eq.true&select=id,codigo,nombre,tipo,moneda,banco,numero_cuenta,subcuenta_id',
-      { headers: serviceHeaders(env, 'return=minimal') },
-    )
-    if (!accountsResponse.ok) return jsonError('No se pudo cargar el catálogo de cuentas para simular la conciliación', 503, request)
-    const accounts = await accountsResponse.json()
-    const preview = buildReconciliationPreview(movements.map(movementResponse), accounts)
-    return json({
-      ok: true,
-      modo: 'simulacion',
-      filtros: filters,
-      versionLibro: version,
-      totalServidor: total,
-      cuentasConsideradas: accounts.length,
-      ...preview,
-      aviso: 'Simulación de solo lectura. Ningún movimiento fue modificado.',
-    }, 200, request)
-  } catch (error) {
-    return financialErrorResponse(error, request)
-  }
-}
-
-export async function handleReasignarCuentaMovimientos(request, env) {
-  const context = await operarContext(request, env)
-  if (context.error) return context.error
-  const parsed = await readBody(request)
-  if (parsed.error) return parsed.error
-
-  const ids = parsed.body?.ids
-  const custodyId = parsed.body?.cuentaCustodiaId
-  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 100 || !ids.every(isValidUuid)) return jsonError('Selecciona entre 1 y 100 movimientos con identificadores v\u00e1lidos', 400, request)
-  if (!isValidUuid(custodyId)) return jsonError('Selecciona una cuenta de custodia v\u00e1lida', 400, request)
-  try {
-    const result = await callFinancialRpc(env, 'finanzas_asignar_custodia', {
-      p_cuenta_id: context.operador.cuenta_id, p_operador_id: context.operador.id,
-      p_ids: [...new Set(ids.map(id => id.toLowerCase()))].sort(), p_custodia_id: custodyId.toLowerCase(), p_ip: context.ip || null,
-    })
-    if (result.ok !== true || result.cuentaCustodiaId !== custodyId.toLowerCase() || !Number.isInteger(result.actualizados)) return jsonError('No se pudo confirmar la asignaci\u00f3n. Actualiza el libro antes de repetirla.', 503, request)
-    return json(result, 200, request)
-  } catch (error) { return financialErrorResponse(error, request) }
-}
+export {
+  handlePreviewReconciliacionMovimientos,
+  handleReasignarCuentaMovimientos,
+} from './finanzas.conciliacion.js'

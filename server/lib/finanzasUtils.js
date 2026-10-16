@@ -300,6 +300,7 @@ export function movementResponse(row) {
     cuenta_origen: row.cuenta_origen ?? null,
     cuenta_custodia_id: row.cuenta_custodia_id ?? null,
     operacion_id: row.operacion_id ?? null,
+    motivo_coincidencia: row.motivo_coincidencia ?? null,
     origen_operacion: row.origen_operacion ?? null,
     partes: row.partes ? (typeof row.partes === 'string' ? JSON.parse(row.partes) : row.partes) : null,
     estado: row.estado,

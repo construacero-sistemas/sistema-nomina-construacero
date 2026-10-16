@@ -35,6 +35,7 @@ import {
 } from './server/handlers/finanzas.js'
 import { handleSyncVentasPos } from './server/handlers/finanzas.sync.js'
 import { handleCrearTransferencia, handleGetSaldos, handleGetOperacionEstado } from './server/handlers/finanzas.operaciones.js'
+import { handleGetFinanzasPeriodoMensual, handleOperarFinanzasPeriodoMensual, handleRegistrarCuentaEnPeriodoMensual } from './server/handlers/finanzas.periodos.js'
 import {
   handleGetCuentasCustodia,
   handleCrearCuentaCustodia,
@@ -88,6 +89,9 @@ const routes = new Map([
   ['POST /api/finanzas/movimientos/crear', handleCrearFinanzasMovimiento],
   ['POST /api/finanzas/transferencias/crear', handleCrearTransferencia],
   ['GET /api/finanzas/saldos', handleGetSaldos],
+  ['GET /api/finanzas/periodos-mensuales', handleGetFinanzasPeriodoMensual],
+  ['POST /api/finanzas/periodos-mensuales/operar', handleOperarFinanzasPeriodoMensual],
+  ['POST /api/finanzas/periodos-mensuales/alta-cuenta', handleRegistrarCuentaEnPeriodoMensual],
   ['GET /api/operaciones/estado', handleGetOperacionEstado],
   ['POST /api/finanzas/movimientos/anular', handleAnularFinanzasMovimiento],
   ['POST /api/finanzas/movimientos/revertir-anulacion', handleRevertirAnulacionMovimiento],

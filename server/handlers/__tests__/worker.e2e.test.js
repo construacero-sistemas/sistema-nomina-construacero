@@ -118,6 +118,9 @@ describe('Worker E2E determinista', () => {
       if (target.includes('/rest/v1/finanzas_movimientos') && method === 'GET' && target.includes('idempotency_key=')) {
         return supabaseResponse([])
       }
+      if (target.includes('/rest/v1/rpc/finanzas_saldos')) {
+        return supabaseResponse({ schemaVersion: 1, cuentas: [{ cuentaCustodiaId: CUSTODY_ID, saldoNativo: '1000' }] })
+      }
       if (target.includes('/rest/v1/finanzas_movimientos') && method === 'POST') {
         return supabaseResponse([movement])
       }
@@ -177,7 +180,9 @@ describe('Worker E2E determinista', () => {
         expect(JSON.parse(init.body).p_categoria).toBe('Proveedores')
       } else if (target.includes('/rpc/finanzas_movimientos_pagina')) {
         expect(JSON.parse(init.body)).toMatchObject({ p_cuenta_id: ACCOUNT_ID, p_desde: '2026-08-01', p_hasta: '2026-08-31', p_offset: 0 })
-      } else if (target.includes('/usuarios?') || target.includes('/finanzas_')) {
+      } else if (target.includes('/rest/v1/rpc/finanzas_saldos')) {
+        expect(JSON.parse(init.body)).toMatchObject({ p_cuenta_id: ACCOUNT_ID })
+      } else if (target.includes('/usuarios?') || target.includes('/finanzas_movimientos')) {
         if ((init.method || 'GET').toUpperCase() === 'POST') {
           expect(JSON.parse(init.body).cuenta_id).toBe(ACCOUNT_ID)
         } else {
