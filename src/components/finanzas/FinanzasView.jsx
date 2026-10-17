@@ -36,7 +36,7 @@ import CategoriasModal from './CategoriasModal.jsx'
 import AnularDialog from './AnularDialog.jsx'
 import { FinanzasFiltrosSeccion, InlineError } from './FinanzasFiltrosUI.jsx'
 import { exportarCsv } from './exportarMovimientosCsv.js'
-import { isoToday, monthStart, RANGOS_RAPIDOS, rangoRapidoActivo, aplicarRangoRapido as resolverRango } from './fechasRapidas.js'
+import { isoToday, monthStart, mesAnteriorIso, RANGOS_RAPIDOS, rangoRapidoActivo, aplicarRangoRapido as resolverRango } from './fechasRapidas.js'
 import { formatNumber, formatUsd } from './formatos.js'
 import { contarMovimientosSinCuenta } from '../../utils/carterasHelper.js'
 import { summarizeConfirmedBalances } from '../../utils/confirmedBalances.js'
@@ -52,7 +52,7 @@ export default function FinanzasView() {
   const puede = usePuedeFinanzas()
   const puedeVerSaldos = tieneCapacidad(perfil, 'verSaldos')
   const puedeEditar = tieneCapacidad(perfil, 'operarFinanzas')
-  const { tasaActiva, nombreTasa } = useMonedaNomina()
+  const { tasaActiva, nombreTasa, tipoTasa, tasaFallback } = useMonedaNomina()
 
   // Pestaña activa: 'movimientos' (operación diaria) o 'tesoreria' (saldos y carteras)
   const [activeTab, setActiveTab] = useState('movimientos')
@@ -79,6 +79,20 @@ export default function FinanzasView() {
 
   const marketRates = useTasaCambioNomina()
   const { usd, usdt } = marketRates
+  // Tasas del período mensual: la tasa elegida en la cabecera es la principal y
+  // se congela al aperturar. USD/VES y USDT/VES toman la elegida si pertenece a
+  // su familia; la otra se toma del mercado (BCV dólar / USDT).
+  const tasasMensuales = useMemo(() => ({
+    usd: tipoTasa === 'usdt' || tipoTasa === 'bcv_eur' ? marketRates.usd : tasaActiva,
+    usdt: tipoTasa === 'usdt' ? tasaActiva : marketRates.usdt,
+    principal: tasaActiva,
+    nombrePrincipal: nombreTasa,
+    unidadPrincipal: tipoTasa === 'bcv_eur' ? 'EUR' : tipoTasa === 'usdt' ? 'USDT' : 'USD',
+    tasaFallback,
+    source: marketRates.source,
+    lastUpdate: marketRates.lastUpdate,
+    stale: marketRates.stale,
+  }), [tipoTasa, tasaActiva, nombreTasa, tasaFallback, marketRates.usd, marketRates.usdt, marketRates.source, marketRates.lastUpdate, marketRates.stale])
   const categorias = useFinanzasCategorias()
   const movimientos = useFinanzasMovimientos({ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera, mostrarAnulados })
   const resumen = useFinanzasResumen({ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera })
@@ -126,8 +140,15 @@ export default function FinanzasView() {
     saldos: saldoSnapshot, saldosCargando, saldosError, error: cuentasError,
     conciliacionPendiente, refetch: refrescarCuentas,
   } = useCuentasCustodia()
-  const mesActivo = `${isoToday().slice(0, 7)}-01`
-  const periodoMensual = useFinanzasPeriodoMensual(mesActivo)
+  const mesActual = `${isoToday().slice(0, 7)}-01`
+  // El servidor solo cierra el MES ANTERIOR y solo después de su último día. Si
+  // ese cierre sigue pendiente, el panel debe mostrar ese mes (no el corriente)
+  // para que sea posible cerrarlo; si no, se muestra el mes en curso.
+  const mesPrevio = mesAnteriorIso(mesActual)
+  const periodoActualMensual = useFinanzasPeriodoMensual(mesActual)
+  const periodoPrevioMensual = useFinanzasPeriodoMensual(mesPrevio)
+  const cierrePendiente = periodoPrevioMensual.data?.estado === 'abierto'
+  const periodoMensual = cierrePendiente ? periodoPrevioMensual : periodoActualMensual
   const operarPeriodoMensual = useOperarFinanzasPeriodoMensual()
   const registrarCuentaEnPeriodo = useRegistrarCuentaEnPeriodoMensual()
 
@@ -169,12 +190,17 @@ export default function FinanzasView() {
   const guardarCuenta = useCustodySave({
     agregarCuenta, editarCuenta, usd, usdt,
     registrarAperturaMensual: async ({ cuentaId, amount, operationId }) => {
-      if (cuentaEditar || periodoMensual.data?.estado !== 'abierto') return false
-      if (!(marketRates.usd > 0) || !(marketRates.usdt > 0)) throw new Error('No se puede valorar la cuenta sin tasas de apertura confirmadas.')
+      // alta_cuenta solo aplica al mes corriente y debe congelar exactamente las
+      // tasas con las que se aperturó el período: nunca una base USD distinta.
+      if (cuentaEditar || periodoActualMensual.data?.estado !== 'abierto') return false
+      const congelada = (periodoActualMensual.data?.cuentas || []).find(row => Number(row.tasaUsdVes) > 0 && Number(row.tasaUsdtVes) > 0)
+      const tasaUsdVes = String(congelada?.tasaUsdVes ?? tasasMensuales.usd)
+      const tasaUsdtVes = String(congelada?.tasaUsdtVes ?? tasasMensuales.usdt)
+      if (!(Number(tasaUsdVes) > 0) || !(Number(tasaUsdtVes) > 0)) throw new Error('No se puede valorar la cuenta sin tasas de apertura confirmadas.')
       await registrarCuentaEnPeriodo.mutateAsync({
-        mesInicio: periodoMensual.data.mes, idempotencyKey: `alta-mes:${operationId}`,
+        mesInicio: periodoActualMensual.data.mes, idempotencyKey: `alta-mes:${operationId}`,
         payload: { cuentaCustodiaId: cuentaId, saldoReal: amount,
-          tasaUsdVes: String(marketRates.usd), tasaUsdtVes: String(marketRates.usdt), motivo: null },
+          tasaUsdVes, tasaUsdtVes, motivo: null },
       })
       return true
     },
@@ -379,10 +405,11 @@ export default function FinanzasView() {
             loading={periodoMensual.isLoading || saldosCargando}
             pending={operarPeriodoMensual.isPending || registrarCuentaEnPeriodo.isPending}
             error={periodoMensual.isError ? periodoMensual.error?.message : ''}
-            rates={marketRates}
-            onRefresh={async () => { await Promise.all([periodoMensual.refetch(), refrescarCuentas()]) }}
+            rates={tasasMensuales}
+            cierrePendiente={cierrePendiente}
+            onRefresh={async () => { await Promise.all([periodoActualMensual.refetch(), periodoPrevioMensual.refetch(), refrescarCuentas()]) }}
             onOpen={fields => operarPeriodoMensual.mutateAsync(fields)}
-            onClose={fields => operarPeriodoMensual.mutateAsync(fields)}
+            onConfirmClose={fields => operarPeriodoMensual.mutateAsync(fields)}
           />
           <CarterasHeader
             saldos={saldosCarteras} loading={saldosCargando} error={saldosError} conciliacionPendiente={conciliacionPendiente} onRetry={refrescarCuentas}

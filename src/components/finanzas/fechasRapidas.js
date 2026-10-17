@@ -17,6 +17,21 @@ export function monthStart() {
   return getLocalIsoDate(new Date(date.getFullYear(), date.getMonth(), 1))
 }
 
+// Mes anterior (YYYY-MM-01) de un inicio de mes dado. El cierre mensual solo
+// puede ejecutarse sobre el mes previo: la UI necesita su ventana real.
+export function mesAnteriorIso(mesIso = monthStart()) {
+  const [y, m] = String(mesIso).split('-').map(Number)
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return monthStart()
+  return getLocalIsoDate(new Date(y, m - 2, 1))
+}
+
+// Mes siguiente (YYYY-MM-01) de un inicio de mes dado.
+export function mesSiguienteIso(mesIso = monthStart()) {
+  const [y, m] = String(mesIso).split('-').map(Number)
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return monthStart()
+  return getLocalIsoDate(new Date(y, m, 1))
+}
+
 // Lunes de la semana en curso (la semana empieza en lunes).
 export function weekStartIso() {
   const date = new Date()

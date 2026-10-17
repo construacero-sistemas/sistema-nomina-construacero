@@ -51,3 +51,11 @@ export function normalizarMontoInput(raw) {
 
   return null
 }
+
+// Un campo vacío o inválido NO es cero: Number('') da 0 y se confirmaría un
+// saldo falso. Aplica a los conteos físicos de apertura y de cierre mensual.
+export function conteoValido(value) {
+  return typeof value === 'string'
+    ? value.trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0
+    : Number.isFinite(value) && value >= 0
+}

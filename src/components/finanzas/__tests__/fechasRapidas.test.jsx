@@ -9,10 +9,21 @@ import {
   yesterdayIso,
   rangoRapidoActivo,
   aplicarRangoRapido,
+  mesAnteriorIso,
+  mesSiguienteIso,
   RANGOS_RAPIDOS,
 } from '../fechasRapidas.js'
 
 afterEach(() => vi.useRealTimers())
+
+describe('mesAnteriorIso / mesSiguienteIso', () => {
+  it('navega meses con salto de año y resiste entradas inválidas', () => {
+    expect(mesAnteriorIso('2026-10-01')).toBe('2026-09-01')
+    expect(mesAnteriorIso('2026-01-01')).toBe('2025-12-01')
+    expect(mesSiguienteIso('2026-12-01')).toBe('2027-01-01')
+    expect(mesSiguienteIso('2026-10-01')).toBe('2026-11-01')
+  })
+})
 
 describe('fechasRapidas', () => {
   it('isoToday devuelve la fecha local en formato ISO', () => {
