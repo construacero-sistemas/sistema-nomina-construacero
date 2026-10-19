@@ -49,7 +49,10 @@ describe('finanzas.sync — sincronización de ventas del POS hacia Carteras', (
   const incoming = (extra = {}) => ({ ...posClosureResponse, cobros_cxc_usd: 0,
     desglose_pagos: { efectivo_usd: 100 }, ...extra })
   const writes = () => mock.calls.filter(call => call.method !== 'GET')
-  const stored = body => ({ id: IDS.linea, ...body, monto_ves: body.monto * body.tasa_ves,
+  // Identidad completa de la fila almacenada (fecha/tipo/categoria son columnas
+  // NOT NULL reales): la guardia de re-sincronización compara esa identidad.
+  const stored = body => ({ id: IDS.linea, fecha: '2026-08-30', tipo: 'ingreso', categoria: 'Ventas',
+    ...body, monto_ves: body.monto * body.tasa_ves,
     tasa_registrada_en: '2026-08-30T12:00:00Z', estado: 'activo' })
 
   it.each([null, undefined, 0, -1, 'NaN', 'Infinity', true, '', ' ', 1000001])('rechaza tasa diaria inválida %s sin escribir', async tasa_bcv => {
@@ -230,9 +233,9 @@ describe('finanzas.sync — sincronización de ventas del POS hacia Carteras', (
         match: 'idempotency_key=eq.',
         method: 'GET',
         respond: (url) => {
-          if (url.includes('pos-vta-efectivo-usd')) return [{ id: IDS.linea, monto: 1000, categoria: 'Ventas', moneda: 'USD', estado: 'activo' }]
-          if (url.includes('pos-vta-zelle-usd')) return [{ id: IDS.linea2, monto: 500, categoria: 'Ventas', moneda: 'USD', estado: 'activo' }]
-          if (url.includes('pos-cxc')) return [{ id: IDS.periodo, monto: 500, categoria: 'Cobros de clientes', moneda: 'USD', estado: 'activo' }]
+          if (url.includes('pos-vta-efectivo-usd')) return [{ id: IDS.linea, fecha: '2026-08-30', tipo: 'ingreso', monto: 1000, categoria: 'Ventas', moneda: 'USD', estado: 'activo' }]
+          if (url.includes('pos-vta-zelle-usd')) return [{ id: IDS.linea2, fecha: '2026-08-30', tipo: 'ingreso', monto: 500, categoria: 'Ventas', moneda: 'USD', estado: 'activo' }]
+          if (url.includes('pos-cxc')) return [{ id: IDS.periodo, fecha: '2026-08-30', tipo: 'ingreso', monto: 500, categoria: 'Cobros de clientes', moneda: 'USD', estado: 'activo' }]
           return []
         },
       },

@@ -223,6 +223,62 @@ try {
     assert.deepEqual(await ledgerCounts(), beforeInvalidClose)
     assert.equal(Number((await getMonthlyState(months.current)).cuentas.find(row => row.cuentaCustodiaId === newWallet).saldoApertura), 75)
   })
+  await check('Apertura/cierre simples 254: faltantes y sobrantes con motivo, descubierto documentado y alta automática al cerrar', async () => {
+    // Reglas nuevas del plan de simplificación: el conteo real puede quedar por
+    // debajo del libro (faltante) y la apertura puede ser negativa (descubierto),
+    // siempre con motivo de 8..300 caracteres. El cierre da de alta sola la
+    // cuenta que nació a mitad de mes.
+    const sTenant = randomUUID(), sActor = randomUUID()
+    await db.query('INSERT INTO auth.users(id) VALUES($1)', [sTenant])
+    await db.query("INSERT INTO usuarios(id,cuenta_id,nombre,rol) VALUES($1,$2,'Simple QA','jefe')", [sActor, sTenant])
+    const sUsd = await createWallet(sTenant, 'USD'), sVes = await createWallet(sTenant, 'VES')
+    const simpleRates = { tasaUsdVes: '410', tasaUsdtVes: '450' }
+    const simpleOpen = (rows, rates = simpleRates) => ({ cuentas: rows, ...rates })
+    const simpleRow = (id, extra = {}, rates = simpleRates) => ({ cuentaCustodiaId: id, ...rates, ...extra })
+    // Apertura del mes previo (primer mes: conteo directo, sin motivo).
+    await monthlyRpc('aperturar', months.previous, simpleOpen([
+      simpleRow(sUsd, { metodo: 'saldo_real', saldoReal: '500' }),
+      simpleRow(sVes, { metodo: 'saldo_real', saldoReal: '100000' }),
+    ]), 'simple-open-prev-key-001', sTenant, sActor)
+    // Cuenta nacida a mitad de mes: sin apertura previa (antes trababa el cierre).
+    const sNew = await createWallet(sTenant, 'USD')
+    // Cierre con FALTANTE de 100 en USD (antes prohibido): exige motivo y queda registrado.
+    await rejects('PT400', () => monthlyRpc('cerrar', months.previous, simpleOpen([
+      simpleRow(sUsd, { saldoReal: '400', motivo: null }),
+      simpleRow(sVes, { saldoReal: '100000', motivo: null }),
+      simpleRow(sNew, { saldoReal: '0', motivo: null }),
+    ], { tasaUsdVes: '500', tasaUsdtVes: '600' }), 'simple-close-prev-key-01', sTenant, sActor))
+    const closed = await monthlyRpc('cerrar', months.previous, simpleOpen([
+      simpleRow(sUsd, { saldoReal: '400', motivo: 'Faltante documentado en acta' }),
+      simpleRow(sVes, { saldoReal: '100000', motivo: null }),
+      simpleRow(sNew, { saldoReal: '0', motivo: null }),
+    ], { tasaUsdVes: '500', tasaUsdtVes: '600' }), 'simple-close-prev-key-01', sTenant, sActor)
+    assert.equal(closed.estado, 'cerrado')
+    const shortfall = await one('SELECT diferencia_cierre,saldo_cierre_real,motivo_cierre FROM finanzas_periodos_mensuales_cuentas WHERE cuenta_id=$1 AND cuenta_custodia_id=$2', [sTenant, sUsd])
+    assert.equal(Number(shortfall.diferencia_cierre), -100); assert.equal(Number(shortfall.saldo_cierre_real), 400)
+    // 4.4: la cuenta sin apertura se dio de alta sola con su saldo calculado (0).
+    const autoRow = await one('SELECT metodo_apertura,saldo_apertura,motivo_apertura FROM finanzas_periodos_mensuales_cuentas WHERE cuenta_id=$1 AND cuenta_custodia_id=$2', [sTenant, sNew])
+    assert.equal(autoRow.metodo_apertura, 'alta_cuenta'); assert.equal(Number(autoRow.saldo_apertura), 0)
+    assert.match(autoRow.motivo_apertura, /Alta autom/)
+    // Descubierto: el mes corriente ya tiene un ingreso antes de aperturar.
+    await db.query(`INSERT INTO finanzas_movimientos(cuenta_id,fecha,tipo,categoria,concepto,monto,moneda,tasa_ves,tasa_usd_ves,fuente_tasa,idempotency_key,cuenta_custodia_id)
+      VALUES($1,$2,'ingreso','QA','Ingreso previo a la apertura',100,'USD',400,400,'BCV',$3,$4)`, [sTenant, `${months.current.slice(0, 7)}-05`, randomUUID(), sNew])
+    // 4.1/D1: apertura por debajo del cierre anterior y en negativo. Sin motivo → PT400.
+    const currentRows = (motivoUsd) => [
+      simpleRow(sUsd, { metodo: 'saldo_real', saldoReal: '300', motivo: motivoUsd }, { tasaUsdVes: '500', tasaUsdtVes: '600' }),
+      simpleRow(sVes, { metodo: 'cierre_anterior' }, { tasaUsdVes: '500', tasaUsdtVes: '600' }),
+      simpleRow(sNew, { metodo: 'saldo_real', saldoReal: '0', motivo: 'Descubierto documentado en acta' }, { tasaUsdVes: '500', tasaUsdtVes: '600' }),
+    ]
+    await rejects('PT400', () => monthlyRpc('aperturar', months.current, simpleOpen(currentRows(null), { tasaUsdVes: '500', tasaUsdtVes: '600' }), 'simple-open-cur-key-001', sTenant, sActor))
+    const opened = await monthlyRpc('aperturar', months.current, simpleOpen(currentRows('Faltante verificado contra el cierre anterior'), { tasaUsdVes: '500', tasaUsdtVes: '600' }), 'simple-open-cur-key-001', sTenant, sActor)
+    assert.equal(opened.estado, 'abierto')
+    const openedState = await monthlyState(months.current, sTenant)
+    const usdOpened = openedState.cuentas.find(row => row.cuentaCustodiaId === sUsd)
+    assert.equal(Number(usdOpened.saldoApertura), 300); assert.equal(Number(usdOpened.diferenciaApertura), -100)
+    // D1: el descubierto (apertura negativa) queda registrado con su motivo.
+    const deficit = openedState.cuentas.find(row => row.cuentaCustodiaId === sNew)
+    assert.equal(Number(deficit.saldoApertura), -100)
+  })
   await check('Concurrencia: abrir y cerrar el mismo mes en paralelo deja un solo ganador', async () => {
     const raceTenant = randomUUID(), raceActor = randomUUID()
     await db.query('INSERT INTO auth.users(id) VALUES($1)', [raceTenant])
@@ -774,6 +830,105 @@ try {
       return
     }
     assert.fail(`El SQL no refleja la matriz única en ${resumen.length} superficies: ${resumen.slice(0, 6).join(' | ')}`)
+  })
+
+  // ── Correcciones F1/F2/F4/F5 (migración 255) ────────────────────────────
+  await check('F4: la anulación de movimientos exige usuario O motivo, no ambos', async () => {
+    const t = randomUUID(), u = randomUUID()
+    await db.query('INSERT INTO auth.users(id) VALUES($1)', [t])
+    await db.query("INSERT INTO usuarios(id,cuenta_id,nombre,rol) VALUES($1,$2,'F4 QA','jefe')", [u, t])
+    // El sujeto del check es el CONSTRAINT de anulación, no los guardes de
+    // saldo/duplicado: se aíslan como hace la propia migración 250.
+    await db.query('ALTER TABLE public.finanzas_movimientos DISABLE TRIGGER USER')
+    try {
+      const insertar = (estado, anuladoPor, motivo) => db.query(
+        `INSERT INTO finanzas_movimientos(id,cuenta_id,fecha,tipo,categoria,concepto,monto,moneda,tasa_ves,tasa_usd_ves,fuente_tasa,idempotency_key,estado,anulado_en,anulado_por,motivo_anulacion)
+         VALUES($1,$2,'2026-08-01','ingreso','QA','F4',10,'USD',100,100,'BCV',$3,$4,CASE WHEN $4='anulado' THEN now() ELSE NULL END,$5,$6)`,
+        [randomUUID(), t, randomUUID(), estado, anuladoPor, motivo],
+      )
+      // usuario sin motivo → basta el usuario.
+      await insertar('anulado', u, null)
+      // motivo sin usuario → basta el motivo.
+      await insertar('anulado', null, 'Anulado por revisión contable')
+      // anulado sin usuario ni motivo → prohibido.
+      await rejects('23514', () => insertar('anulado', null, null))
+      // activo sin campos de anulación sigue válido.
+      await insertar('activo', null, null)
+    } finally {
+      await db.query('ALTER TABLE public.finanzas_movimientos ENABLE TRIGGER USER')
+    }
+  })
+
+  await check('F2: la descripción de la retención está desacoplada de la de la purga', async () => {
+    const col = await one(`SELECT col_description('public.configuracion_negocio'::regclass,
+      (SELECT attnum FROM pg_attribute WHERE attrelid='public.configuracion_negocio'::regclass AND attname='retencion_meses')) AS d`)
+    assert.ok(col.d, 'retencion_meses debe tener descripción')
+    assert.ok(!/purga/i.test(col.d), `la descripción de la retención no debe mencionar la purga: ${col.d}`)
+    const fn = await one(`SELECT obj_description('public.retencion_purga(uuid,integer,boolean,text,uuid,text)'::regprocedure) AS d`)
+    assert.ok(fn.d, 'retencion_purga debe tener descripción')
+    assert.ok(!/retenci/i.test(fn.d), `la descripción de la purga no debe mencionar la retención: ${fn.d}`)
+  })
+
+  await check('F5: la purga conserva solo lo exigido, ordena por riesgo y reporta cuánto falta', async () => {
+    const t = randomUUID(), u = randomUUID(), emp = randomUUID()
+    await db.query('INSERT INTO auth.users(id) VALUES($1)', [t])
+    await db.query("INSERT INTO usuarios(id,cuenta_id,nombre,rol) VALUES($1,$2,'F5 QA','jefe')", [u, t])
+    await db.query('INSERT INTO clientes(id,cuenta_id,nombre) VALUES($1,$2,$3)', [emp, t, 'F5 Empleado'])
+    const abierto = randomUUID(), cerrado = randomUUID()
+    // El guard de períodos exige nacer 'abierto'; para el escenario hace falta
+    // uno cerrado, así que se siembran con los guards aislados (igual que 250).
+    await db.query('ALTER TABLE public.nomina_periodos DISABLE TRIGGER USER')
+    try {
+      await db.query("INSERT INTO nomina_periodos(id,cuenta_id,nombre,desde,hasta,estado) VALUES($1,$2,'F5 abierto','2020-01-01','2020-01-31','abierto')", [abierto, t])
+      await db.query("INSERT INTO nomina_periodos(id,cuenta_id,nombre,desde,hasta,estado) VALUES($1,$2,'F5 cerrado','2019-01-01','2019-01-31','cerrado')", [cerrado, t])
+    } finally {
+      await db.query('ALTER TABLE public.nomina_periodos ENABLE TRIGGER USER')
+    }
+    // auditoria: una vieja (se purga) y una reciente (queda en la ventana).
+    await db.query("INSERT INTO auditoria(cuenta_id,ts,categoria,accion) VALUES($1,'2020-01-05','SISTEMA','F5 vieja')", [t])
+    await db.query('INSERT INTO auditoria(cuenta_id,ts,categoria,accion) VALUES($1,now(),\'SISTEMA\',\'F5 reciente\')', [t])
+    // snapshots: uno de un período ABIERTO (se conserva) y uno de uno CERRADO
+    // (fuera de la ventana ya no protege: se purga).
+    await db.query("INSERT INTO nomina_tasas_snapshot(id,fecha,moneda_origen,valor,fuente,observado_en,periodo_id,cuenta_id) VALUES($1,'2020-01-15','USD',100,'BCV',now(),$2,$3)", [randomUUID(), abierto, t])
+    await db.query("INSERT INTO nomina_tasas_snapshot(id,fecha,moneda_origen,valor,fuente,observado_en,periodo_id,cuenta_id) VALUES($1,'2019-01-15','USD',90,'BCV',now(),$2,$3)", [randomUUID(), cerrado, t])
+    // asistencia: dentro del período abierto (se conserva), dentro del cerrado
+    // y fuera de cualquier período (ambas se purgan).
+    await db.query('INSERT INTO registro_asistencia(id,cuenta_id,empleado_id,fecha) VALUES($1,$2,$3,\'2020-01-10\')', [randomUUID(), t, emp])
+    await db.query('INSERT INTO registro_asistencia(id,cuenta_id,empleado_id,fecha) VALUES($1,$2,$3,\'2019-01-10\')', [randomUUID(), t, emp])
+    await db.query('INSERT INTO registro_asistencia(id,cuenta_id,empleado_id,fecha) VALUES($1,$2,$3,\'2019-02-10\')', [randomUUID(), t, emp])
+
+    const filas = (await db.query("SELECT tabla,eliminadas,pendientes FROM retencion_purga($1, 3, true, 'manual', NULL, NULL)", [t])).rows
+    assert.deepEqual(filas.map(r => r.tabla), ['auditoria', 'nomina_tasas_snapshot', 'registro_asistencia'], 'el reporte sale en orden de riesgo')
+    const porTabla = Object.fromEntries(filas.map(r => [r.tabla, r]))
+    assert.equal(Number(porTabla.auditoria.eliminadas), 1); assert.equal(Number(porTabla.auditoria.pendientes), 1)
+    assert.equal(Number(porTabla.nomina_tasas_snapshot.eliminadas), 1); assert.equal(Number(porTabla.nomina_tasas_snapshot.pendientes), 1)
+    assert.equal(Number(porTabla.registro_asistencia.eliminadas), 2); assert.equal(Number(porTabla.registro_asistencia.pendientes), 1)
+
+    // La ejecución real respeta el mismo cálculo: lo conservado es solo lo exigido.
+    await db.query("SELECT retencion_purga($1, 3, false, 'manual', $2, NULL)", [t, u])
+    assert.equal((await one('SELECT count(*)::int AS n FROM registro_asistencia WHERE cuenta_id=$1', [t])).n, 1)
+    assert.equal((await one('SELECT count(*)::int AS n FROM nomina_tasas_snapshot WHERE cuenta_id=$1', [t])).n, 1)
+    assert.equal((await one('SELECT count(*)::int AS n FROM auditoria WHERE cuenta_id=$1', [t])).n, 1)
+  })
+
+  await check('F1: nomina_pagos.empleado_id se convierte en llave foránea real', async () => {
+    const t = randomUUID(), emp = randomUUID()
+    await db.query('INSERT INTO auth.users(id) VALUES($1)', [t])
+    await db.query('INSERT INTO clientes(id,cuenta_id,nombre) VALUES($1,$2,$3)', [emp, t, 'F1 Empleado'])
+    // Tabla legada de la base viva: existe fuera de las migraciones.
+    await db.query('CREATE TABLE public.nomina_pagos (id uuid PRIMARY KEY, empleado_id uuid)')
+    await db.query('INSERT INTO public.nomina_pagos(id,empleado_id) VALUES($1,$2)', [randomUUID(), emp])
+    await db.query('INSERT INTO public.nomina_pagos(id,empleado_id) VALUES($1,$2)', [randomUUID(), randomUUID()])
+
+    const r = await one('SELECT public.nomina_pagos_fk_empleado_real() AS resultado')
+    assert.match(r.resultado, /NOT VALID: 1 empleado_id huérfanos/, r.resultado)
+    const con = await one("SELECT count(*)::int AS n FROM pg_constraint WHERE conrelid='public.nomina_pagos'::regclass AND contype='f' AND conname='fk_nomina_pagos_empleado'")
+    assert.equal(con.n, 1, 'fk_nomina_pagos_empleado debe existir')
+    // La FK real impide nuevos huérfanos aunque quede NOT VALID.
+    await rejects('23503', () => db.query('INSERT INTO public.nomina_pagos(id,empleado_id) VALUES($1,$2)', [randomUUID(), randomUUID()]))
+    // Idempotente: no se vuelve a aplicar.
+    assert.equal((await one('SELECT public.nomina_pagos_fk_empleado_real() AS resultado')).resultado, 'ya aplicada')
+    await db.query('DROP TABLE public.nomina_pagos')
   })
 
   result.passed = true

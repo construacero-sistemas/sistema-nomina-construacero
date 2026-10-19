@@ -102,6 +102,30 @@ async function readExistingByKey(env, accountId, key) {
   return { error: false, row: row || null }
 }
 
+// 4.6: una clave de operación identifica la identidad económica de UN
+// movimiento (monto, moneda, tipo, fecha, clasificación y cuenta). Si un
+// reintento la cambia no es un replay: se rechaza con 409 para no confirmar
+// con éxito algo distinto a lo que el usuario cree haber enviado. La
+// referencia es metadato documental y no participa: los replay legados del
+// flujo de nómina llegan con otra referencia y deben seguir siendo idempotentes.
+function mismoMovimiento(row, movement, custodyId) {
+  return row.fecha === movement.fecha
+    && row.tipo === movement.tipo
+    && String(row.categoria).toLowerCase() === String(movement.categoria).toLowerCase()
+    && String(row.concepto).toLowerCase() === String(movement.concepto).toLowerCase()
+    && Number(row.monto) === Number(movement.monto)
+    && row.moneda === movement.moneda
+    && (row.cuenta_custodia_id ?? null) === (custodyId ?? null)
+}
+
+function idempotencyConflictResponse(row, request) {
+  return json({
+    error: 'La clave de operación ya se usó con un movimiento distinto. Revisa el movimiento registrado antes de reintentar.',
+    code: 'FINANCIAL_IDEMPOTENCY_CONFLICT',
+    movimiento: movementResponse(row),
+  }, 409, request)
+}
+
 async function readMovement(env, accountId, id) {
   const response = await fetch(
     `${env.SUPABASE_URL}/rest/v1/finanzas_movimientos?id=eq.${queryValue(id)}` +
@@ -173,6 +197,7 @@ export async function handleCrearFinanzasMovimiento(request, env) {
   const existing = await readExistingByKey(env, context.operador.cuenta_id, movement.idempotency_key)
   if (existing.error) return jsonError('No se pudo comprobar la idempotencia', 500, request)
   if (existing.row) {
+    if (!mismoMovimiento(existing.row, movement, custodyId)) return idempotencyConflictResponse(existing.row, request)
     return json({ ok: true, idempotente: true, movimiento: movementResponse(existing.row) }, 200, request)
   }
   const duplicatesResponse = await fetch(
@@ -262,7 +287,10 @@ export async function handleCrearFinanzasMovimiento(request, env) {
     if (funds) return insufficientFundsResponse(funds, funds.moneda || movement.moneda, request)
     if (detailLower.includes('idempot') || detailLower.includes('unique')) {
       const retry = await readExistingByKey(env, context.operador.cuenta_id, movement.idempotency_key)
-      if (retry.row) return json({ ok: true, idempotente: true, movimiento: movementResponse(retry.row) }, 200, request)
+      if (retry.row && mismoMovimiento(retry.row, movement, custodyId)) {
+        return json({ ok: true, idempotente: true, movimiento: movementResponse(retry.row) }, 200, request)
+      }
+      if (retry.row) return idempotencyConflictResponse(retry.row, request)
       return jsonError('Movimiento duplicado', 409, request)
     }
 
@@ -302,7 +330,9 @@ export async function handleAnularFinanzasMovimiento(request, env) {
   const motivo = String(parsed.body?.motivo || '').trim()
   const key = String(parsed.body?.idempotencyKey || parsed.body?.idempotency_key || '').trim()
   if (!isValidUuid(id)) return jsonError('id inválido', 400, request)
-  if (motivo.length < 3 || motivo.length > 300) return jsonError('motivo inválido', 400, request)
+  // usuario O motivo, no ambos: quien anula siempre queda registrado
+  // (anulado_por), así que el motivo es opcional; si llega, debe ser válido.
+  if (motivo && (motivo.length < 3 || motivo.length > 300)) return jsonError('motivo inválido', 400, request)
   if (!/^[A-Za-z0-9._:-]{16,128}$/.test(key)) return jsonError('idempotencyKey inválida', 400, request)
 
   const current = await readMovement(env, context.operador.cuenta_id, id)
@@ -323,7 +353,7 @@ export async function handleAnularFinanzasMovimiento(request, env) {
         estado: 'anulado',
         anulado_en: new Date().toISOString(),
         anulado_por: context.operador.id,
-        motivo_anulacion: motivo,
+        motivo_anulacion: motivo || null,
         anulacion_idempotency_key: key,
       }),
     },
@@ -345,7 +375,7 @@ export async function handleAnularFinanzasMovimiento(request, env) {
     accion: 'MOVIMIENTO_ANULADO',
     entidadTipo: 'finanzas_movimientos',
     entidadId: row.id,
-    meta: { motivo },
+    meta: { motivo: motivo || null },
     ip: context.ip,
   }).catch(() => {})
 

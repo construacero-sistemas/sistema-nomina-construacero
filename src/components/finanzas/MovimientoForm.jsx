@@ -428,8 +428,10 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose 
           />
         </div>
 
-        {/* 2b. Cuenta de custodia asociada (bancos, Binance USDT, Zelle) — en efectivo la asignación de caja es 100% automática */}
-        {!esEfectivo && (
+        {/* 2b. Cuenta de custodia asociada. Se oculta solo con exactamente una
+            cuenta compatible (asignación automática); con varias cajas del mismo
+            método el selector SIEMPRE aparece para poder elegir (4.7). */}
+        {(!esEfectivo || opcionesCuenta.length > 1) && (
           <div className="space-y-1">
             <label className="block text-xs font-bold text-slate-700">
               {tipo === 'ingreso' ? 'Cuenta / Billetera de destino *' : 'Cuenta / Billetera de origen *'}

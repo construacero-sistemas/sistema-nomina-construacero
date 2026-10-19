@@ -30,6 +30,7 @@ const movementInput = {
 const movement = {
   id: IDS.linea, ...movementInput, tasa_ves: 120, monto_ves: 12000,
   fuente_tasa: 'MANUAL', estado: 'activo', creado_en: '2026-08-18T12:00:00Z',
+  cuenta_custodia_id: IDS.config,
 }
 
 describe('finanzas — períodos mensuales de tesorería', () => {
@@ -58,10 +59,41 @@ describe('finanzas — períodos mensuales de tesorería', () => {
     mock = installFetchMock([{ match: '/rpc/finanzas_periodo_mensual_operar', method: 'POST', respond: { ok: true, estado: 'abierto' } }])
     const bad = await M.handleOperarFinanzasPeriodoMensual(monthlyRequest({ accion: 'aperturar', mesInicio: '2026-10-01', idempotencyKey: 'monthly-open-key-0001', payload: { ...payload, tasaUsdVes: null } }), ENV)
     expect((await readResponse(bad)).status).toBe(400)
-    expect(mock.calls).toHaveLength(0)
+    // Sin tasas ni valoración previa registrada en el libro no se intenta ningún RPC.
+    expect(mock.calls.filter(call => call.method === 'POST')).toHaveLength(0)
     const response = await M.handleOperarFinanzasPeriodoMensual(monthlyRequest({ accion: 'aperturar', mesInicio: '2026-10-01', idempotencyKey: 'monthly-open-key-0001', payload }), ENV)
     expect((await readResponse(response)).status).toBe(200)
-    expect(mock.calls[0].body).toMatchObject({ p_cuenta_id: OPERADORES.administracion.cuenta_id, p_operador_id: OPERADORES.administracion.id, p_accion: 'aperturar', p_mes_inicio: '2026-10-01' })
+    const rpc = mock.calls.find(call => call.url.includes('/rpc/finanzas_periodo_mensual_operar'))
+    expect(rpc.body).toMatchObject({ p_cuenta_id: OPERADORES.administracion.cuenta_id, p_operador_id: OPERADORES.administracion.id, p_accion: 'aperturar', p_mes_inicio: '2026-10-01' })
+  })
+
+  it('sin tasas del cliente usa la última valoración registrada y arma la lista de cuentas (254)', async () => {
+    mock = installFetchMock([
+      { match: 'order=creado_en.desc', method: 'GET', respond: [
+        { moneda: 'USD', tasa_ves: 400, tasa_usd_ves: 400 },
+        { moneda: 'USDT', tasa_ves: 450, tasa_usd_ves: 400 },
+      ] },
+      { match: '/rpc/finanzas_periodo_mensual_estado', method: 'POST', respond: {
+        schemaVersion: 1, estado: 'sin_apertura', mes: '2026-10-01',
+        cierreAnterior: [{ cuentaCustodiaId: IDS.config, moneda: 'USD', saldo: '80' }],
+        cuentas: [
+          { cuentaCustodiaId: IDS.config, nombre: 'Caja USD', moneda: 'USD', activo: true, saldoHistorico: '80.000000' },
+          { cuentaCustodiaId: IDS.periodo, nombre: 'Banco VES', moneda: 'VES', activo: true, saldoHistorico: '1500.000000' },
+        ],
+      } },
+      { match: '/rpc/finanzas_periodo_mensual_operar', method: 'POST', respond: { ok: true, estado: 'abierto' } },
+    ])
+    const response = await M.handleOperarFinanzasPeriodoMensual(monthlyRequest({
+      accion: 'aperturar', mesInicio: '2026-10-01', idempotencyKey: 'monthly-open-key-0002', payload: {},
+    }), ENV)
+    expect((await readResponse(response)).status).toBe(200)
+    const sent = mock.calls.find(call => call.url.includes('/rpc/finanzas_periodo_mensual_operar')).body
+    expect(sent.p_payload.tasaUsdVes).toBe('400')
+    expect(sent.p_payload.tasaUsdtVes).toBe('450')
+    expect(sent.p_payload.cuentas).toEqual([
+      { cuentaCustodiaId: IDS.config, metodo: 'cierre_anterior', tasaUsdVes: '400', tasaUsdtVes: '450' },
+      { cuentaCustodiaId: IDS.periodo, metodo: 'saldo_real', saldoReal: '1500', motivo: null, tasaUsdVes: '400', tasaUsdtVes: '450' },
+    ])
   })
 
   it('alta de cuenta solo opera con período abierto y confirma clave tenant-scoped', async () => {
@@ -205,6 +237,38 @@ describe('finanzas — flujo crear, reportar y anular', () => {
     const result = await readResponse(response)
     expect(result.status).toBe(200)
     expect(result.body.idempotente).toBe(true)
+    expect(mock.calls.filter(call => call.method === 'POST')).toHaveLength(0)
+  })
+
+  it('los replay legados con otra referencia siguen siendo idempotentes', async () => {
+    // Contrato del simulador determinista: la referencia es metadato documental;
+    // los reintentos del flujo de nómina legado llegan con otra referencia y no
+    // deben recibir conflicto de idempotencia.
+    const custodyId = IDS.config
+    mock = installFetchMock([
+      { match: `/cuentas_custodia?id=eq.${custodyId}`, method: 'GET', respond: [{ id: custodyId, nombre: 'Caja USD', moneda: 'USD' }] },
+      { match: 'idempotency_key=eq.movimiento-test-0001', method: 'GET', respond: [{ ...movement, referencia: 'NOMINA-QUINCENA-1' }] },
+    ])
+    const response = await H.handleCrearFinanzasMovimiento(
+      makeRequest({ ...movementInput, referencia: 'REF-OP-MES', cuentaCustodiaId: custodyId }), ENV)
+    const result = await readResponse(response)
+    expect(result.status).toBe(200)
+    expect(result.body.idempotente).toBe(true)
+    expect(mock.calls.filter(call => call.method === 'POST')).toHaveLength(0)
+  })
+
+  it('la misma clave con datos distintos se rechaza en vez de confirmar el movimiento previo', async () => {
+    const custodyId = IDS.config
+    mock = installFetchMock([
+      { match: `/cuentas_custodia?id=eq.${custodyId}`, method: 'GET', respond: [{ id: custodyId, nombre: 'Caja USD', moneda: 'USD' }] },
+      { match: 'idempotency_key=eq.movimiento-test-0001', method: 'GET', respond: [movement] },
+    ])
+    const response = await H.handleCrearFinanzasMovimiento(
+      makeRequest({ ...movementInput, monto: 250, cuentaCustodiaId: custodyId }), ENV)
+    const result = await readResponse(response)
+    expect(result.status).toBe(409)
+    expect(result.body.code).toBe('FINANCIAL_IDEMPOTENCY_CONFLICT')
+    expect(result.body.movimiento.monto).toBe(100)
     expect(mock.calls.filter(call => call.method === 'POST')).toHaveLength(0)
   })
 

@@ -10,7 +10,7 @@ import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import PageHeader from '../../../compat/components/ui/PageHeader.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
-import ResumenPeriodoKpis from './ResumenPeriodoKpis.jsx'
+import MesAMesResumen from './MesAMesResumen.jsx'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
@@ -321,6 +321,21 @@ export default function FinanzasView() {
          ========================================================= */}
       {pestanaVisible === 'movimientos' && (
         <div className="space-y-4">
+          {/* Portada "Mes a mes": entró, salió y ganancia del período, con el
+              detalle por categoría y por cuenta. Reservada a verSaldos (misma
+              regla de capacidades que los agregados). */}
+          {puedeVerSaldos && (
+            <MesAMesResumen
+              movimientos={movimientosFiltrados}
+              summary={resumen.isError ? null : summary}
+              loading={movimientos.isLoading || resumen.isLoading}
+              cuentas={cuentas}
+              totalServidor={totalServidor}
+              desde={desde}
+              hasta={hasta}
+            />
+          )}
+
           <FinanzasFiltrosSeccion
             filtroCartera={filtroCartera}
             setFiltroCartera={setFiltroCartera}
@@ -354,9 +369,6 @@ export default function FinanzasView() {
               tasaActiva={tasaActiva}
               nombreTasa={nombreTasa}
             />
-
-          {/* KPI Cards Globales del período */}
-          {puedeVerSaldos && <ResumenPeriodoKpis summary={resumen.isError ? null : summary} loading={resumen.isLoading} moneda={moneda} onSelectMoneda={setMoneda} tasaActiva={tasaActiva} />}
 
           {puedeVerSaldos && resumen.isError && <InlineError message="No se pudo cargar el resumen." onRetry={() => resumen.refetch()} />}
 

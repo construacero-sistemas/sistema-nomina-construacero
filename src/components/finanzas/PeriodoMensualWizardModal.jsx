@@ -76,6 +76,10 @@ export default function PeriodoMensualWizardModal({
     }))
   })
 
+  // UX: el error de un conteo incompleto solo se muestra tras salir del campo
+  // (o al intentar avanzar), no al abrir el wizard con los campos intactos.
+  const [touched, setTouched] = useState({})
+
   // Cuentas dadas de alta con el wizard abierto: reciben la entrada por defecto
   // (conteo físico pendiente) en vez de enviarse sin método al servidor.
   const entryDe = id => opening[id] || { metodo: 'saldo_real', saldoReal: '', motivo: '' }
@@ -85,6 +89,7 @@ export default function PeriodoMensualWizardModal({
     const entry = entryDe(wallet.id)
     return entry.metodo === 'saldo_real' && !conteoValido(entry.saldoReal)
   })
+  // El descubierto (apertura negativa) no bloquea: se registra con motivo.
   const aperturaNegativa = (activeWallets || []).some(wallet => {
     const entry = entryDe(wallet.id)
     return entry.metodo === 'saldo_real' && conteoValido(entry.saldoReal)
@@ -116,24 +121,20 @@ export default function PeriodoMensualWizardModal({
     const aperturaDe = row => row.metodo === 'cierre_anterior'
       ? Number((periodo?.cierreAnterior || []).find(item => item.cuentaCustodiaId === row.cuentaCustodiaId)?.saldo)
       : Number(row.saldoReal) - netoMesDe(periodo, row.cuentaCustodiaId)
-    if (rows.some(row => row.metodo === 'saldo_real' && aperturaDe(row) < -0.000001)) {
-      setMessage('El conteo físico no cubre los movimientos del mes en alguna cuenta; la apertura no puede quedar en negativo.'); return
-    }
-    // Regla dura del servidor, anticipada: la apertura nunca reduce los fondos
-    // confirmados del cierre anterior, haya motivo o no.
+    // Reglas simples (plan de simplificación): faltantes frente al cierre
+    // anterior y descubiertos (apertura negativa) permitidos, con motivo.
     if (rows.some(row => {
       const previous = (periodo?.cierreAnterior || []).find(item => item.cuentaCustodiaId === row.cuentaCustodiaId)
-      return previous?.saldo != null && aperturaDe(row) < Number(previous.saldo) - 0.000001
-    })) { setMessage('La apertura no puede quedar por debajo del cierre anterior; el servidor protege los fondos confirmados.'); return }
-    // Misma exigencia que el servidor: el motivo es obligatorio solo frente al
-    // CIERRE ANTERIOR. Sin cierres previos, el saldo del libro es referencia
-    // informativa y el motivo queda opcional.
-    if (rows.some(row => {
-      const previous = (periodo?.cierreAnterior || []).find(item => item.cuentaCustodiaId === row.cuentaCustodiaId)
-      return row.metodo === 'saldo_real' && previous?.saldo != null
-        && Math.abs(aperturaDe(row) - Number(previous.saldo)) > 0.000001
+      return row.metodo === 'saldo_real'
+        && ((previous?.saldo != null && Math.abs(aperturaDe(row) - Number(previous.saldo)) > 0.000001) || aperturaDe(row) < -0.000001)
         && String(row.motivo || '').trim().length < 8
-    })) { setMessage('Justifica con al menos 8 caracteres cada diferencia frente al cierre anterior.'); return }
+    })) { setMessage('Justifica con al menos 8 caracteres cada diferencia frente al saldo anterior (incluye aperturas en negativo).'); return }
+    // Motivo escrito pero incompleto: si se escribe, mínimo 8 caracteres aunque
+    // sea opcional; vacío sigue permitido cuando la regla no lo exige.
+    if (rows.some(row => {
+      const note = String(row.motivo || '').trim()
+      return note !== '' && note.length < 8
+    })) { setMessage('Si escribes un motivo, usa al menos 8 caracteres (o déjalo vacío).'); return }
     rows.forEach(row => { delete row.previewSaldo })
     try {
       await onOpen({ accion: 'aperturar', mesInicio: periodo.mes, idempotencyKey: aperturaKey, payload: { cuentas: rows, tasaUsdVes: String(rates.usd), tasaUsdtVes: String(rates.usdt) } })
@@ -163,15 +164,15 @@ export default function PeriodoMensualWizardModal({
           </button>
           {step < 1 ? (
             <div className="flex items-center gap-3">
-              {(conteoPendiente || aperturaNegativa) && (
+              {conteoPendiente && (
                 <span className="text-xs text-amber-700 font-medium hidden sm:inline">
-                  {conteoPendiente ? 'Completa los saldos para continuar' : 'Hay aperturas en negativo: ajusta el conteo'}
+                  Completa los saldos para continuar
                 </span>
               )}
               <button
                 type="button"
                 onClick={() => setStep(step + 1)}
-                disabled={pending || (step === 0 && (conteoPendiente || aperturaNegativa))}
+                disabled={pending || (step === 0 && conteoPendiente)}
                 className="min-h-11 px-5 rounded-xl bg-primary hover:bg-primary-hover active:bg-primary-dark text-white font-bold text-sm shadow-sm transition-colors disabled:opacity-50"
               >
                 Siguiente
@@ -181,7 +182,7 @@ export default function PeriodoMensualWizardModal({
             <button
               type="button"
               onClick={confirmOpening}
-              disabled={pending || !canUseRates || conteoPendiente || aperturaNegativa}
+              disabled={pending || !canUseRates || conteoPendiente}
               className="min-h-11 px-5 rounded-xl bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-sm shadow-sm transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {pending && <RefreshCw size={15} className="animate-spin" />}
@@ -247,15 +248,20 @@ export default function PeriodoMensualWizardModal({
               const difiereAnterior = anterior && saldoAperturaReal != null && Math.abs(saldoAperturaReal - Number(anterior.saldo)) > 0.000001
               const difiereValor = difiereAnterior ? saldoAperturaReal - Number(anterior.saldo) : 0
               const motivoValido = String(entry.motivo || '').trim().length >= 8
-              // El motivo es obligatorio solo frente al CIERRE ANTERIOR (misma
-              // regla del servidor); frente al saldo del libro es opcional.
-              const motivoObligatorio = anterior?.origen === 'cierre anterior' && difiereAnterior
+              const descubierto = saldoAperturaReal != null && saldoAperturaReal < -0.000001
+              // El motivo es obligatorio frente al cierre anterior (cualquier
+              // diferencia) y para toda apertura en negativo (descubierto).
+              const motivoObligatorio = (anterior?.origen === 'cierre anterior' && difiereAnterior) || descubierto
+              // Escrito pero corto tampoco vale: se marca igual que el obligatorio.
+              const motivoIncompleto = !motivoValido && (motivoObligatorio || Boolean(entry.motivo?.trim()))
+              const conteoInvalido = isManual && !conteoValido(entry.saldoReal)
+              const mostrarErrorConteo = conteoInvalido && Boolean(touched[wallet.id])
 
               return (
                 <div
                   key={wallet.id}
                   className={`rounded-xl border p-3.5 transition-all ${
-                    motivoObligatorio && !motivoValido
+                    motivoIncompleto
                       ? 'border-amber-300 bg-amber-50/20'
                       : 'border-slate-200 bg-white hover:border-slate-300'
                   }`}
@@ -311,18 +317,23 @@ export default function PeriodoMensualWizardModal({
                               value={entry.saldoReal}
                               disabled={pending}
                               onChange={event => { const value = normalizarMontoInput(event.target.value); if (value !== null) setOpeningValue(wallet.id, 'saldoReal', value) }}
-                              placeholder="0.00"
-                              className={`w-full rounded-lg border p-2 pr-12 text-sm font-mono font-semibold text-slate-900 focus:outline-none ${isManual && !conteoValido(entry.saldoReal) ? 'border-rose-400 bg-rose-50/40 focus:ring-2 focus:ring-rose-300' : 'border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20'}`}
+                              onBlur={() => setTouched(current => ({ ...current, [wallet.id]: true }))}
+                              placeholder="Ej.: 1.500,00"
+                              className={`w-full rounded-lg border p-2 pr-12 text-sm font-mono font-semibold text-slate-900 focus:outline-none ${mostrarErrorConteo ? 'border-rose-400 bg-rose-50/40 focus:ring-2 focus:ring-rose-300' : 'border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20'}`}
                             />
                             <span className="absolute right-2.5 top-2.5 text-xs font-bold font-mono text-slate-400 pointer-events-none">
                               {wallet.moneda}
                             </span>
                           </div>
-                          {isManual && !conteoValido(entry.saldoReal) && (
-                            <p className="mt-1 text-xs font-medium text-rose-600">Ingresa el conteo físico; acepta punto o coma decimal.</p>
+                          {mostrarErrorConteo && (
+                            <p className="mt-1 text-xs font-medium text-rose-600">
+                              {String(entry.saldoReal ?? '').trim() === ''
+                                ? 'Ingresa el conteo físico.'
+                                : 'Usa solo números; acepta punto o coma decimal.'}
+                            </p>
                           )}
-                          {saldoAperturaReal != null && saldoAperturaReal < 0 && (
-                            <p className="mt-1 text-xs font-bold text-rose-700">La apertura quedaría en negativo: el conteo no cubre los movimientos del mes.</p>
+                          {descubierto && (
+                            <p className="mt-1 text-xs font-bold text-amber-700">Descubierto: la apertura quedará en negativo porque el conteo no cubre los movimientos del mes (motivo obligatorio).</p>
                           )}
                         </label>
                       ) : (
@@ -336,32 +347,36 @@ export default function PeriodoMensualWizardModal({
                     </div>
                   </div>
 
-                  {anterior && entry.metodo === 'saldo_real' && difiereAnterior && (
+                  {entry.metodo === 'saldo_real' && (difiereAnterior || descubierto) && (
                     <div className="mt-2.5 pt-2 border-t border-amber-200">
                       <div className="flex items-center justify-between text-xs font-semibold text-amber-900 mb-1 flex-wrap gap-1">
                         <span className="flex items-center gap-1 font-bold">
                           <AlertTriangle size={13} className="text-amber-600" />
-                          Diferencia detectada: {difiereValor > 0 ? '+' : ''}{money(difiereValor)} {wallet.moneda} frente al saldo anterior
+                          {difiereAnterior
+                            ? `Diferencia detectada: ${difiereValor > 0 ? '+' : ''}${money(difiereValor)} ${wallet.moneda} frente al ${anterior.origen} (${money(anterior.saldo)} ${wallet.moneda})`
+                            : 'Descubierto: la apertura quedará en negativo'}
                         </span>
                         <span className={motivoValido ? 'text-emerald-700 font-bold' : 'text-amber-700 font-semibold'}>
                           {motivoObligatorio
                             ? `${String(entry.motivo || '').trim().length}/8 caracteres requeridos`
-                            : 'Motivo opcional (queda registrado en la apertura)'}
+                            : entry.motivo?.trim()
+                              ? `${String(entry.motivo).trim().length}/8 caracteres o déjalo vacío`
+                              : 'Motivo opcional (queda registrado en la apertura)'}
                         </span>
                       </div>
                       <label className="text-xs font-bold text-slate-700 block">
-                        Motivo si difiere del saldo anterior
+                        Motivo de la diferencia
                         <input
                           value={entry.motivo}
                           maxLength={300}
                           disabled={pending}
                           onChange={event => setOpeningValue(wallet.id, 'motivo', event.target.value)}
                           className={`mt-1 w-full rounded-lg border p-2 text-xs focus:outline-none transition-colors ${
-                            motivoObligatorio && !motivoValido
+                            motivoIncompleto
                               ? 'border-amber-400 bg-amber-50/40 focus:ring-2 focus:ring-amber-300'
                               : 'border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20'
                           }`}
-                          placeholder={motivoObligatorio ? 'Obligatorio: explica la diferencia (al menos 8 caracteres)' : 'Al menos 8 caracteres'}
+                          placeholder={motivoObligatorio ? 'Obligatorio: explica la diferencia (al menos 8 caracteres)' : 'Opcional: explica la diferencia (mínimo 8 caracteres si la escribes)'}
                         />
                       </label>
                     </div>
@@ -398,9 +413,9 @@ export default function PeriodoMensualWizardModal({
             )}
 
             {aperturaNegativa && (
-              <p role="alert" className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-rose-800 font-medium text-sm flex items-center gap-2">
+              <p role="status" className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-amber-900 font-medium text-sm flex items-center gap-2">
                 <AlertTriangle size={16} className="shrink-0" />
-                Hay cuentas cuya apertura quedaría en negativo (el conteo no cubre los movimientos del mes). Ajusta el conteo en el paso anterior.
+                Hay aperturas en negativo (descubierto real): quedarán registradas con su motivo.
               </p>
             )}
 
@@ -468,7 +483,7 @@ export default function PeriodoMensualWizardModal({
                     }`}
                   >
                     <p className={`text-sm font-medium leading-relaxed ${sinConteo || enNegativo ? 'text-rose-800' : 'text-slate-900'}`}>
-                      {wallet.nombre}: {sinConteo ? 'falta el conteo físico' : `${money(amount)} ${wallet.moneda} ≈ $${money(usd)} USD`} · saldo de apertura por {etiqueta}{row.metodo === 'saldo_real' && !sinConteo && neto !== 0 ? ` · contado ${money(Number(row.saldoReal))} menos movimientos del mes ${money(neto)}` : ''}{enNegativo ? ' · la apertura quedaría en negativo' : ''}
+                      {wallet.nombre}: {sinConteo ? 'falta el conteo físico' : `${money(amount)} ${wallet.moneda} ≈ $${money(usd)} USD`} · saldo de apertura por {etiqueta}{row.metodo === 'saldo_real' && !sinConteo && neto !== 0 ? ` · contado ${money(Number(row.saldoReal))} menos movimientos del mes ${money(neto)}` : ''}{enNegativo ? ' · descubierto (apertura en negativo, con motivo)' : ''}
                     </p>
                     {row.motivo && (
                       <p className="mt-1.5 text-xs text-slate-600 bg-slate-50 rounded-lg p-2 border border-slate-100">

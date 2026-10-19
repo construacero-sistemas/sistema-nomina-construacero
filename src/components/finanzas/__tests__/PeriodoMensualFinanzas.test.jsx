@@ -203,13 +203,24 @@ describe('PeriodoMensualFinanzas — saldo anterior sin cierre previo', () => {
     expect(onOpen.mock.calls[0][0].payload.cuentas[0]).toMatchObject({ saldoReal: 0, motivo: null })
   })
 
-  it('bloquea el paso si el conteo dejaría la apertura en negativo', () => {
-    renderPanel(conActividad)
+  it('el descubierto (apertura en negativo) no bloquea y exige motivo', async () => {
+    const { onOpen } = renderPanel(conActividad)
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
     // Con 250 de movimientos en el mes, un conteo de 100 deja la apertura en -150.
     fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '100' } })
-    expect(screen.getByText(/La apertura quedaría en negativo/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
+    expect(screen.getByText(/Descubierto/)).toBeInTheDocument()
+    // Regla simple 254: el descubierto se permite, no se bloquea el paso.
+    expect(screen.getByRole('button', { name: 'Siguiente' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/diferencia/i)
+    expect(onOpen).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Anterior' }))
+    fireEvent.change(screen.getByLabelText(/Motivo de la diferencia/), { target: { value: 'Descubierto por caja verificada' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1))
+    expect(onOpen.mock.calls[0][0].payload.cuentas[0]).toMatchObject({ saldoReal: 100, motivo: 'Descubierto por caja verificada' })
   })
 })
 
@@ -234,29 +245,31 @@ describe('PeriodoMensualFinanzas — motivo frente al cierre anterior', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
     // El wizard es aria-modal: el mensaje de validación vive dentro del diálogo como alerta.
-    expect(screen.getByRole('alert')).toHaveTextContent(/frente al cierre anterior/)
+    expect(screen.getByRole('alert')).toHaveTextContent(/frente al saldo anterior/)
     expect(onOpen).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Anterior' }))
-    fireEvent.change(screen.getByLabelText(/Motivo si difiere del saldo anterior/), { target: { value: 'Diferencia verificada contra el libro' } })
+    fireEvent.change(screen.getByLabelText(/Motivo de la diferencia/), { target: { value: 'Diferencia verificada contra el libro' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
     await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1))
     expect(onOpen.mock.calls[0][0].payload.cuentas[0]).toMatchObject({ motivo: 'Diferencia verificada contra el libro' })
   })
 
-  it('no permite aperturar por debajo del cierre anterior aunque haya motivo', async () => {
+  it('permite aperturar por debajo del cierre anterior con motivo (faltante documentado)', async () => {
     const user = userEvent.setup()
     const { onOpen } = renderPanel(conCierre)
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
     await user.click(screen.getByRole('combobox', { name: /Fuente del saldo de Caja USD/ }))
     await user.click(screen.getByRole('option', { name: 'Conteo físico verificado' }))
     fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '500' } })
-    fireEvent.change(screen.getByLabelText(/Motivo si difiere del saldo anterior/), { target: { value: 'Merma documentada en acta' } })
+    fireEvent.change(screen.getByLabelText(/Motivo de la diferencia/), { target: { value: 'Merma documentada en acta' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
-    expect(screen.getByRole('alert')).toHaveTextContent(/no puede quedar por debajo del cierre anterior/)
-    expect(onOpen).not.toHaveBeenCalled()
+    // Regla simple 254: el faltante frente al cierre anterior se permite y queda
+    // registrado con su motivo (antes el servidor lo bloqueaba sin salida).
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1))
+    expect(onOpen.mock.calls[0][0].payload.cuentas[0]).toMatchObject({ saldoReal: 500, motivo: 'Merma documentada en acta' })
   })
 })
 
@@ -279,6 +292,57 @@ describe('PeriodoMensualFinanzas — conteo vacío no es cero', () => {
     await user.click(screen.getByRole('option', { name: 'Conteo físico verificado' }))
     expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
     expect(onOpen).not.toHaveBeenCalled()
+  })
+})
+
+describe('PeriodoMensualWizardModal — validación no intrusiva del conteo', () => {
+  it('no marca en rojo los campos intactos; el error aparece al salir del campo', () => {
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    const saldoInput = screen.getByLabelText(/Saldo contado/)
+    // Nada de errores antes de interactuar: el aviso vive en el pie del wizard.
+    expect(screen.queryByText(/Ingresa el conteo físico/)).not.toBeInTheDocument()
+    expect(saldoInput.className).not.toMatch(/rose/)
+    fireEvent.blur(saldoInput)
+    expect(screen.getByText(/Ingresa el conteo físico\./)).toBeInTheDocument()
+    expect(saldoInput.className).toMatch(/rose/)
+  })
+
+  it('el placeholder orienta el formato del conteo en vez de parecer un valor', () => {
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    expect(screen.getByPlaceholderText('Ej.: 1.500,00')).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('0.00')).not.toBeInTheDocument()
+  })
+})
+
+describe('PeriodoMensualWizardModal — motivo opcional con mínimo', () => {
+  it('el banner nombra el origen del saldo de referencia y exige 8 caracteres si se escribe motivo', async () => {
+    const { onOpen } = renderPanel({
+      periodo: {
+        mes: '2026-10-01', estado: 'sin_apertura', cuentasPendientes: [], cierreAnterior: [],
+        cuentas: [wallet({ saldoHistorico: '300.000000', movimientosMes: '0' })],
+      },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '0' } })
+    // Sin cierre previo el origen es el saldo del libro, y el banner lo dice.
+    expect(screen.getByText(/frente al saldo del libro \(300,00 USD\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Motivo opcional/)).toBeInTheDocument()
+
+    // Si se escribe un motivo, aunque sea opcional, mínimo 8 caracteres.
+    fireEvent.change(screen.getByLabelText(/Motivo de la diferencia/), { target: { value: 'ok' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/al menos 8 caracteres/)
+    expect(onOpen).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Anterior' }))
+    fireEvent.change(screen.getByLabelText(/Motivo de la diferencia/), { target: { value: 'Diferencia verificada en caja' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1))
+    expect(onOpen.mock.calls[0][0].payload.cuentas[0]).toMatchObject({ saldoReal: 0, motivo: 'Diferencia verificada en caja' })
   })
 })
 
@@ -350,12 +414,15 @@ describe('PeriodoMensualFinanzas — cierre con diferencias', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('el cierre no permite contado por debajo del saldo del libro aunque haya motivo', () => {
+  it('el cierre permite contado por debajo del libro con motivo (faltante documentado)', async () => {
     const { onClose } = renderPanel(periodoAbierto)
     fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '100' } })
     fireEvent.change(screen.getByLabelText(/Motivo de diferencia/), { target: { value: 'Merma documentada en acta' } })
     fireEvent.click(screen.getByRole('button', { name: /Cerrar mes/ }))
-    expect(screen.getByRole('status')).toHaveTextContent(/no puede quedar por debajo del saldo del libro/)
-    expect(onClose).not.toHaveBeenCalled()
+    // Regla simple 254: el faltante de cierre se registra con su motivo.
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(onClose.mock.calls[0][0].payload.cuentas).toEqual([
+      { cuentaCustodiaId: 'wallet-1', saldoReal: 100, motivo: 'Merma documentada en acta', tasaUsdVes: '410', tasaUsdtVes: '450' },
+    ])
   })
 })

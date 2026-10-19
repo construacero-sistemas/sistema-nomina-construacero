@@ -114,6 +114,7 @@ export default function RetencionCard() {
   const mesesGuardados = Number.isFinite(Number(data?.retencion_meses)) && Number(data.retencion_meses) >= 0 ? Number(data.retencion_meses) : 0
   const meses = mesesDraft ?? mesesGuardados
   const detalleResumen = detalle?.detalle || []
+  const totalPendientes = detalleResumen.reduce((sum, row) => sum + Number(row.pendientes || 0), 0)
   const ejecutando = purgarM.isPending || configurarM.isPending
 
   return (
@@ -125,7 +126,7 @@ export default function RetencionCard() {
         </div>
         <div>
           <h2 className="text-sm font-black text-slate-800">Almacenamiento y retención</h2>
-          <p className="text-xs text-slate-400">Purga inteligente para el plan gratuito de Supabase</p>
+          <p className="text-xs text-slate-400">Ventana de retención del historial operativo del negocio</p>
         </div>
       </div>
 
@@ -262,8 +263,11 @@ export default function RetencionCard() {
         </div>
       </div>
 
-      {/* Botón de Purga Directa (Sin Simular) */}
+      {/* Purga directa (sin simular): descripción propia, desacoplada de la retención */}
       <div className="space-y-3">
+        <p className="text-xs text-slate-500">
+          Purga inteligente: elimina los datos derivados antiguos fuera de la ventana (asistencia, snapshots de tasa y auditoría) para el plan gratuito de Supabase, en orden de riesgo y sin tocar la contabilidad.
+        </p>
         {!confirmarOpen ? (
           <button
             type="button"
@@ -315,11 +319,23 @@ export default function RetencionCard() {
             <span className="text-lg font-black text-emerald-700">{detalle.total_eliminadas ?? totalFromDetalle(detalleResumen)} filas eliminadas</span>
           </div>
           <ul className="text-xs text-slate-600 space-y-0.5">
-            <li className="flex justify-between"><span>Registros de asistencia</span><b>{detalle.detalle?.find(r => r.tabla === 'registro_asistencia')?.eliminadas ?? 0}</b></li>
-            <li className="flex justify-between"><span>Snapshots de tasa</span><b>{detalle.detalle?.find(r => r.tabla === 'nomina_tasas_snapshot')?.eliminadas ?? 0}</b></li>
-            <li className="flex justify-between"><span>Logs de auditoría</span><b>{detalle.detalle?.find(r => r.tabla === 'auditoria')?.eliminadas ?? 0}</b></li>
-            <li className="flex justify-between"><span>Historial de purgas</span><b>{detalle.detalle?.find(r => r.tabla === 'purga_log')?.eliminadas ?? 0}</b></li>
+            {[
+              ['registro_asistencia', 'Registros de asistencia'],
+              ['nomina_tasas_snapshot', 'Snapshots de tasa'],
+              ['auditoria', 'Logs de auditoría'],
+            ].map(([tabla, label]) => {
+              const fila = detalle.detalle?.find(r => r.tabla === tabla) || {}
+              return (
+                <li key={tabla} className="flex justify-between gap-2">
+                  <span>{label}</span>
+                  <b className="tabular-nums">{fila.eliminadas ?? 0} eliminadas · {fila.pendientes ?? 0} pendientes</b>
+                </li>
+              )
+            })}
           </ul>
+          <p className="text-xs text-emerald-700">
+            Cuánto falta: <b>{totalPendientes}</b> filas pendientes que se conservan (dentro de la ventana de retención o de un período abierto) hasta que queden fuera.
+          </p>
         </div>
       )}
 

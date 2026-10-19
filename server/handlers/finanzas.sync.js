@@ -62,8 +62,13 @@ async function readExistingByKey(env, accountId, key) {
 async function saveSyncMovement(env, cuentaId, operadorId, movementData) {
   const existing = await readExistingByKey(env, cuentaId, movementData.idempotency_key)
   if (existing.error) return { ok: false, error: 'No se pudo comprobar la operación previa. No se escribió otro movimiento.' }
-  if (existing.row && (existing.row.estado !== 'activo' || existing.row.moneda !== movementData.moneda)) {
-    return { ok: false, error: 'El movimiento previo requiere conciliación. No se cambió su estado ni moneda.' }
+  const mismoTexto = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase()
+  // Identidad del movimiento: si la clave previa corresponde a otro día/tipo/
+  // categoría/moneda no se sobrescribe; requiere conciliación explícita.
+  if (existing.row && (existing.row.estado !== 'activo' || existing.row.moneda !== movementData.moneda
+    || existing.row.fecha !== movementData.fecha || existing.row.tipo !== movementData.tipo
+    || !mismoTexto(existing.row.categoria, movementData.categoria))) {
+    return { ok: false, error: 'El movimiento previo requiere conciliación. No se cambió su estado, moneda, fecha, tipo ni categoría.' }
   }
   const fields = {
     monto: movementData.monto, tasa_ves: movementData.tasa_ves, tasa_usd_ves: movementData.tasa_usd_ves,

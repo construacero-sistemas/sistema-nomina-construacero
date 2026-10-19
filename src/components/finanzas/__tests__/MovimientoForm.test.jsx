@@ -270,6 +270,32 @@ describe('MovimientoForm', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
   })
 
+  it('con dos cajas de efectivo del mismo método aparece el selector para elegir la caja (4.7)', async () => {
+    const user = userEvent.setup()
+    const dosCajas = [
+      { id: 'c-caja-usd-1', nombre: 'Caja Fuerte $', banco: 'Caja Fuerte', tipo: 'efectivo_usd', moneda: 'USD', saldo: 500, activo: true },
+      { id: 'c-caja-usd-2', nombre: 'Caja Chica $', banco: 'Caja Chica', tipo: 'efectivo_usd', moneda: 'USD', saldo: 120, activo: true },
+    ]
+    const { onClose } = renderForm(dosCajas)
+    await fillValidForm(user)
+    await pickCategory(user, 'General')
+
+    // Con más de una caja compatible el selector de cuenta SÍ se muestra.
+    const cuentaTrigger = screen.getAllByRole('combobox').find(c => /desde qué cuenta/i.test(c.textContent))
+    expect(cuentaTrigger).toBeTruthy()
+    await user.click(cuentaTrigger)
+    await user.click(await screen.findByRole('option', { name: /caja chica/i }))
+
+    const form = screen.getByRole('dialog').querySelector('form')
+    if (form) fireEvent.submit(form)
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1))
+    const payload = mutateAsync.mock.calls[0][0]
+    expect(payload.metodoPago).toBe('Efectivo $')
+    expect(payload.cuentaCustodiaId).toBe('c-caja-usd-2')
+    expect(payload.cuentaOrigen).toBe('Caja Chica $')
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+  })
+
   it('invariante anti-huérfanos: sin cuenta seleccionada NO envía nada y avisa', async () => {
     const user = userEvent.setup()
     // Método bancario con DOS cuentas: el selector aparece vacío por defecto.

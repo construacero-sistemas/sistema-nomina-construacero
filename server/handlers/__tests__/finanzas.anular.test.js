@@ -87,6 +87,32 @@ describe('finanzas — anulación de movimientos', () => {
     expect(mock.calls).toHaveLength(0)
   })
 
+  it('permite anular sin motivo: usuario O motivo, el usuario registrado basta', async () => {
+    let patch
+    mock = installFetchMock([
+      { match: `finanzas_movimientos?id=eq.${IDS.linea}`, method: 'GET', respond: [activeMovement] },
+      {
+        match: `finanzas_movimientos?id=eq.${IDS.linea}`,
+        method: 'PATCH',
+        respond: (url, init) => {
+          patch = JSON.parse(init.body)
+          return [{ ...activeMovement, ...patch, estado: 'anulado' }]
+        },
+      },
+    ])
+    const response = await H.handleAnularFinanzasMovimiento(
+      makeRequest({ id: IDS.linea, idempotencyKey: 'anulacion-test-000000002' }),
+      ENV,
+    )
+    const result = await readResponse(response)
+
+    expect(result.status).toBe(200)
+    expect(result.body.ok).toBe(true)
+    // El usuario que anula siempre queda registrado; el motivo queda en NULL.
+    expect(patch.anulado_por).toBe(OPERADORES.administracion.id)
+    expect(patch.motivo_anulacion).toBeNull()
+  })
+
   it('rechaza una idempotency key inválida antes de leer el movimiento', async () => {
     mock = installFetchMock([])
     const response = await H.handleAnularFinanzasMovimiento(

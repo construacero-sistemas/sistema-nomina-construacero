@@ -93,11 +93,16 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
   const setClosingValue = (id, field, value) => setClosing(current => ({ ...current, [id]: { ...current[id], [field]: value } }))
 
   async function confirmClosing() {
-    // El conteo prellenado (saldoCalculado) cuenta como saldo contado aunque el
-    // usuario no haya tocado el campo; un campo VACÍO o inválido NO es cero.
+    // Base del libro: saldo calculado del mes. Para cuentas sin apertura (el
+    // cierre las da de alta solas) el saldo histórico completo cuadra el período.
+    const baseDe = wallet => wallet.saldoCalculado != null
+      ? Number(wallet.saldoCalculado)
+      : (wallet.saldoHistorico != null ? Number(wallet.saldoHistorico) : NaN)
+    // El conteo prellenado cuenta como saldo contado aunque el usuario no haya
+    // tocado el campo; un campo VACÍO o inválido NO es cero.
     const contadoDe = wallet => {
       const entry = closing[walletKey(wallet)] || {}
-      if (entry.saldoReal == null) return wallet.saldoCalculado == null ? NaN : Number(wallet.saldoCalculado)
+      if (entry.saldoReal == null) return baseDe(wallet)
       return conteoValido(entry.saldoReal) ? Number(entry.saldoReal) : NaN
     }
     const rows = wallets.map(wallet => ({
@@ -105,12 +110,8 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
       tasaUsdVes: String(rates.usd), tasaUsdtVes: String(rates.usdt),
     }))
     if (rows.some(row => !Number.isFinite(row.saldoReal) || row.saldoReal < 0)) { setMessage('Registra el saldo contado de cada cuenta abierta; un campo vacío no es cero.'); return }
-    // Regla dura del servidor, anticipada: el cierre nunca reduce los fondos
-    // confirmados del libro, haya motivo o no.
-    if (wallets.some(wallet => contadoDe(wallet) < Number(wallet.saldoCalculado || 0) - 0.000001)) {
-      setMessage('El saldo contado no puede quedar por debajo del saldo del libro; el servidor protege los fondos confirmados.'); return
-    }
-    if (wallets.some(wallet => Math.abs(contadoDe(wallet) - Number(wallet.saldoCalculado || 0)) > 0.000001
+    // Regla simple: faltantes y sobrantes permitidos, con motivo de 8..300.
+    if (wallets.some(wallet => Math.abs(contadoDe(wallet) - baseDe(wallet)) > 0.000001
       && String(closing[walletKey(wallet)]?.motivo || '').trim().length < 8)) {
       setMessage('Justifica con al menos 8 caracteres cada diferencia contra el saldo calculado.'); return
     }
@@ -240,7 +241,7 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
           <div className="flex items-start gap-2.5">
             <AlertTriangle size={18} className="shrink-0 text-amber-600 mt-0.5" />
             <span className="leading-relaxed">
-              El período {periodo.mes} todavía no está aperturado. Registra o egresa solo después de verificar saldos físicos, revisar actividad previa y confirmar la tasa USD congelada.
+              El período {periodo.mes} todavía no está aperturado. Ábrelo con un clic: los saldos arrastran del cierre anterior y el conteo físico es opcional.
             </span>
           </div>
           <button
@@ -343,7 +344,7 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <h3 className="font-bold text-slate-900 text-sm">Conteo físico de cierre</h3>
-              <p className="text-xs text-slate-500">Verifica el saldo contado físico de cada cuenta antes de consolidar el cierre mensual con el botón superior.</p>
+              <p className="text-xs text-slate-500">Si no contaste, se cierra con el saldo del libro. Si contaste menos o más, anota el importe y el motivo.</p>
             </div>
           </div>
           <div className="grid gap-3">
@@ -378,7 +379,7 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
                     value={closing[walletKey(row)]?.motivo || ''}
                     disabled={pending}
                     maxLength={300}
-                    placeholder="Obligatorio si el contado supera el libro (mín. 8 caracteres)"
+                    placeholder="Obligatorio si el contado difiere del libro (mín. 8 caracteres)"
                     onChange={event => setClosingValue(walletKey(row), 'motivo', event.target.value)}
                   />
                 </label>
