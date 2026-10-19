@@ -3927,4 +3927,6 @@ En dispositivos móviles, la cuadrilla semanal intentaba encajar 7 días en 360p
 
 **Verificación:** `npm test` **123 archivos / 1302 pruebas** · `lint` limpio · `test:qa` sin fallos · `test:responsive` **41/41** · `test:deterministic` (nomina, finanzas y **test:flujo-mes 11/11 fases / 51 migraciones**) · `test:db` **42/42 comprobaciones / 51 migraciones** · `build` OK · `test:bundle-size` PASS (index 46.9/400 KiB) · `check:project` OK — todo en verde en el mismo turno.
 
-**Pendiente:** redacción del wizard («Tasa congelada» → «Se congelará al confirmar») a la espera de decisión; QA visual en navegador no ejecutado (la verificación es por render de componentes).
+**Deploy.** Commit `d87beda` pusheado a `construacero-sistemas/sistema-nomina-construacero` (cuenta org one-off, gh restaurado después); el pipeline de Vercel publicó el bundle `index-C-ytsL9i.js` en `sistema-nomina-construacero.vercel.app`, con el chunk de la vista (`FinanzasView-GiD0kLrs.js`, lazy) **byte-idéntico al build local**. Gates verificados en vivo: `/` 200 · `/api/rates` 200 · `/api/auth/me` 401 · `purga-preview` 401, y los marcadores de la doble valoración («USD hoy», «Diferencia de cierre») y del padrón presentes en el bundle servido.
+
+**Pendiente:** redacción del wizard («Tasa congelada» → «Se congelará al confirmar») a la espera de decisión; QA visual en navegador no ejecutado (la verificación es por render de componentes y por marcadores del bundle).
