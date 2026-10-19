@@ -3911,4 +3911,6 @@ En dispositivos móviles, la cuadrilla semanal intentaba encajar 7 días en 360p
 
 **Hallazgo de dominio.** `sistema-nomina-construacero.vercel.app` (el dominio que usa el runbook como producción) sirve un **deployment viejo** (bundle `index-C6o3wU4K.js`) y **no es proyecto ni alias de la cuenta de la CLI**: vive en otro proyecto de Vercel, casi seguro conectado a GitHub (`construacero-sistemas/sistema-nomina-construacero`) que auto-despliega con los push. Por eso `vercel --prod` no lo movió. La resolución elegida por el usuario: **commit + push a GitHub** para que su pipeline lo actualice. Artefactos operativos del release en `local-backups/` (gitignored): respaldo JSON, ejecutor `release-251-256-pg.mjs`, extractor de cuerpos y utilidades de verificación.
 
-**Pendiente:** confirmar que el pipeline del dominio `sistema-nomina-construacero.vercel.app` publica el push; M2–M4 del reporte QA si se aprueban.
+**Deploy al dominio confirmado.** El push a `construacero-sistemas/sistema-nomina-construacero` (commit `5724939`, con la cuenta org de gh porque la cuenta personal no escribe en la repo) disparó el pipeline de Vercel conectado a GitHub: `sistema-nomina-construacero.vercel.app` sirve el bundle del release (`index-DvW-IiAp.js`, `age 0`) y los gates (200/200/401/401) quedaron re-verificados sobre el dominio ya actualizado.
+
+**Pendiente:** M2–M4 del reporte QA si se aprueban.
