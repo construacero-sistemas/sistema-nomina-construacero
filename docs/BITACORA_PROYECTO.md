@@ -3914,3 +3914,17 @@ En dispositivos móviles, la cuadrilla semanal intentaba encajar 7 días en 360p
 **Deploy al dominio confirmado.** El push a `construacero-sistemas/sistema-nomina-construacero` (commit `5724939`, con la cuenta org de gh porque la cuenta personal no escribe en la repo) disparó el pipeline de Vercel conectado a GitHub: `sistema-nomina-construacero.vercel.app` sirve el bundle del release (`index-DvW-IiAp.js`, `age 0`) y los gates (200/200/401/401) quedaron re-verificados sobre el dominio ya actualizado.
 
 **Pendiente:** M2–M4 del reporte QA si se aprueban.
+
+
+
+## 129. Tabla del mes simplificada y doble valoración congelado/hoy, con pulido responsive incluido (2026-10-19)
+
+**Objetivo:** responder a la revisión de la tabla de control mensual (6 columnas, 4 de ellas guiones puros mientras el mes no está abierto) simplificándola, y añadir junto al USD congelado el **valor a tasa de hoy** como línea secundaria, sin reescribir el histórico auditable.
+
+**Cambios.** `src/components/finanzas/PeriodoMensualFinanzas.jsx`: la tabla queda `Cuenta | Moneda | Saldo de apertura | Saldo calculado` — «USD congelado» pasa a sub-línea de la apertura y «Diferencia de cierre» a sub-línea del saldo calculado, con el mismo modelo mental que la vista móvil; con el mes sin abrir se muestra solo el padrón de cuentas (Cuenta | Moneda) con pie explicativo, en vez de cuatro columnas de guiones; las cuentas en USD no repiten su valoración. **Doble valoración**: `valorHoyDe` valora el saldo nativo de la apertura con la tasa vigente (VES ÷ USD/VES; USDT × USDT/VES ÷ USD/VES) y se muestra como `≈ $X USD hoy` junto al `$Y USD congelado`; sin tasa vigente no se inventa la línea y el congelado nunca se reescribe. El PDF de tesorería y el CSV de auditoría conservan **solo** el congelado a propósito (documentos reproducibles). En el mismo cambio entra el **pulido responsive** del panel y del wizard de apertura (header/botones `w-full sm:w-auto` con `min-h-11`, separación tabla-desktop/tarjetas-móvil, footer y stepper del wizard): es trabajo paralelo ajeno a esta conversación que el usuario autorizó commitear junto («comitea todos los cambios, así no sean tuyos»).
+
+**Tests.** `PeriodoMensualFinanzas.test.jsx` +6: padrón en sin-apertura, sub-líneas vs columnas, sin duplicado en cuentas USD, valor hoy sin reescribir el congelado, USDT con tasa relativa (440/400) y ausencia del «hoy» sin tasa vigente; la aserción de «USD congelado» pasa a `getAllByText` porque la misma cifra se renderiza en las dos vistas responsive.
+
+**Verificación:** `npm test` **123 archivos / 1302 pruebas** · `lint` limpio · `test:qa` sin fallos · `test:responsive` **41/41** · `test:deterministic` (nomina, finanzas y **test:flujo-mes 11/11 fases / 51 migraciones**) · `test:db` **42/42 comprobaciones / 51 migraciones** · `build` OK · `test:bundle-size` PASS (index 46.9/400 KiB) · `check:project` OK — todo en verde en el mismo turno.
+
+**Pendiente:** redacción del wizard («Tasa congelada» → «Se congelará al confirmar») a la espera de decisión; QA visual en navegador no ejecutado (la verificación es por render de componentes).

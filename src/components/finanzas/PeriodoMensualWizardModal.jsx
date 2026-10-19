@@ -151,21 +151,21 @@ export default function PeriodoMensualWizardModal({
       isOpen
       onClose={() => !pending && onClose()}
       title="Apertura mensual de tesorería"
-      className="sm:max-w-3xl"
+      className="sm:max-w-3xl max-h-[92vh] sm:max-h-[88vh]"
       footer={
-        <div className="flex w-full items-center justify-between gap-3">
+        <div className="flex flex-col-reverse sm:flex-row w-full items-stretch sm:items-center justify-between gap-2.5">
           <button
             type="button"
             onClick={() => step ? setStep(step - 1) : onClose()}
             disabled={pending}
-            className="min-h-11 px-5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm shadow-xs transition-colors disabled:opacity-50"
+            className="min-h-11 px-5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm shadow-xs transition-colors disabled:opacity-50 flex items-center justify-center w-full sm:w-auto"
           >
             {step ? 'Anterior' : 'Cancelar'}
           </button>
           {step < 1 ? (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto justify-end">
               {conteoPendiente && (
-                <span className="text-xs text-amber-700 font-medium hidden sm:inline">
+                <span className="text-xs text-amber-700 font-medium text-center sm:text-right">
                   Completa los saldos para continuar
                 </span>
               )}
@@ -173,7 +173,7 @@ export default function PeriodoMensualWizardModal({
                 type="button"
                 onClick={() => setStep(step + 1)}
                 disabled={pending || (step === 0 && conteoPendiente)}
-                className="min-h-11 px-5 rounded-xl bg-primary hover:bg-primary-hover active:bg-primary-dark text-white font-bold text-sm shadow-sm transition-colors disabled:opacity-50"
+                className="min-h-11 px-6 rounded-xl bg-primary hover:bg-primary-hover active:bg-primary-dark text-white font-bold text-sm shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center w-full sm:w-auto"
               >
                 Siguiente
               </button>
@@ -183,7 +183,7 @@ export default function PeriodoMensualWizardModal({
               type="button"
               onClick={confirmOpening}
               disabled={pending || !canUseRates || conteoPendiente}
-              className="min-h-11 px-5 rounded-xl bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-sm shadow-sm transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="min-h-11 px-6 rounded-xl bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-sm shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2 w-full sm:w-auto"
             >
               {pending && <RefreshCw size={15} className="animate-spin" />}
               {pending ? 'Confirmando…' : 'Confirmar apertura'}
@@ -193,7 +193,7 @@ export default function PeriodoMensualWizardModal({
       }
     >
       <div className="space-y-4">
-        <ol className="flex items-center gap-3 text-xs font-bold border-b border-slate-100 pb-3">
+        <ol className="flex items-center gap-2 sm:gap-3 text-xs font-bold border-b border-slate-100 pb-3">
           {[
             { label: 'Cuentas y saldos', desc: 'Conteo físico verificado' },
             { label: 'Revisión', desc: 'Tasas congeladas y balance' }
@@ -203,7 +203,7 @@ export default function PeriodoMensualWizardModal({
             return (
               <li
                 key={item.label}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl transition-all ${
+                className={`flex items-center justify-center sm:justify-start gap-2 px-3 py-2 sm:px-3.5 rounded-xl transition-all flex-1 min-w-0 ${
                   isActive
                     ? 'bg-primary text-white shadow-xs'
                     : isCompleted
@@ -212,7 +212,7 @@ export default function PeriodoMensualWizardModal({
                 }`}
               >
                 <span
-                  className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-black ${
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-black ${
                     isActive
                       ? 'bg-white text-primary'
                       : isCompleted
@@ -222,7 +222,7 @@ export default function PeriodoMensualWizardModal({
                 >
                   {isCompleted ? '✓' : index + 1}
                 </span>
-                <span>{item.label}</span>
+                <span className="truncate">{item.label}</span>
               </li>
             )
           })}
@@ -319,9 +319,9 @@ export default function PeriodoMensualWizardModal({
                               onChange={event => { const value = normalizarMontoInput(event.target.value); if (value !== null) setOpeningValue(wallet.id, 'saldoReal', value) }}
                               onBlur={() => setTouched(current => ({ ...current, [wallet.id]: true }))}
                               placeholder="Ej.: 1.500,00"
-                              className={`w-full rounded-lg border p-2 pr-12 text-sm font-mono font-semibold text-slate-900 focus:outline-none ${mostrarErrorConteo ? 'border-rose-400 bg-rose-50/40 focus:ring-2 focus:ring-rose-300' : 'border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20'}`}
+                              className={`w-full min-h-11 rounded-lg border p-2.5 pr-12 text-sm font-mono font-semibold text-slate-900 focus:outline-none ${mostrarErrorConteo ? 'border-rose-400 bg-rose-50/40 focus:ring-2 focus:ring-rose-300' : 'border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20'}`}
                             />
-                            <span className="absolute right-2.5 top-2.5 text-xs font-bold font-mono text-slate-400 pointer-events-none">
+                            <span className="absolute right-2.5 top-3 text-xs font-bold font-mono text-slate-400 pointer-events-none">
                               {wallet.moneda}
                             </span>
                           </div>
@@ -349,14 +349,14 @@ export default function PeriodoMensualWizardModal({
 
                   {entry.metodo === 'saldo_real' && (difiereAnterior || descubierto) && (
                     <div className="mt-2.5 pt-2 border-t border-amber-200">
-                      <div className="flex items-center justify-between text-xs font-semibold text-amber-900 mb-1 flex-wrap gap-1">
-                        <span className="flex items-center gap-1 font-bold">
-                          <AlertTriangle size={13} className="text-amber-600" />
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs font-semibold text-amber-900 mb-1.5 gap-1">
+                        <span className="flex items-center gap-1 font-bold break-words">
+                          <AlertTriangle size={13} className="text-amber-600 shrink-0" />
                           {difiereAnterior
                             ? `Diferencia detectada: ${difiereValor > 0 ? '+' : ''}${money(difiereValor)} ${wallet.moneda} frente al ${anterior.origen} (${money(anterior.saldo)} ${wallet.moneda})`
                             : 'Descubierto: la apertura quedará en negativo'}
                         </span>
-                        <span className={motivoValido ? 'text-emerald-700 font-bold' : 'text-amber-700 font-semibold'}>
+                        <span className={`shrink-0 ${motivoValido ? 'text-emerald-700 font-bold' : 'text-amber-700 font-semibold'}`}>
                           {motivoObligatorio
                             ? `${String(entry.motivo || '').trim().length}/8 caracteres requeridos`
                             : entry.motivo?.trim()
@@ -371,7 +371,7 @@ export default function PeriodoMensualWizardModal({
                           maxLength={300}
                           disabled={pending}
                           onChange={event => setOpeningValue(wallet.id, 'motivo', event.target.value)}
-                          className={`mt-1 w-full rounded-lg border p-2 text-xs focus:outline-none transition-colors ${
+                          className={`mt-1 w-full min-h-11 rounded-lg border p-2.5 text-xs focus:outline-none transition-colors ${
                             motivoIncompleto
                               ? 'border-amber-400 bg-amber-50/40 focus:ring-2 focus:ring-amber-300'
                               : 'border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20'
@@ -476,17 +476,33 @@ export default function PeriodoMensualWizardModal({
                 return (
                   <div
                     key={wallet.id}
-                    className={`rounded-xl border p-3 transition-colors ${
+                    className={`rounded-xl border p-3.5 transition-colors ${
                       sinConteo || enNegativo
                         ? 'border-rose-300 bg-rose-50/60'
                         : 'border-slate-200 bg-white hover:border-slate-300 shadow-2xs'
                     }`}
                   >
-                    <p className={`text-sm font-medium leading-relaxed ${sinConteo || enNegativo ? 'text-rose-800' : 'text-slate-900'}`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-slate-900 text-sm">{wallet.nombre}</span>
+                        {renderMonedaBadge(wallet.moneda)}
+                      </div>
+                      <div className="text-left sm:text-right">
+                        <span className={`font-mono font-bold text-sm ${sinConteo || enNegativo ? 'text-rose-700' : 'text-slate-900'}`}>
+                          {sinConteo ? 'Falta conteo' : `${money(amount)} ${wallet.moneda}`}
+                        </span>
+                        {usd != null && (
+                          <span className="block font-mono text-xs font-semibold text-emerald-700">
+                            ≈ ${money(usd)} USD
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <p className={`mt-1.5 text-xs font-medium leading-relaxed break-words ${sinConteo || enNegativo ? 'text-rose-800' : 'text-slate-500'}`}>
                       {wallet.nombre}: {sinConteo ? 'falta el conteo físico' : `${money(amount)} ${wallet.moneda} ≈ $${money(usd)} USD`} · saldo de apertura por {etiqueta}{row.metodo === 'saldo_real' && !sinConteo && neto !== 0 ? ` · contado ${money(Number(row.saldoReal))} menos movimientos del mes ${money(neto)}` : ''}{enNegativo ? ' · descubierto (apertura en negativo, con motivo)' : ''}
                     </p>
                     {row.motivo && (
-                      <p className="mt-1.5 text-xs text-slate-600 bg-slate-50 rounded-lg p-2 border border-slate-100">
+                      <p className="mt-2 text-xs text-slate-600 bg-slate-50 rounded-lg p-2 border border-slate-100 break-words">
                         <span className="font-bold text-slate-700">Justificación:</span> {row.motivo}
                       </p>
                     )}

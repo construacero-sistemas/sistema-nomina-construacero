@@ -83,8 +83,28 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
   const cierreKeyRef = useRef(null)
   const wallets = periodo?.cuentas || []
   const missing = periodo?.cuentasPendientes || []
+  // Con el mes sin abrir no hay saldos que mostrar: la tabla se reduce al padrón
+  // de cuentas en vez de cuatro columnas de guiones.
+  const tieneSaldos = wallets.some(row => row.saldoApertura != null || row.saldoAperturaUsd != null || row.saldoCalculado != null || row.diferenciaCierre != null)
   const canUseRates = tasa(rates.usd) > 0 && tasa(rates.usdt) > 0
   const activeWallets = useMemo(() => (cuentas || []).filter(item => item.activo), [cuentas])
+  // Doble valoración: el USD congelado es la foto auditable de la apertura y no
+  // se reescribe; el valor de hoy traduce ese mismo saldo nativo a la tasa
+  // vigente como referencia secundaria (sin tocar el histórico).
+  const valorHoyDe = row => {
+    if (row.saldoApertura == null || row.moneda === 'USD') return null
+    const usdHoy = tasa(rates.usd)
+    if (!(usdHoy > 0)) return null
+    const monto = Number(row.saldoApertura)
+    if (!Number.isFinite(monto)) return null
+    if (row.moneda === 'VES') return monto / usdHoy
+    const usdtHoy = tasa(rates.usdt)
+    return usdtHoy > 0 ? monto * usdtHoy / usdHoy : null
+  }
+  const renderValorHoy = (row, className) => {
+    const hoy = valorHoyDe(row)
+    return hoy == null ? null : <span className={className}>≈ ${money(hoy)} USD hoy</span>
+  }
 
   const openWizard = () => {
     setMessage('')
@@ -154,8 +174,8 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
   }
 
   return (
-    <section aria-label="Control mensual de tesorería" className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section aria-label="Control mensual de tesorería" className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-base font-black text-slate-900 tracking-tight">Apertura y cierre mensual</h2>
@@ -165,12 +185,12 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
             {formatPeriodoMes(periodo?.mes)} <span className="text-slate-400">({periodo?.mes || '—'})</span>
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <button
             type="button"
             onClick={onRefresh}
             disabled={loading}
-            className="min-h-11 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm shadow-xs transition-colors flex items-center gap-1.5"
+            className="min-h-11 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm shadow-xs transition-colors flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
           >
             <RefreshCw size={15} className={`text-slate-500 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
@@ -180,7 +200,7 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
               type="button"
               onClick={openWizard}
               disabled={pending || loading || !canUseRates || activeWallets.length === 0}
-              className="min-h-11 px-4 rounded-xl bg-primary hover:bg-primary-hover active:bg-primary-dark text-white font-bold text-sm shadow-sm disabled:opacity-50 transition-colors flex items-center gap-2"
+              className="min-h-11 px-4 rounded-xl bg-primary hover:bg-primary-hover active:bg-primary-dark text-white font-bold text-sm shadow-sm disabled:opacity-50 transition-colors flex items-center justify-center gap-2 flex-1 sm:flex-initial"
             >
               Iniciar apertura guiada
             </button>
@@ -190,20 +210,20 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
               type="button"
               onClick={confirmClosing}
               disabled={pending || loading || missing.length > 0 || !wallets.length || !canUseRates}
-              className="min-h-11 px-4 rounded-xl bg-amber-700 hover:bg-amber-800 active:bg-amber-900 text-white font-bold text-sm shadow-sm disabled:opacity-50 transition-colors flex items-center gap-2"
+              className="min-h-11 px-4 rounded-xl bg-amber-700 hover:bg-amber-800 active:bg-amber-900 text-white font-bold text-sm shadow-sm disabled:opacity-50 transition-colors flex items-center justify-center gap-2 flex-1 sm:flex-initial"
             >
               <LockKeyhole size={15} />
               Cerrar mes
             </button>
           )}
           {wallets.length > 0 && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={downloadPeriodPdf}
                 disabled={loading || generatingPdf}
                 title="Descargar reporte oficial de tesorería en PDF"
-                className="min-h-11 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm shadow-xs transition-colors flex items-center gap-1.5"
+                className="min-h-11 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm shadow-xs transition-colors flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
               >
                 <FileText size={15} className={`text-primary ${generatingPdf ? 'animate-pulse' : ''}`} />
                 {generatingPdf ? 'Generando PDF…' : 'Reporte PDF'}
@@ -213,7 +233,7 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
                 onClick={downloadPeriod}
                 disabled={loading}
                 title="Descargar CSV crudo de auditoría"
-                className="min-h-11 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 font-bold text-xs shadow-xs transition-colors flex items-center gap-1"
+                className="min-h-11 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-1"
               >
                 <Download size={13} />
                 CSV
@@ -248,7 +268,7 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
             type="button"
             onClick={openWizard}
             disabled={pending || loading || !canUseRates || activeWallets.length === 0}
-            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs disabled:opacity-50 transition-colors"
+            className="shrink-0 inline-flex items-center justify-center gap-1.5 px-4 min-h-11 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-xs disabled:opacity-50 transition-colors w-full sm:w-auto"
           >
             Abrir mes ahora →
           </button>
@@ -285,58 +305,100 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
       {message && <p role="status" className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-sm text-slate-700">{message}</p>}
 
       {wallets.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-xs font-bold uppercase tracking-wider text-slate-500 bg-slate-50/80">
-                <th className="py-2.5 px-3.5 text-left">Cuenta</th>
-                <th className="py-2.5 px-3 text-center">Moneda</th>
-                <th className="py-2.5 px-3.5 text-right">Saldo de apertura</th>
-                <th className="py-2.5 px-3.5 text-right">USD congelado</th>
-                <th className="py-2.5 px-3.5 text-right">Saldo calculado</th>
-                <th className="py-2.5 px-3.5 text-right">Diferencia cierre</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {wallets.map(row => (
-                <tr key={walletKey(row)} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-2.5 px-3.5 font-semibold text-slate-900">{row.nombre}</td>
-                  <td className="py-2.5 px-3 text-center">{renderMonedaBadge(row.moneda)}</td>
-                  <td className="py-2.5 px-3.5 text-right font-mono tabular-nums">
-                    {row.saldoApertura != null ? (
-                      <span className="font-semibold text-slate-900">{money(row.saldoApertura)} <span className="text-xs text-slate-500 font-normal">{row.moneda}</span></span>
-                    ) : (
-                      <span className="text-slate-400 font-normal">— {row.moneda}</span>
-                    )}
-                  </td>
-                  <td className="py-2.5 px-3.5 text-right font-mono tabular-nums">
-                    {row.saldoAperturaUsd != null ? (
-                      <span className="font-semibold text-emerald-700">${money(row.saldoAperturaUsd)}</span>
-                    ) : (
-                      <span className="text-slate-400 font-normal">—</span>
-                    )}
-                  </td>
-                  <td className="py-2.5 px-3.5 text-right font-mono tabular-nums">
-                    {row.saldoCalculado != null ? (
-                      <span className="font-semibold text-slate-900">{money(row.saldoCalculado)} <span className="text-xs text-slate-500 font-normal">{row.moneda}</span></span>
-                    ) : (
-                      <span className="text-slate-400 font-normal">— {row.moneda}</span>
-                    )}
-                  </td>
-                  <td className="py-2.5 px-3.5 text-right font-mono tabular-nums">
-                    {row.diferenciaCierre != null ? (
-                      <span className={`font-semibold ${Number(row.diferenciaCierre) === 0 ? 'text-slate-600' : 'text-amber-700'}`}>
-                        {money(row.diferenciaCierre)} <span className="text-xs text-slate-500 font-normal">{row.moneda}</span>
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 font-normal">—</span>
-                    )}
-                  </td>
+        <>
+          {/* Vista desktop: tabla con scroll horizontal suave */}
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 shadow-xs">
+            <table className={`w-full ${tieneSaldos ? 'min-w-[560px]' : 'min-w-[300px]'} text-left text-sm`}>
+              <thead>
+                <tr className="border-b border-slate-200 text-xs font-bold uppercase tracking-wider text-slate-500 bg-slate-50/80">
+                  <th className="py-2.5 px-3.5 text-left">Cuenta</th>
+                  <th className="py-2.5 px-3 text-center">Moneda</th>
+                  {tieneSaldos && <th className="py-2.5 px-3.5 text-right">Saldo de apertura</th>}
+                  {tieneSaldos && <th className="py-2.5 px-3.5 text-right">Saldo calculado</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {wallets.map(row => (
+                  <tr key={walletKey(row)} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="py-2.5 px-3.5 font-semibold text-slate-900">{row.nombre}</td>
+                    <td className="py-2.5 px-3 text-center">{renderMonedaBadge(row.moneda)}</td>
+                    {tieneSaldos && (
+                      <td className="py-2.5 px-3.5 text-right font-mono tabular-nums">
+                        {row.saldoApertura != null ? (
+                          <span className="font-semibold text-slate-900">{money(row.saldoApertura)} <span className="text-xs text-slate-500 font-normal">{row.moneda}</span></span>
+                        ) : (
+                          <span className="text-slate-400 font-normal">— {row.moneda}</span>
+                        )}
+                        {row.saldoAperturaUsd != null && row.moneda !== 'USD' && (
+                          <span className="block text-xs font-bold text-emerald-700 mt-0.5">${money(row.saldoAperturaUsd)} USD congelado</span>
+                        )}
+                        {renderValorHoy(row, 'block text-xs font-medium text-slate-500 mt-0.5')}
+                      </td>
+                    )}
+                    {tieneSaldos && (
+                      <td className="py-2.5 px-3.5 text-right font-mono tabular-nums">
+                        {row.saldoCalculado != null ? (
+                          <span className="font-semibold text-slate-900">{money(row.saldoCalculado)} <span className="text-xs text-slate-500 font-normal">{row.moneda}</span></span>
+                        ) : (
+                          <span className="text-slate-400 font-normal">— {row.moneda}</span>
+                        )}
+                        {row.diferenciaCierre != null && (
+                          <span className={`block text-xs font-bold mt-0.5 ${Number(row.diferenciaCierre) === 0 ? 'text-slate-500' : 'text-amber-700'}`}>
+                            Diferencia de cierre: {money(row.diferenciaCierre)} {row.moneda}
+                          </span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Vista móvil: tarjetas legibles sin scroll horizontal ni recortes */}
+          <div className="block md:hidden space-y-2.5">
+            {wallets.map(row => (
+              <article key={walletKey(row)} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-900 text-sm truncate">{row.nombre}</span>
+                  {renderMonedaBadge(row.moneda)}
+                </div>
+                {tieneSaldos && (
+                <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-2.5 border border-slate-100 text-xs">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block truncate">Apertura</span>
+                    <span className="font-mono font-bold text-slate-900 block mt-0.5 truncate">
+                      {row.saldoApertura != null ? `${money(row.saldoApertura)} ${row.moneda}` : '—'}
+                    </span>
+                    {row.saldoAperturaUsd != null && row.moneda !== 'USD' && (
+                      <span className="font-mono text-[11px] font-bold text-emerald-700 block mt-0.5 truncate">
+                        ${money(row.saldoAperturaUsd)} USD congelado
+                      </span>
+                    )}
+                    {renderValorHoy(row, 'font-mono text-[11px] text-slate-500 block mt-0.5 truncate')}
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block truncate">Calculado</span>
+                    <span className="font-mono font-bold text-slate-900 block mt-0.5 truncate">
+                      {row.saldoCalculado != null ? `${money(row.saldoCalculado)} ${row.moneda}` : '—'}
+                    </span>
+                    {row.diferenciaCierre != null && (
+                      <span className={`font-mono text-[11px] font-bold block mt-0.5 truncate ${Number(row.diferenciaCierre) === 0 ? 'text-slate-500' : 'text-amber-700'}`}>
+                        Diff: {money(row.diferenciaCierre)} {row.moneda}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                )}
+              </article>
+            ))}
+          </div>
+          {!tieneSaldos && (
+            <p className="text-xs text-slate-500">
+              Al abrir el mes verás aquí el saldo de apertura, su valoración USD congelada, el valor a tasa de hoy y el saldo del libro de cada cuenta.
+            </p>
+          )}
+        </>
       )}
 
       {periodo?.estado === 'abierto' && cierreHabilitado && wallets.length > 0 && (

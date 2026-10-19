@@ -426,3 +426,78 @@ describe('PeriodoMensualFinanzas — cierre con diferencias', () => {
     ])
   })
 })
+
+describe('PeriodoMensualFinanzas — tabla de control mensual', () => {
+  it('con el mes sin abrir muestra solo el padrón de cuentas, sin columnas de guiones', () => {
+    renderPanel({
+      periodo: {
+        mes: '2026-10-01', estado: 'sin_apertura', cuentasPendientes: [], cierreAnterior: [],
+        cuentas: [wallet({ nombre: 'BANESCO', moneda: 'VES' }), wallet({ cuentaCustodiaId: 'wallet-2', nombre: 'ZELLE', moneda: 'USD' })],
+      },
+    })
+    expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Cuenta', 'Moneda'])
+    expect(screen.getByText(/Al abrir el mes verás aquí el saldo de apertura/)).toBeInTheDocument()
+  })
+
+  it('muestra la valoración USD y la diferencia de cierre como sub-líneas, no como columnas', () => {
+    renderPanel({
+      periodo: {
+        mes: '2026-09-01', estado: 'cerrado', cuentasPendientes: [], cierreAnterior: [],
+        cuentas: [wallet({ nombre: 'Caja Bs', moneda: 'VES', saldoApertura: 5000, saldoAperturaUsd: 100, saldoCalculado: 5200, diferenciaCierre: 200 })],
+      },
+    })
+    expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual([
+      'Cuenta', 'Moneda', 'Saldo de apertura', 'Saldo calculado',
+    ])
+    expect(screen.getAllByText(/USD congelado/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Diferencia de cierre: 200,00 VES/)).toBeInTheDocument()
+  })
+
+  it('no repite la valoración USD de una cuenta que ya está en USD', () => {
+    renderPanel({
+      periodo: {
+        mes: '2026-09-01', estado: 'cerrado', cuentasPendientes: [], cierreAnterior: [],
+        cuentas: [wallet({ saldoApertura: 100, saldoAperturaUsd: 100, saldoCalculado: 120, diferenciaCierre: 0 })],
+      },
+    })
+    expect(screen.queryByText(/USD congelado/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/USD hoy/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Diferencia de cierre: 0,00 USD/)).toBeInTheDocument()
+  })
+
+  it('muestra el valor a tasa de hoy sin reescribir el USD congelado', () => {
+    renderPanel({
+      periodo: {
+        mes: '2026-09-01', estado: 'cerrado', cuentasPendientes: [], cierreAnterior: [],
+        cuentas: [wallet({ nombre: 'Caja Bs', moneda: 'VES', saldoApertura: 8200, saldoAperturaUsd: 100, saldoCalculado: 8200 })],
+      },
+    })
+    // 8.200 VES ÷ 410 (tasa vigente) = 20 USD hoy; el congelado (100) no se toca.
+    expect(screen.getAllByText(/100,00 USD congelado/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/20,00 USD hoy/).length).toBeGreaterThan(0)
+  })
+
+  it('valora el USDT de hoy con la tasa USDT/VES relativa', () => {
+    renderPanel({
+      rates: { ...rates, usd: 400, usdt: 440 },
+      periodo: {
+        mes: '2026-09-01', estado: 'cerrado', cuentasPendientes: [], cierreAnterior: [],
+        cuentas: [wallet({ nombre: 'Gaby3737', moneda: 'USDT', saldoApertura: 100, saldoAperturaUsd: 90, saldoCalculado: 100 })],
+      },
+    })
+    // 100 USDT × 440 (USDT/VES) ÷ 400 (USD/VES) = 110 USD hoy.
+    expect(screen.getAllByText(/110,00 USD hoy/).length).toBeGreaterThan(0)
+  })
+
+  it('sin tasa vigente no inventa la valoración de hoy', () => {
+    renderPanel({
+      rates: { ...rates, usd: 0 },
+      periodo: {
+        mes: '2026-09-01', estado: 'cerrado', cuentasPendientes: [], cierreAnterior: [],
+        cuentas: [wallet({ nombre: 'Caja Bs', moneda: 'VES', saldoApertura: 8200, saldoAperturaUsd: 100, saldoCalculado: 8200 })],
+      },
+    })
+    expect(screen.getAllByText(/USD congelado/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/USD hoy/)).not.toBeInTheDocument()
+  })
+})
