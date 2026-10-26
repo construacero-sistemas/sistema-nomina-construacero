@@ -31,28 +31,30 @@ const inputClass = 'w-full h-11 rounded-xl border border-slate-200 bg-slate-50 p
 // Mientras esté en false no se renderiza; al volver a true se rehabilita.
 const MOSTRAR_PARTES = false
 
-export default function MovimientoForm({ categorias = [], cuentas = [], onClose }) {
+export default function MovimientoForm({ categorias = [], cuentas = [], onClose, inicial = {} }) {
   const crear = useCrearMovimiento()
   const crearCategoria = useCrearCategoria()
   const eliminarCategoria = useEliminarCategoria()
   const restaurarCategoria = useRestaurarCategoria()
   const { usd, eur, usdt } = useTasaCambioNomina()
 
-  const [tipo, setTipo] = useState('egreso')
+  const [tipo, setTipo] = useState(inicial.tipo || 'egreso')
   const [fecha, setFecha] = useState(today)
-  const [metodoPago, setMetodoPago] = useState('Efectivo $')
+  const [metodoPago, setMetodoPago] = useState(inicial.metodoPago || 'Efectivo $')
   const [cuentaOrigen, setCuentaOrigen] = useState(() => {
-    const iniciales = getCuentasCompatibles('Efectivo $', cuentas)
+    // Atajo «Añadir saldo»: la cuenta de la tarjeta viene fijada de origen.
+    if (inicial.cuentaCustodiaId && cuentas.some(c => c.id === inicial.cuentaCustodiaId)) return inicial.cuentaCustodiaId
+    const iniciales = getCuentasCompatibles(inicial.metodoPago || 'Efectivo $', cuentas)
     return iniciales.length === 1 ? iniciales[0].id : ''
   })
   const [categoria, setCategoria] = useState('')
-  const [concepto, setConcepto] = useState('')
+  const [concepto, setConcepto] = useState(inicial.concepto || '')
   const [monto, setMonto] = useState('')
   const [partes, setPartes] = useState([])
 
   // Selector y ajuste de tasa integrado (oculto por defecto)
   const [mostrarOpcionesTasa, setMostrarOpcionesTasa] = useState(false)
-  const [modoTasa, setModoTasa] = useState('bcv')
+  const [modoTasa, setModoTasa] = useState(inicial.metodoPago === 'USDT' ? 'usdt' : 'bcv')
   const [tasaManual, setTasaManual] = useState('')
   const [observacionTasa, setObservacionTasa] = useState('')
 

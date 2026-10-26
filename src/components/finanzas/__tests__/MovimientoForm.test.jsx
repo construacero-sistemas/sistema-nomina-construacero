@@ -35,12 +35,12 @@ const CATEGORIAS = [
   { id: 'c3', nombre: 'General', tipo: 'ambos' },
 ]
 
-function renderForm(cuentas = [{ id: '10000000-0000-4000-8000-000000000001', nombre: 'Caja Efectivo $', tipo: 'efectivo_usd', moneda: 'USD', saldo: 500, saldoConfirmado: true, activo: true }]) {
+function renderForm(cuentas = [{ id: '10000000-0000-4000-8000-000000000001', nombre: 'Caja Efectivo $', tipo: 'efectivo_usd', moneda: 'USD', saldo: 500, saldoConfirmado: true, activo: true }], inicial) {
   const onClose = vi.fn()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <MovimientoForm categorias={CATEGORIAS} cuentas={cuentas} onClose={onClose} />
+      <MovimientoForm categorias={CATEGORIAS} cuentas={cuentas} inicial={inicial} onClose={onClose} />
     </QueryClientProvider>,
   )
   return { onClose }
@@ -108,6 +108,36 @@ describe('MovimientoForm', () => {
     expect(payload.concepto).toBe('Compra de cemento')
     expect(payload.tasaVes).toBeGreaterThan(0)
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+  })
+
+  it('pre-carga un ingreso con cuenta y concepto sugerido (atajo «Añadir saldo»)', async () => {
+    const user = userEvent.setup()
+    const cuentas = [
+      { id: '10000000-0000-4000-8000-000000000001', nombre: 'Caja Efectivo $', tipo: 'efectivo_usd', moneda: 'USD', saldo: 500, saldoConfirmado: true, activo: true },
+      { id: '10000000-0000-4000-8000-000000000002', nombre: 'Binance', banco: 'Binance Pay (USDT)', tipo: 'cripto_usdt', moneda: 'USDT', saldo: 10, saldoConfirmado: true, activo: true },
+    ]
+    renderForm(cuentas, {
+      tipo: 'ingreso',
+      metodoPago: 'USDT',
+      cuentaCustodiaId: '10000000-0000-4000-8000-000000000002',
+      concepto: 'Aporte de saldo a Binance',
+    })
+
+    // El concepto sugerido llega precargado y sigue siendo editable
+    const concepto = screen.getByPlaceholderText(/pago de flete/i)
+    expect(concepto).toHaveValue('Aporte de saldo a Binance')
+
+    await user.type(screen.getByPlaceholderText('0.00'), '25')
+    await pickCategory(user, 'Ventas')
+    const form = screen.getByRole('dialog').querySelector('form')
+    if (form) fireEvent.submit(form)
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1))
+    const payload = mutateAsync.mock.calls[0][0]
+    expect(payload.tipo).toBe('ingreso')
+    expect(payload.metodoPago).toBe('USDT')
+    expect(payload.cuentaCustodiaId).toBe('10000000-0000-4000-8000-000000000002')
+    expect(payload.concepto).toBe('Aporte de saldo a Binance')
   })
 
   it('muestra el error del servidor si mutateAsync falla', async () => {

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowRightLeft, Wallet } from 'lucide-react'
+import { ArrowDownRight, ArrowRightLeft, Wallet } from 'lucide-react'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import { asignarMovimientoACuenta, clasificarMovimientoEnCartera } from '../../utils/carterasHelper.js'
 
@@ -8,7 +8,7 @@ const money = value => valid(value) ? Number(value).toLocaleString('es-VE', { mi
 const LOGICAL = ['Efectivo $', 'Zelle', 'USDT', 'Efectivo Bs', 'Banco en Bolívares']
 
 export default function DetalleCuentaModal({ open, onClose, cuenta, movimientos = [], cuentas = [], tasaBcv = 0,
-  onOpenTransferencia, hasMore = false, onLoadMore, isLoadingMore = false, errorCarga = '' }) {
+  onOpenTransferencia, onAniadirSaldo, hasMore = false, onLoadMore, isLoadingMore = false, errorCarga = '' }) {
   const [pagina, setPagina] = useState(1)
   const rows = useMemo(() => movimientos.filter(m => {
     if (!cuenta || m.estado === 'anulado') return false
@@ -30,6 +30,7 @@ export default function DetalleCuentaModal({ open, onClose, cuenta, movimientos 
   const available = confirmed && cuenta.disponible === true
   return <Modal isOpen={open} onClose={onClose} title="Detalle de Cuenta de Custodia" className="sm:max-w-xl"
     footer={<><button type="button" onClick={onClose} className="min-h-11 px-4 py-2 rounded-xl border border-slate-300">Cerrar</button>
+      <button type="button" disabled={!onAniadirSaldo} onClick={() => onAniadirSaldo?.(cuenta)} title="Añadir saldo a esta cuenta (ingreso)" className="min-h-11 px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold inline-flex gap-2 items-center disabled:opacity-50"><ArrowDownRight size={18} />Añadir saldo</button>
       <button type="button" disabled={!available || !onOpenTransferencia} onClick={onOpenTransferencia} className="min-h-11 px-4 py-2 rounded-xl bg-primary text-white font-bold inline-flex gap-2 items-center disabled:opacity-50"><ArrowRightLeft size={18} />Mover fondos desde esta cuenta</button></>}>
     <div className="space-y-4">
       <section aria-label="Saldo de la cuenta" className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2">

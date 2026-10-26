@@ -46,6 +46,21 @@ describe('CuentasCustodiaGrid — borrado seguro', () => {
     expect(mover).not.toHaveClass('min-h-8')
   })
 
+  it('ofrece «Añadir saldo» con caja táctil de 44px que dispara onAniadirSaldo sin abrir el detalle', () => {
+    const onAniadirSaldo = vi.fn()
+    const onVerDetalle = vi.fn()
+    renderGrid([mkCuenta()], vi.fn(), { onAniadirSaldo, onVerDetalle })
+
+    const btn = screen.getByRole('button', { name: /añadir saldo/i })
+    expect(btn).toHaveClass('min-h-11')
+    fireEvent.click(btn)
+
+    expect(onAniadirSaldo).toHaveBeenCalledTimes(1)
+    expect(onAniadirSaldo.mock.calls[0][0].id).toBe('c-1')
+    // stopPropagation: la tarjeta no debe abrir el modal de detalle
+    expect(onVerDetalle).not.toHaveBeenCalled()
+  })
+
   it('muestra el botón eliminar en cuentas normales (aunque sean predeterminadas)', () => {
     const cuenta = mkCuenta({ predeterminada: true })
     renderGrid([cuenta])

@@ -31,6 +31,7 @@ import TransferenciaCarterasModal from './TransferenciaCarterasModal.jsx'
 import DetalleCuentaModal from './DetalleCuentaModal.jsx'
 import ConciliacionPreviewModal from './ConciliacionPreviewModal.jsx'
 import CuentasCustodiaGrid from './CuentasCustodiaGrid.jsx'
+import { metodoPagoParaCuenta } from './cuentasCompatibles.js'
 import CuentaFormModal from './CuentaFormModal.jsx'
 import CategoriasModal from './CategoriasModal.jsx'
 import AnularDialog from './AnularDialog.jsx'
@@ -66,7 +67,7 @@ export default function FinanzasView() {
   const [filtroCartera, setFiltroCartera] = useState('')
   const [mostrarAnulados, setMostrarAnulados] = useState(false)
 
-  const [formOpen, setFormOpen] = useState(false)
+  const [formInicial, setFormInicial] = useState(null)
   const [transferenciaOpen, setTransferenciaOpen] = useState(false)
   const [cuentaDetalle, setCuentaDetalle] = useState(null)
   const [cuentaFormOpen, setCuentaFormOpen] = useState(false)
@@ -76,6 +77,15 @@ export default function FinanzasView() {
   const [conciliacionPreviewOpen, setConciliacionPreviewOpen] = useState(false)
   const [categoriasOpen, setCategoriasOpen] = useState(false)
   const [cuentaTransferir, setCuentaTransferir] = useState(null)
+
+  // Atajo «Añadir saldo»: abre el movimiento pre-cargado como ingreso con la
+  // cuenta fijada y un motivo sugerido editable (desde tarjeta o detalle).
+  const abrirIngresoRapido = cuenta => setFormInicial({
+    tipo: 'ingreso',
+    metodoPago: metodoPagoParaCuenta(cuenta),
+    cuentaCustodiaId: cuenta.id,
+    concepto: `Aporte de saldo a ${cuenta.nombre}`,
+  })
 
   const marketRates = useTasaCambioNomina()
   const { usd, usdt } = marketRates
@@ -248,7 +258,7 @@ export default function FinanzasView() {
             )}
             {puede && <button
               type="button"
-              onClick={() => setFormOpen(true)}
+              onClick={() => setFormInicial({})}
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-11 rounded-xl text-sm font-black text-white shadow-lg active:scale-[.98] cursor-pointer w-full sm:w-auto"
               style={{ background: 'linear-gradient(135deg, #1B365D, #B8860B)', touchAction: 'manipulation' }}
             >
@@ -385,7 +395,7 @@ export default function FinanzasView() {
                   title={filtroCartera ? `Sin movimientos en Cartera ${filtroCartera}` : 'No hay movimientos para este filtro'}
                   description="Ajusta el rango de fechas o registra un nuevo movimiento para empezar."
                   actionLabel="Registrar movimiento"
-                  onAction={() => setFormOpen(true)}
+                  onAction={() => setFormInicial({})}
                 />
               </div>
             ) : (
@@ -453,6 +463,7 @@ export default function FinanzasView() {
             }}
             onEliminarCuenta={eliminarCuenta}
             onVerDetalle={cuenta => setCuentaDetalle(cuenta)}
+            onAniadirSaldo={abrirIngresoRapido}
             onTransferir={cuenta => {
               setCuentaTransferir(cuenta)
               setTransferenciaOpen(true)
@@ -507,7 +518,7 @@ export default function FinanzasView() {
         </div>
       )}
 
-      {formOpen && <MovimientoForm categorias={categoriasVisibles} cuentas={cuentas} onClose={() => setFormOpen(false)} />}
+      {formInicial && <MovimientoForm categorias={categoriasVisibles} cuentas={cuentas} inicial={formInicial} onClose={() => setFormInicial(null)} />}
       {puede && transferenciaOpen && (
         <TransferenciaCarterasModal
           key={cuentaTransferir?.id || 'transferencia-default'}
@@ -545,6 +556,7 @@ export default function FinanzasView() {
           movimientos={movimientosList}
           cuentas={cuentas}
           tasaBcv={tasaActiva}
+          onAniadirSaldo={cuenta => { setCuentaDetalle(null); abrirIngresoRapido(cuenta) }}
           onOpenTransferencia={() => {
             setCuentaTransferir(cuentas.find(c => c.id === cuentaDetalle.id) || null)
             setCuentaDetalle(null)

@@ -1,7 +1,7 @@
 // src/components/finanzas/__tests__/cuentasCompatibles.test.js
 // Pruebas unitarias para la separación estricta de cuentas según el método de pago
 import { describe, expect, it } from 'vitest'
-import { getCuentasCompatibles } from '../cuentasCompatibles.js'
+import { getCuentasCompatibles, metodoPagoParaCuenta } from '../cuentasCompatibles.js'
 
 const CUENTAS_TEST = [
   { id: 'c-binance', nombre: 'binance', banco: 'Binance Pay (USDT)', tipo: 'cripto_usdt', moneda: 'USDT', activo: true },
@@ -56,5 +56,21 @@ describe('getCuentasCompatibles — Separación Inteligente y Estricta', () => {
   it('ignora cuentas inactivas', () => {
     const res = getCuentasCompatibles('Banco en Bolívares', CUENTAS_TEST)
     expect(res.some(c => c.id === 'c-inactiva')).toBe(false)
+  })
+})
+
+describe('metodoPagoParaCuenta — pre-carga del formulario financiero', () => {
+  it('mapea cada cuenta a su método del formulario (mismas reglas de compatibilidad)', () => {
+    const de = id => CUENTAS_TEST.find(c => c.id === id)
+    expect(metodoPagoParaCuenta(de('c-binance'))).toBe('USDT')
+    expect(metodoPagoParaCuenta(de('c-zelle'))).toBe('Zelle')
+    expect(metodoPagoParaCuenta(de('c-caja-usd'))).toBe('Efectivo $')
+    expect(metodoPagoParaCuenta(de('c-caja-bs'))).toBe('Efectivo Bs')
+    expect(metodoPagoParaCuenta(de('c-bnc'))).toBe('Bolívares digitales')
+  })
+
+  it('devuelve vacío ante cuentas sin método representable', () => {
+    expect(metodoPagoParaCuenta(null)).toBe('')
+    expect(metodoPagoParaCuenta({ id: 'x', tipo: 'otro', moneda: 'XXX' })).toBe('')
   })
 })

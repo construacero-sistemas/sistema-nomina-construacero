@@ -66,3 +66,12 @@ export function getCuentasCompatibles(metodo, cuentas) {
   }
   return []
 }
+
+// Método de pago del formulario financiero que representa esta cuenta de
+// custodia. Se deriva de las mismas reglas de compatibilidad (sin duplicar
+// lógica) para pre-cargar formularios desde la tarjeta de la billetera.
+export function metodoPagoParaCuenta(cuenta) {
+  if (!cuenta) return ''
+  const candidatos = ['USDT', 'Zelle', 'Efectivo $', 'Efectivo Bs', 'Bolívares digitales']
+  return candidatos.find(m => getCuentasCompatibles(m, [cuenta]).some(c => c.id === cuenta.id)) || ''
+}

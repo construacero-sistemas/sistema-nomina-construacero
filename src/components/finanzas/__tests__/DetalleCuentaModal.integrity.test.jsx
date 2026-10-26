@@ -28,6 +28,19 @@ describe('Account detail uses the full ledger balance', () => {
     expect(balance.textContent).not.toMatch(/0,00/)
     expect(screen.getByRole('button', { name: 'Mover fondos desde esta cuenta' })).toBeDisabled()
   })
+  it('offers «Añadir saldo» (income pre-load) even without confirmed balance, with 44px target', () => {
+    const onAniadirSaldo = vi.fn()
+    // Sin saldo confirmado no se pueden mover fondos, pero SÍ se puede aportar.
+    mount({ cuenta: { ...account, saldo: null, saldoConfirmado: false, disponible: false }, onAniadirSaldo })
+    const btn = screen.getByRole('button', { name: /añadir saldo/i })
+    expect(btn).toBeEnabled()
+    expect(btn).toHaveClass('min-h-11')
+    expect(screen.getByRole('button', { name: 'Mover fondos desde esta cuenta' })).toBeDisabled()
+    fireEvent.click(btn)
+    expect(onAniadirSaldo).toHaveBeenCalledOnce()
+    expect(onAniadirSaldo.mock.calls[0][0].id).toBe(account.id)
+  })
+
   it('shows incomplete history errors and requests more without claiming completeness', () => {
     const load = vi.fn(); mount({ hasMore: true, onLoadMore: load, errorCarga: 'Read failed' })
     expect(screen.getByRole('alert')).toHaveTextContent('Read failed')

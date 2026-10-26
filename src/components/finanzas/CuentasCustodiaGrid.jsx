@@ -47,6 +47,7 @@ export default function CuentasCustodiaGrid({
   onEliminarCuenta,
   onVerDetalle,
   onTransferir,
+  onAniadirSaldo,
   onRestaurar,
   tasaBcv = 0,
 }) {
@@ -385,7 +386,7 @@ export default function CuentasCustodiaGrid({
                 </div>
 
                 {/* Botones de acción inferiores */}
-                <div className="flex items-center justify-between gap-1 pt-2 border-t border-slate-100 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-slate-100 text-xs">
                   <button
                     type="button"
                     onClick={e => {
@@ -398,7 +399,20 @@ export default function CuentasCustodiaGrid({
                     <span>Detalle</span>
                   </button>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation()
+                        onAniadirSaldo?.(cuenta)
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 min-h-11 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-[10px] font-bold text-white transition-all cursor-pointer active:scale-95"
+                      title="Añadir saldo a esta cuenta (ingreso)"
+                    >
+                      <ArrowDownRight size={11} />
+                      <span>Añadir saldo</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={e => {
