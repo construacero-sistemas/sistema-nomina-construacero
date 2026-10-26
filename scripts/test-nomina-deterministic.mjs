@@ -81,6 +81,7 @@ class InMemoryDatabase {
     this.registro_asistencia = []
     this.nomina_periodos = []
     this.nomina_lineas = []
+    this.nomina_descuentos = []
     this.nomina_feriados = [
       { id: '70000000-0000-4000-8000-000000000001', fecha: '2026-08-14', nombre: 'Día Festivo Especial', tipo: 'empresa', laborable: false, cuenta_id: IDS.cuenta },
     ]
@@ -313,6 +314,36 @@ class InMemoryDatabase {
           return jsonResponse({ code: '23503', message: 'Receipt history is retained' }, 409)
         }
         if (perEq) this.nomina_lineas = this.nomina_lineas.filter(l => l.periodo_id !== perEq)
+        return jsonResponse([], 200)
+      }
+    }
+
+    if (pathname.includes('/rest/v1/nomina_descuentos')) {
+      if (method === 'GET') {
+        const perEq = params.get('periodo_id')?.replace('eq.', '')
+        const lineEq = params.get('linea_id')?.replace('eq.', '')
+        let res = this.nomina_descuentos
+        if (perEq) res = res.filter(d => d.periodo_id === perEq)
+        if (lineEq) res = res.filter(d => d.linea_id === lineEq)
+        return jsonResponse(res)
+      }
+      if (method === 'POST') {
+        const rows = (Array.isArray(body) ? body : [body]).map((r, i) => ({
+          id: randomUUID(),
+          creado_en: new Date().toISOString(),
+          ...r,
+        }))
+        this.nomina_descuentos.push(...rows)
+        return jsonResponse(rows, 201)
+      }
+      if (method === 'DELETE') {
+        const lineEq = params.get('linea_id')?.replace('eq.', '')
+        const notInRaw = params.get('id') || ''
+        const conservar = notInRaw.startsWith('not.in.(')
+          ? notInRaw.slice('not.in.('.length, -1).split(',')
+          : null
+        this.nomina_descuentos = this.nomina_descuentos.filter(d =>
+          !(d.linea_id === lineEq && !(conservar && conservar.includes(d.id))))
         return jsonResponse([], 200)
       }
     }
@@ -637,15 +668,34 @@ async function runAllTests() {
     const req = makeRequest({
       lineaId: linea.id,
       bonosUsd: 25.0,
-      deduccionesUsd: 10.0,
       notaBonos: 'Bono de puntualidad y productividad',
-      notaDeducciones: 'Anticipo quincenal',
+      descuentos: [{ motivo: 'anticipo', detalle: 'Anticipo quincenal', monto: 10.0 }],
     })
     const res = await H.handleAjustarLinea(req, ENV)
     assertEqual(res.status, 200, 'Status de ajuste')
     const body = await res.json()
     assertEqual(body.linea.bonos_usd, 25.0, 'Bono guardado')
     assertEqual(body.linea.deducciones_usd, 10.0, 'Deducción guardada')
+    const desglose = db.nomina_descuentos.filter(d => d.linea_id === linea.id)
+    assertEqual(desglose.length, 1, 'El descuento queda en el desglose del recibo')
+    assertEqual(desglose[0].motivo, 'anticipo', 'El motivo obligatorio se conserva')
+    assertEqual(desglose[0].monto_usd, 10.0, 'Monto del desglose')
+    assertEqual(body.linea.nota_deducciones, 'Anticipo — Anticipo quincenal', 'Resumen legible con motivo')
+  })
+
+  await test('Todo descuento exige motivo y neto no negativo (rechazos)', async () => {
+    const linea = db.nomina_lineas[0]
+    const antes = db.nomina_descuentos.length
+    const sinMotivo = await H.handleAjustarLinea(
+      makeRequest({ lineaId: linea.id, bonosUsd: 0, descuentos: [{ monto: 5.0 }] }), ENV)
+    assertEqual(sinMotivo.status, 400, 'Debe rechazar el descuento sin motivo')
+    const suelto = await H.handleAjustarLinea(
+      makeRequest({ lineaId: linea.id, bonosUsd: 0, deduccionesUsd: 5.0 }), ENV)
+    assertEqual(suelto.status, 400, 'Debe rechazar montos sueltos sin motivo')
+    const enRojo = await H.handleAjustarLinea(
+      makeRequest({ lineaId: linea.id, bonosUsd: 0, descuentos: [{ motivo: 'prestamo', monto: 99999.0 }] }), ENV)
+    assertEqual(enRojo.status, 400, 'Debe rechazar descuentos que dejan el neto en negativo')
+    assertEqual(db.nomina_descuentos.length, antes, 'Ningún rechazo escribe descuentos')
   })
 
   await test('Cerrar período de nómina para autorizar pago', async () => {
@@ -764,8 +814,8 @@ async function runAllTests() {
     await H.handleAjustarLinea(makeRequest({
       lineaId: lineasInit[0].id,
       bonosUsd: 80.0,
-      deduccionesUsd: 0,
       notaBonos: 'Producción semanal',
+      descuentos: [],
     }), ENV)
 
     await H.handleCerrarPeriodo(makeRequest({ periodoId }), ENV)

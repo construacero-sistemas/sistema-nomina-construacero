@@ -9,6 +9,7 @@ import {
   fmtUsd, fmtBs, fmtFecha, drawWatermark, drawPremiumHeader,
 } from '../../../compat/services/pdf/pdfShared.js'
 import { formatHora12 } from '../../utils/timeUtils.js'
+import { etiquetaMotivoDescuento } from '../../../server/lib/nominaDescuentos.js'
 
 function fmtFechaVE(f) {
   if (!f) return '—'
@@ -236,7 +237,21 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
     })
   }
 
-  if (Number(linea.deducciones_usd || 0) > 0) {
+  // Cada descuento se imprime con su motivo obligatorio. Los recibos
+  // anteriores al desglose conservan su deducción global con el resumen histórico.
+  const descuentosDetalle = (Array.isArray(linea.descuentos) ? linea.descuentos : [])
+    .filter(d => Number(d.monto_usd) > 0)
+  if (descuentosDetalle.length) {
+    for (const d of descuentosDetalle) {
+      conceptos.push({
+        label: `Descuento — ${etiquetaMotivoDescuento(d.motivo)}${d.detalle ? ` · ${d.detalle}` : ''}`,
+        cant: '1 global',
+        tarifa: '—',
+        monto: Number(d.monto_usd),
+        tipo: 'deduccion',
+      })
+    }
+  } else if (Number(linea.deducciones_usd || 0) > 0) {
     conceptos.push({
       label: linea.nota_deducciones ? `Deducciones / Préstamos — ${linea.nota_deducciones}` : 'Deducciones de Nómina / Anticipos',
       cant: '1 global',

@@ -1,11 +1,15 @@
 // src/components/nomina/LiquidacionModal.jsx
-// Ajuste manual de bonos y deducciones sobre el recibo calculado de un empleado.
+// Ajuste manual de bonos y descuentos sobre el recibo calculado de un empleado.
+// Regla vigente: cada descuento lleva motivo obligatorio (Anticipo, Préstamo,
+// Falta, Multa u Otro) y el neto nunca queda en negativo.
 import { useMemo, useState } from 'react'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 import { useAjustarLinea } from '../../hooks/useNomina'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
+import DescuentosEditor from './DescuentosEditor.jsx'
+import { descuentosIniciales, normalizarDescuentosForm, validarDescuentosForm } from './descuentosUtils.js'
 
-const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50'
+const inputCls = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[16px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50'
 
 function fmt(n) {
   return (Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -15,9 +19,8 @@ export default function LiquidacionModal({ linea, onClose }) {
   const ajustar = useAjustarLinea()
 
   const [bonos, setBonos]   = useState(String(linea.bonos_usd ?? 0))
-  const [deduc, setDeduc]   = useState(String(linea.deducciones_usd ?? 0))
   const [notaBonos, setNotaBonos] = useState(linea.nota_bonos ?? '')
-  const [notaDeduc, setNotaDeduc] = useState(linea.nota_deducciones ?? '')
+  const [descuentos, setDescuentos] = useState(() => descuentosIniciales(linea))
   const [error, setError]   = useState('')
 
   const cargando = ajustar.isPending
@@ -30,23 +33,28 @@ export default function LiquidacionModal({ linea, onClose }) {
     Number(linea.monto_feriado_usd || 0)
   ), [linea])
 
-  const bruto = base + (Number(bonos) || 0)
-  const neto  = Math.max(0, bruto - (Number(deduc) || 0))
+  const bonosNum = Number(bonos) || 0
+  const bruto = base + (bonosNum > 0 ? bonosNum : 0)
+  const validacion = useMemo(() => validarDescuentosForm(descuentos, bruto), [descuentos, bruto])
+  const neto  = Math.max(0, bruto - validacion.total)
 
   async function guardar(e) {
     if (e) e.preventDefault()
     setError('')
-    if (Number(bonos) < 0 || Number(deduc) < 0) {
-      setError('Los montos no pueden ser negativos')
+    if (bonosNum < 0) {
+      setError('El bono no puede ser negativo')
+      return
+    }
+    if (!validacion.ok) {
+      setError(validacion.errorGlobal || 'Revisa los descuentos: cada uno exige motivo y monto mayor que 0')
       return
     }
     try {
       await ajustar.mutateAsync({
         lineaId: linea.id,
-        bonosUsd: Number(bonos) || 0,
-        deduccionesUsd: Number(deduc) || 0,
+        bonosUsd: bonosNum,
         notaBonos: notaBonos || undefined,
-        notaDeducciones: notaDeduc || undefined,
+        descuentos: normalizarDescuentosForm(descuentos),
       })
       onClose()
     } catch (err) {
@@ -61,7 +69,7 @@ export default function LiquidacionModal({ linea, onClose }) {
       className="max-w-md">
       <div className="space-y-4">
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-sm text-red-700">
+          <div role="alert" className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         )}
@@ -103,19 +111,16 @@ Calculado con la asistencia
               className={inputCls} disabled={cargando} />
             <input type="text" value={notaBonos} onChange={e => setNotaBonos(e.target.value)}
               placeholder="Concepto del bono (opcional)"
-              className={`${inputCls} !py-2 !text-xs`} disabled={cargando} />
+              className={`${inputCls} !py-2`} disabled={cargando} />
           </div>
 
-          {/* Deducciones */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">Deducciones (USD)</label>
-            <input type="number" min="0" step="0.01" value={deduc}
-              onChange={e => setDeduc(e.target.value)}
-              className={inputCls} disabled={cargando} />
-            <input type="text" value={notaDeduc} onChange={e => setNotaDeduc(e.target.value)}
-              placeholder="Concepto: adelanto, préstamo, etc. (opcional)"
-              className={`${inputCls} !py-2 !text-xs`} disabled={cargando} />
-          </div>
+          {/* Descuentos con motivo obligatorio */}
+          <DescuentosEditor
+            filas={descuentos}
+            validacion={validacion}
+            onChange={setDescuentos}
+            disabled={cargando}
+          />
         </form>
 
         {/* Resultado */}
@@ -124,10 +129,10 @@ Calculado con la asistencia
             <span className="text-amber-800">Total bruto</span>
             <span className="font-bold text-amber-900">${fmt(bruto)}</span>
           </div>
-          {Number(deduc) > 0 && (
+          {validacion.total > 0 && (
             <div className="flex justify-between text-xs">
-              <span className="text-amber-800">Deducciones</span>
-              <span className="font-bold text-red-600">−${fmt(deduc)}</span>
+              <span className="text-amber-800">Descuentos</span>
+              <span className="font-bold text-red-600">−${fmt(validacion.total)}</span>
             </div>
           )}
           <div className="flex justify-between pt-1.5 border-t border-amber-200">
@@ -138,13 +143,13 @@ Calculado con la asistencia
       </div>
 
       {/* Footer */}
-      <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-slate-100">
+      <div className="flex flex-wrap justify-end gap-2 pt-3 mt-3 border-t border-slate-100">
         <button onClick={onClose} type="button" disabled={cargando}
-          className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+          className="min-h-11 px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
           Cancelar
         </button>
-        <button onClick={guardar} disabled={cargando}
-          className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-sm font-bold">
+        <button onClick={guardar} disabled={cargando || !validacion.ok}
+          className="min-h-11 px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-sm font-bold">
           {cargando ? 'Guardando...' : 'Guardar cambios'}
         </button>
       </div>

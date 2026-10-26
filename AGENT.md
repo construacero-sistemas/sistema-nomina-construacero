@@ -93,6 +93,17 @@ Todo movimiento financiero (ingreso o egreso) debe registrarse **con su motivo/c
 
 **Guardrail:** tests en `server/lib/__tests__/finanzasUtils.test.js` y `src/components/finanzas/__tests__/MovimientoForm.test.jsx`.
 
+## Regla obligatoria: motivo obligatorio en los descuentos de nómina
+
+Todo descuento de nómina (anticipo, préstamo, falta, multa u otro) se registra **por trabajador y por recibo, con motivo obligatorio** de la lista cerrada `Anticipo · Préstamo · Falta · Multa · Otro`, monto estrictamente positivo y detalle opcional. La persona que liquida la nómina coloca los descuentos al ajustar el recibo. Reglas mínimas:
+
+- El motivo es obligatorio en la interfaz y en el servidor: sin motivo válido no se guarda el descuento. La única fuente de la lista de motivos es `server/lib/nominaDescuentos.js`.
+- El neto del recibo **nunca queda en negativo**: si los descuentos superan el bruto, el ajuste se rechaza (interfaz y servidor) para que quien liquida decida cómo repartir la recuperación.
+- El recibo de pago imprime **cada descuento con su motivo** y su detalle. Los recibos anteriores a esta regla conservan su deducción global con el resumen histórico.
+- El desglose vive en la tabla `nomina_descuentos` (migración 257) con autor y fecha; los totales siguen en `nomina_lineas`.
+
+**Guardrail:** tests en `server/lib/__tests__/nominaDescuentos.test.js`, `server/handlers/__tests__/nomina.ajuste-descuentos.test.js`, `src/components/nomina/__tests__/LiquidacionModal.descuentos.test.jsx` y `scripts/test-nomina-deterministic.mjs`.
+
 ## Regla obligatoria: presupuesto de bundle inicial
 El chunk `index-*.js` tras `vite build` no debe superar **400 kB**. Nuevas vistas pesadas deben cargarse con `React.lazy()`; las librerías grandes (jspdf, html2canvas) solo mediante `await import()` dinámico dentro de la función que las usa.
 
