@@ -20,6 +20,7 @@ vi.mock('../../../hooks/useFinanzas.js', () => ({
   useCrearCategoria: () => ({ mutateAsync: crearCategoriaMock, isPending: false }),
   useEliminarCategoria: () => ({ mutateAsync: eliminarCategoriaMock, isPending: false }),
   useRestaurarCategoria: () => ({ mutateAsync: vi.fn(async () => ({ ok: true })), isPending: false, reset: () => {} }),
+  useRenombrarCategoria: () => ({ mutateAsync: vi.fn(async () => ({ ok: true })), isPending: false, reset: () => {} }),
 }))
 
 // Tasa de cambio estable para pruebas deterministas.

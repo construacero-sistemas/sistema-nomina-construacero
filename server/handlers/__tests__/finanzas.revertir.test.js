@@ -145,6 +145,102 @@ describe('finanzas — categorías reversibles', () => {
     expect(patch.activo).toBe(true)
   })
 
+  it('al crear un nombre archivado reactiva la fila en vez de responder "ya existe"', async () => {
+    let patch
+    const archivada = { id: catId, nombre: 'Mantenimiento', tipo: 'ambos', activo: false }
+    mock = installFetchMock([
+      {
+        match: '/finanzas_categorias',
+        method: 'POST',
+        respond: { __raw: 'duplicate key value violates unique constraint "finanzas_categorias_cuenta_id_nombre_key"', ok: false, status: 409 },
+      },
+      { match: '/finanzas_categorias', method: 'GET', respond: [archivada] },
+      {
+        match: '/finanzas_categorias',
+        method: 'PATCH',
+        respond: (url, init) => {
+          patch = JSON.parse(init.body)
+          return [{ ...archivada, ...patch }]
+        },
+      },
+    ])
+    const response = await H.handleCrearFinanzasCategoria(makeRequest({ nombre: 'Mantenimiento', tipo: 'egreso' }), ENV)
+    const result = await readResponse(response)
+
+    expect(result.status).toBe(200)
+    expect(result.body.reactivada).toBe(true)
+    expect(result.body.categoria).toMatchObject({ id: catId, nombre: 'Mantenimiento', tipo: 'egreso', activo: true })
+    expect(patch).toEqual({ activo: true, tipo: 'egreso' })
+    expect(mock.calls.some(call => call.method === 'DELETE')).toBe(false)
+  })
+
+  it('al crear un nombre que ya está activo responde 409 sin tocar la fila', async () => {
+    mock = installFetchMock([
+      {
+        match: '/finanzas_categorias',
+        method: 'POST',
+        respond: { __raw: 'duplicate key value violates unique constraint "finanzas_categorias_cuenta_id_nombre_key"', ok: false, status: 409 },
+      },
+      { match: '/finanzas_categorias', method: 'GET', respond: [{ id: catId, nombre: 'Mantenimiento', tipo: 'ambos', activo: true }] },
+    ])
+    const response = await H.handleCrearFinanzasCategoria(makeRequest({ nombre: 'Mantenimiento', tipo: 'egreso' }), ENV)
+    const result = await readResponse(response)
+
+    expect(result.status).toBe(409)
+    expect(result.body.error).toMatch(/ya existe/i)
+    expect(mock.calls.some(call => call.method === 'PATCH')).toBe(false)
+  })
+
+  it('renombra una categoría activa sin tocar movimientos históricos', async () => {
+    let patch
+    mock = installFetchMock([
+      { match: '/finanzas_categorias', method: 'GET', respond: [{ id: catId, nombre: 'Personal', tipo: 'egreso', activo: true }] },
+      {
+        match: '/finanzas_categorias',
+        method: 'PATCH',
+        respond: (url, init) => {
+          patch = JSON.parse(init.body)
+          return [{ id: catId, nombre: patch.nombre, tipo: 'egreso', activo: true }]
+        },
+      },
+    ])
+    const response = await H.handleRenombrarFinanzasCategoria(makeRequest({ id: catId, nombre: '  Nómina extra  ' }), ENV)
+    const result = await readResponse(response)
+
+    expect(result.status).toBe(200)
+    expect(result.body.categoria.nombre).toBe('Nómina extra')
+    expect(patch).toEqual({ nombre: 'Nómina extra' })
+    expect(mock.calls.some(call => call.url.includes('/finanzas_movimientos'))).toBe(false)
+    expect(mock.calls.some(call => call.method === 'DELETE')).toBe(false)
+  })
+
+  it('renombrar a un nombre ya existente responde 409', async () => {
+    mock = installFetchMock([
+      { match: '/finanzas_categorias', method: 'GET', respond: [{ id: catId, nombre: 'Personal', tipo: 'egreso', activo: true }] },
+      {
+        match: '/finanzas_categorias',
+        method: 'PATCH',
+        respond: { __raw: 'duplicate key value violates unique constraint "finanzas_categorias_cuenta_id_nombre_key"', ok: false, status: 409 },
+      },
+    ])
+    const response = await H.handleRenombrarFinanzasCategoria(makeRequest({ id: catId, nombre: 'Nómina' }), ENV)
+    const result = await readResponse(response)
+
+    expect(result.status).toBe(409)
+    expect(result.body.error).toMatch(/ya existe/i)
+  })
+
+  it('no renombra categorías predeterminadas del sistema', async () => {
+    mock = installFetchMock([
+      { match: '/finanzas_categorias', method: 'GET', respond: [{ id: catId, nombre: 'Ventas', tipo: 'ingreso', activo: true }] },
+    ])
+    const response = await H.handleRenombrarFinanzasCategoria(makeRequest({ id: catId, nombre: 'Ventas 2' }), ENV)
+    const result = await readResponse(response)
+
+    expect(result.status).toBe(400)
+    expect(mock.calls.some(call => call.method === 'PATCH')).toBe(false)
+  })
+
   it('devuelve 404 al restaurar una categoría de otra cuenta (aislamiento)', async () => {
     mock = installFetchMock([
       { match: '/finanzas_categorias', method: 'PATCH', respond: [] },

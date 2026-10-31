@@ -7,7 +7,8 @@ import { useOverlayPosition } from './useOverlayPosition.js'
 
 export default function CustomSelect({ options = [], value, onChange, placeholder = 'Seleccionar...', searchable,
   clearable = false, creatable = false, createLabel = 'Crear', createMaxLength = null, disabled = false,
-  icon: TriggerIcon, showSubInTrigger = true, rowAction, id, 'aria-label': ariaLabel, 'aria-labelledby': labelledBy }) {
+  icon: TriggerIcon, showSubInTrigger = true, rowAction, rowActions, id, 'aria-label': ariaLabel, 'aria-labelledby': labelledBy }) {
+  const acciones = rowActions || (rowAction ? [rowAction] : [])
   const [abierto, setAbierto] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [showInlineCreate, setShowInlineCreate] = useState(false)
@@ -151,11 +152,11 @@ export default function CustomSelect({ options = [], value, onChange, placeholde
                       </span>
                       {selected && <Check size={18} aria-hidden="true" className="shrink-0" />}
                     </button>
-                    {rowAction && !option.noAction && <button type="button" aria-label={`${rowAction.label} ${option.label}`} title={rowAction.title}
-                      onClick={() => { rowAction.onSelect(option); close() }}
-                      className="min-h-11 min-w-11 shrink-0 rounded-xl p-2 text-rose-700 hover:bg-rose-50">
-                      {rowAction.icon ? <rowAction.icon size={18} aria-hidden="true" /> : rowAction.label}
-                    </button>}
+                    {!option.noAction && acciones.map(accion => <button key={accion.label} type="button" aria-label={`${accion.label} ${option.label}`} title={accion.title}
+                      onClick={() => { accion.onSelect(option); close() }}
+                      className={`min-h-11 min-w-11 shrink-0 rounded-xl p-2 ${accion.className || 'text-rose-700 hover:bg-rose-50'}`}>
+                      {accion.icon ? <accion.icon size={18} aria-hidden="true" /> : accion.label}
+                    </button>)}
                   </div>
                 })}
               </div>

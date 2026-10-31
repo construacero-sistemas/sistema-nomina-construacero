@@ -1,10 +1,65 @@
 // src/components/finanzas/CategoriaAcciones.jsx
 // Piezas de UI para gestionar categorías desde el formulario de movimientos:
 // panel inline de creación y diálogo de confirmación de borrado (baja lógica).
+import { useState } from 'react'
 import { Loader2, Trash2 } from 'lucide-react'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
+import { capitalizarTexto } from '../../utils/cuentasCustodiaUtils.js'
 
 const inputClass = 'w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
+
+/**
+ * Renombrar una categoría activa. Solo cambia el catálogo: los movimientos
+ * históricos conservan el nombre con el que se registraron.
+ */
+export function RenombrarCategoriaDialog({ nombre, pending, error, onClose, onConfirm }) {
+  const [valor, setValor] = useState(nombre)
+  const limpio = valor.trim()
+  const listo = limpio.length >= 2 && limpio !== nombre
+
+  function enviar(event) {
+    event.preventDefault()
+    if (listo && !pending) onConfirm(capitalizarTexto(limpio))
+  }
+
+  return (
+    <Modal isOpen busy={pending} onClose={onClose} title={`Renombrar "${nombre}"`}>
+      <form onSubmit={enviar} className="space-y-3">
+        <input
+          value={valor}
+          onChange={event => setValor(event.target.value)}
+          maxLength={80}
+          autoFocus
+          disabled={pending}
+          aria-label="Nuevo nombre de la categoría"
+          className={inputClass}
+        />
+        <p className="text-[11px] text-slate-600">
+          Los movimientos ya registrados conservan el nombre original.
+        </p>
+        {error && <p className="text-[11px] font-bold text-rose-600">{error}</p>}
+        <div className="flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={pending}
+            className="h-11 px-4 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={pending || !listo}
+            className="h-11 px-4 rounded-xl bg-primary text-xs font-black text-white hover:bg-primary-hover disabled:opacity-50 active:scale-95 transition-all inline-flex items-center gap-2 cursor-pointer"
+          >
+            {pending && <Loader2 size={14} className="animate-spin" />}
+            Guardar nombre
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
 
 /** Panel inline para crear una categoría personalizada sin salir del formulario. */
 export function CrearCategoriaPanel({ tipo, nombre, onNombre, onGuardar, onCancelar, pending }) {

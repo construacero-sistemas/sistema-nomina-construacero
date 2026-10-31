@@ -17,6 +17,7 @@ vi.mock('../../../hooks/useFinanzas.js', () => ({
   useActualizarMovimiento: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
   useEliminarCategoria: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, variables: null }),
   useRestaurarCategoria: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, variables: null }),
+  useRenombrarCategoria: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, variables: null }),
   useCrearCategoria: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePreviewConciliacion: () => ({ data: null, isPending: false, reset: vi.fn(), mutate: vi.fn() }),
   useFinanzasPeriodoMensual: () => ({ data: null, isLoading: false, isError: false, refetch: vi.fn() }),

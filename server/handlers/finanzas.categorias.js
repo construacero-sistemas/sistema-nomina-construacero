@@ -89,6 +89,47 @@ export async function handleGetFinanzasCategorias(request, env) {
   }, 200, request)
 }
 
+// La baja lógica deja la fila con activo=false y la restricción única
+// (cuenta_id, nombre) sigue ocupada. Si el nombre pertenece a una categoría
+// archivada, se reactiva en vez de responder "ya existe" (no visible).
+async function reactivarArchivadaOConflicto(request, env, context, category) {
+  const cuenta = accountFilter(context.operador.cuenta_id)
+  const lookup = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?${cuenta}` +
+      `&nombre=eq.${encodeURIComponent(category.nombre)}&select=id,nombre,tipo,activo&limit=1`,
+    { headers: serviceHeaders(env, 'return=minimal') },
+  )
+  const [existing] = lookup.ok ? await lookup.json().catch(() => []) : []
+  if (!existing || existing.activo) return jsonError('La categoría ya existe', 409, request)
+
+  const response = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?id=eq.${encodeURIComponent(existing.id)}&${cuenta}`,
+    {
+      method: 'PATCH',
+      headers: serviceHeaders(env),
+      body: JSON.stringify({ activo: true, tipo: category.tipo }),
+    },
+  )
+  if (!response.ok) return jsonError('No se pudo crear la categoría', 500, request)
+  const [row] = await response.json().catch(() => [])
+  if (!row) return jsonError('No se pudo crear la categoría', 500, request)
+
+  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
+    usuarioId: context.operador.id,
+    usuarioNombre: context.operador.nombre,
+    usuarioRol: context.operador.rol,
+    cuentaId: context.operador.cuenta_id,
+    categoria: 'FINANZAS',
+    accion: 'CATEGORIA_RESTAURADA',
+    entidadTipo: 'finanzas_categorias',
+    entidadId: row.id,
+    meta: { nombre: row.nombre, tipo: category.tipo, via: 'creacion' },
+    ip: context.ip,
+  }).catch(() => {})
+
+  return json({ ok: true, categoria: row, reactivada: true }, 200, request)
+}
+
 export async function handleCrearFinanzasCategoria(request, env) {
   const context = await adminContext(request, env)
   if (context.error) return context.error
@@ -113,7 +154,8 @@ export async function handleCrearFinanzasCategoria(request, env) {
   })
   if (!response.ok) {
     const detail = (await response.text()).toLowerCase()
-    return jsonError(detail.includes('unique') ? 'La categoría ya existe' : 'No se pudo crear la categoría', detail.includes('unique') ? 409 : 500, request)
+    if (!detail.includes('unique')) return jsonError('No se pudo crear la categoría', 500, request)
+    return reactivarArchivadaOConflicto(request, env, context, category)
   }
   const [row] = await response.json()
   registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
@@ -173,6 +215,72 @@ export async function handleEliminarFinanzasCategoria(request, env) {
   }).catch(() => {})
 
   return json({ ok: true, id, nombre: row.nombre }, 200, request)
+}
+
+// Renombra solo el catálogo: los movimientos históricos conservan su texto
+// original (preservación contable), igual que en la baja lógica.
+export async function handleRenombrarFinanzasCategoria(request, env) {
+  const context = await adminContext(request, env)
+  if (context.error) return context.error
+  const parsed = await readBody(request)
+  if (parsed.error) return parsed.error
+
+  const id = String(parsed.body?.id || '').trim()
+  if (!isValidUuid(id)) return jsonError('id inválido', 400, request)
+  let nuevoNombre
+  try {
+    nuevoNombre = normalizeCategory({ nombre: parsed.body?.nombre, tipo: 'ambos' }).nombre
+  } catch (error) {
+    return jsonError(error.message || 'Nombre inválido', 400, request)
+  }
+
+  const cuenta = accountFilter(context.operador.cuenta_id)
+  const lookup = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?id=eq.${encodeURIComponent(id)}` +
+      `&${cuenta}&select=id,nombre,tipo,activo&limit=1`,
+    { headers: serviceHeaders(env, 'return=minimal') },
+  )
+  if (!lookup.ok) return jsonError('No se pudo validar la categoría', 500, request)
+  const [row] = await lookup.json().catch(() => [])
+  if (!row) return jsonError('Categoría no encontrada', 404, request)
+  if (DEFAULT_CATEGORIES.some(c => c.nombre.toLowerCase() === String(row.nombre).toLowerCase())) {
+    return jsonError('Las categorías predeterminadas no se pueden renombrar', 400, request)
+  }
+  if (!row.activo) return jsonError('Restaura la categoría antes de renombrarla', 400, request)
+  if (row.nombre === nuevoNombre) return json({ ok: true, idempotente: true, categoria: row }, 200, request)
+
+  const response = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?id=eq.${encodeURIComponent(id)}&${cuenta}`,
+    {
+      method: 'PATCH',
+      headers: serviceHeaders(env),
+      body: JSON.stringify({ nombre: nuevoNombre }),
+    },
+  )
+  if (!response.ok) {
+    const detail = (await response.text()).toLowerCase()
+    if (detail.includes('unique')) {
+      return jsonError('Ya existe una categoría con ese nombre (revisa las archivadas)', 409, request)
+    }
+    return jsonError('No se pudo renombrar la categoría', 500, request)
+  }
+  const [actualizada] = await response.json().catch(() => [])
+  if (!actualizada) return jsonError('Categoría no encontrada', 404, request)
+
+  registrarAuditoria(env, serviceHeaders(env, 'return=minimal'), {
+    usuarioId: context.operador.id,
+    usuarioNombre: context.operador.nombre,
+    usuarioRol: context.operador.rol,
+    cuentaId: context.operador.cuenta_id,
+    categoria: 'FINANZAS',
+    accion: 'CATEGORIA_RENOMBRADA',
+    entidadTipo: 'finanzas_categorias',
+    entidadId: id,
+    meta: { anterior: row.nombre, nuevo: nuevoNombre },
+    ip: context.ip,
+  }).catch(() => {})
+
+  return json({ ok: true, categoria: actualizada }, 200, request)
 }
 
 export async function handleRestaurarFinanzasCategoria(request, env) {

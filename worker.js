@@ -32,6 +32,7 @@ import {
   handleCrearFinanzasCategoria,
   handleEliminarFinanzasCategoria,
   handleRestaurarFinanzasCategoria,
+  handleRenombrarFinanzasCategoria,
 } from './server/handlers/finanzas.js'
 import { handleSyncVentasPos } from './server/handlers/finanzas.sync.js'
 import { handleCrearTransferencia, handleGetSaldos, handleGetOperacionEstado } from './server/handlers/finanzas.operaciones.js'
@@ -104,6 +105,7 @@ const routes = new Map([
   ['POST /api/finanzas/categorias/crear', handleCrearFinanzasCategoria],
   ['POST /api/finanzas/categorias/eliminar', handleEliminarFinanzasCategoria],
   ['POST /api/finanzas/categorias/restaurar', handleRestaurarFinanzasCategoria],
+  ['POST /api/finanzas/categorias/renombrar', handleRenombrarFinanzasCategoria],
   ['GET /api/finanzas/cuentas-custodia', handleGetCuentasCustodia],
   ['POST /api/finanzas/cuentas-custodia/crear', handleCrearCuentaCustodia],
   ['POST /api/finanzas/cuentas-custodia/actualizar', handleActualizarCuentaCustodia],

@@ -224,6 +224,18 @@ export function useRestaurarCategoria() {
   })
 }
 
+export function useRenombrarCategoria() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, nombre }) => apiPost('/api/finanzas/categorias/renombrar', { id, nombre }),
+    onSuccess: () => {
+      showToast.success('Categoría renombrada')
+      client.invalidateQueries({ queryKey: [...BASE_KEY, 'categorias'] })
+    },
+    onError: error => showToast.error(error.message || 'No se pudo renombrar la categoría'),
+  })
+}
+
 export function useReasignarCuenta() {
   const client = useQueryClient()
   return useMutation({

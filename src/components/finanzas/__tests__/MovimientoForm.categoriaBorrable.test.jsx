@@ -8,12 +8,14 @@ import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const eliminarCategoriaMock = vi.fn(async () => ({ ok: true }))
+const renombrarCategoriaMock = vi.fn(async () => ({ ok: true }))
 
 vi.mock('../../../hooks/useFinanzas.js', () => ({
   useCrearMovimiento: () => ({ mutateAsync: vi.fn(async () => ({})), isPending: false }),
   useCrearCategoria: () => ({ mutateAsync: vi.fn(async () => ({ ok: true, categoria: { nombre: 'Nueva', tipo: 'egreso' } })), isPending: false }),
   useEliminarCategoria: () => ({ mutateAsync: eliminarCategoriaMock, isPending: false }),
   useRestaurarCategoria: () => ({ mutateAsync: vi.fn(async () => ({ ok: true })), isPending: false, reset: () => {} }),
+  useRenombrarCategoria: () => ({ mutateAsync: renombrarCategoriaMock, isPending: false, reset: () => {} }),
 }))
 
 vi.mock('../../../hooks/useTasaCambioNomina.js', () => ({
@@ -94,6 +96,23 @@ describe('MovimientoForm — borrado de categoría desde el selector', () => {
     await waitFor(() => expect(eliminarCategoriaMock).toHaveBeenCalled())
     // El trigger vuelve al placeholder (la categoría ya no existe)
     await waitFor(() => expect(screen.getByRole('combobox', { name: /selecciona una categor/i })).toBeTruthy())
+  })
+
+  it('el botón Renombrar abre el diálogo y guarda el nombre nuevo con el id correcto', async () => {
+    const user = userEvent.setup()
+    renombrarCategoriaMock.mockClear()
+    renderForm()
+    await abrirSelectorCategoria(user)
+    await user.click(screen.getByRole('button', { name: /renombrar sueldos/i }))
+
+    const dialogo = await screen.findByRole('dialog', { name: /renombrar "sueldos"/i })
+    const input = within(dialogo).getByRole('textbox', { name: /nuevo nombre/i })
+    await user.clear(input)
+    await user.type(input, 'Nómina')
+    await user.click(within(dialogo).getByRole('button', { name: /guardar nombre/i }))
+
+    await waitFor(() => expect(renombrarCategoriaMock).toHaveBeenCalledWith({ id: 'c1', nombre: 'Nómina' }))
+    expect(eliminarCategoriaMock).not.toHaveBeenCalled()
   })
 
   it('cancelar cierra el diálogo sin llamar a la mutación', async () => {

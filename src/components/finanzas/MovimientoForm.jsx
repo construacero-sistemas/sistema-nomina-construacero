@@ -8,13 +8,13 @@ import {
   DollarSign,
   FolderPlus,
   Loader2,
-  Trash2,
 } from 'lucide-react'
-import { useCrearCategoria, useCrearMovimiento, useEliminarCategoria, useRestaurarCategoria } from '../../hooks/useFinanzas.js'
+import { useCrearCategoria, useCrearMovimiento, useRestaurarCategoria } from '../../hooks/useFinanzas.js'
 import MovimientoResumen from './MovimientoResumen.jsx'
 import MovimientoPartes from './MovimientoPartes.jsx'
 import MovimientoConversion from './MovimientoConversion.jsx'
-import { CrearCategoriaPanel, EliminarCategoriaDialog, Field } from './CategoriaAcciones.jsx'
+import { CrearCategoriaPanel, Field } from './CategoriaAcciones.jsx'
+import useAccionesCategoria from './useAccionesCategoria.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
@@ -34,7 +34,6 @@ const MOSTRAR_PARTES = false
 export default function MovimientoForm({ categorias = [], cuentas = [], onClose, inicial = {} }) {
   const crear = useCrearMovimiento()
   const crearCategoria = useCrearCategoria()
-  const eliminarCategoria = useEliminarCategoria()
   const restaurarCategoria = useRestaurarCategoria()
   const { usd, eur, usdt } = useTasaCambioNomina()
 
@@ -67,8 +66,10 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose,
   const [nuevaCategoria, setNuevaCategoria] = useState('')
   // Categorías creadas en esta sesión para que el label se resuelva al instante.
   const [categoriasExtra, setCategoriasExtra] = useState([])
-  // Borrado de categoría desde el propio selector (con confirmación).
-  const [categoriaAEliminar, setCategoriaAEliminar] = useState(null)
+  // Renombrar / eliminar categorías desde el propio selector (con diálogos).
+  const { rowActions: accionesCategoria, dialogos: dialogosCategoria } = useAccionesCategoria({
+    categorias, categoriasExtra, categoria, setCategoria, setCategoriasExtra,
+  })
 
   const [error, setError] = useState('')
   const [operationId] = useState(() => crypto.randomUUID())
@@ -141,32 +142,6 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose,
       return
     }
     setCategoria(value)
-  }
-
-  // Borrado reversible: guarda el id para pedir confirmación; la mutación
-  // (baja lógica) corrige la selección y restaura por si era de esta sesión.
-  function confirmarEliminarCategoria(opcion) {
-    const actual = categorias.find(c => c.nombre === opcion.value)
-    const extra = categoriasExtra.find(c => c.nombre === opcion.value)
-    const objetivo = actual || extra
-    if (!objetivo?.id) return
-    setCategoriaAEliminar(objetivo)
-  }
-
-  async function eliminarCategoriaConfirmada() {
-    const objetivo = categoriaAEliminar
-    if (!objetivo?.id) return
-    try {
-      await eliminarCategoria.mutateAsync({ id: objetivo.id })
-      // Si la categoría eliminada estaba seleccionada, limpiar la elección.
-      if (categoria === objetivo.nombre) setCategoria('')
-      // Si era una creada en esta sesión, sacarla de las extras para que
-      // desaparezca del selector de inmediato (el refetch cubre el resto).
-      setCategoriasExtra(prev => prev.filter(c => c.nombre !== objetivo.nombre))
-      setCategoriaAEliminar(null)
-    } catch {
-      // El hook ya mostró el toast de error; el diálogo sigue abierto para reintentar.
-    }
   }
 
   async function guardarNuevaCategoria() {
@@ -472,12 +447,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose,
               options={opcionesCategoria}
               placeholder="Selecciona una categoría..."
               disabled={disabled}
-              rowAction={{
-                label: 'Eliminar',
-                icon: Trash2,
-                title: 'Eliminar categoría (podrás restaurarla)',
-                onSelect: confirmarEliminarCategoria,
-              }}
+              rowActions={accionesCategoria}
             />
           </Field>
         </div>
@@ -578,16 +548,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose,
         </div>
       </form>
 
-      {/* Confirmación de borrado de categoría (baja lógica, reversible) */}
-      {categoriaAEliminar && (
-        <EliminarCategoriaDialog
-          nombre={categoriaAEliminar.nombre}
-          movimientosCount={categoriaAEliminar.movimientos_count || 0}
-          pending={eliminarCategoria.isPending}
-          onClose={() => setCategoriaAEliminar(null)}
-          onConfirm={eliminarCategoriaConfirmada}
-        />
-      )}
+      {dialogosCategoria}
     </Modal>
   )
 }

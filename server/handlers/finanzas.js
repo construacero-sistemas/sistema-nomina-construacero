@@ -517,6 +517,7 @@ export async function handleActualizarFinanzasMovimiento(request, env) {
 export {
   handleEliminarFinanzasCategoria,
   handleRestaurarFinanzasCategoria,
+  handleRenombrarFinanzasCategoria,
   handleGetFinanzasCategorias,
   handleCrearFinanzasCategoria,
 } from './finanzas.categorias.js'
