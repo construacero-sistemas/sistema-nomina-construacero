@@ -195,7 +195,7 @@ export default function PeriodoMensualWizardModal({
       <div className="space-y-4">
         <ol className="flex items-center gap-2 sm:gap-3 text-xs font-bold border-b border-slate-100 pb-3">
           {[
-            { label: 'Cuentas y saldos', desc: 'Conteo físico verificado' },
+            { label: 'Cuentas y saldos', desc: 'Saldo anterior o saldo nuevo' },
             { label: 'Revisión', desc: 'Tasas congeladas y balance' }
           ].map((item, index) => {
             const isActive = step === index
@@ -266,8 +266,8 @@ export default function PeriodoMensualWizardModal({
                       : 'border-slate-200 bg-white hover:border-slate-300'
                   }`}
                 >
-                  <div className="grid gap-3 sm:grid-cols-12 items-center">
-                    <div className="min-w-0 sm:col-span-5">
+                  <div className="grid gap-3 sm:grid-cols-2 items-start">
+                    <div className="min-w-0 sm:col-span-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="font-bold text-slate-900">{wallet.nombre}</p>
                         {renderMonedaBadge(wallet.moneda)}
@@ -282,35 +282,35 @@ export default function PeriodoMensualWizardModal({
                       )}
                     </div>
 
-                    <div className="sm:col-span-4">
+                    <div className="min-w-0">
                       <label className="text-xs font-bold text-slate-700 block mb-1">
-                        Fuente del saldo
+                        ¿Con qué saldo abre esta cuenta?
                       </label>
                       <CustomSelect
-                        aria-label={`Fuente del saldo de ${wallet.nombre}`}
+                        aria-label={`Saldo de apertura de ${wallet.nombre}`}
                         value={entry.metodo}
                         disabled={pending}
                         onChange={value => setOpeningValue(wallet.id, 'metodo', value)}
                         showSubInTrigger={false}
                         options={[
-                          { value: 'saldo_real', label: 'Conteo físico verificado' },
-                          ...(previous ? [{ value: 'cierre_anterior', label: 'Cierre anterior' }] : []),
-                          ...(!previous && anterior && herenciaValida(anterior) ? [{ value: 'saldo_libro', label: 'Saldo del libro al inicio del mes' }] : [])
+                          { value: 'saldo_real', label: 'Ingresar un saldo nuevo' },
+                          ...(previous ? [{ value: 'cierre_anterior', label: `Usar el saldo anterior: ${money(previous.saldo)} ${wallet.moneda}` }] : []),
+                          ...(!previous && anterior && herenciaValida(anterior) ? [{ value: 'saldo_libro', label: `Usar el saldo del libro: ${money(anterior.saldo)} ${wallet.moneda}` }] : [])
                         ]}
                       />
                     </div>
 
-                    <div className="sm:col-span-3">
+                    <div className="min-w-0">
                       {entry.metodo === 'saldo_libro' ? (
                         <div>
-                          <span className="text-xs font-bold text-slate-500 block mb-1">Saldo aplicado</span>
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm font-bold text-slate-800 truncate">
-                            Se hereda del libro: {money(anterior?.saldo)} {wallet.moneda}
+                          <span className="text-xs font-bold text-slate-500 block mb-1">Abre con</span>
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-sm font-bold text-slate-800 break-words tabular-nums">
+                            {money(anterior?.saldo)} {wallet.moneda}
                           </div>
                         </div>
                       ) : entry.metodo === 'saldo_real' ? (
                         <label className="text-xs font-bold text-slate-700 block">
-                          Saldo contado
+                          Saldo nuevo (lo que hay hoy en la cuenta)
                           <div className="relative mt-1">
                             <input
                               inputMode="decimal"
@@ -328,19 +328,19 @@ export default function PeriodoMensualWizardModal({
                           {mostrarErrorConteo && (
                             <p className="mt-1 text-xs font-medium text-rose-600">
                               {String(entry.saldoReal ?? '').trim() === ''
-                                ? 'Ingresa el conteo físico.'
+                                ? 'Ingresa el saldo nuevo.'
                                 : 'Usa solo números; acepta punto o coma decimal.'}
                             </p>
                           )}
                           {descubierto && (
-                            <p className="mt-1 text-xs font-bold text-amber-700">Descubierto: la apertura quedará en negativo porque el conteo no cubre los movimientos del mes (motivo obligatorio).</p>
+                            <p className="mt-1 text-xs font-bold text-amber-700">Descubierto: la apertura quedará en negativo porque el saldo nuevo no cubre los movimientos del mes (motivo obligatorio).</p>
                           )}
                         </label>
                       ) : (
                         <div>
-                          <span className="text-xs font-bold text-slate-500 block mb-1">Saldo aplicado</span>
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm font-bold text-slate-800 truncate">
-                            Se hereda: {money(previous?.saldo)} {wallet.moneda}
+                          <span className="text-xs font-bold text-slate-500 block mb-1">Abre con</span>
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-sm font-bold text-slate-800 break-words tabular-nums">
+                            {money(previous?.saldo)} {wallet.moneda}
                           </div>
                         </div>
                       )}
@@ -353,7 +353,7 @@ export default function PeriodoMensualWizardModal({
                         <span className="flex items-center gap-1 font-bold break-words">
                           <AlertTriangle size={13} className="text-amber-600 shrink-0" />
                           {difiereAnterior
-                            ? `Diferencia detectada: ${difiereValor > 0 ? '+' : ''}${money(difiereValor)} ${wallet.moneda} frente al ${anterior.origen} (${money(anterior.saldo)} ${wallet.moneda})`
+                            ? `Diferencia detectada: ${difiereValor > 0 ? '+' : ''}${money(difiereValor)} ${wallet.moneda} frente al ${anterior.origen === 'cierre anterior' ? 'saldo anterior' : anterior.origen} (${money(anterior.saldo)} ${wallet.moneda})`
                             : 'Descubierto: la apertura quedará en negativo'}
                         </span>
                         <span className={`shrink-0 ${motivoValido ? 'text-emerald-700 font-bold' : 'text-amber-700 font-semibold'}`}>
@@ -451,9 +451,9 @@ export default function PeriodoMensualWizardModal({
                 const row = entryDe(wallet.id)
                 const neto = netoMesDe(periodo, wallet.id)
                 const etiqueta = {
-                  saldo_real: 'conteo físico',
-                  saldo_libro: 'saldo del libro al inicio del mes',
-                  cierre_anterior: 'cierre anterior'
+                  saldo_real: 'saldo nuevo',
+                  saldo_libro: 'saldo del libro',
+                  cierre_anterior: 'saldo anterior'
                 }[row.metodo]
                 const sinConteo = row.metodo === 'saldo_real' && !conteoValido(row.saldoReal)
                 const amount = sinConteo
@@ -489,7 +489,7 @@ export default function PeriodoMensualWizardModal({
                       </div>
                       <div className="text-left sm:text-right">
                         <span className={`font-mono font-bold text-sm ${sinConteo || enNegativo ? 'text-rose-700' : 'text-slate-900'}`}>
-                          {sinConteo ? 'Falta conteo' : `${money(amount)} ${wallet.moneda}`}
+                          {sinConteo ? 'Falta saldo nuevo' : `${money(amount)} ${wallet.moneda}`}
                         </span>
                         {usd != null && (
                           <span className="block font-mono text-xs font-semibold text-emerald-700">
@@ -499,7 +499,7 @@ export default function PeriodoMensualWizardModal({
                       </div>
                     </div>
                     <p className={`mt-1.5 text-xs font-medium leading-relaxed break-words ${sinConteo || enNegativo ? 'text-rose-800' : 'text-slate-500'}`}>
-                      {wallet.nombre}: {sinConteo ? 'falta el conteo físico' : `${money(amount)} ${wallet.moneda} ≈ $${money(usd)} USD`} · saldo de apertura por {etiqueta}{row.metodo === 'saldo_real' && !sinConteo && neto !== 0 ? ` · contado ${money(Number(row.saldoReal))} menos movimientos del mes ${money(neto)}` : ''}{enNegativo ? ' · descubierto (apertura en negativo, con motivo)' : ''}
+                      {wallet.nombre}: {sinConteo ? 'falta el saldo nuevo' : `${money(amount)} ${wallet.moneda} ≈ $${money(usd)} USD`} · saldo de apertura por {etiqueta}{row.metodo === 'saldo_real' && !sinConteo && neto !== 0 ? ` · contado ${money(Number(row.saldoReal))} menos movimientos del mes ${money(neto)}` : ''}{enNegativo ? ' · descubierto (apertura en negativo, con motivo)' : ''}
                     </p>
                     {row.motivo && (
                       <p className="mt-2 text-xs text-slate-600 bg-slate-50 rounded-lg p-2 border border-slate-100 break-words">

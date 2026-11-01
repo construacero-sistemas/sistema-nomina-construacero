@@ -54,7 +54,7 @@ describe('PeriodoMensualFinanzas — aviso y apertura guiada', () => {
     expect(screen.getByText(/Cuentas y saldos/)).toBeInTheDocument()
     expect(screen.queryByText(/^1\. Tasas$/)).not.toBeInTheDocument()
 
-    const saldoInput = screen.getByLabelText(/Saldo contado/)
+    const saldoInput = screen.getByLabelText(/Saldo nuevo/)
     fireEvent.change(saldoInput, { target: { value: '250.5' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     // El párrafo de revisión se compara completo: React parte el texto en varios nodos.
@@ -84,7 +84,7 @@ describe('PeriodoMensualFinanzas — aviso y apertura guiada', () => {
   it('normaliza la coma decimal del conteo físico', () => {
     renderPanel()
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
-    const saldoInput = screen.getByLabelText(/Saldo contado/)
+    const saldoInput = screen.getByLabelText(/Saldo nuevo/)
     fireEvent.change(saldoInput, { target: { value: '1,5' } })
     expect(saldoInput).toHaveValue('1.5')
     expect(screen.getByRole('button', { name: 'Siguiente' })).toBeEnabled()
@@ -94,7 +94,7 @@ describe('PeriodoMensualFinanzas — aviso y apertura guiada', () => {
     const { onOpen, onRefresh } = renderPanel()
     onOpen.mockRejectedValueOnce(new Error('Fallo de red transitorio'))
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '250' } })
+    fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '250' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
     await vi.waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/Fallo de red transitorio/))
@@ -112,7 +112,7 @@ describe('PeriodoMensualFinanzas — tasa principal elegida en la cabecera', () 
     const elegida = { usd: 880.12, usdt: 996.7, principal: 1100.5, nombrePrincipal: 'Tasa Manual', unidadPrincipal: 'USD', tasaFallback: null, source: 'BCV', lastUpdate: '2026-10-16', stale: false }
     const { onOpen } = renderPanel({ rates: elegida })
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '250' } })
+    fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '250' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     expect(screen.getByText(/Tasa congelada \(Tasa Manual\)/)).toBeInTheDocument()
     expect(screen.getByText(/1\.100,50 VES\/USD/)).toBeInTheDocument()
@@ -126,7 +126,7 @@ describe('PeriodoMensualFinanzas — tasa principal elegida en la cabecera', () 
     const eur = { ...rates, principal: 1050, nombrePrincipal: 'BCV Euro (€)', unidadPrincipal: 'EUR' }
     renderPanel({ rates: eur })
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '100' } })
+    fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '100' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     expect(screen.getByText(/1\.050,00 VES\/EUR/)).toBeInTheDocument()
   })
@@ -154,8 +154,8 @@ describe('PeriodoMensualFinanzas — saldo anterior sin cierre previo', () => {
     const { onOpen } = renderPanel(conActividad)
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
     // Saldo del libro 750 (1000 - 250): la opción debe existir como fuente.
-    await user.click(screen.getByRole('combobox', { name: /Fuente del saldo de Caja USD/ }))
-    await user.click(screen.getByRole('option', { name: 'Saldo del libro al inicio del mes' }))
+    await user.click(screen.getByRole('combobox', { name: /Saldo de apertura de Caja USD/ }))
+    await user.click(screen.getByRole('option', { name: /Usar el saldo del libro/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     expect(screen.getByText(/Caja USD: 750,00 USD/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
@@ -169,14 +169,14 @@ describe('PeriodoMensualFinanzas — saldo anterior sin cierre previo', () => {
     const negativo = { periodo: { ...conActividad.periodo, cuentas: [wallet({ saldoHistorico: '100.000000', movimientosMes: '250.000000' })] } }
     renderPanel(negativo)
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
-    await user.click(screen.getByRole('combobox', { name: /Fuente del saldo de Caja USD/ }))
-    expect(screen.queryByRole('option', { name: 'Saldo del libro al inicio del mes' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('combobox', { name: /Saldo de apertura de Caja USD/ }))
+    expect(screen.queryByRole('option', { name: /Usar el saldo del libro/ })).not.toBeInTheDocument()
   })
 
   it('la revisión muestra la apertura neta de los movimientos del mes', async () => {
     const { onOpen } = renderPanel(conActividad)
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '1000' } })
+    fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '1000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     expect(screen.getByText(/Caja USD: 750,00 USD/)).toBeInTheDocument()
     expect(screen.getByText(/menos movimientos del mes/)).toBeInTheDocument()
@@ -195,7 +195,7 @@ describe('PeriodoMensualFinanzas — saldo anterior sin cierre previo', () => {
     }
     const { onOpen } = renderPanel(sinMovimientos)
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '0' } })
+    fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '0' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
     // Sin cierre previo el servidor no exige motivo: el wizard tampoco lo exige.
@@ -207,7 +207,7 @@ describe('PeriodoMensualFinanzas — saldo anterior sin cierre previo', () => {
     const { onOpen } = renderPanel(conActividad)
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
     // Con 250 de movimientos en el mes, un conteo de 100 deja la apertura en -150.
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '100' } })
+    fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '100' } })
     expect(screen.getByText(/Descubierto/)).toBeInTheDocument()
     // Regla simple 254: el descubierto se permite, no se bloquea el paso.
     expect(screen.getByRole('button', { name: 'Siguiente' })).toBeEnabled()
@@ -239,9 +239,9 @@ describe('PeriodoMensualFinanzas — motivo frente al cierre anterior', () => {
     const user = userEvent.setup()
     const { onOpen } = renderPanel(conCierre)
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
-    await user.click(screen.getByRole('combobox', { name: /Fuente del saldo de Caja USD/ }))
-    await user.click(screen.getByRole('option', { name: 'Conteo físico verificado' }))
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '900' } })
+    await user.click(screen.getByRole('combobox', { name: /Saldo de apertura de Caja USD/ }))
+    await user.click(screen.getByRole('option', { name: 'Ingresar un saldo nuevo' }))
+    fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '900' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
     // El wizard es aria-modal: el mensaje de validación vive dentro del diálogo como alerta.
@@ -260,9 +260,9 @@ describe('PeriodoMensualFinanzas — motivo frente al cierre anterior', () => {
     const user = userEvent.setup()
     const { onOpen } = renderPanel(conCierre)
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
-    await user.click(screen.getByRole('combobox', { name: /Fuente del saldo de Caja USD/ }))
-    await user.click(screen.getByRole('option', { name: 'Conteo físico verificado' }))
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '500' } })
+    await user.click(screen.getByRole('combobox', { name: /Saldo de apertura de Caja USD/ }))
+    await user.click(screen.getByRole('option', { name: 'Ingresar un saldo nuevo' }))
+    fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '500' } })
     fireEvent.change(screen.getByLabelText(/Motivo de la diferencia/), { target: { value: 'Merma documentada en acta' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
@@ -288,8 +288,8 @@ describe('PeriodoMensualFinanzas — conteo vacío no es cero', () => {
     const { onOpen } = renderPanel({ periodo: { mes: '2026-10-01', estado: 'sin_apertura', cuentasPendientes: [], cierreAnterior: [], cuentas: [wallet({ saldoHistorico: '0', movimientosMes: '0' })] } })
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
     // Forzar una fila sin conteo: cambiar a conteo físico deja el campo vacío.
-    await user.click(screen.getByRole('combobox', { name: /Fuente del saldo de Caja USD/ }))
-    await user.click(screen.getByRole('option', { name: 'Conteo físico verificado' }))
+    await user.click(screen.getByRole('combobox', { name: /Saldo de apertura de Caja USD/ }))
+    await user.click(screen.getByRole('option', { name: 'Ingresar un saldo nuevo' }))
     expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
     expect(onOpen).not.toHaveBeenCalled()
   })
@@ -299,12 +299,12 @@ describe('PeriodoMensualWizardModal — validación no intrusiva del conteo', ()
   it('no marca en rojo los campos intactos; el error aparece al salir del campo', () => {
     renderPanel()
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
-    const saldoInput = screen.getByLabelText(/Saldo contado/)
+    const saldoInput = screen.getByLabelText(/Saldo nuevo/)
     // Nada de errores antes de interactuar: el aviso vive en el pie del wizard.
-    expect(screen.queryByText(/Ingresa el conteo físico/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Ingresa el saldo nuevo/)).not.toBeInTheDocument()
     expect(saldoInput.className).not.toMatch(/rose/)
     fireEvent.blur(saldoInput)
-    expect(screen.getByText(/Ingresa el conteo físico\./)).toBeInTheDocument()
+    expect(screen.getByText(/Ingresa el saldo nuevo\./)).toBeInTheDocument()
     expect(saldoInput.className).toMatch(/rose/)
   })
 
@@ -325,7 +325,7 @@ describe('PeriodoMensualWizardModal — motivo opcional con mínimo', () => {
       },
     })
     fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '0' } })
+    fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '0' } })
     // Sin cierre previo el origen es el saldo del libro, y el banner lo dice.
     expect(screen.getByText(/frente al saldo del libro \(300,00 USD\)/)).toBeInTheDocument()
     expect(screen.getByText(/Motivo opcional/)).toBeInTheDocument()

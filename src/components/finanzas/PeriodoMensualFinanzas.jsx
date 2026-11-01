@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Download, FileText, LockKeyhole, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, LockKeyhole, RefreshCw } from 'lucide-react'
 import { formatNumber, normalizarMontoInput } from './formatos.js'
 import { conteoValido } from '../../utils/montoUtils.js'
 import PeriodoMensualWizardModal from './PeriodoMensualWizardModal.jsx'
-import { descargarPeriodoCsv } from './periodoCsv.js'
-import { generarPeriodoMensualPDF } from '../../services/pdf/periodoMensualPDF.js'
 
 const tasa = value => Number(value) > 0 ? Number(value) : 0
 const money = value => value == null ? '—' : formatNumber(value)
@@ -140,26 +138,6 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
     } catch (cause) { setMessage(cause.message || 'No se confirmó el cierre; conserva los datos y reintenta.') }
   }
 
-  const [generatingPdf, setGeneratingPdf] = useState(false)
-
-  async function downloadPeriodPdf() {
-    setGeneratingPdf(true)
-    try {
-      await generarPeriodoMensualPDF({
-        periodo,
-        rates,
-        action: 'download',
-      })
-    } catch (err) {
-      console.error('Error generando PDF de tesorería:', err)
-      setMessage('No se pudo generar el reporte PDF de tesorería.')
-    } finally {
-      setGeneratingPdf(false)
-    }
-  }
-
-  const downloadPeriod = () => descargarPeriodoCsv(periodo)
-
   return (
     <section aria-label="Control mensual de tesorería" className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -202,30 +180,6 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
               <LockKeyhole size={15} />
               Cerrar mes
             </button>
-          )}
-          {wallets.length > 0 && (
-            <div className="flex items-center gap-1.5 w-full sm:w-auto">
-              <button
-                type="button"
-                onClick={downloadPeriodPdf}
-                disabled={loading || generatingPdf}
-                title="Descargar reporte oficial de tesorería en PDF"
-                className="min-h-11 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm shadow-xs transition-colors flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
-              >
-                <FileText size={15} className={`text-primary ${generatingPdf ? 'animate-pulse' : ''}`} />
-                {generatingPdf ? 'Generando PDF…' : 'Reporte PDF'}
-              </button>
-              <button
-                type="button"
-                onClick={downloadPeriod}
-                disabled={loading}
-                title="Descargar CSV crudo de auditoría"
-                className="min-h-11 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-1"
-              >
-                <Download size={13} />
-                CSV
-              </button>
-            </div>
           )}
         </div>
       </div>
