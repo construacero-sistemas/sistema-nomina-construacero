@@ -11,6 +11,8 @@ import {
 } from '../../../compat/services/pdf/pdfShared.js'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 import { historicalUsd, historicalVes } from '../../utils/financialValuation.js'
+import { drawSaldosCierre } from './cierreSaldosSeccion.js'
+import { nombreMesCierre } from './cierreNombre.js'
 
 function fecha(f) {
   if (!f) return '—'
@@ -91,7 +93,7 @@ function drawSectionTitle(doc, y, titulo) {
 }
 
 async function generarFinanzasResumenPDFImpl({
-  movimientos = [],
+  movimientos: movimientosEntrada = [],
   resumen = {},
   rango = {},
   config = {},
@@ -100,7 +102,11 @@ async function generarFinanzasResumenPDFImpl({
   action = 'download',
   printWindow = null,
   tipoReporte = 'completo',
+  // Cierre mensual: estado del período (saldos por cuenta) para encabezar el reporte.
+  cierre = null,
 }) {
+  // Un cierre mensual solo muestra movimientos vigentes: los anulados no salen.
+  const movimientos = cierre ? movimientosEntrada.filter(m => m.estado !== 'anulado') : movimientosEntrada
   const doc = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' })
   const logoData = await cargarLogo(config.logo_url)
 
@@ -110,10 +116,13 @@ async function generarFinanzasResumenPDFImpl({
     : resumen.tipoFiltro === 'egreso'
       ? 'Reporte de Egresos'
       : 'Reporte de Ingresos y Egresos'
-  const titulo = esResumido ? `${tituloBase} (Resumido)` : tituloBase
+  const tituloMovimientos = esResumido ? `${tituloBase} (Resumido)` : tituloBase
+  const titulo = cierre ? `Cierre de ${nombreMesCierre(cierre.mes)}${esResumido ? ' (Resumido)' : ' (Detallado)'}` : tituloMovimientos
 
   const subtituloRango = `${fecha(rango.desde)} – ${fecha(rango.hasta)}`
-  const subtituloConTasa = `${subtituloRango} · Tasas históricas guardadas; traspasos internos fuera de totales operativos`
+  const subtituloConTasa = cierre
+    ? `${subtituloRango} · Cierre confirmado el ${fecha(cierre.cerradoEn)} · Totales operativos sin traspasos internos`
+    : `${subtituloRango} · Tasas históricas guardadas; traspasos internos fuera de totales operativos`
 
   // Sobrescribir addPage para incluir watermark y cabecera clara simplificada
   const originalAddPage = doc.addPage.bind(doc)
@@ -155,6 +164,8 @@ async function generarFinanzasResumenPDFImpl({
   const totalEgresosVes = egresos.reduce((sum, m) => sum + calcMontoVes(m), 0)
   const balanceUsd = totalIngresosUsd - totalEgresosUsd
   const balanceVes = totalIngresosVes - totalEgresosVes
+
+  if (cierre) y = drawSaldosCierre(doc, y, cierre, movimientos)
 
   // ═══ 2. KPIS DEL PERÍODO ═══════════════════════════════════════════════════
   y = drawKpis(doc, y, [
@@ -492,7 +503,9 @@ async function generarFinanzasResumenPDFImpl({
   const safeHasta = String(rango.hasta || '').replace(/[^\d-]/g, '') || 'hoy'
   const sufijoTipo = resumen.tipoFiltro === 'ingreso' ? '-ingresos' : resumen.tipoFiltro === 'egreso' ? '-egresos' : ''
   const prefijo = esResumido ? 'finanzas-resumido' : 'finanzas'
-  const nombreArch = `${prefijo}-${safeDesde}_${safeHasta}${sufijoTipo}.pdf`
+  const nombreArch = cierre
+    ? `cierre-${cierre.mes}-${esResumido ? 'resumido' : 'detallado'}.pdf`
+    : `${prefijo}-${safeDesde}_${safeHasta}${sufijoTipo}.pdf`
   if (action === 'print') {
     if (!printWindow || printWindow.closed) throw new Error('La ventana de impresión no está disponible. Descarga el PDF para imprimirlo.')
     doc.autoPrint()
@@ -505,9 +518,10 @@ async function generarFinanzasResumenPDFImpl({
       URL.revokeObjectURL(url)
       throw error
     }
-  } else {
+  } else if (action === 'download') {
     doc.save(nombreArch)
   }
+  return doc
 }
 
 export { generarFinanzasResumenPDFImpl };

@@ -3,19 +3,13 @@ import { AlertTriangle, CheckCircle2, Download, FileText, LockKeyhole, RefreshCw
 import { formatNumber, normalizarMontoInput } from './formatos.js'
 import { conteoValido } from '../../utils/montoUtils.js'
 import PeriodoMensualWizardModal from './PeriodoMensualWizardModal.jsx'
+import { descargarPeriodoCsv } from './periodoCsv.js'
 import { generarPeriodoMensualPDF } from '../../services/pdf/periodoMensualPDF.js'
 
 const tasa = value => Number(value) > 0 ? Number(value) : 0
 const money = value => value == null ? '—' : formatNumber(value)
 const walletKey = row => row.cuentaCustodiaId
 const key = () => crypto.randomUUID()
-const csvCell = value => `"${String(value ?? '').replaceAll('"', '""')}"`
-const csvFile = (rows, name) => {
-  const blob = new Blob([`\ufeff${rows.map(row => row.map(csvCell).join(';')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a'); link.href = url; link.download = name; link.click()
-  URL.revokeObjectURL(url)
-}
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const formatPeriodoMes = (mesIso) => {
@@ -164,14 +158,7 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
     }
   }
 
-  function downloadPeriod() {
-    const headers = ['Mes','Nombre de cuenta','Cuenta ID','Moneda','Método de apertura','Saldo inicial','Saldo inicial USD','Saldo nativo calculado','Saldo contado','Diferencia','Motivo diferencia','Tasa USD/VES apertura','Tasa USDT/VES apertura','Saldo cierre real','Saldo cierre USD','Diferencia cierre','Motivo cierre','Origen saldo']
-    const rows = wallets.map(row => [periodo.mes, row.nombre, row.cuentaCustodiaId, row.moneda, row.metodoApertura,
-      row.saldoApertura, row.saldoAperturaUsd, row.saldoCalculado, row.saldoContadoApertura, row.diferenciaApertura,
-      row.motivoApertura, row.tasaUsdVes, row.tasaUsdtVes, row.saldoCierreReal, row.saldoCierreUsd,
-      row.diferenciaCierre, row.motivoCierre, row.origenSaldo])
-    csvFile([headers, ...rows], `finanzas-apertura-${periodo.mes}.csv`)
-  }
+  const downloadPeriod = () => descargarPeriodoCsv(periodo)
 
   return (
     <section aria-label="Control mensual de tesorería" className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
@@ -453,7 +440,7 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
 
       {periodo?.estado === 'cerrado' && (
         <p className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-sm font-semibold text-slate-800">
-          Cierre confirmado {periodo.cerradoEn ? `el ${new Date(periodo.cerradoEn).toLocaleString('es-VE')}` : ''}. Revisa/descarga el CSV para mantener el detalle de auditoría.
+          Cierre confirmado {periodo.cerradoEn ? `el ${new Date(periodo.cerradoEn).toLocaleString('es-VE')}` : ''}. Su detalle queda guardado en el historial de cierres, donde puedes descargar el PDF o el CSV cuando quieras.
         </p>
       )}
 

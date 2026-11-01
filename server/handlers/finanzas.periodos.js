@@ -3,6 +3,7 @@ import { requireCapacidad } from '../lib/permissions.js'
 import { callFinancialRpc, financialErrorResponse, FinancialOperationError } from '../lib/financialOperations.js'
 import { isValidUuid, json, jsonError } from '../lib/utils.js'
 import { tenantGuard } from './nomina.shared.js'
+import { movementResponse } from '../lib/finanzasUtils.js'
 
 function serviceHeaders(env, prefer = 'return=representation') {
   return { ...supaServiceHeaders(env), Prefer: prefer }
@@ -107,6 +108,70 @@ export async function handleGetFinanzasPeriodoMensual(request, env) {
       throw new FinancialOperationError('La respuesta del período mensual no se pudo verificar.', 503, 'FINANCIAL_UPDATE_REQUIRED')
     }
     return json(result, 200, request)
+  } catch (error) { return financialErrorResponse(error, request) }
+}
+
+// Historial de cierres: los períodos cerrados quedan guardados con su detalle por
+// cuenta (apertura, cierre, diferencias, tasas congeladas). Se arma consultando el
+// estado de cada mes reciente, sin tocar el esquema; devuelve solo los cerrados.
+const HISTORIAL_MESES_DEFECTO = 12
+const HISTORIAL_MESES_MAX = 36
+
+function monthsBack(count) {
+  const now = new Date()
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - index, 1))
+    return date.toISOString().slice(0, 10)
+  })
+}
+
+export async function handleGetFinanzasHistorialCierres(request, env) {
+  const auth = await context(request, env)
+  if (auth.error) return auth.error
+  const requested = Number(new URL(request.url).searchParams.get('meses') || HISTORIAL_MESES_DEFECTO)
+  if (!Number.isInteger(requested) || requested < 1 || requested > HISTORIAL_MESES_MAX) {
+    return jsonError(`Indica entre 1 y ${HISTORIAL_MESES_MAX} meses.`, 400, request)
+  }
+  try {
+    const states = await Promise.all(monthsBack(requested).map(month =>
+      callFinancialRpc(env, 'finanzas_periodo_mensual_estado', { p_cuenta_id: auth.operador.cuenta_id, p_mes_inicio: month })))
+    if (states.some(state => state.schemaVersion !== 1 || !Array.isArray(state.cuentas))) {
+      throw new FinancialOperationError('La respuesta del historial mensual no se pudo verificar.', 503, 'FINANCIAL_UPDATE_REQUIRED')
+    }
+    return json({ cierres: states.filter(state => state.estado === 'cerrado') }, 200, request)
+  } catch (error) { return financialErrorResponse(error, request) }
+}
+
+// Detalle del cierre: todos los movimientos vigentes del mes (los anulados no cuentan
+// y no se listan). El mes cerrado es inmutable, así que este listado ES el soporte del cierre.
+const MOVEMENTS_PAGE = 100
+const MOVEMENTS_MAX = 20000
+
+export async function handleGetFinanzasMovimientosCierre(request, env) {
+  const auth = await context(request, env)
+  if (auth.error) return auth.error
+  const month = new URL(request.url).searchParams.get('mes')
+  if (!monthValue(month)) return jsonError('Mes inválido; usa YYYY-MM-01.', 400, request)
+  try {
+    const state = await callFinancialRpc(env, 'finanzas_periodo_mensual_estado', {
+      p_cuenta_id: auth.operador.cuenta_id, p_mes_inicio: month,
+    })
+    if (state.estado !== 'cerrado') return jsonError('Solo los meses cerrados tienen detalle de cierre.', 409, request)
+    const desde = state.mes
+    const hasta = state.hasta
+    const movimientos = []
+    for (let offset = 0; offset < MOVEMENTS_MAX; offset += MOVEMENTS_PAGE) {
+      const page = await callFinancialRpc(env, 'finanzas_movimientos_pagina', {
+        p_cuenta_id: auth.operador.cuenta_id, p_desde: desde, p_hasta: hasta, p_tipo: null, p_categoria: null,
+        p_moneda: null, p_cartera: null, p_anulados: false, p_limite: MOVEMENTS_PAGE, p_offset: offset, p_version: null,
+      })
+      if (!Array.isArray(page.movimientos)) {
+        throw new FinancialOperationError('La respuesta de movimientos del cierre no se pudo verificar.', 503, 'FINANCIAL_UPDATE_REQUIRED')
+      }
+      movimientos.push(...page.movimientos.map(movementResponse))
+      if (page.movimientos.length < MOVEMENTS_PAGE) break
+    }
+    return json({ mes: desde, hasta, movimientos }, 200, request)
   } catch (error) { return financialErrorResponse(error, request) }
 }
 

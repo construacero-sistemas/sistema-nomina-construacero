@@ -43,6 +43,7 @@ import { contarMovimientosSinCuenta } from '../../utils/carterasHelper.js'
 import { summarizeConfirmedBalances } from '../../utils/confirmedBalances.js'
 import useCustodySave from '../../hooks/useCustodySave.js'
 import PeriodoMensualFinanzas from './PeriodoMensualFinanzas.jsx'
+import HistorialCierresFinanzas from './HistorialCierresFinanzas.jsx'
 import FinanzasExportBar from './FinanzasExportBar.jsx'
 
 // Export CSV: oculto por ahora (se reactiva poniendo true).
@@ -433,6 +434,7 @@ export default function FinanzasView() {
             onOpen={fields => operarPeriodoMensual.mutateAsync(fields)}
             onConfirmClose={fields => operarPeriodoMensual.mutateAsync(fields)}
           />
+          <HistorialCierresFinanzas />
           <CarterasHeader
             saldos={saldosCarteras} loading={saldosCargando} error={saldosError} conciliacionPendiente={conciliacionPendiente} onRetry={refrescarCuentas}
             filtroCartera={filtroCartera}
