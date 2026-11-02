@@ -129,4 +129,33 @@ describe('FinanzasView — ventana de cierre mensual', () => {
     expect(screen.queryByRole('button', { name: 'Ir a cerrar el mes' })).not.toBeInTheDocument()
     vi.useRealTimers()
   })
+
+  it('en Tesorería se puede ver el mes anterior con las flechas (el período lo comparte toda la vista)', () => {
+    renderView()
+    fireEvent.click(screen.getByRole('button', { name: /Tesorería/ }))
+    const seccion = screen.getByRole('region', { name: 'Movimientos de tesorería' })
+    const etiqueta = () => seccion.querySelector('p').textContent
+    const actual = etiqueta()
+    expect(screen.getByRole('button', { name: 'Mes siguiente' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }))
+    expect(etiqueta()).not.toBe(actual)
+    expect(screen.getByRole('button', { name: 'Mes siguiente' })).not.toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Mes siguiente' }))
+    expect(etiqueta()).toBe(actual)
+  })
+
+  it('con el mes anterior abierto la vista arranca en ese mes y el mes en curso queda a una flecha', () => {
+    periodos.previo = { ...periodos.previo, estado: 'abierto', cuentas: [walletRow()] }
+    renderView()
+    fireEvent.click(screen.getByRole('button', { name: /Tesorería/ }))
+    expect(screen.getByRole('button', { name: 'Mes siguiente' })).not.toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Mes siguiente' }))
+    expect(screen.getByRole('button', { name: 'Mes siguiente' })).toBeDisabled()
+  })
+
+  it('sin cierre pendiente la vista arranca en el mes en curso', () => {
+    renderView()
+    fireEvent.click(screen.getByRole('button', { name: /Tesorería/ }))
+    expect(screen.getByRole('button', { name: 'Mes siguiente' })).toBeDisabled()
+  })
 })

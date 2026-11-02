@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import MesAMesResumen from '../MesAMesResumen.jsx'
+import { rangoDeMes } from '../fechasRapidas.js'
 
 const movimientos = [
   { id: 'm1', fecha: '2026-10-02', tipo: 'ingreso', categoria: 'Ventas', concepto: 'Venta mostrador', monto: 100, moneda: 'USD', tasa_ves: 400, tasa_usd_ves: 400, estado: 'activo', cuenta_custodia_id: 'c1' },
@@ -77,3 +78,30 @@ describe('MesAMesResumen — portada de gasto y ganancia', () => {
     expect(screen.getByText(/pendiente de valoración/)).toBeInTheDocument()
   })
 })
+
+describe('MesAMesResumen — ver otros meses', () => {
+  it('rangoDeMes cubre el mes completo y llega solo hasta hoy en el mes en curso', () => {
+    expect(rangoDeMes('2026-10-01', '2026-11-02')).toEqual({ desde: '2026-10-01', hasta: '2026-10-31' })
+    expect(rangoDeMes('2026-11-01', '2026-11-02')).toEqual({ desde: '2026-11-01', hasta: '2026-11-02' })
+    expect(rangoDeMes('2028-02-01', '2028-03-05')).toEqual({ desde: '2028-02-01', hasta: '2028-02-29' })
+  })
+
+  it('las flechas piden el mes anterior y el siguiente; el siguiente se bloquea en el mes en curso', () => {
+    const onRango = vi.fn()
+    const { rerender } = render(<MesAMesResumen movimientos={movimientos} cuentas={cuentas} desde="2026-10-01" hasta="2026-10-31" onRango={onRango} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Mes anterior' }))
+    expect(onRango).toHaveBeenLastCalledWith({ desde: '2026-09-01', hasta: '2026-09-30' })
+    fireEvent.click(screen.getByRole('button', { name: 'Mes siguiente' }))
+    expect(onRango.mock.calls.at(-1)[0].desde).toBe('2026-11-01')
+    const hoy = new Date()
+    const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-01`
+    rerender(<MesAMesResumen movimientos={movimientos} cuentas={cuentas} desde={mesActual} hasta={mesActual} onRango={onRango} />)
+    expect(screen.getByRole('button', { name: 'Mes siguiente' })).toBeDisabled()
+  })
+
+  it('sin onRango no muestra flechas', () => {
+    render(<MesAMesResumen movimientos={movimientos} cuentas={cuentas} desde="2026-10-01" hasta="2026-10-31" />)
+    expect(screen.queryByRole('button', { name: 'Mes anterior' })).not.toBeInTheDocument()
+  })
+})
+

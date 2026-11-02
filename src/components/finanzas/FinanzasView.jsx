@@ -2,7 +2,7 @@
 // Libro financiero administrativo: ingresos, egresos, reportes y gestión por Carteras (USD & Bolívares).
 import { useMemo, useState } from 'react'
 import {
-  ArrowRightLeft, BarChart3, Download, Landmark,
+  ArrowRightLeft, BarChart3, Landmark,
   Plus, ReceiptText, RefreshCw, Wallet, Settings2,
 } from 'lucide-react'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
@@ -36,8 +36,7 @@ import CuentaFormModal from './CuentaFormModal.jsx'
 import CategoriasModal from './CategoriasModal.jsx'
 import AnularDialog from './AnularDialog.jsx'
 import { FinanzasFiltrosSeccion, InlineError } from './FinanzasFiltrosUI.jsx'
-import { exportarCsv } from './exportarMovimientosCsv.js'
-import { isoToday, monthStart, mesAnteriorIso, RANGOS_RAPIDOS, rangoRapidoActivo, aplicarRangoRapido as resolverRango } from './fechasRapidas.js'
+import { isoToday, monthStart, mesAnteriorIso, etiquetaRango, rangoDeMes, RANGOS_RAPIDOS, rangoRapidoActivo, aplicarRangoRapido as resolverRango } from './fechasRapidas.js'
 import { formatNumber, formatUsd } from './formatos.js'
 import { contarMovimientosSinCuenta } from '../../utils/carterasHelper.js'
 import { summarizeConfirmedBalances } from '../../utils/confirmedBalances.js'
@@ -45,10 +44,8 @@ import useCustodySave from '../../hooks/useCustodySave.js'
 import PeriodoMensualFinanzas from './PeriodoMensualFinanzas.jsx'
 import HistorialCierresFinanzas from './HistorialCierresFinanzas.jsx'
 import AvisoCierrePendiente from './AvisoCierrePendiente.jsx'
+import SelectorMesFinanzas from './SelectorMesFinanzas.jsx'
 import FinanzasExportBar from './FinanzasExportBar.jsx'
-
-// Export CSV: oculto por ahora (se reactiva poniendo true).
-const MOSTRAR_CSV = false
 
 export default function FinanzasView() {
   const perfil = useAuthStore(state => state.perfil)
@@ -181,12 +178,25 @@ export default function FinanzasView() {
     loadMoreError: movimientos.isFetchNextPageError ? movimientos.error?.message : '', totalServidor, pageKey }
 
   const fechaValida = desde && hasta && desde <= hasta
-  const chipActivo = rangoRapidoActivo(desde, hasta)
+  // Varios chips pueden dar el mismo rango (en lunes «Semana» = «Hoy»): se marca el que el usuario pulsó
+  // mientras el rango siga siendo el suyo; si no, el que corresponde al rango.
+  const [chipElegido, setChipElegido] = useState('')
+  const rangoElegido = chipElegido && resolverRango(chipElegido)
+  const chipActivo = rangoElegido?.desde === desde && rangoElegido?.hasta === hasta ? chipElegido : rangoRapidoActivo(desde, hasta)
 
+  // Cambia el período mostrado (flechas de mes): lo comparten el resumen, la tabla y la lista de tesorería.
+  const cambiarRango = rango => { setDesde(rango.desde); setHasta(rango.hasta) }
+  // Con el mes anterior abierto (cierre pendiente) la vista arranca en ese mes, que es el que aún se está
+  // completando; el mes en curso queda a una flecha. Una sola vez y solo si nadie cambió el período
+  // (ajuste de estado durante el render, el patrón de React para derivar estado de datos que llegan).
+  const [periodoInicialAplicado, setPeriodoInicialAplicado] = useState(false)
+  if (!periodoInicialAplicado && puedeVerSaldos && cierrePendiente) {
+    setPeriodoInicialAplicado(true)
+    if (desde === monthStart() && hasta === isoToday()) cambiarRango(rangoDeMes(mesPrevio))
+  }
   const aplicarRangoRapido = id => {
-    const rango = resolverRango(id)
-    setDesde(rango.desde)
-    setHasta(rango.hasta)
+    setChipElegido(id)
+    cambiarRango(resolverRango(id))
   }
 
   const resetFiltros = () => {
@@ -247,17 +257,6 @@ export default function FinanzasView() {
             >
               <ArrowRightLeft size={14} className="text-primary" /> Mover entre carteras
             </button>}
-            {MOSTRAR_CSV && (
-              <button
-                type="button"
-                onClick={() => exportarCsv(movimientosFiltrados)}
-                disabled={!movimientosFiltrados.length}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-11 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 cursor-pointer whitespace-nowrap"
-                style={{ touchAction: 'manipulation' }}
-              >
-                <Download size={14} /> CSV
-              </button>
-            )}
             {puede && <button
               type="button"
               onClick={() => setFormInicial({})}
@@ -346,8 +345,7 @@ export default function FinanzasView() {
               loading={movimientos.isLoading || resumen.isLoading}
               cuentas={cuentas}
               totalServidor={totalServidor}
-              desde={desde}
-              hasta={hasta}
+              desde={desde} hasta={hasta} onRango={cambiarRango}
             />
           )}
 
@@ -494,6 +492,7 @@ export default function FinanzasView() {
                   Ver todas las carteras
                 </button>
               )}
+              <SelectorMesFinanzas desde={desde} hasta={hasta} onRango={cambiarRango} />
             </div>
 
             {movimientos.isLoading ? (
@@ -505,7 +504,7 @@ export default function FinanzasView() {
                 <EmptyState
                   icon={Landmark}
                   title="Sin movimientos registrados"
-                  description="No hay movimientos en esta cartera para el período actual."
+                  description={`No hay movimientos en esta cartera en ${etiquetaRango(desde, hasta)}. Usa las flechas de arriba para ver otro mes.`}
                   actionLabel={puede ? 'Realizar traspaso' : undefined}
                   onAction={puede ? () => setTransferenciaOpen(true) : undefined}
                 />

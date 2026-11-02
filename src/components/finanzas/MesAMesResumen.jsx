@@ -6,6 +6,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Landmark, TrendingDown, TrendingUp } from 'lucide-react'
 import { formatNumber } from './formatos.js'
+import SelectorMesFinanzas from './SelectorMesFinanzas.jsx'
 
 const money = value => value == null || !Number.isFinite(Number(value)) ? '—' : formatNumber(value)
 
@@ -16,18 +17,6 @@ function usdDe(movimiento) {
   const tasaUsd = Number(movimiento.tasa_usd_ves)
   if (!(tasaUsd > 0) || !(tasaVes > 0)) return null
   return monto * tasaVes / tasaUsd
-}
-
-const nombreMes = iso => {
-  const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-  const [anio, mes] = String(iso || '').split('-')
-  return `${meses[Number(mes) - 1] || iso} ${anio || ''}`.trim()
-}
-
-function etiquetaRango(desde, hasta) {
-  const inicio = String(desde || '').slice(0, 7)
-  if (inicio && `${inicio}-01` === desde && hasta?.startsWith(inicio)) return nombreMes(inicio)
-  return `Del ${desde} al ${hasta}`
 }
 
 function agregarMovimientos(rows, cuentas) {
@@ -101,7 +90,7 @@ function Tarjeta({ icono: Icono, etiqueta, valor, tono }) {
   )
 }
 
-export default function MesAMesResumen({ movimientos = [], summary = null, cuentas = [], loading = false, totalServidor, desde, hasta }) {
+export default function MesAMesResumen({ movimientos = [], summary = null, cuentas = [], loading = false, totalServidor, desde, hasta, onRango }) {
   const [abiertas, setAbiertas] = useState(() => new Set())
   const datos = useMemo(() => agregarMovimientos(movimientos, cuentas), [movimientos, cuentas])
   const barras = useMemo(() => barrasPorPeriodo(movimientos), [movimientos])
@@ -127,7 +116,7 @@ export default function MesAMesResumen({ movimientos = [], summary = null, cuent
     <section aria-label="Resumen financiero" className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-base font-black text-slate-900 tracking-tight">Mes a mes</h2>
-        <p className="text-xs font-bold text-slate-500">{etiquetaRango(desde, hasta)}</p>
+        <SelectorMesFinanzas desde={desde} hasta={hasta} onRango={onRango} />
       </div>
 
       {summary?.movimientos_sin_usd > 0 && (

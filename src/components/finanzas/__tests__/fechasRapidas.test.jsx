@@ -69,7 +69,8 @@ describe('fechasRapidas', () => {
     expect(rangoRapidoActivo('2026-09-01', hoy)).toBe('mes')
     // 2 sep 2026 es miércoles: el lunes fue 31 ago → rango semana
     expect(rangoRapidoActivo('2026-08-31', hoy)).toBe('semana')
-    expect(rangoRapidoActivo('2026-08-01', '2026-08-31')).toBe('')
+    expect(rangoRapidoActivo('2026-08-01', '2026-08-31')).toBe('mesPasado')
+    expect(rangoRapidoActivo('2026-07-01', '2026-07-31')).toBe('')
   })
 
   it('aplicarRangoRapido produce los rangos esperados', () => {
@@ -78,10 +79,11 @@ describe('fechasRapidas', () => {
     expect(aplicarRangoRapido('ayer')).toEqual({ desde: '2026-09-01', hasta: '2026-09-01' })
     expect(aplicarRangoRapido('semana')).toEqual({ desde: '2026-08-31', hasta: '2026-09-02' })
     expect(aplicarRangoRapido('mes')).toEqual({ desde: '2026-09-01', hasta: '2026-09-02' })
+    expect(aplicarRangoRapido('mesPasado')).toEqual({ desde: '2026-08-01', hasta: '2026-08-31' })
   })
 
-  it('expone exactamente los cuatro rangos rápidos en orden', () => {
-    expect(RANGOS_RAPIDOS.map(r => r.id)).toEqual(['hoy', 'ayer', 'semana', 'mes'])
+  it('expone los rangos rápidos en orden', () => {
+    expect(RANGOS_RAPIDOS.map(r => r.id)).toEqual(['hoy', 'ayer', 'semana', 'mes', 'mesPasado'])
   })
 
   it('prioriza "mes" cuando el mes empieza en lunes (ambos rangos coinciden)', () => {
