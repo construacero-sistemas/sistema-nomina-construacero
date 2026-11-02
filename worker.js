@@ -36,7 +36,7 @@ import {
 } from './server/handlers/finanzas.js'
 import { handleSyncVentasPos } from './server/handlers/finanzas.sync.js'
 import { handleCrearTransferencia, handleGetSaldos, handleGetOperacionEstado } from './server/handlers/finanzas.operaciones.js'
-import { handleGetFinanzasPeriodoMensual, handleGetFinanzasHistorialCierres, handleGetFinanzasMovimientosCierre, handleOperarFinanzasPeriodoMensual, handleRegistrarCuentaEnPeriodoMensual } from './server/handlers/finanzas.periodos.js'
+import { handleGetFinanzasPeriodoMensual, handleGetFinanzasHistorialCierres, handleGetFinanzasMovimientosCierre, handleReabrirFinanzasPeriodoMensual, handleOperarFinanzasPeriodoMensual, handleRegistrarCuentaEnPeriodoMensual } from './server/handlers/finanzas.periodos.js'
 import {
   handleGetCuentasCustodia,
   handleCrearCuentaCustodia,
@@ -49,6 +49,7 @@ import {
 import { handleGetRates } from './server/handlers/rates.js'
 import { handleCrearLogs } from './server/handlers/logs.js'
 import { supaServiceHeaders } from './server/lib/auth.js'
+import { auditoriasPendientes } from './server/lib/audit.js'
 import {
   handleGetRetencion,
   handleGetRetencionUso,
@@ -94,6 +95,7 @@ const routes = new Map([
   ['GET /api/finanzas/periodos-mensuales/historial', handleGetFinanzasHistorialCierres],
   ['GET /api/finanzas/periodos-mensuales/movimientos', handleGetFinanzasMovimientosCierre],
   ['POST /api/finanzas/periodos-mensuales/operar', handleOperarFinanzasPeriodoMensual],
+  ['POST /api/finanzas/periodos-mensuales/reabrir', handleReabrirFinanzasPeriodoMensual],
   ['POST /api/finanzas/periodos-mensuales/alta-cuenta', handleRegistrarCuentaEnPeriodoMensual],
   ['GET /api/operaciones/estado', handleGetOperacionEstado],
   ['POST /api/finanzas/movimientos/anular', handleAnularFinanzasMovimiento],
@@ -242,7 +244,7 @@ function internalError(request, env, error) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url)
     if (request.method === 'OPTIONS' && url.pathname.startsWith('/api/')) {
       return preflight(request, env)
@@ -280,6 +282,8 @@ export default {
         }
 
         const response = withHeaders(await handler(request, env), request, env)
+        // Sostiene las auditorías lanzadas sin esperar hasta que terminen de escribirse.
+        ctx?.waitUntil?.(auditoriasPendientes())
         // Toda mutación puede invalidar varias lecturas relacionadas; limpiar
         // globalmente es barato y evita servir totales o permisos antiguos.
         if (request.method === 'POST') clearEgressCache()

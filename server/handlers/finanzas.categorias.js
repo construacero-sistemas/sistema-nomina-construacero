@@ -130,6 +130,29 @@ async function reactivarArchivadaOConflicto(request, env, context, category) {
   return json({ ok: true, categoria: row, reactivada: true }, 200, request)
 }
 
+// Clave para detectar variantes del mismo nombre ("GASTO EMPRESA" / "Gasto empresa." /
+// "gasto empresas"): sin tildes, mayúsculas ni puntuación, y con el plural final recortado.
+function claveCategoria(nombre) {
+  const base = String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9ñ ]/g, ' ').replace(/\s+/g, ' ').trim()
+  return base.length > 4 ? base.replace(/s$/, '') : base
+}
+
+// Una categoría casi igual a otra activa (distinta solo en mayúsculas, puntos o plural) parte el
+// historial en dos nombres. Se avisa antes de crearla; el nombre idéntico sigue su camino normal.
+async function categoriaParecida(env, cuentaId, category) {
+  const response = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/finanzas_categorias?${accountFilter(cuentaId)}&activo=eq.true&select=nombre&limit=200`,
+    { headers: serviceHeaders(env, 'return=minimal') },
+  )
+  if (!response.ok) return null
+  const activas = await response.json().catch(() => [])
+  if (!Array.isArray(activas)) return null
+  const clave = claveCategoria(category.nombre)
+  return activas.map(item => item.nombre).find(nombre =>
+    nombre.trim().toLowerCase() !== category.nombre.trim().toLowerCase() && claveCategoria(nombre) === clave) || null
+}
+
 export async function handleCrearFinanzasCategoria(request, env) {
   const context = await adminContext(request, env)
   if (context.error) return context.error
@@ -140,6 +163,11 @@ export async function handleCrearFinanzasCategoria(request, env) {
     category = normalizeCategory(parsed.body)
   } catch (error) {
     return jsonError(error.message || 'Categoría inválida', 400, request)
+  }
+
+  const parecida = await categoriaParecida(env, context.operador.cuenta_id, category)
+  if (parecida) {
+    return json({ error: `Ya existe una categoría parecida: «${parecida}». Úsala en lugar de crear otra.`, code: 'CATEGORIA_PARECIDA', parecida }, 409, request)
   }
 
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/finanzas_categorias`, {

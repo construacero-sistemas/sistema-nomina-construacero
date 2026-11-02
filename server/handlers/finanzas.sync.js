@@ -19,6 +19,8 @@ const MOVEMENT_SELECT = [
   'motivo_anulacion', 'metodo_pago', 'cuenta_origen', 'tasa_usd_ves', 'tasa_registrada_en',
 ].join(',')
 
+const POS_URL_POR_DEFECTO = 'https://listo-pos-cotizaciones.pages.dev'
+
 function round2(num) {
   return Math.round((Number(num) || 0) * 100) / 100
 }
@@ -111,6 +113,7 @@ function getDatesArray(startDateStr, endDateStr) {
 }
 
 async function fetchDayPosData(posUrl, syncSecret, fecha, env) {
+  if (!syncSecret) return fetchDayPosDataFromDirectDb(env, fecha)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 8000)
 
@@ -140,6 +143,12 @@ export async function handleSyncVentasPos(request, env) {
   const context = await adminContext(request, env)
   if (context.error) return context.error
 
+  // Sincronización con el POS en pausa «hasta nuevo aviso» (decisión del usuario, 2026-11-01).
+  // Para reactivarla basta definir la variable FINANZAS_SYNC_ACTIVO=true en el Worker; no hace falta redesplegar código.
+  if (env.FINANZAS_SYNC_ACTIVO !== 'true') {
+    return json({ error: 'La sincronización con el POS está en pausa.', code: 'SYNC_POS_PAUSADO' }, 503, request)
+  }
+
   let body = {}
   try {
     body = await request.json()
@@ -148,7 +157,7 @@ export async function handleSyncVentasPos(request, env) {
   }
 
   const singleDate = String(body.fecha || '').trim()
-  const desde = String(body.desde || singleDate || '').trim() || new Date().toISOString().slice(0, 10)
+  const desde = String(body.desde || singleDate || '').trim() || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
   const hasta = String(body.hasta || singleDate || desde).trim()
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) {
@@ -159,8 +168,12 @@ export async function handleSyncVentasPos(request, env) {
     return jsonError('La fecha de inicio no puede ser posterior a la fecha fin', 400, request)
   }
 
-  const posUrl = (body.posUrl || env.POS_API_URL || 'https://listo-pos-cotizaciones.pages.dev').replace(/\/$/, '')
-  const syncSecret = env.FINANZAS_SYNC_SECRET || env.SYNC_SECRET_KEY || 'construacero-sync-secret-2026'
+  // La dirección del POS la fija el servidor, nunca el cuerpo de la petición: el secreto de
+  // sincronización viaja en esa llamada y no debe poder enviarse a un destino arbitrario.
+  const posUrl = (env.POS_API_URL || POS_URL_POR_DEFECTO).replace(/\/$/, '')
+  // Sin secreto configurado no se llama al POS por HTTP (no hay clave de respaldo en el código):
+  // la lectura directa a la base del POS, que ya era el respaldo, cubre ese caso.
+  const syncSecret = env.FINANZAS_SYNC_SECRET || env.SYNC_SECRET_KEY || null
   const confirm = Boolean(body.confirm)
 
   const dateList = getDatesArray(desde, hasta)

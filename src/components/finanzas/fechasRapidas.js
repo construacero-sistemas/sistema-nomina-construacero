@@ -74,3 +74,10 @@ export function aplicarRangoRapido(id) {
   if (id === 'semana') return { desde: weekStartIso(), hasta: hoy }
   return { desde: monthStart(), hasta: hoy }
 }
+
+/** ¿`hoy` (YYYY-MM-DD) es el último día del mes `mes` (YYYY-MM-01)? */
+export function esUltimoDiaDelMes(hoy, mes) {
+  if (!hoy || !mes || hoy.slice(0, 7) !== mes.slice(0, 7)) return false
+  const [anio, numero] = mes.split('-').map(Number)
+  return Number(hoy.slice(8, 10)) === new Date(anio, numero, 0).getDate()
+}

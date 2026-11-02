@@ -5,7 +5,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 const estado = vi.hoisted(() => ({ query: {} }))
 const pdfMock = vi.hoisted(() => vi.fn(async () => {}))
 const movimientosMock = vi.hoisted(() => vi.fn(async () => [{ id: 'm1', fecha: '2026-10-05', tipo: 'ingreso', monto: 10, moneda: 'USD' }]))
-vi.mock('../../../hooks/useHistorialCierres.js', () => ({ useHistorialCierres: () => estado.query, cargarMovimientosCierre: movimientosMock }))
+const reabrirMock = vi.hoisted(() => vi.fn())
+vi.mock('../../../hooks/useHistorialCierres.js', () => ({ useHistorialCierres: () => estado.query, cargarMovimientosCierre: movimientosMock, useReabrirCierre: () => ({ mutate: reabrirMock, isPending: false }) }))
+vi.mock('../fechasRapidas.js', async importOriginal => ({ ...(await importOriginal()), isoToday: () => '2026-11-05' }))
 vi.mock('../../../services/pdf/finanzasResumenPDF.js', () => ({ generarFinanzasResumenPDF: pdfMock }))
 
 import HistorialCierresFinanzas from '../HistorialCierresFinanzas.jsx'
@@ -50,5 +52,19 @@ describe('HistorialCierresFinanzas', () => {
     estado.query = { data: [], isLoading: false, isError: false }
     rerender(<HistorialCierresFinanzas />)
     expect(screen.getByText('Todavía no hay meses cerrados.')).toBeTruthy()
+  })
+
+  it('el mes anterior se puede reabrir con motivo; otros meses no', () => {
+    estado.query = { data: [cierre, { ...cierre, mes: '2026-09-01' }], isLoading: false, isError: false }
+    render(<HistorialCierresFinanzas />)
+    const botones = screen.getAllByRole('button', { name: 'Reabrir mes' })
+    expect(botones).toHaveLength(1) // solo Octubre 2026 (el mes anterior a la fecha simulada)
+    fireEvent.click(botones[0])
+    const confirmar = screen.getByRole('button', { name: 'Sí, reabrir mes' })
+    expect(confirmar.disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(/Motivo de la reapertura/), { target: { value: 'Cerré el mes por error' } })
+    expect(confirmar.disabled).toBe(false)
+    fireEvent.click(confirmar)
+    expect(reabrirMock).toHaveBeenCalledWith({ mesInicio: '2026-10-01', motivo: 'Cerré el mes por error' }, expect.any(Object))
   })
 })

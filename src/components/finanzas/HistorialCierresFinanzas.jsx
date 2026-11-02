@@ -2,8 +2,10 @@
 // Historial de cierres mensuales: cada cierre queda guardado y se puede revisar al
 // detalle y volver a descargar el PDF (resumido o detallado) cuando haga falta.
 import { useState } from 'react'
-import { ChevronDown, FileText, History, LockKeyhole } from 'lucide-react'
-import { cargarMovimientosCierre, useHistorialCierres } from '../../hooks/useHistorialCierres.js'
+import { ChevronDown, FileText, History, LockKeyhole, Undo2 } from 'lucide-react'
+import { cargarMovimientosCierre, useHistorialCierres, useReabrirCierre } from '../../hooks/useHistorialCierres.js'
+import ReabrirCierreDialog from './ReabrirCierreDialog.jsx'
+import { isoToday, mesAnteriorIso } from './fechasRapidas.js'
 import { generarFinanzasResumenPDF } from '../../services/pdf/finanzasResumenPDF.js'
 import { formatNumber } from './formatos.js'
 
@@ -56,6 +58,10 @@ export default function HistorialCierresFinanzas() {
   const [abierto, setAbierto] = useState(null)
   const [generando, setGenerando] = useState(null)
   const [aviso, setAviso] = useState('')
+  const [reabriendo, setReabriendo] = useState(null)
+  const reabrir = useReabrirCierre()
+  // Solo el mes anterior puede reabrirse (el servidor además exige que el siguiente no esté abierto).
+  const mesReabrible = mesAnteriorIso(`${isoToday().slice(0, 7)}-01`)
 
   // Solo PDF. Resumido = saldos por cuenta; detallado = además todos los movimientos del mes.
   async function descargar(periodo, detallado) {
@@ -112,6 +118,16 @@ export default function HistorialCierresFinanzas() {
                 </span>
               </button>
               <div className="flex flex-wrap items-center gap-1.5">
+                {periodo.mes === mesReabrible && (
+                  <button
+                    type="button"
+                    onClick={() => setReabriendo(periodo)}
+                    className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-900 shadow-xs hover:bg-amber-100 sm:flex-initial"
+                  >
+                    <Undo2 size={14} />
+                    Reabrir mes
+                  </button>
+                )}
                 {[[false, 'PDF resumido'], [true, 'PDF detallado']].map(([detallado, etiqueta]) => {
                   const id = `${periodo.mes}:${detallado}`
                   return (
@@ -134,6 +150,14 @@ export default function HistorialCierresFinanzas() {
           </div>
         )
       })}
+      {reabriendo && (
+        <ReabrirCierreDialog
+          mes={nombreMes(reabriendo.mes)}
+          pending={reabrir.isPending}
+          onClose={() => setReabriendo(null)}
+          onConfirm={motivo => reabrir.mutate({ mesInicio: reabriendo.mes, motivo }, { onSuccess: () => setReabriendo(null) })}
+        />
+      )}
     </section>
   )
 }

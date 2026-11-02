@@ -14,9 +14,19 @@ export async function logToSystem(env, { nivel = 'error', origen = 'worker', cat
   }
 }
 
-// Registra auditoría via REST
-export async function registrarAuditoria(env, headers, { usuarioId, usuarioNombre, usuarioRol, categoria, accion, descripcion, entidadTipo, entidadId, meta, ip, cuentaId }) {
-  await fetch(`${env.SUPABASE_URL}/rest/v1/auditoria`, {
+// Registra auditoría via REST.
+// Los handlers la lanzan sin esperarla (no deben demorar la respuesta), pero en Cloudflare
+// una promesa suelta puede cancelarse al terminar la petición: cada envío queda anotado
+// en `pendientes` y el Worker lo sostiene con ctx.waitUntil(auditoriasPendientes()).
+// Un fallo ya no es silencioso: se deja constancia en el log del Worker.
+const pendientes = new Set();
+
+export function auditoriasPendientes() {
+  return Promise.allSettled([...pendientes]);
+}
+
+async function enviarAuditoria(env, headers, { usuarioId, usuarioNombre, usuarioRol, categoria, accion, descripcion, entidadTipo, entidadId, meta, ip, cuentaId }) {
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/auditoria`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -33,4 +43,16 @@ export async function registrarAuditoria(env, headers, { usuarioId, usuarioNombr
       ip_origen: ip || null,
     }),
   });
+  if (!response.ok) {
+    console.error(`[AUDITORIA_FALLIDA] ${accion} (${categoria}) respondió ${response.status}`);
+    throw new Error(`Auditoría no registrada (${response.status})`);
+  }
+}
+
+export function registrarAuditoria(env, headers, datos) {
+  const promesa = enviarAuditoria(env, headers, datos);
+  const liberar = () => pendientes.delete(promesa);
+  pendientes.add(promesa);
+  promesa.then(liberar, liberar);
+  return promesa;
 }

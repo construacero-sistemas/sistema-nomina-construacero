@@ -278,16 +278,16 @@ export function useCrearCategoria() {
 
 export function usePreviewSyncPos() {
   return useMutation({
-    mutationFn: ({ fecha, desde, hasta, posUrl } = {}) =>
-      apiPost('/api/finanzas/sync-pos', { fecha, desde, hasta, posUrl, confirm: false }),
+    mutationFn: ({ fecha, desde, hasta } = {}) =>
+      apiPost('/api/finanzas/sync-pos', { fecha, desde, hasta, confirm: false }),
   })
 }
 
 export function useEjecutarSyncPos() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: async ({ fecha, desde, hasta, posUrl, distribucion } = {}) => {
-      const data = await apiPost('/api/finanzas/sync-pos', { fecha, desde, hasta, posUrl, distribucion, confirm: true })
+    mutationFn: async ({ fecha, desde, hasta, distribucion } = {}) => {
+      const data = await apiPost('/api/finanzas/sync-pos', { fecha, desde, hasta, distribucion, confirm: true })
       if (data?.ok !== true || data.synced !== true || !Array.isArray(data.resultados)) {
         throw new Error('No se confirmó la sincronización. Revisa el estado antes de repetirla.')
       }

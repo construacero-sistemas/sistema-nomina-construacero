@@ -9,6 +9,10 @@ export const ENV = {
   SUPABASE_URL,
   SUPABASE_SERVICE_KEY: 'test-service-key-no-real',
   SUPABASE_ANON_KEY: 'test-anon-key-no-real',
+  // El sync con el POS ya no tiene secreto de respaldo en el código: los tests lo configuran.
+  FINANZAS_SYNC_SECRET: 'test-sync-secret-no-real',
+  // El sync con el POS está en pausa por defecto; las pruebas del sync lo activan.
+  FINANZAS_SYNC_ACTIVO: 'true',
 }
 
 export const OPERADORES = {

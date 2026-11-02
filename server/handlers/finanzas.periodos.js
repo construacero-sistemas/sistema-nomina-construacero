@@ -13,6 +13,12 @@ function accountFilter(accountId) {
   return `cuenta_id=eq.${encodeURIComponent(accountId)}`
 }
 
+// «Hoy» del negocio: fecha de Caracas, igual que las funciones SQL del período mensual
+// (migración 258). Con UTC, de 8 pm a medianoche ya sería el mes siguiente.
+function caracasToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
+
 const MONTH_RE = /^\d{4}-\d{2}-01$/
 const KEY_RE = /^[A-Za-z0-9._:-]{16,128}$/
 
@@ -98,7 +104,7 @@ export async function handleGetFinanzasPeriodoMensual(request, env) {
   const auth = await context(request, env)
   if (auth.error) return auth.error
   const url = new URL(request.url)
-  const month = url.searchParams.get('mes') || `${new Date().toISOString().slice(0, 7)}-01`
+  const month = url.searchParams.get('mes') || `${caracasToday().slice(0, 7)}-01`
   if (!monthValue(month)) return jsonError('Mes inválido; usa YYYY-MM-01.', 400, request)
   try {
     const result = await callFinancialRpc(env, 'finanzas_periodo_mensual_estado', {
@@ -118,9 +124,9 @@ const HISTORIAL_MESES_DEFECTO = 12
 const HISTORIAL_MESES_MAX = 36
 
 function monthsBack(count) {
-  const now = new Date()
+  const [year, month] = caracasToday().split('-').map(Number)
   return Array.from({ length: count }, (_, index) => {
-    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - index, 1))
+    const date = new Date(Date.UTC(year, month - 1 - index, 1))
     return date.toISOString().slice(0, 10)
   })
 }
@@ -219,6 +225,27 @@ export async function handleOperarFinanzasPeriodoMensual(request, env) {
       p_payload: payload, p_ip: auth.ip || null,
     })
     if (result.ok !== true) throw new FinancialOperationError('La operación mensual no quedó confirmada.', 503, 'OPERATION_RESULT_UNKNOWN')
+    return json(result, 200, request)
+  } catch (error) { return financialErrorResponse(error, request) }
+}
+
+// Reabrir el último mes cerrado (cierre hecho por error). Solo jefe; exige motivo y
+// deja auditado el cierre anterior. La base limita la ventana: solo el mes anterior
+// y solo si el mes siguiente aún no se abrió.
+export async function handleReabrirFinanzasPeriodoMensual(request, env) {
+  const auth = await context(request, env)
+  if (auth.error) return auth.error
+  let body
+  try { body = await request.json() } catch { return jsonError('Body inválido.', 400, request) }
+  const motivo = String(body?.motivo || '').trim()
+  if (!monthValue(body?.mesInicio)) return jsonError('Mes inválido; usa YYYY-MM-01.', 400, request)
+  if (motivo.length < 8 || motivo.length > 300) return jsonError('Explica por qué reabres el mes (entre 8 y 300 caracteres).', 400, request)
+  try {
+    const result = await callFinancialRpc(env, 'finanzas_periodo_mensual_reabrir', {
+      p_cuenta_id: auth.operador.cuenta_id, p_operador_id: auth.operador.id,
+      p_mes_inicio: body.mesInicio, p_motivo: motivo, p_ip: auth.ip || null,
+    })
+    if (result.ok !== true) throw new FinancialOperationError('La reapertura no quedó confirmada.', 503, 'OPERATION_RESULT_UNKNOWN')
     return json(result, 200, request)
   } catch (error) { return financialErrorResponse(error, request) }
 }

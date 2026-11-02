@@ -391,11 +391,24 @@ describe('PeriodoMensualFinanzas — cierre con diferencias', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('"Revisar de nuevo" cancela el cierre sin enviar nada', () => {
+    const { onClose } = renderPanel(periodoAbierto)
+    fireEvent.click(screen.getByRole('button', { name: /Cerrar mes/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar de nuevo' }))
+    expect(screen.queryByRole('button', { name: 'Sí, cerrar mes' })).not.toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('con motivo documentado congela el saldo contado y confirma', async () => {
     const { onClose, onRefresh } = renderPanel(periodoAbierto)
     fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '130' } })
     fireEvent.change(screen.getByLabelText(/Motivo de diferencia/), { target: { value: 'Conteo físico documentado' } })
     fireEvent.click(screen.getByRole('button', { name: /Cerrar mes/ }))
+    // El cierre es irreversible salvo reabrir: no se envía hasta confirmar el diálogo.
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByText(/solo lectura/)).toBeInTheDocument()
+    expect(screen.getByText(/Diferencias contra el saldo calculado/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, cerrar mes' }))
     await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
     const call = onClose.mock.calls[0][0]
     expect(call.accion).toBe('cerrar')
@@ -419,6 +432,7 @@ describe('PeriodoMensualFinanzas — cierre con diferencias', () => {
     fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '100' } })
     fireEvent.change(screen.getByLabelText(/Motivo de diferencia/), { target: { value: 'Merma documentada en acta' } })
     fireEvent.click(screen.getByRole('button', { name: /Cerrar mes/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, cerrar mes' }))
     // Regla simple 254: el faltante de cierre se registra con su motivo.
     await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
     expect(onClose.mock.calls[0][0].payload.cuentas).toEqual([

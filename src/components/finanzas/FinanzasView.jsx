@@ -44,6 +44,7 @@ import { summarizeConfirmedBalances } from '../../utils/confirmedBalances.js'
 import useCustodySave from '../../hooks/useCustodySave.js'
 import PeriodoMensualFinanzas from './PeriodoMensualFinanzas.jsx'
 import HistorialCierresFinanzas from './HistorialCierresFinanzas.jsx'
+import AvisoCierrePendiente from './AvisoCierrePendiente.jsx'
 import FinanzasExportBar from './FinanzasExportBar.jsx'
 
 // Export CSV: oculto por ahora (se reactiva poniendo true).
@@ -306,6 +307,7 @@ export default function FinanzasView() {
               <span className="sm:hidden">Tesorería</span>
               <span className="hidden sm:inline">Tesorería y Carteras</span>
             </span>
+            {cierrePendiente && <span aria-label="Cierre pendiente" className="h-2 w-2 shrink-0 rounded-full bg-amber-500 animate-pulse" />}
             {puedeVerSaldos && saldosCarteras?.patrimonioTotalUsd != null && (
               <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold whitespace-nowrap shrink-0">
                 ${formatNumber(saldosCarteras.patrimonioTotalUsd)} USD
@@ -313,6 +315,8 @@ export default function FinanzasView() {
             )}
           </button>}
         </div>
+
+        {puedeVerSaldos && pestanaVisible === 'movimientos' && <AvisoCierrePendiente previo={periodoPrevioMensual.data} actual={periodoActualMensual.data} hoy={isoToday()} onIr={() => setActiveTab('tesoreria')} />}
 
         {/* Resumen rápido de patrimonio cuando estás en la pestaña de movimientos */}
         {puedeVerSaldos && pestanaVisible === 'movimientos' && saldosCarteras?.patrimonioTotalUsd != null && (
@@ -371,15 +375,16 @@ export default function FinanzasView() {
             setMostrarAnulados={setMostrarAnulados}
           />
 
-            {/* Exportación del reporte del período filtrado */}
-            <FinanzasExportBar
+            {/* Exportación del reporte del período filtrado: trae ingresos, egresos y flujo neto,
+                así que solo para quien puede ver acumulados (el rol finanzas nunca los ve). */}
+            {puedeVerSaldos && <FinanzasExportBar
               filtros={{ desde, hasta, tipo, categoria, moneda, cartera: filtroCartera, mostrarAnulados }}
               fechaValida={fechaValida}
               movimientosCount={movimientosFiltrados.length}
               totalServidor={totalServidor}
               tasaActiva={tasaActiva}
               nombreTasa={nombreTasa}
-            />
+            />}
 
           {puedeVerSaldos && resumen.isError && <InlineError message="No se pudo cargar el resumen." onRetry={() => resumen.refetch()} />}
 

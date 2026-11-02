@@ -98,7 +98,14 @@ describe('FinanzasView — acceso por capacidad', () => {
     expect(screen.getByText('Tabla de movimientos (con edición)')).toBeInTheDocument()
   })
 
+  it('el rol finanzas no ve el reporte PDF de totales; el jefe sí', () => {
+    renderView()
+    expect(screen.queryByRole('button', { name: 'Resumido' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Completo' })).not.toBeInTheDocument()
+  })
+
   it('permite alternar entre reporte Resumido y Completo', () => {
+    session.perfil = { rol: 'jefe', nombre: 'QA' }
     renderView()
     const btnResumido = screen.getByRole('button', { name: 'Resumido' })
     const btnCompleto = screen.getByRole('button', { name: 'Completo' })

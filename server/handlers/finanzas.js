@@ -4,7 +4,7 @@ import { json, jsonError, isValidUuid } from '../lib/utils.js'
 import { validateOperator, supaServiceHeaders } from '../lib/auth.js'
 import { registrarAuditoria } from '../lib/audit.js'
 import { requireCapacidad, capacidadesDe } from '../lib/permissions.js'
-import { callFinancialRpc, financialErrorResponse } from '../lib/financialOperations.js'
+import { callFinancialRpc, financialErrorResponse, reglaMensual } from '../lib/financialOperations.js'
 import { clasificarCoincidenciasMovimiento, motivoCoincidenciaValido } from '../lib/financialDuplicates.js'
 import { evaluarSaldoEgreso, mensajeSaldoInsuficiente, parseInsufficientFundsDetail } from '../lib/financialBalance.js'
 import {
@@ -74,13 +74,23 @@ function queryValue(value) {
   return encodeURIComponent(String(value))
 }
 
-function insufficientFundsResponse(funds, moneda, request, prefix = '') {
-  const known = Number.isFinite(funds.disponible) && Number.isFinite(funds.faltante)
+// El rol finanzas opera el libro pero jamás ve saldos: su error no debe revelar cuánto hay
+// (con egresos de prueba se podría averiguar el saldo exacto de cada cartera).
+const ocultarSaldo = context => !capacidadesDe(context.operador).verSaldos
+
+function insufficientFundsResponse(funds, moneda, request, prefix = '', ocultar = false) {
+  const known = !ocultar && Number.isFinite(funds.disponible) && Number.isFinite(funds.faltante)
   return json({
     error: prefix + (known ? mensajeSaldoInsuficiente(funds, moneda) : 'Saldo insuficiente en la cartera.'),
     code: 'FINANCIAL_INSUFFICIENT_FUNDS',
     ...(known ? { disponible: funds.disponible, faltante: funds.faltante, moneda } : {}),
   }, 409, request)
+}
+
+// Error de una escritura directa al libro: primero las reglas del mes cerrado/apertura.
+function reglaMensualResponse(detalle, request) {
+  const regla = reglaMensual(detalle)
+  return regla ? json({ error: regla.message, code: 'MONTHLY_LEDGER_RULE' }, regla.status, request) : null
 }
 
 async function readBody(request) {
@@ -235,7 +245,7 @@ export async function handleCrearFinanzasMovimiento(request, env) {
     const saldo = Number(wallet?.saldoNativo)
     if (!wallet || !Number.isFinite(saldo)) return jsonError('No se pudo comprobar el saldo de la cartera. No se registró nada.', 503, request)
     const shortfall = evaluarSaldoEgreso(saldo, movement.monto)
-    if (shortfall) return insufficientFundsResponse(shortfall, movement.moneda, request)
+    if (shortfall) return insufficientFundsResponse(shortfall, movement.moneda, request, '', ocultarSaldo(context))
   }
   const fuenteTasaDb = movement.fuente_tasa === 'FIJA' ? 'BCV' : (movement.fuente_tasa || 'BCV')
   const payload = {
@@ -283,8 +293,10 @@ export async function handleCrearFinanzasMovimiento(request, env) {
     if (detail.includes('FINANCIAL_DUPLICATE_SIMILAR')) {
       return json({ error: 'Hay un movimiento activo con el mismo concepto y referencia el mismo día. Escribe una justificación para registrar otra operación.', code: 'FINANCIAL_DUPLICATE_SIMILAR' }, 409, request)
     }
+    const reglaMes = reglaMensualResponse(detail, request)
+    if (reglaMes) return reglaMes
     const funds = parseInsufficientFundsDetail(detail)
-    if (funds) return insufficientFundsResponse(funds, funds.moneda || movement.moneda, request)
+    if (funds) return insufficientFundsResponse(funds, funds.moneda || movement.moneda, request, '', ocultarSaldo(context))
     if (detailLower.includes('idempot') || detailLower.includes('unique')) {
       const retry = await readExistingByKey(env, context.operador.cuenta_id, movement.idempotency_key)
       if (retry.row && mismoMovimiento(retry.row, movement, custodyId)) {
@@ -359,8 +371,11 @@ export async function handleAnularFinanzasMovimiento(request, env) {
     },
   )
   if (!response.ok) {
-    const funds = parseInsufficientFundsDetail(await response.text())
-    if (funds) return insufficientFundsResponse(funds, funds.moneda || current.row.moneda, request, 'Anularlo dejaría la cartera en negativo. ')
+    const detail = await response.text()
+    const reglaMes = reglaMensualResponse(detail, request)
+    if (reglaMes) return reglaMes
+    const funds = parseInsufficientFundsDetail(detail)
+    if (funds) return insufficientFundsResponse(funds, funds.moneda || current.row.moneda, request, 'Anularlo dejaría la cartera en negativo. ', ocultarSaldo(context))
     return jsonError('No se pudo anular el movimiento', 409, request)
   }
   const [row] = await response.json()
@@ -423,8 +438,11 @@ export async function handleRevertirAnulacionMovimiento(request, env) {
     },
   )
   if (!response.ok) {
-    const funds = parseInsufficientFundsDetail(await response.text())
-    if (funds) return insufficientFundsResponse(funds, funds.moneda || current.row.moneda, request, 'Restaurarlo dejaría la cartera en negativo. ')
+    const detail = await response.text()
+    const reglaMes = reglaMensualResponse(detail, request)
+    if (reglaMes) return reglaMes
+    const funds = parseInsufficientFundsDetail(detail)
+    if (funds) return insufficientFundsResponse(funds, funds.moneda || current.row.moneda, request, 'Restaurarlo dejaría la cartera en negativo. ', ocultarSaldo(context))
     return jsonError('No se pudo revertir la anulación', 409, request)
   }
   const [row] = await response.json()
@@ -489,7 +507,10 @@ export async function handleActualizarFinanzasMovimiento(request, env) {
       body: JSON.stringify(patchData),
     },
   )
-  if (!response.ok) return jsonError('No se pudo actualizar el movimiento', 409, request)
+  if (!response.ok) {
+    const reglaMes = reglaMensualResponse(await response.text(), request)
+    return reglaMes || jsonError('No se pudo actualizar el movimiento', 409, request)
+  }
   const [row] = await response.json()
   if (!row) return jsonError('Movimiento no encontrado o no modificable', 409, request)
 

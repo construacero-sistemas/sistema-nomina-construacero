@@ -153,7 +153,8 @@ try {
     assert.ok(entries.every(e => Number(e.monto) === 100 && Number(e.tasa_ves) === 400 && e.moneda === 'USD' && e.metodo_pago === 'Efectivo $' && e.cuenta_custodia_id === usd))
     assert.equal((await one('SELECT estado FROM nomina_periodos WHERE id=$1', [period])).estado, 'cerrado')
   })
-  const months = await one("SELECT (date_trunc('month',current_date)-interval '1 month')::date::text AS previous,(date_trunc('month',current_date))::date::text AS current")
+  // "Hoy" en hora de Caracas, como las funciones del período mensual (migración 258).
+  const months = await one("SELECT (date_trunc('month',(now() AT TIME ZONE 'America/Caracas')::date)-interval '1 month')::date::text AS previous,(date_trunc('month',(now() AT TIME ZONE 'America/Caracas')::date))::date::text AS current,extract(day FROM (now() AT TIME ZONE 'America/Caracas')::date)::int AS dia")
   const monthlyTenant = randomUUID(), monthlyActor = randomUUID()
   await db.query('INSERT INTO auth.users(id) VALUES($1)', [monthlyTenant])
   await db.query("INSERT INTO usuarios(id,cuenta_id,nombre,rol) VALUES($1,$2,'Monthly QA','jefe')", [monthlyActor, monthlyTenant])
@@ -262,7 +263,7 @@ try {
     assert.match(autoRow.motivo_apertura, /Alta autom/)
     // Descubierto: el mes corriente ya tiene un ingreso antes de aperturar.
     await db.query(`INSERT INTO finanzas_movimientos(cuenta_id,fecha,tipo,categoria,concepto,monto,moneda,tasa_ves,tasa_usd_ves,fuente_tasa,idempotency_key,cuenta_custodia_id)
-      VALUES($1,$2,'ingreso','QA','Ingreso previo a la apertura',100,'USD',400,400,'BCV',$3,$4)`, [sTenant, `${months.current.slice(0, 7)}-05`, randomUUID(), sNew])
+      VALUES($1,$2,'ingreso','QA','Ingreso previo a la apertura',100,'USD',400,400,'BCV',$3,$4)`, [sTenant, `${months.current.slice(0, 7)}-${String(Math.min(5, months.dia)).padStart(2, '0')}`, randomUUID(), sNew])
     // 4.1/D1: apertura por debajo del cierre anterior y en negativo. Sin motivo → PT400.
     const currentRows = (motivoUsd) => [
       simpleRow(sUsd, { metodo: 'saldo_real', saldoReal: '300', motivo: motivoUsd }, { tasaUsdVes: '500', tasaUsdtVes: '600' }),

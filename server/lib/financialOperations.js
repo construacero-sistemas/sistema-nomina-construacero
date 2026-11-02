@@ -99,6 +99,30 @@ export function normalizeFinancialOperation(tipo, body) {
   }
   return { tipo, clave, payload }
 }
+// Mensajes claros para las reglas del libro mensual (migraciones 253/254/258): la base
+// responde en inglés técnico; el usuario necesita saber qué hacer.
+const REGLAS_MENSUALES = [
+  [/Closed monthly ledger is immutable/i, 409, 'Ese mes ya está cerrado: sus movimientos no se pueden crear, anular ni modificar. Si fue un error, el jefe puede reabrir el mes anterior desde el historial de cierres.'],
+  [/Wallet must be opened before recording monthly movements/i, 409, 'Esa cuenta aún no tiene apertura en el mes. Abre el mes o da de alta la cuenta antes de registrar movimientos.'],
+  [/Previous month must be closed first/i, 409, 'Cierra primero el mes anterior para poder abrir este.'],
+  [/Only the previous month may be closed/i, 409, 'Solo se puede cerrar el mes anterior.'],
+  [/Month can only close after its last day/i, 409, 'El mes solo se puede cerrar cuando termina su último día.'],
+  [/Only the previous month may be reopened/i, 409, 'Solo se puede reabrir el mes anterior.'],
+  [/A later month is already opened/i, 409, 'No se puede reabrir: el mes siguiente ya está abierto.'],
+  [/Month is not closed/i, 409, 'Ese mes no está cerrado.'],
+  [/Month already (opened|closed) with different data/i, 409, 'Ese mes ya se procesó con otros datos. Actualiza la pantalla.'],
+  [/Explain why the month is reopened/i, 400, 'Explica por qué reabres el mes (entre 8 y 300 caracteres).'],
+  [/Explain (each closing )?difference/i, 400, 'Justifica cada diferencia con un motivo de al menos 8 caracteres.'],
+  [/Cannot open a month older than an existing period/i, 409, 'No se puede abrir un mes anterior a otro ya registrado.'],
+]
+
+/** Traduce un error de la base (texto o JSON) a { status, message } si es una regla mensual conocida. */
+export function reglaMensual(detalle) {
+  const texto = typeof detalle === 'string' ? detalle : JSON.stringify(detalle || '')
+  const regla = REGLAS_MENSUALES.find(([patron]) => patron.test(texto))
+  return regla ? { status: regla[1], message: regla[2] } : null
+}
+
 export async function callFinancialRpc(env, rpc, params) {
   let response, data
   const controller = new AbortController()
@@ -117,6 +141,8 @@ export async function callFinancialRpc(env, rpc, params) {
     if (['PGRST202', 'PGRST204', '42883', '42P01', '42703'].includes(data?.code)) {
       throw new FinancialOperationError('Es necesario actualizar la base antes de usar esta función financiera.', 503, 'FINANCIAL_UPDATE_REQUIRED')
     }
+    const regla = reglaMensual(data)
+    if (regla) throw new FinancialOperationError(regla.message, regla.status, data?.code || 'MONTHLY_RULE')
     const messages = {
       PT400: [400, 'Operación inválida. Revisa cuentas, importes, tasas y estado de los recibos.'],
       PT403: [403, 'Acceso denegado: el operador no tiene permiso en esta cuenta.'],

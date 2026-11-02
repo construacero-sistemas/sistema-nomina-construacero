@@ -16,6 +16,9 @@ const ENV = {
   JWT_SECRET: 'test-jwt-secret-very-secure-key-1234567890',
   NOMINA_TIMEZONE: 'America/Caracas',
   POS_API_URL: 'https://pos.construacero.local/api/cierre',
+  // Sin secreto el sync no llama al POS por HTTP (ya no hay clave de respaldo en el código).
+  FINANZAS_SYNC_SECRET: 'test-sync-secret-no-real',
+  FINANZAS_SYNC_ACTIVO: 'true',
 }
 
 const IDS = {

@@ -97,4 +97,36 @@ describe('FinanzasView — ventana de cierre mensual', () => {
     expect(screen.queryByRole('button', { name: /Cerrar mes/ })).not.toBeInTheDocument()
     expect(screen.getByText(/se habilita el primer día del mes siguiente/)).toBeInTheDocument()
   })
+
+  it('con el cierre pendiente avisa desde Movimientos y lleva a cerrarlo', () => {
+    periodos.previo = { ...periodos.previo, estado: 'abierto', cuentas: [walletRow()] }
+    renderView()
+    expect(screen.getByText(/Ya toca cerrar/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Cierre pendiente')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ir a cerrar el mes' }))
+    expect(screen.getByRole('button', { name: /Cerrar mes/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Ya toca cerrar/)).not.toBeInTheDocument()
+  })
+
+  it('sin cierre pendiente o sin permiso de saldos no hay aviso', () => {
+    renderView()
+    expect(screen.queryByText(/Ya toca cerrar/)).not.toBeInTheDocument()
+    cleanup()
+    periodos.previo = { ...periodos.previo, estado: 'abierto', cuentas: [walletRow()] }
+    session.perfil = { rol: 'finanzas', nombre: 'Fin' }
+    renderView()
+    expect(screen.queryByText(/Ya toca cerrar/)).not.toBeInTheDocument()
+  })
+
+  it('el último día del mes con el mes abierto recuerda que mañana toca cerrarlo', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const hoy = new Date()
+    vi.setSystemTime(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0, 12))
+    periodos.previoKey = mesAnteriorIso(monthStart())
+    periodos.actual = { mes: monthStart(), estado: 'abierto', cuentas: [walletRow()], cuentasPendientes: [], cierreAnterior: [] }
+    renderView()
+    expect(screen.getByText(/Hoy es el último día de/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ir a cerrar el mes' })).not.toBeInTheDocument()
+    vi.useRealTimers()
+  })
 })

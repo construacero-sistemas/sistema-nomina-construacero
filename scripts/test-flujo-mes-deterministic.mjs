@@ -42,9 +42,12 @@ try {
   }
 
   // ─── Escenario: un negocio con tres cuentas y una cuarta nacida a mitad de mes ─
-  const months = await one("SELECT (date_trunc('month',current_date)-interval '1 month')::date::text AS previous,(date_trunc('month',current_date))::date::text AS current")
+  // "Hoy" es la fecha de Caracas (como las funciones del período mensual, migración 258).
+  const months = await one("SELECT (date_trunc('month',(now() AT TIME ZONE 'America/Caracas')::date)-interval '1 month')::date::text AS previous,(date_trunc('month',(now() AT TIME ZONE 'America/Caracas')::date))::date::text AS current,extract(day FROM (now() AT TIME ZONE 'America/Caracas')::date)::int AS dia")
   const sepDia = d => `${months.previous.slice(0, 7)}-${d}`
-  const octDia = d => `${months.current.slice(0, 7)}-${d}`
+  // El libro mensual no cuenta movimientos futuros: los días del mes corriente se acotan a hoy
+  // para que el recorrido sea determinista sea cual sea el día en que se ejecuta.
+  const octDia = d => `${months.current.slice(0, 7)}-${String(Math.min(Number(d), months.dia)).padStart(2, '0')}`
   const tenant = randomUUID(), actor = randomUUID()
   const paso = async (etiqueta, run) => { try { return await run() } catch (error) { error.message = `${etiqueta}: ${error.message}`; throw error } }
   await paso('fixture auth.users', () => db.query('INSERT INTO auth.users(id) VALUES($1)', [tenant]))
@@ -215,6 +218,45 @@ try {
   await check('F8. El mes cerrado es inmutable: ni movimientos nuevos ni ediciones', async () => {
     await rejects('PT409', () => insertMov({ fecha: sepDia('25'), tipo: 'ingreso', categoria: 'Ventas', concepto: 'Tardío', monto: 10, moneda: 'USD', wallet: cajaUsd, tasaVes: 410, referencia: 'FAC-007' }), 'Closed monthly ledger is immutable')
     await rejects('PT409', () => db.query("UPDATE finanzas_movimientos SET monto=310 WHERE cuenta_id=$1 AND referencia='FAC-003'", [tenant]), 'Closed monthly ledger is immutable')
+  })
+
+  // ─── F8b. Campos descriptivos del mes cerrado + reabrir (migración 258) ─────
+  await check('F8b. El mes cerrado también congela fecha, categoría y concepto', async () => {
+    await rejects('PT409', () => db.query("UPDATE finanzas_movimientos SET categoria='Otra' WHERE cuenta_id=$1 AND referencia='FAC-003'", [tenant]), 'Closed monthly ledger is immutable')
+    await rejects('PT409', () => db.query("UPDATE finanzas_movimientos SET concepto='Cambiado' WHERE cuenta_id=$1 AND referencia='FAC-003'", [tenant]), 'Closed monthly ledger is immutable')
+    await rejects('PT409', () => db.query("UPDATE finanzas_movimientos SET fecha=$2::date WHERE cuenta_id=$1 AND referencia='FAC-003'", [tenant, octDia('01')]), 'Closed monthly ledger is immutable')
+    // Reescribir el mismo valor no cambia nada y no se bloquea.
+    await db.query("UPDATE finanzas_movimientos SET categoria=categoria WHERE cuenta_id=$1 AND referencia='FAC-003'", [tenant])
+  })
+
+  await check('F8c. Reabrir el último mes: motivo, auditoría con el cierre anterior y vuelve a cerrarse', async () => {
+    const reabrir = (motivo, mes = months.previous) => one('SELECT finanzas_periodo_mensual_reabrir($1,$2,$3,$4,NULL) AS value', [tenant, actor, mes, motivo]).then(r => r.value)
+    await rejects('PT400', () => reabrir('corto'), 'Explain why')
+    await rejects('PT409', () => reabrir('Cierre hecho por error', months.current), 'Month is not closed')
+    const antes = await filaMes(months.previous, cajaUsd)
+    const reabierto = await reabrir('Cierre hecho por error de clic')
+    assert.equal(reabierto.estado, 'abierto'); assert.equal(reabierto.ok, true)
+    const fila = await filaMes(months.previous, cajaUsd)
+    assert.equal(fila.saldo_cierre_real, null); assert.equal(fila.diferencia_cierre, null); assert.equal(fila.saldo_cierre_usd, null)
+    const auditoria = await one("SELECT meta FROM auditoria WHERE cuenta_id=$1 AND accion='CIERRE_MENSUAL_REABIERTO'", [tenant])
+    assert.equal(auditoria.meta.motivo, 'Cierre hecho por error de clic')
+    const guardado = auditoria.meta.cierreAnterior.find(c => c.cuentaCustodiaId === cajaUsd)
+    assert.equal(Number(guardado.saldoCierreReal), Number(antes.saldo_cierre_real))
+    await rejects('PT409', () => reabrir('Cierre hecho por error de clic'), 'Month is not closed')
+    // Abierto de nuevo: se corrige y se vuelve a cerrar con los mismos conteos.
+    await db.query("UPDATE finanzas_movimientos SET concepto=concepto WHERE cuenta_id=$1 AND referencia='FAC-003'", [tenant])
+    const filas = auditoria.meta.cierreAnterior.map(c => ({ cuentaCustodiaId: c.cuentaCustodiaId, saldoReal: String(c.saldoCierreReal), motivo: c.motivo, ...rates2 }))
+    const cerrada = await monthly('cerrar', months.previous, { cuentas: filas, ...rates2 }, 'flujo-close-month1-00002')
+    assert.equal(cerrada.estado, 'cerrado')
+    const despues = await filaMes(months.previous, cajaUsd)
+    assert.equal(Number(despues.saldo_cierre_real), Number(antes.saldo_cierre_real))
+    assert.equal(Number(despues.saldo_cierre_libro), Number(antes.saldo_cierre_libro))
+  })
+
+  await check('F8d. Las funciones del período mensual cuentan "hoy" en hora de Caracas', async () => {
+    const { rows } = await db.query("SELECT proname,proconfig FROM pg_proc WHERE proname IN ('finanzas_saldo_periodo','finanzas_periodo_mensual_estado','finanzas_periodo_mensual_operar','finanzas_periodo_mensual_reabrir','finanzas_saldos','finanzas_guard_saldo_movement')")
+    assert.equal(rows.length, 6)
+    for (const fila of rows) assert.ok((fila.proconfig || []).some(c => c.toLowerCase() === 'timezone=america/caracas'), `${fila.proname} sin timezone de Caracas`)
   })
 
   // ─── F9. Mes 2: el usuario abre con el cierre heredado y documenta faltantes ─

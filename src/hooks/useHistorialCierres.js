@@ -1,7 +1,9 @@
 // src/hooks/useHistorialCierres.js
 // Cierres mensuales ya confirmados (con su detalle por cuenta), del más reciente al más antiguo.
 import { useCallback } from 'react'
-import { useAccountQuery as useQuery } from '../../compat/lib/accountQueries.js'
+import { useMutation } from '@tanstack/react-query'
+import { useAccountQuery as useQuery, useAccountQueryClient as useQueryClient } from '../../compat/lib/accountQueries.js'
+import { showToast } from '../../compat/components/ui/toastBus.js'
 import useAuthStore from '../../compat/store/useAuthStore.js'
 import { authFetch } from '../../compat/services/authFetch.js'
 import { tieneCapacidad } from '../config/accesoModulos.js'
@@ -16,7 +18,8 @@ export function useHistorialCierres(meses = 12) {
       if (!response.ok) throw new Error(payload.error || `Error ${response.status}`)
       return payload.cierres || []
     },
-    enabled: tieneCapacidad(perfil, 'gestionarUsuarios'), staleTime: 0, retry: false,
+    // Cada consulta suma el libro de cada mes: 5 min de caché; cerrar o reabrir un mes la invalida.
+    enabled: tieneCapacidad(perfil, 'gestionarUsuarios'), staleTime: 5 * 60 * 1000, retry: false,
   })
 }
 
@@ -26,4 +29,24 @@ export async function cargarMovimientosCierre(mes) {
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.error || `Error ${response.status}`)
   return payload.movimientos || []
+}
+
+// Reabre el último mes cerrado (cierre hecho por error). Exige motivo; solo jefe.
+export function useReabrirCierre() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ mesInicio, motivo }) => {
+      const response = await authFetch('/api/finanzas/periodos-mensuales/reabrir', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mesInicio, motivo }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || `Error ${response.status}`)
+      return payload
+    },
+    onSuccess: async () => {
+      showToast.success('Mes reabierto: ya puedes corregirlo y volver a cerrarlo')
+      await client.invalidateQueries({ queryKey: ['finanzas'] })
+    },
+    onError: error => showToast.error(error.message || 'No se pudo reabrir el mes'),
+  })
 }

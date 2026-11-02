@@ -389,6 +389,7 @@ describe('finanzas — flujo crear, reportar y anular', () => {
     // Regla de negocio: crear categorías/motivos es parte de registrar ingresos/egresos.
     // El rol finanzas opera el libro (aunque no vea saldos); nomina no toca finanzas.
     mock = installFetchMock([
+      { match: '/finanzas_categorias', method: 'GET', respond: [] },
       {
         match: '/finanzas_categorias',
         method: 'POST',
@@ -443,11 +444,14 @@ describe('finanzas — flujo crear, reportar y anular', () => {
 
   it('crea una categoría con tenant y actor administrativo', async () => {
     let sent
-    mock = installFetchMock([{
-      match: '/finanzas_categorias',
-      method: 'POST',
-      respond: (url, init) => { sent = JSON.parse(init.body); return [{ id: IDS.config, nombre: 'Alquiler', tipo: 'egreso' }] },
-    }])
+    mock = installFetchMock([
+      { match: '/finanzas_categorias', method: 'GET', respond: [] },
+      {
+        match: '/finanzas_categorias',
+        method: 'POST',
+        respond: (url, init) => { sent = JSON.parse(init.body); return [{ id: IDS.config, nombre: 'Alquiler', tipo: 'egreso' }] },
+      },
+    ])
     const response = await H.handleCrearFinanzasCategoria(makeRequest({ nombre: '  Alquiler  ', tipo: 'egreso' }), ENV)
     const result = await readResponse(response)
     expect(result.status).toBe(201)

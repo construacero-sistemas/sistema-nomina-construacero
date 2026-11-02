@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, LockKeyhole, RefreshCw } from 'lucide-reac
 import { formatNumber, normalizarMontoInput } from './formatos.js'
 import { conteoValido } from '../../utils/montoUtils.js'
 import PeriodoMensualWizardModal from './PeriodoMensualWizardModal.jsx'
+import CierreMesConfirmDialog from './CierreMesConfirmDialog.jsx'
 
 const tasa = value => Number(value) > 0 ? Number(value) : 0
 const money = value => value == null ? '—' : formatNumber(value)
@@ -72,6 +73,7 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
   const [wizardOpen, setWizardOpen] = useState(false)
   const [closing, setClosing] = useState({})
   const [message, setMessage] = useState('')
+  const [confirmarCierre, setConfirmarCierre] = useState(null)
   const cierreKeyRef = useRef(null)
   const wallets = periodo?.cuentas || []
   const missing = periodo?.cuentasPendientes || []
@@ -104,7 +106,8 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
   }
   const setClosingValue = (id, field, value) => setClosing(current => ({ ...current, [id]: { ...current[id], [field]: value } }))
 
-  async function confirmClosing() {
+  // Paso 1: valida el conteo y pide confirmación (el cierre deja el mes en solo lectura).
+  function solicitarCierre() {
     // Base del libro: saldo calculado del mes. Para cuentas sin apertura (el
     // cierre las da de alta solas) el saldo histórico completo cuadra el período.
     const baseDe = wallet => wallet.saldoCalculado != null
@@ -127,15 +130,29 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
       && String(closing[walletKey(wallet)]?.motivo || '').trim().length < 8)) {
       setMessage('Justifica con al menos 8 caracteres cada diferencia contra el saldo calculado.'); return
     }
+    if (!(onConfirmClose || onClose)) return
+    setMessage('')
+    const diferencias = wallets
+      .map(wallet => ({ id: walletKey(wallet), nombre: wallet.nombre, moneda: wallet.moneda, diferencia: contadoDe(wallet) - baseDe(wallet) }))
+      .filter(item => Math.abs(item.diferencia) > 0.000001)
+    setConfirmarCierre({ rows, diferencias })
+  }
+
+  // Paso 2: ya confirmado, envía el cierre con la misma clave de idempotencia hasta que se confirme.
+  async function ejecutarCierre() {
     const handleClose = onConfirmClose || onClose
-    if (!handleClose) return
+    const { rows } = confirmarCierre
     if (!cierreKeyRef.current) cierreKeyRef.current = key()
     try {
       await handleClose({ accion: 'cerrar', mesInicio: periodo.mes, idempotencyKey: cierreKeyRef.current, payload: { cuentas: rows, tasaUsdVes: String(rates.usd), tasaUsdtVes: String(rates.usdt) } })
       cierreKeyRef.current = null
-      setMessage('Cierre mensual confirmado. El libro queda de solo lectura para ese mes.')
+      setConfirmarCierre(null)
+      setMessage('Cierre mensual confirmado. El libro queda de solo lectura para ese mes; lo encuentras en el historial de cierres.')
       await onRefresh()
-    } catch (cause) { setMessage(cause.message || 'No se confirmó el cierre; conserva los datos y reintenta.') }
+    } catch (cause) {
+      setConfirmarCierre(null)
+      setMessage(cause.message || 'No se confirmó el cierre; conserva los datos y reintenta.')
+    }
   }
 
   return (
@@ -173,7 +190,7 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
           {periodo?.estado === 'abierto' && cierreHabilitado && (
             <button
               type="button"
-              onClick={confirmClosing}
+              onClick={solicitarCierre}
               disabled={pending || loading || missing.length > 0 || !wallets.length || !canUseRates}
               className="min-h-11 px-4 rounded-xl bg-amber-700 hover:bg-amber-800 active:bg-amber-900 text-white font-bold text-sm shadow-sm disabled:opacity-50 transition-colors flex items-center justify-center gap-2 flex-1 sm:flex-initial"
             >
@@ -396,6 +413,17 @@ export default function PeriodoMensualFinanzas({ periodo, saldos, cuentas, loadi
         <p className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-sm font-semibold text-slate-800">
           Cierre confirmado {periodo.cerradoEn ? `el ${new Date(periodo.cerradoEn).toLocaleString('es-VE')}` : ''}. Su detalle queda guardado en el historial de cierres, donde puedes descargar el PDF o el CSV cuando quieras.
         </p>
+      )}
+
+      {confirmarCierre && (
+        <CierreMesConfirmDialog
+          mes={formatPeriodoMes(periodo?.mes)}
+          cuentas={confirmarCierre.rows.length}
+          diferencias={confirmarCierre.diferencias}
+          pending={pending}
+          onClose={() => setConfirmarCierre(null)}
+          onConfirm={ejecutarCierre}
+        />
       )}
 
       {wizardOpen && (
