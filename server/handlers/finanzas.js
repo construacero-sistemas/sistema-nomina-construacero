@@ -15,7 +15,7 @@ import {
 } from '../lib/finanzasUtils.js'
 
 const MOVEMENT_SELECT = [
-  'id', 'fecha', 'tipo', 'categoria', 'concepto', 'monto', 'moneda',
+  'id', 'numero', 'fecha', 'tipo', 'categoria', 'concepto', 'monto', 'moneda',
   'tasa_ves', 'monto_ves', 'fuente_tasa', 'observacion_tasa',
   'referencia', 'observaciones', 'estado', 'creado_en', 'anulado_en',
   'motivo_anulacion', 'metodo_pago', 'cuenta_origen', 'partes',

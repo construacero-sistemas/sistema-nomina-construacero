@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import PeriodoMensualFinanzas from '../PeriodoMensualFinanzas.jsx'
@@ -43,13 +43,13 @@ afterEach(cleanup)
 describe('PeriodoMensualFinanzas — aviso y apertura guiada', () => {
   it('muestra el aviso pre-apertura y bloquea el wizard sin tasas confirmadas', () => {
     renderPanel({ rates: { ...rates, usd: 0 } })
-    expect(screen.getByRole('status')).toHaveTextContent(/no está aperturado/i)
-    expect(screen.getByRole('button', { name: /Iniciar apertura guiada/ })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent(/todavía no está abierto/i)
+    expect(screen.getByRole('button', { name: /Abrir Octubre 2026/ })).toBeDisabled()
   })
 
   it('el wizard congela las tasas y envía el saldo físico de cada cuenta', async () => {
     const { onOpen, onRefresh } = renderPanel()
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     // Sin paso de tasas: el wizard abre directo en cuentas y saldos (paso 1 de 2).
     expect(screen.getByText(/Cuentas y saldos/)).toBeInTheDocument()
     expect(screen.queryByText(/^1\. Tasas$/)).not.toBeInTheDocument()
@@ -83,7 +83,7 @@ describe('PeriodoMensualFinanzas — aviso y apertura guiada', () => {
 
   it('normaliza la coma decimal del conteo físico', () => {
     renderPanel()
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     const saldoInput = screen.getByLabelText(/Saldo nuevo/)
     fireEvent.change(saldoInput, { target: { value: '1,5' } })
     expect(saldoInput).toHaveValue('1.5')
@@ -93,7 +93,7 @@ describe('PeriodoMensualFinanzas — aviso y apertura guiada', () => {
   it('reutiliza la clave de idempotencia entre reintentos de la apertura', async () => {
     const { onOpen, onRefresh } = renderPanel()
     onOpen.mockRejectedValueOnce(new Error('Fallo de red transitorio'))
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '250' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
@@ -111,7 +111,7 @@ describe('PeriodoMensualFinanzas — tasa principal elegida en la cabecera', () 
   it('muestra la tasa principal con su nombre y congela esa misma tasa en la apertura', async () => {
     const elegida = { usd: 880.12, usdt: 996.7, principal: 1100.5, nombrePrincipal: 'Tasa Manual', unidadPrincipal: 'USD', tasaFallback: null, source: 'BCV', lastUpdate: '2026-10-16', stale: false }
     const { onOpen } = renderPanel({ rates: elegida })
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '250' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     expect(screen.getByText(/Tasa congelada \(Tasa Manual\)/)).toBeInTheDocument()
@@ -125,7 +125,7 @@ describe('PeriodoMensualFinanzas — tasa principal elegida en la cabecera', () 
   it('usa la unidad de la tasa principal en la revisión (VES/EUR con BCV €)', () => {
     const eur = { ...rates, principal: 1050, nombrePrincipal: 'BCV Euro (€)', unidadPrincipal: 'EUR' }
     renderPanel({ rates: eur })
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '100' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     expect(screen.getByText(/1\.050,00 VES\/EUR/)).toBeInTheDocument()
@@ -144,7 +144,7 @@ describe('PeriodoMensualFinanzas — saldo anterior sin cierre previo', () => {
 
   it('muestra el saldo del libro al inicio del mes en vez de "No disponible"', () => {
     renderPanel(conActividad)
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     expect(screen.getByText(/Saldo anterior: 750,00 USD \(saldo del libro\)/)).toBeInTheDocument()
     expect(screen.queryByText(/No disponible/)).not.toBeInTheDocument()
   })
@@ -152,7 +152,7 @@ describe('PeriodoMensualFinanzas — saldo anterior sin cierre previo', () => {
   it('ofrece heredar el saldo del libro solo cuando es no negativo y lo guarda como conteo', async () => {
     const user = userEvent.setup()
     const { onOpen } = renderPanel(conActividad)
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     // Saldo del libro 750 (1000 - 250): la opción debe existir como fuente.
     await user.click(screen.getByRole('combobox', { name: /Saldo de apertura de Caja USD/ }))
     await user.click(screen.getByRole('option', { name: /Usar el saldo del libro/ }))
@@ -168,14 +168,14 @@ describe('PeriodoMensualFinanzas — saldo anterior sin cierre previo', () => {
     const user = userEvent.setup()
     const negativo = { periodo: { ...conActividad.periodo, cuentas: [wallet({ saldoHistorico: '100.000000', movimientosMes: '250.000000' })] } }
     renderPanel(negativo)
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     await user.click(screen.getByRole('combobox', { name: /Saldo de apertura de Caja USD/ }))
     expect(screen.queryByRole('option', { name: /Usar el saldo del libro/ })).not.toBeInTheDocument()
   })
 
   it('la revisión muestra la apertura neta de los movimientos del mes', async () => {
     const { onOpen } = renderPanel(conActividad)
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '1000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     expect(screen.getByText(/Caja USD: 750,00 USD/)).toBeInTheDocument()
@@ -194,7 +194,7 @@ describe('PeriodoMensualFinanzas — saldo anterior sin cierre previo', () => {
       },
     }
     const { onOpen } = renderPanel(sinMovimientos)
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '0' } })
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
     fireEvent.click(screen.getByRole('button', { name: /Confirmar apertura/ }))
@@ -205,7 +205,7 @@ describe('PeriodoMensualFinanzas — saldo anterior sin cierre previo', () => {
 
   it('el descubierto (apertura en negativo) no bloquea y exige motivo', async () => {
     const { onOpen } = renderPanel(conActividad)
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     // Con 250 de movimientos en el mes, un conteo de 100 deja la apertura en -150.
     fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '100' } })
     expect(screen.getByText(/Descubierto/)).toBeInTheDocument()
@@ -238,7 +238,7 @@ describe('PeriodoMensualFinanzas — motivo frente al cierre anterior', () => {
   it('exige motivo cuando la apertura difiere del cierre anterior', async () => {
     const user = userEvent.setup()
     const { onOpen } = renderPanel(conCierre)
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     await user.click(screen.getByRole('combobox', { name: /Saldo de apertura de Caja USD/ }))
     await user.click(screen.getByRole('option', { name: 'Ingresar un saldo nuevo' }))
     fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '900' } })
@@ -259,7 +259,7 @@ describe('PeriodoMensualFinanzas — motivo frente al cierre anterior', () => {
   it('permite aperturar por debajo del cierre anterior con motivo (faltante documentado)', async () => {
     const user = userEvent.setup()
     const { onOpen } = renderPanel(conCierre)
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     await user.click(screen.getByRole('combobox', { name: /Saldo de apertura de Caja USD/ }))
     await user.click(screen.getByRole('option', { name: 'Ingresar un saldo nuevo' }))
     fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '500' } })
@@ -277,7 +277,7 @@ describe('PeriodoMensualFinanzas — conteo vacío no es cero', () => {
   it('no deja avanzar ni confirmar con un conteo vacío y no inventa saldos', () => {
     const { onOpen } = renderPanel()
 
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     // Sin escribir el conteo, "Siguiente" debe estar bloqueado.
     expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
     expect(onOpen).not.toHaveBeenCalled()
@@ -286,7 +286,7 @@ describe('PeriodoMensualFinanzas — conteo vacío no es cero', () => {
   it('la revisión marca la cuenta sin conteo en vez de mostrar 0,00 y bloquea confirmar', async () => {
     const user = userEvent.setup()
     const { onOpen } = renderPanel({ periodo: { mes: '2026-10-01', estado: 'sin_apertura', cuentasPendientes: [], cierreAnterior: [], cuentas: [wallet({ saldoHistorico: '0', movimientosMes: '0' })] } })
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     // Forzar una fila sin conteo: cambiar a conteo físico deja el campo vacío.
     await user.click(screen.getByRole('combobox', { name: /Saldo de apertura de Caja USD/ }))
     await user.click(screen.getByRole('option', { name: 'Ingresar un saldo nuevo' }))
@@ -298,7 +298,7 @@ describe('PeriodoMensualFinanzas — conteo vacío no es cero', () => {
 describe('PeriodoMensualWizardModal — validación no intrusiva del conteo', () => {
   it('no marca en rojo los campos intactos; el error aparece al salir del campo', () => {
     renderPanel()
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     const saldoInput = screen.getByLabelText(/Saldo nuevo/)
     // Nada de errores antes de interactuar: el aviso vive en el pie del wizard.
     expect(screen.queryByText(/Ingresa el saldo nuevo/)).not.toBeInTheDocument()
@@ -310,7 +310,7 @@ describe('PeriodoMensualWizardModal — validación no intrusiva del conteo', ()
 
   it('el placeholder orienta el formato del conteo en vez de parecer un valor', () => {
     renderPanel()
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     expect(screen.getByPlaceholderText('Ej.: 1.500,00')).toBeInTheDocument()
     expect(screen.queryByPlaceholderText('0.00')).not.toBeInTheDocument()
   })
@@ -324,7 +324,7 @@ describe('PeriodoMensualWizardModal — motivo opcional con mínimo', () => {
         cuentas: [wallet({ saldoHistorico: '300.000000', movimientosMes: '0' })],
       },
     })
-    fireEvent.click(screen.getByRole('button', { name: /Iniciar apertura guiada/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Abrir Octubre 2026/ }))
     fireEvent.change(screen.getByLabelText(/Saldo nuevo/), { target: { value: '0' } })
     // Sin cierre previo el origen es el saldo del libro, y el banner lo dice.
     expect(screen.getByText(/frente al saldo del libro \(300,00 USD\)/)).toBeInTheDocument()
@@ -362,82 +362,116 @@ describe('PeriodoMensualFinanzas — ventana real de cierre', () => {
         cuentas: [wallet({ saldoApertura: 100, saldoAperturaUsd: 100, saldoCalculado: 120, metodoApertura: 'saldo_real' })],
       },
     })
-    expect(screen.queryByRole('button', { name: /Cerrar mes/ })).not.toBeInTheDocument()
-    expect(screen.queryByText(/Conteo físico de cierre/)).not.toBeInTheDocument()
-    expect(screen.getByText(/se habilita el primer día del mes siguiente/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Empezar cierre/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/el cierre se habilita el primer día de Noviembre 2026/)).toBeInTheDocument()
   })
 
   it('con cierre pendiente se ofrece cerrar el mes anterior y se explica la ventana', () => {
     renderPanel(periodoAbierto)
-    expect(screen.getByRole('button', { name: /Cerrar mes/ })).toBeInTheDocument()
-    expect(screen.getByText(/Cierre pendiente de Septiembre 2026/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Empezar cierre/ })).toBeInTheDocument()
+    expect(screen.getByText(/Septiembre 2026 está listo para cerrar/)).toBeInTheDocument()
   })
 })
 
-describe('PeriodoMensualFinanzas — cierre con diferencias', () => {
+describe('PeriodoMensualFinanzas — asistente de cierre en 3 pasos', () => {
   const periodoAbierto = {
     cierrePendiente: true,
     periodo: {
       mes: '2026-09-01', estado: 'abierto', cuentasPendientes: [], cierreAnterior: [],
-      cuentas: [wallet({ saldoApertura: 100, saldoAperturaUsd: 100, saldoCalculado: 120, metodoApertura: 'saldo_real' })],
+      cuentas: [wallet({ saldoApertura: 100, saldoAperturaUsd: 100, saldoCalculado: 120, movimientosMes: 20, metodoApertura: 'saldo_real' })],
     },
   }
+  const empezar = () => fireEvent.click(screen.getByRole('button', { name: /Empezar cierre/ }))
 
-  it('sin motivo exige justificación y no confirma el cierre', () => {
+  it('el conteo empieza vacío: no se puede avanzar sin una acción en cada cuenta', () => {
     const { onClose } = renderPanel(periodoAbierto)
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '130' } })
-    fireEvent.click(screen.getByRole('button', { name: /Cerrar mes/ }))
-    expect(screen.getByRole('status')).toHaveTextContent(/Justifica con al menos 8 caracteres/)
+    empezar()
+    expect(screen.getByLabelText('Saldo contado de Caja USD')).toHaveValue('')
+    expect(screen.getByText('0 de 1 cuenta(s) listas')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('"Revisar de nuevo" cancela el cierre sin enviar nada', () => {
-    const { onClose } = renderPanel(periodoAbierto)
-    fireEvent.click(screen.getByRole('button', { name: /Cerrar mes/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Revisar de nuevo' }))
-    expect(screen.queryByRole('button', { name: 'Sí, cerrar mes' })).not.toBeInTheDocument()
-    expect(onClose).not.toHaveBeenCalled()
-  })
-
-  it('con motivo documentado congela el saldo contado y confirma', async () => {
+  it('"Coincide" copia el saldo del sistema y cierra sin diferencias tras revisar', async () => {
     const { onClose, onRefresh } = renderPanel(periodoAbierto)
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '130' } })
-    fireEvent.change(screen.getByLabelText(/Motivo de diferencia/), { target: { value: 'Conteo físico documentado' } })
-    fireEvent.click(screen.getByRole('button', { name: /Cerrar mes/ }))
-    // El cierre es irreversible salvo reabrir: no se envía hasta confirmar el diálogo.
+    empezar()
+    fireEvent.click(screen.getByRole('button', { name: 'Coincide' }))
+    expect(screen.getByLabelText('Saldo contado de Caja USD')).toHaveValue('120')
+    expect(screen.queryByLabelText(/Motivo de la diferencia/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    // Revisión: con cuánto empezó, los movimientos y con cuánto cierra; nada se envía todavía.
+    expect(within(screen.getByRole('dialog')).getByText('Empezó con')).toBeInTheDocument()
+    expect(screen.getByText(/ya no se podrán crear, editar ni anular/)).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
-    expect(screen.getByText(/solo lectura/)).toBeInTheDocument()
-    expect(screen.getByText(/Diferencias contra el saldo calculado/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Sí, cerrar mes' }))
+    fireEvent.click(screen.getByRole('button', { name: /Cerrar Septiembre 2026/ }))
     await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
     const call = onClose.mock.calls[0][0]
-    expect(call.accion).toBe('cerrar')
-    expect(call.mesInicio).toBe('2026-09-01')
+    expect(call).toMatchObject({ accion: 'cerrar', mesInicio: '2026-09-01' })
     expect(call.payload.cuentas).toEqual([
-      { cuentaCustodiaId: 'wallet-1', saldoReal: 130, motivo: 'Conteo físico documentado', tasaUsdVes: '410', tasaUsdtVes: '450' },
+      { cuentaCustodiaId: 'wallet-1', saldoReal: 120, motivo: null, tasaUsdVes: '410', tasaUsdtVes: '450' },
     ])
-    await vi.waitFor(() => expect(onRefresh).toHaveBeenCalled())
+    await vi.waitFor(() => expect(screen.getByText('Septiembre 2026 cerrado')).toBeInTheDocument())
+    expect(onRefresh).toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /Descargar PDF del cierre/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Abrir Octubre 2026' })).toBeInTheDocument()
   })
 
-  it('el conteo vacío en el cierre no se convierte en cero', () => {
+  it('una diferencia pide el motivo en el momento y lo exige (mín. 8 caracteres)', async () => {
     const { onClose } = renderPanel(periodoAbierto)
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '' } })
-    fireEvent.click(screen.getByRole('button', { name: /Cerrar mes/ }))
-    expect(screen.getByRole('status')).toHaveTextContent(/un campo vacío no es cero/)
-    expect(onClose).not.toHaveBeenCalled()
-  })
-
-  it('el cierre permite contado por debajo del libro con motivo (faltante documentado)', async () => {
-    const { onClose } = renderPanel(periodoAbierto)
-    fireEvent.change(screen.getByLabelText(/Saldo contado/), { target: { value: '100' } })
-    fireEvent.change(screen.getByLabelText(/Motivo de diferencia/), { target: { value: 'Merma documentada en acta' } })
-    fireEvent.click(screen.getByRole('button', { name: /Cerrar mes/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Sí, cerrar mes' }))
-    // Regla simple 254: el faltante de cierre se registra con su motivo.
+    empezar()
+    fireEvent.change(screen.getByLabelText('Saldo contado de Caja USD'), { target: { value: '100' } })
+    expect(screen.getByText(/Diferencia: -20,00 USD/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Motivo de la diferencia de Caja USD'), { target: { value: 'corto' } })
+    expect(screen.getByText(/al menos 8 caracteres/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Motivo de la diferencia de Caja USD'), { target: { value: 'Merma documentada en acta' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    fireEvent.click(screen.getByRole('button', { name: /Cerrar Septiembre 2026/ }))
     await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
-    expect(onClose.mock.calls[0][0].payload.cuentas).toEqual([
-      { cuentaCustodiaId: 'wallet-1', saldoReal: 100, motivo: 'Merma documentada en acta', tasaUsdVes: '410', tasaUsdtVes: '450' },
-    ])
+    expect(onClose.mock.calls[0][0].payload.cuentas[0]).toMatchObject({ saldoReal: 100, motivo: 'Merma documentada en acta' })
+  })
+
+  it('"Cancelar" no envía nada y un fallo conserva la clave para reintentar', async () => {
+    const { onClose } = renderPanel(periodoAbierto)
+    empezar()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByRole('button', { name: 'Coincide' })).not.toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+
+    onClose.mockRejectedValueOnce(new Error('Fallo de red transitorio'))
+    empezar()
+    fireEvent.click(screen.getByRole('button', { name: 'Coincide' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }))
+    fireEvent.click(screen.getByRole('button', { name: /Cerrar Septiembre 2026/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Fallo de red transitorio/)
+    fireEvent.click(screen.getByRole('button', { name: /Cerrar Septiembre 2026/ }))
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(2))
+    expect(onClose.mock.calls[1][0].idempotencyKey).toBe(onClose.mock.calls[0][0].idempotencyKey)
+  })
+
+  it('sin tasas del día explica por qué no se puede cerrar', () => {
+    renderPanel({ ...periodoAbierto, rates: { ...rates, usd: 0 } })
+    expect(screen.getByText(/Falta la tasa del día/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Empezar cierre/ })).toBeDisabled()
+  })
+
+  it('muestra el equivalente a la tasa del día: Bs en dólares y dólares en Bs', () => {
+    renderPanel({
+      cierrePendiente: true,
+      periodo: {
+        mes: '2026-09-01', estado: 'abierto', cuentasPendientes: [], cierreAnterior: [],
+        cuentas: [
+          wallet({ nombre: 'Cuenta Bs', moneda: 'VES', saldoApertura: 0, saldoCalculado: 82000 }),
+          wallet({ cuentaCustodiaId: 'wallet-2', nombre: 'Caja $', moneda: 'USD', saldoApertura: 0, saldoCalculado: 10 }),
+        ],
+      },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Empezar cierre/ }))
+    const dialogo = within(screen.getByRole('dialog'))
+    // 82.000 Bs ÷ 410 = $200; 10 USD × 410 = 4.100 Bs.
+    expect(dialogo.getByText(/≈ \$200,00 USD/)).toBeInTheDocument()
+    expect(dialogo.getByText(/≈ 4\.100,00 Bs/)).toBeInTheDocument()
   })
 })
 
@@ -450,68 +484,46 @@ describe('PeriodoMensualFinanzas — tabla de control mensual', () => {
       },
     })
     expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['Cuenta', 'Moneda'])
-    expect(screen.getByText(/Al abrir el mes verás aquí el saldo de apertura/)).toBeInTheDocument()
+    expect(screen.getByText(/Al abrir el mes verás aquí con cuánto empezó/)).toBeInTheDocument()
   })
 
-  it('muestra la valoración USD y la diferencia de cierre como sub-líneas, no como columnas', () => {
-    renderPanel({
-      periodo: {
-        mes: '2026-09-01', estado: 'cerrado', cuentasPendientes: [], cierreAnterior: [],
-        cuentas: [wallet({ nombre: 'Caja Bs', moneda: 'VES', saldoApertura: 5000, saldoAperturaUsd: 100, saldoCalculado: 5200, diferenciaCierre: 200 })],
-      },
-    })
+  const cerrado = cuentas => ({ periodo: { mes: '2026-09-01', estado: 'cerrado', cuentasPendientes: [], cierreAnterior: [], cuentas } })
+
+  it('encabezados claros y la diferencia de cierre como sub-línea', () => {
+    renderPanel(cerrado([wallet({ nombre: 'Caja Bs', moneda: 'VES', saldoApertura: 5000, saldoAperturaUsd: 100, saldoCalculado: 5200, diferenciaCierre: 200 })]))
     expect(screen.getAllByRole('columnheader').map(cell => cell.textContent)).toEqual([
-      'Cuenta', 'Moneda', 'Saldo de apertura', 'Saldo calculado',
+      'Cuenta', 'Moneda', 'Al empezar el mes', 'Ahora (según movimientos)',
     ])
-    expect(screen.getAllByText(/USD congelado/).length).toBeGreaterThan(0)
-    expect(screen.getByText(/Diferencia de cierre: 200,00 VES/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Diferencia al cerrar: 200,00 VES/).length).toBe(2)
   })
 
-  it('no repite la valoración USD de una cuenta que ya está en USD', () => {
-    renderPanel({
-      periodo: {
-        mes: '2026-09-01', estado: 'cerrado', cuentasPendientes: [], cierreAnterior: [],
-        cuentas: [wallet({ saldoApertura: 100, saldoAperturaUsd: 100, saldoCalculado: 120, diferenciaCierre: 0 })],
-      },
-    })
-    expect(screen.queryByText(/USD congelado/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/USD hoy/)).not.toBeInTheDocument()
-    expect(screen.getByText(/Diferencia de cierre: 0,00 USD/)).toBeInTheDocument()
+  it('una sola línea de equivalente: al empezar usa el dólar fijado ese día; ahora, la tasa de hoy', () => {
+    renderPanel(cerrado([wallet({ nombre: 'Caja Bs', moneda: 'VES', saldoApertura: 8200, saldoAperturaUsd: 100, saldoCalculado: 8200 })]))
+    // Al empezar: $100 fijado (no se recalcula). Ahora: 8.200 ÷ 410 = $20.
+    expect(screen.getAllByText('≈ $100,00').length).toBe(2)
+    expect(screen.getAllByText('≈ $20,00').length).toBe(2)
+    expect(screen.queryByText(/USD hoy|al abrir/)).not.toBeInTheDocument()
   })
 
-  it('muestra el valor a tasa de hoy sin reescribir el USD congelado', () => {
-    renderPanel({
-      periodo: {
-        mes: '2026-09-01', estado: 'cerrado', cuentasPendientes: [], cierreAnterior: [],
-        cuentas: [wallet({ nombre: 'Caja Bs', moneda: 'VES', saldoApertura: 8200, saldoAperturaUsd: 100, saldoCalculado: 8200 })],
-      },
-    })
-    // 8.200 VES ÷ 410 (tasa vigente) = 20 USD hoy; el congelado (100) no se toca.
-    expect(screen.getAllByText(/100,00 USD congelado/).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/20,00 USD hoy/).length).toBeGreaterThan(0)
+  it('las cuentas en dólares muestran su equivalente en Bs', () => {
+    renderPanel(cerrado([wallet({ saldoApertura: 100, saldoAperturaUsd: 100, saldoCalculado: 120, diferenciaCierre: 0 })]))
+    // 120 USD × 410 = 49.200 Bs.
+    expect(screen.getAllByText('≈ 49.200,00 Bs').length).toBe(2)
+    expect(screen.getAllByText(/Diferencia al cerrar: 0,00 USD/).length).toBe(2)
   })
 
   it('valora el USDT de hoy con la tasa USDT/VES relativa', () => {
-    renderPanel({
-      rates: { ...rates, usd: 400, usdt: 440 },
-      periodo: {
-        mes: '2026-09-01', estado: 'cerrado', cuentasPendientes: [], cierreAnterior: [],
-        cuentas: [wallet({ nombre: 'Gaby3737', moneda: 'USDT', saldoApertura: 100, saldoAperturaUsd: 90, saldoCalculado: 100 })],
-      },
-    })
-    // 100 USDT × 440 (USDT/VES) ÷ 400 (USD/VES) = 110 USD hoy.
-    expect(screen.getAllByText(/110,00 USD hoy/).length).toBeGreaterThan(0)
+    renderPanel({ ...cerrado([wallet({ nombre: 'Gaby3737', moneda: 'USDT', saldoApertura: 100, saldoAperturaUsd: 90, saldoCalculado: 100 })]), rates: { ...rates, usd: 400, usdt: 440 } })
+    // 100 USDT × 440 ÷ 400 = $110.
+    expect(screen.getAllByText('≈ $110,00').length).toBe(2)
   })
 
-  it('sin tasa vigente no inventa la valoración de hoy', () => {
-    renderPanel({
-      rates: { ...rates, usd: 0 },
-      periodo: {
-        mes: '2026-09-01', estado: 'cerrado', cuentasPendientes: [], cierreAnterior: [],
-        cuentas: [wallet({ nombre: 'Caja Bs', moneda: 'VES', saldoApertura: 8200, saldoAperturaUsd: 100, saldoCalculado: 8200 })],
-      },
-    })
-    expect(screen.getAllByText(/USD congelado/).length).toBeGreaterThan(0)
-    expect(screen.queryByText(/USD hoy/)).not.toBeInTheDocument()
+  it('con saldo 0 no muestra equivalentes, y sin tasa no inventa el de hoy', () => {
+    renderPanel(cerrado([wallet({ nombre: 'Vacía', moneda: 'VES', saldoApertura: 0, saldoAperturaUsd: 0, saldoCalculado: 0 })]))
+    expect(screen.queryByText(/≈/)).not.toBeInTheDocument()
+    cleanup()
+    renderPanel({ ...cerrado([wallet({ nombre: 'Caja Bs', moneda: 'VES', saldoApertura: 8200, saldoAperturaUsd: 100, saldoCalculado: 8200 })]), rates: { ...rates, usd: 0 } })
+    expect(screen.getAllByText('≈ $100,00').length).toBe(2)
+    expect(screen.getAllByText(/≈/).length).toBe(2)
   })
 })

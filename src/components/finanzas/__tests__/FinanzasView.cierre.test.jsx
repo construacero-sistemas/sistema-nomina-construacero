@@ -84,18 +84,17 @@ describe('FinanzasView — ventana de cierre mensual', () => {
     renderView()
     fireEvent.click(screen.getByRole('button', { name: /Tesorería/ }))
     // El panel gira al mes con cierre pendiente: el servidor solo cierra el mes anterior.
-    expect(screen.getByText(`(${periodos.previoKey})`)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Cerrar mes/ })).toBeInTheDocument()
-    expect(screen.getByText(/Cierre pendiente de/)).toBeInTheDocument()
+    expect(screen.getByText(/está listo para cerrar/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Empezar cierre/ })).toBeInTheDocument()
   })
 
   it('sin cierre pendiente muestra el mes corriente y no ofrece cerrarlo', () => {
     periodos.actual = { mes: monthStart(), estado: 'abierto', cuentas: [walletRow()] }
     renderView()
     fireEvent.click(screen.getByRole('button', { name: /Tesorería/ }))
-    expect(screen.getByText(`(${monthStart()})`)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Cerrar mes/ })).not.toBeInTheDocument()
-    expect(screen.getByText(/se habilita el primer día del mes siguiente/)).toBeInTheDocument()
+    expect(screen.getByText(/está abierto\./)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Empezar cierre/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/el cierre se habilita el primer día de/)).toBeInTheDocument()
   })
 
   it('con el cierre pendiente avisa desde Movimientos y lleva a cerrarlo', () => {
@@ -104,7 +103,7 @@ describe('FinanzasView — ventana de cierre mensual', () => {
     expect(screen.getByText(/Ya toca cerrar/)).toBeInTheDocument()
     expect(screen.getByLabelText('Cierre pendiente')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Ir a cerrar el mes' }))
-    expect(screen.getByRole('button', { name: /Cerrar mes/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Empezar cierre/ })).toBeInTheDocument()
     expect(screen.queryByText(/Ya toca cerrar/)).not.toBeInTheDocument()
   })
 

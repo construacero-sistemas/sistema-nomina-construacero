@@ -105,6 +105,10 @@ export function normalizeMovement(input = {}) {
     throw new RangeError('concepto (motivo) obligatorio: mínimo 3 caracteres, máximo 180')
   }
   if (!isValidIsoDate(fecha)) throw new RangeError('fecha inválida')
+  // Hoy en Caracas (como la base, migración 260): se puede registrar el pasado, nunca el futuro.
+  if (fecha > new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())) {
+    throw new RangeError('la fecha no puede ser futura: el máximo es hoy')
+  }
   if (!Number.isFinite(monto) || monto <= 0 || monto > MAX_AMOUNT) throw new RangeError('monto inválido')
   if (!Number.isFinite(tasaVes) || tasaVes <= 0 || tasaVes > MAX_RATE) throw new RangeError('tasa VES inválida')
   if (tasaUsdVes != null && (!Number.isFinite(tasaUsdVes) || tasaUsdVes <= 0 || tasaUsdVes > MAX_RATE)) {
@@ -282,6 +286,7 @@ export function movementResponse(row) {
   if (!row) return null
   return {
     id: row.id,
+    numero: row.numero == null ? null : Number(row.numero),
     fecha: row.fecha,
     tipo: row.tipo,
     categoria: row.categoria,

@@ -246,7 +246,7 @@ function DesktopRow({ item, onAnular, onRevertir, onEditar, tasaBcv, tasaUsdt })
       <td className="px-4 py-3 max-w-[280px]">
         <p className="truncate font-bold text-slate-800">{capitalizarPalabras(item.concepto)}</p>
         <p className="truncate text-[11px] text-slate-400">
-          {capitalizarPalabras(item.categoria)}
+          {item.numero ? `N.º ${item.numero} · ` : ''}{capitalizarPalabras(item.categoria)}
           {item.referencia ? ` · ${item.referencia}` : ''}
         </p>
       </td>
@@ -310,7 +310,7 @@ function MobileRow({ item, onAnular, onRevertir, onEditar, tasaBcv, tasaUsdt }) 
         <div className="min-w-0 flex-1">
           <p className="font-bold text-slate-800 text-sm leading-snug">{capitalizarPalabras(item.concepto)}</p>
           <p className="mt-0.5 text-xs text-slate-500">
-            {capitalizarPalabras(item.categoria)} · {date(item.fecha)}
+            {item.numero ? `N.º ${item.numero} · ` : ''}{capitalizarPalabras(item.categoria)} · {date(item.fecha)}
           </p>
         </div>
         <TypeBadge type={item.tipo} />

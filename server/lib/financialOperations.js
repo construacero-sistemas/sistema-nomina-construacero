@@ -102,6 +102,7 @@ export function normalizeFinancialOperation(tipo, body) {
 // Mensajes claros para las reglas del libro mensual (migraciones 253/254/258): la base
 // responde en inglés técnico; el usuario necesita saber qué hacer.
 const REGLAS_MENSUALES = [
+  [/Movement date cannot be in the future/i, 400, 'La fecha no puede ser futura: el máximo es hoy.'],
   [/Closed monthly ledger is immutable/i, 409, 'Ese mes ya está cerrado: sus movimientos no se pueden crear, anular ni modificar. Si fue un error, el jefe puede reabrir el mes anterior desde el historial de cierres.'],
   [/Wallet must be opened before recording monthly movements/i, 409, 'Esa cuenta aún no tiene apertura en el mes. Abre el mes o da de alta la cuenta antes de registrar movimientos.'],
   [/Previous month must be closed first/i, 409, 'Cierra primero el mes anterior para poder abrir este.'],

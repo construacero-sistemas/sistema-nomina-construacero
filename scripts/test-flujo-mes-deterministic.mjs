@@ -131,6 +131,21 @@ try {
     assert.equal(await saldoHistorico(cajaUsd), 400)
   })
 
+  // ─── F3b. Cierre pendiente: el saldo de hoy incluye la apertura del mes anterior (261) ─
+  await check('F3b. Con el mes anterior abierto, el saldo de hoy es su apertura + movimientos, no solo movimientos', async () => {
+    const hoy = octDia('31')
+    // Caja USD: 500 de apertura + 400 netos del mes anterior (el libro solo suma 400).
+    assert.equal(await saldoPeriodo(cajaUsd, hoy), 900)
+    const saldos = (await one('SELECT finanzas_saldos($1) AS value', [tenant])).value
+    const caja = saldos.cuentas.find(c => c.cuentaCustodiaId === cajaUsd)
+    assert.equal(Number(caja.saldoNativo), 900)
+    assert.equal(Number(caja.valorUsd), 900)
+    // Cuenta Venezuela: 82.000 de apertura + 41.000 del mes, como muestra el cierre mensual.
+    const banco = saldos.cuentas.find(c => c.cuentaCustodiaId === bancoVes)
+    assert.equal(Number(banco.saldoNativo), 123000)
+    assert.equal(Number((await monthlyState(months.previous)).cuentas.find(c => c.cuentaCustodiaId === bancoVes).saldoCalculado), 123000)
+  })
+
   // ─── F4. Mes 1: los guardarraíles del libro en el día a día ─────────────────
   await check('F4. Duplicados, fondos y claves: bloquean lo dudoso sin trabar lo válido', async () => {
     // Duplicado exacto (misma factura): bloqueado.

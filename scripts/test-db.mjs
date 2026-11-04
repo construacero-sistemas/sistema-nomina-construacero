@@ -932,6 +932,33 @@ try {
     await db.query('DROP TABLE public.nomina_pagos')
   })
 
+  await check('259: cada movimiento tiene un número correlativo único, creciente e inmutable', async () => {
+    const filas = (await db.query('SELECT id,numero::int AS numero FROM finanzas_movimientos ORDER BY creado_en,numero')).rows
+    assert.ok(filas.length > 5, 'las pruebas anteriores dejaron movimientos')
+    assert.ok(filas.every(f => Number.isInteger(f.numero) && f.numero > 0))
+    assert.equal(new Set(filas.map(f => f.numero)).size, filas.length, 'sin números repetidos')
+    assert.ok(filas.every((f, i) => i === 0 || f.numero > filas[i - 1].numero), 'crece en orden de registro')
+    await rejects('PT409', () => db.query('UPDATE finanzas_movimientos SET numero=numero+1000 WHERE id=$1', [filas[0].id]))
+    const pagina = await one("SELECT public.finanzas_movimientos_pagina(m.cuenta_id,m.fecha,m.fecha) AS r FROM (SELECT cuenta_id,fecha FROM finanzas_movimientos WHERE estado='activo' LIMIT 1) m")
+    assert.ok(pagina.r.movimientos.length > 0 && pagina.r.movimientos.every(m => Number.isInteger(m.numero)), 'la lista paginada incluye el número')
+  })
+
+  await check('260: no se registran movimientos con fecha futura; hoy y el pasado sí', async () => {
+    const { cuenta_id: cuenta } = await one('SELECT cuenta_id FROM finanzas_movimientos LIMIT 1')
+    const hoy = (await one("SELECT (now() AT TIME ZONE 'America/Caracas')::date::text AS d")).d
+    const insertar = (fecha, clave) => db.query(
+      `INSERT INTO finanzas_movimientos(cuenta_id,fecha,tipo,categoria,concepto,monto,moneda,tasa_ves,fuente_tasa,idempotency_key)
+       VALUES($1,$2::date,'ingreso','PRUEBA','fecha',1,'USD',1,'BCV',$3)`, [cuenta, fecha, clave])
+    const manana = (await one("SELECT ((now() AT TIME ZONE 'America/Caracas')::date + 1)::text AS d")).d
+    await rejects('PT400', () => insertar(manana, 'prueba-futura-0000001'))
+    await insertar(hoy, 'prueba-hoy-00000001')
+    await insertar('2020-01-15', 'prueba-pasada-00001')
+    // Cambiar la fecha de uno existente a una futura también se rechaza.
+    await rejects('PT400', () => db.query("UPDATE finanzas_movimientos SET fecha=$1::date WHERE idempotency_key='prueba-hoy-00000001'", [manana]))
+    // Anular uno existente no se bloquea por la regla de fechas.
+    await db.query("UPDATE finanzas_movimientos SET estado='anulado',anulado_en=now(),motivo_anulacion='prueba' WHERE idempotency_key='prueba-hoy-00000001'")
+  })
+
   result.passed = true
   console.log(`[test:db] ${result.checks.length} comprobaciones aprobadas; ${result.migrations.length} migraciones.`)
   console.log(`[test:db] Paridad capacidad × rol: ${mediciones.length} superficies medidas, ${result.paridad.sobrePrivilegios.length} privilegios de más, ${result.paridad.brechas.length} brechas pendientes.`)

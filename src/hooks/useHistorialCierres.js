@@ -31,6 +31,16 @@ export async function cargarMovimientosCierre(mes) {
   return payload.movimientos || []
 }
 
+// Un cierre concreto (YYYY-MM-01) del historial; lo usa el asistente para ofrecer el PDF al terminar.
+export async function cargarCierre(mes) {
+  const response = await authFetch(`/api/finanzas/periodos-mensuales/historial?${new URLSearchParams({ meses: 3 })}`)
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || `Error ${response.status}`)
+  const cierre = (payload.cierres || []).find(item => item.mes === mes)
+  if (!cierre) throw new Error('El cierre todavía no aparece en el historial. Descárgalo desde "Historial de cierres".')
+  return cierre
+}
+
 // Reabre el último mes cerrado (cierre hecho por error). Exige motivo; solo jefe.
 export function useReabrirCierre() {
   const client = useQueryClient()

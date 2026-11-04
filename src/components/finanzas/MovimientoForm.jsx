@@ -213,6 +213,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose,
 
   function validate() {
     if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return 'Selecciona una fecha válida.'
+    if (fecha > today()) return 'La fecha no puede ser futura: el máximo es hoy.'
     if (!categoria) return 'Selecciona una categoría.'
     // El motivo es la trazabilidad del movimiento: sin él no se puede saber
     // al final de mes de dónde vienen los ingresos y los egresos.
@@ -437,7 +438,7 @@ export default function MovimientoForm({ categorias = [], cuentas = [], onClose,
         {/* 3. Fecha y Categoría */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Fecha del movimiento *">
-            <DatePicker value={fecha} onChange={setFecha} disabled={disabled} />
+            <DatePicker value={fecha} onChange={setFecha} disabled={disabled} max={today()} />
           </Field>
 
           <Field label="Categoría *">

@@ -369,7 +369,7 @@ async function generarFinanzasResumenPDFImpl({
         const mUsd = calcMontoUsd(m)
         const mVes = calcMontoVes(m)
 
-        const conceptoStr = capitalizarPalabras(String(m.concepto || '—'))
+        const conceptoStr = `${m.numero ? `N.º ${m.numero} · ` : ''}${capitalizarPalabras(String(m.concepto || '—'))}`
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(6.5)
         const maxConceptoW = cols[2].w - 3 // 70 - 3 = 67 mm
