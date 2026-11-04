@@ -157,7 +157,7 @@ export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false })
             style={{ touchAction: 'manipulation' }}
             className={`flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-black transition-all ${seleccionado ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}>
             <Icon size={14} className={seleccionado ? 'text-primary' : 'text-slate-400'} aria-hidden="true" />
-            <span className="truncate">{label}</span>
+            <span className="text-center leading-tight">{label}</span>
           </button>
         )
       })}

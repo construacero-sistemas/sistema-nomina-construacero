@@ -86,7 +86,7 @@ export default function HistorialCierresFinanzas() {
   return (
     <section aria-label="Historial de cierres" className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs sm:p-5">
       <div className="flex items-center gap-2.5">
-        <History size={18} className="text-slate-500" />
+        <History size={18} className="shrink-0 text-slate-500" />
         <div>
           <h2 className="text-base font-black tracking-tight text-slate-900">Historial de cierres</h2>
           <p className="text-xs font-medium text-slate-500">Cada cierre queda guardado con todos sus movimientos: descárgalo en PDF resumido (saldos por cuenta) o detallado (más cada movimiento del mes).</p>
