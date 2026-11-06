@@ -59,6 +59,31 @@ function agregarMovimientos(rows, cuentas) {
   }
 }
 
+// Categorías del período COMPLETO: el servidor las suma sobre todo el libro, así que
+// cantidad y total son exactos aunque la pantalla solo haya cargado la primera página.
+// Los movimientos listados al expandir son los cargados; sin resumen se usa solo lo cargado.
+function categoriasDelPeriodo(summary, cargadas) {
+  const delServidor = Array.isArray(summary?.categorias) ? summary.categorias : []
+  if (delServidor.length === 0) {
+    return cargadas.map(categoria => ({ ...categoria, cantidad: categoria.movimientos.length }))
+  }
+  const cargadasPorClave = new Map(cargadas.map(categoria => [`${categoria.tipo}:${categoria.categoria}`, categoria.movimientos]))
+  return delServidor
+    .map(item => {
+      const nombre = item.categoria || 'Sin categoría'
+      const movimientos = cargadasPorClave.get(`${item.tipo}:${nombre}`) || []
+      const total = Number(item.total_usd)
+      return {
+        tipo: item.tipo,
+        categoria: nombre,
+        usd: Number.isFinite(total) ? total : 0,
+        cantidad: Number(item.movimientos) || movimientos.length,
+        movimientos,
+      }
+    })
+    .sort((a, b) => b.usd - a.usd)
+}
+
 function barrasPorPeriodo(rows) {
   const porDia = true
   const buckets = new Map()
@@ -94,6 +119,7 @@ export default function MesAMesResumen({ movimientos = [], summary = null, cuent
   const [abiertas, setAbiertas] = useState(() => new Set())
   const datos = useMemo(() => agregarMovimientos(movimientos, cuentas), [movimientos, cuentas])
   const barras = useMemo(() => barrasPorPeriodo(movimientos), [movimientos])
+  const categorias = useMemo(() => categoriasDelPeriodo(summary, datos.categorias), [summary, datos.categorias])
 
   // El resumen del servidor manda (libro completo); sin él se suman las filas cargadas.
   const ingresosUsd = summary?.ingresos_usd != null ? Number(summary.ingresos_usd) : datos.ingresos
@@ -175,47 +201,37 @@ export default function MesAMesResumen({ movimientos = [], summary = null, cuent
       <div className="rounded-2xl border border-slate-200 bg-white shadow-xs">
         <p className="px-4 pt-4 text-xs font-black uppercase tracking-wide text-slate-500">En qué se fue la plata, por categoría</p>
         <ul className="divide-y divide-slate-100 p-2">
-          {datos.categorias.filter(categoria => categoria.tipo === 'egreso').map(categoria => (
-            <li key={`egreso:${categoria.categoria}`}>
-              <button type="button" onClick={() => alternar(`egreso:${categoria.categoria}`)} className="flex w-full items-center gap-2 rounded-xl px-2 py-2.5 text-left hover:bg-slate-50 cursor-pointer">
-                {abiertas.has(`egreso:${categoria.categoria}`) ? <ChevronDown size={15} className="text-slate-400 shrink-0" /> : <ChevronRight size={15} className="text-slate-400 shrink-0" />}
-                <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">{categoria.categoria}</span>
-                <span className="text-xs text-slate-400">{categoria.movimientos.length} mov.</span>
-                <span className="font-mono text-sm font-black text-rose-700">−${money(categoria.usd)}</span>
-              </button>
-              {abiertas.has(`egreso:${categoria.categoria}`) && (
-                <ul className="ml-6 space-y-1 border-l border-slate-100 pl-3 pb-2">
-                  {categoria.movimientos.map(movimiento => (
-                    <li key={movimiento.id} className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-slate-600">
-                      <span className="min-w-0 truncate">{movimiento.fecha} · {movimiento.concepto}</span>
-                      <span className="font-mono font-bold text-slate-800">{money(movimiento.monto)} {movimiento.moneda}{usdDe(movimiento) != null ? ` · $${money(usdDe(movimiento))}` : ''}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-          {datos.categorias.filter(categoria => categoria.tipo === 'ingreso').map(categoria => (
-            <li key={`ingreso:${categoria.categoria}`}>
-              <button type="button" onClick={() => alternar(`ingreso:${categoria.categoria}`)} className="flex w-full items-center gap-2 rounded-xl px-2 py-2.5 text-left hover:bg-slate-50 cursor-pointer">
-                {abiertas.has(`ingreso:${categoria.categoria}`) ? <ChevronDown size={15} className="text-slate-400 shrink-0" /> : <ChevronRight size={15} className="text-slate-400 shrink-0" />}
-                <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">{categoria.categoria}</span>
-                <span className="text-xs text-slate-400">{categoria.movimientos.length} mov.</span>
-                <span className="font-mono text-sm font-black text-emerald-700">+${money(categoria.usd)}</span>
-              </button>
-              {abiertas.has(`ingreso:${categoria.categoria}`) && (
-                <ul className="ml-6 space-y-1 border-l border-slate-100 pl-3 pb-2">
-                  {categoria.movimientos.map(movimiento => (
-                    <li key={movimiento.id} className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-slate-600">
-                      <span className="min-w-0 truncate">{movimiento.fecha} · {movimiento.concepto}</span>
-                      <span className="font-mono font-bold text-slate-800">{money(movimiento.monto)} {movimiento.moneda}{usdDe(movimiento) != null ? ` · $${money(usdDe(movimiento))}` : ''}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-          {datos.categorias.length === 0 && (
+          {['egreso', 'ingreso'].flatMap(tipoFila => categorias.filter(categoria => categoria.tipo === tipoFila).map(categoria => {
+            const clave = `${tipoFila}:${categoria.categoria}`
+            const esIngreso = tipoFila === 'ingreso'
+            const abierta = abiertas.has(clave)
+            return (
+              <li key={clave}>
+                <button type="button" onClick={() => alternar(clave)} className="flex w-full items-center gap-2 rounded-xl px-2 py-2.5 text-left hover:bg-slate-50 cursor-pointer">
+                  {abierta ? <ChevronDown size={15} className="text-slate-400 shrink-0" /> : <ChevronRight size={15} className="text-slate-400 shrink-0" />}
+                  <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">{categoria.categoria}</span>
+                  <span className="text-xs text-slate-400">{categoria.cantidad} mov.</span>
+                  <span className={`font-mono text-sm font-black ${esIngreso ? 'text-emerald-700' : 'text-rose-700'}`}>{esIngreso ? '+' : '−'}${money(categoria.usd)}</span>
+                </button>
+                {abierta && (
+                  <ul className="ml-6 space-y-1 border-l border-slate-100 pl-3 pb-2">
+                    {categoria.movimientos.map(movimiento => (
+                      <li key={movimiento.id} className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-slate-600">
+                        <span className="min-w-0 truncate">{movimiento.fecha} · {movimiento.concepto}</span>
+                        <span className="font-mono font-bold text-slate-800">{money(movimiento.monto)} {movimiento.moneda}{usdDe(movimiento) != null ? ` · $${money(usdDe(movimiento))}` : ''}</span>
+                      </li>
+                    ))}
+                    {categoria.movimientos.length < categoria.cantidad && (
+                      <li className="text-xs font-medium text-amber-700">
+                        Se muestran {categoria.movimientos.length} de {categoria.cantidad} movimientos; el resto está en la tabla de abajo (botón «cargar más»).
+                      </li>
+                    )}
+                  </ul>
+                )}
+              </li>
+            )
+          }))}
+          {categorias.length === 0 && (
             <li className="px-3 py-4 text-sm text-slate-500">{loading ? 'Cargando movimientos…' : 'Sin movimientos en este período.'}</li>
           )}
         </ul>
@@ -242,7 +258,7 @@ export default function MesAMesResumen({ movimientos = [], summary = null, cuent
 
       {parcial && (
         <p className="text-xs font-medium text-slate-500">
-          Detalle armado con {movimientos.length} de {totalServidor} movimientos cargados; los totales en USD vienen del libro completo.
+          Los gráficos por día y el detalle por cuenta se arman con {movimientos.length} de {totalServidor} movimientos cargados; los totales y las categorías vienen del período completo.
         </p>
       )}
     </section>

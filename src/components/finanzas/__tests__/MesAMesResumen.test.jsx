@@ -64,6 +64,31 @@ describe('MesAMesResumen — portada de gasto y ganancia', () => {
     expect(screen.getByText(/2 de 10 movimientos cargados/)).toBeInTheDocument()
   })
 
+  it('las categorías muestran cantidad y total del período completo aunque solo haya una página cargada', () => {
+    render(
+      <MesAMesResumen
+        movimientos={movimientos.slice(0, 2)}
+        cuentas={cuentas}
+        summary={{
+          ingresos_usd: 300, egresos_usd: 120, balance_usd: 180, movimientos_sin_usd: 0,
+          categorias: [
+            { tipo: 'egreso', categoria: 'Proveedores', total_usd: 120, movimientos: 124 },
+            { tipo: 'ingreso', categoria: 'Ventas', total_usd: 300, movimientos: 9 },
+          ],
+        }}
+        totalServidor={133}
+        desde="2026-10-01"
+        hasta="2026-10-31"
+      />,
+    )
+    const proveedores = screen.getByRole('button', { name: /Proveedores/ })
+    expect(proveedores).toHaveTextContent('124 mov.')
+    expect(proveedores).toHaveTextContent('−$120,00')
+    expect(screen.getByRole('button', { name: /Ventas/ })).toHaveTextContent('9 mov.')
+    fireEvent.click(proveedores)
+    expect(screen.getByText(/Se muestran 1 de 124 movimientos/)).toBeInTheDocument()
+  })
+
   it('marca el consolidado pendiente cuando hay movimientos sin valorar', () => {
     render(
       <MesAMesResumen

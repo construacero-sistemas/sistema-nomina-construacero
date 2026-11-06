@@ -1,6 +1,6 @@
 // src/components/finanzas/FinanzasView.jsx
 // Libro financiero administrativo: ingresos, egresos, reportes y gestión por Carteras (USD & Bolívares).
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowRightLeft, BarChart3, Landmark,
   Plus, ReceiptText, RefreshCw, Wallet, Settings2,
@@ -46,6 +46,8 @@ import HistorialCierresFinanzas from './HistorialCierresFinanzas.jsx'
 import AvisoCierrePendiente from './AvisoCierrePendiente.jsx'
 import SelectorMesFinanzas from './SelectorMesFinanzas.jsx'
 import FinanzasExportBar from './FinanzasExportBar.jsx'
+import BuscadorMovimientos from './BuscadorMovimientos.jsx'
+import { filtrarMovimientos } from './busquedaMovimientos.js'
 
 export default function FinanzasView() {
   const perfil = useAuthStore(state => state.perfil)
@@ -65,6 +67,7 @@ export default function FinanzasView() {
   const [moneda, setMoneda] = useState('')
   const [filtroCartera, setFiltroCartera] = useState('')
   const [mostrarAnulados, setMostrarAnulados] = useState(false)
+  const [busqueda, setBusqueda] = useState('')
 
   const [formInicial, setFormInicial] = useState(null)
   const [transferenciaOpen, setTransferenciaOpen] = useState(false)
@@ -167,13 +170,28 @@ export default function FinanzasView() {
   const movimientosFiltrados = movimientosList
   const totalServidor = movimientos.data?.pages?.[0]?.paginacion?.total
 
+  // Buscador: el servidor entrega 50 por página, así que al buscar se trae el resto del
+  // período (una página a la vez) para que el resultado cubra TODOS los movimientos.
+  const buscando = busqueda.trim().length > 0
+  const hayMasPaginas = !!movimientos.hasNextPage
+  const cargandoPaginas = !!movimientos.isFetchingNextPage
+  const falloPagina = !!movimientos.isFetchNextPageError
+  const traerSiguientePagina = movimientos.fetchNextPage
+  useEffect(() => {
+    if (buscando && hayMasPaginas && !cargandoPaginas && !falloPagina) traerSiguientePagina()
+  }, [buscando, hayMasPaginas, cargandoPaginas, falloPagina, traerSiguientePagina, movimientosList.length])
+  const movimientosVista = useMemo(
+    () => (buscando ? filtrarMovimientos(movimientosFiltrados, busqueda) : movimientosFiltrados),
+    [buscando, busqueda, movimientosFiltrados],
+  )
+
   // Este indicador es explícitamente un subtotal de páginas cargadas; la simulación
   // de conciliación usa el libro completo antes de proponer cualquier cambio.
   const sinCuentaInfo = useMemo(() => {
     const activos = movimientosList.filter(m => m.estado !== 'anulado')
     return { total: activos.length, totalServidor, sinCuenta: activos.filter(m => !m.cuenta_custodia_id && !m.cuentaCustodiaId).length }
   }, [movimientosList, totalServidor])
-  const pageKey = [desde, hasta, tipo, categoria, moneda, filtroCartera, mostrarAnulados].join('|')
+  const pageKey = [desde, hasta, tipo, categoria, moneda, filtroCartera, mostrarAnulados, busqueda.trim()].join('|')
   const paginationProps = { hasMore: !!movimientos.hasNextPage, onLoadMore: () => movimientos.fetchNextPage(), isLoadingMore: !!movimientos.isFetchingNextPage,
     loadMoreError: movimientos.isFetchNextPageError ? movimientos.error?.message : '', totalServidor, pageKey }
 
@@ -373,6 +391,15 @@ export default function FinanzasView() {
             setMostrarAnulados={setMostrarAnulados}
           />
 
+          <BuscadorMovimientos
+            valor={busqueda}
+            onChange={setBusqueda}
+            encontrados={movimientosVista.length}
+            cargados={movimientosFiltrados.length}
+            totalServidor={totalServidor}
+            cargandoTodo={buscando && hayMasPaginas && !falloPagina}
+          />
+
             {/* Exportación del reporte del período filtrado: trae ingresos, egresos y flujo neto,
                 así que solo para quien puede ver acumulados (el rol finanzas nunca los ve). */}
             {puedeVerSaldos && <FinanzasExportBar
@@ -392,6 +419,12 @@ export default function FinanzasView() {
               <div className="space-y-2"><Skeleton className="h-12 w-full rounded-xl" /><Skeleton className="h-12 w-full rounded-xl" /><Skeleton className="h-12 w-full rounded-xl" /></div>
             ) : movimientos.isError && !movimientos.isFetchNextPageError ? (
               <InlineError message={movimientos.error?.message || 'No se pudieron cargar los movimientos.'} onRetry={() => movimientos.refetch()} />
+            ) : buscando && movimientosVista.length === 0 && movimientosFiltrados.length > 0 ? (
+              <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-600">
+                {hayMasPaginas && !falloPagina
+                  ? 'Buscando en todo el período…'
+                  : <>Ningún movimiento coincide con <strong>«{busqueda.trim()}»</strong>. Revisa la ortografía o borra alguna condición.</>}
+              </div>
             ) : movimientosFiltrados.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-2xl p-8">
                 <EmptyState
@@ -405,7 +438,8 @@ export default function FinanzasView() {
             ) : (
               <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
                 <MovimientoTable key={pageKey} {...paginationProps}
-                  movimientos={movimientosFiltrados}
+                  {...(buscando ? { hasMore: false, totalServidor: undefined } : {})}
+                  movimientos={movimientosVista}
                   onAnular={movimiento => setAnular(movimiento)}
                   onRevertir={movimiento => revertirAnulacion.mutate({ id: movimiento.id })}
                   onEditar={puedeEditar ? setMovimientoEditar : undefined}
