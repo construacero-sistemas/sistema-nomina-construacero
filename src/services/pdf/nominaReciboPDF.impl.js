@@ -9,6 +9,7 @@ import {
   fmtUsd, fmtBs, fmtFecha, drawWatermark, drawPremiumHeader,
 } from '../../../compat/services/pdf/pdfShared.js'
 import { formatHora12 } from '../../utils/timeUtils.js'
+import { desgloseDescanso } from '../../utils/descansoRecibo.js'
 import { etiquetaMotivoDescuento } from '../../../server/lib/nominaDescuentos.js'
 
 function fmtFechaVE(f) {
@@ -172,15 +173,26 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
     ? salarioDia / Number(linea.horas_jornada_snap || 8)
     : 0
 
+  const descanso = desgloseDescanso(linea)
   const conceptos = [
     {
       label: 'Salario Base por Días Laborados',
       cant: `${diasTrab} días`,
       tarifa: `${fmtUsd(salarioDia)} / día`,
-      monto: Number(linea.monto_normal_usd || 0),
+      monto: descanso.montoTrabajado,
       tipo: 'ingreso',
     },
   ]
+
+  if (descanso.diasDescanso > 0) {
+    conceptos.push({
+      label: 'Descanso y Feriados Pagados (LOTTT art. 119)',
+      cant: `${descanso.diasDescanso} día(s)`,
+      tarifa: `${fmtUsd(salarioDia)} / día`,
+      monto: descanso.montoDescanso,
+      tipo: 'ingreso',
+    })
+  }
 
   if (Number(linea.horas_extra || 0) > 0) {
     conceptos.push({

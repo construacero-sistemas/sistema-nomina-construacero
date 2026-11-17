@@ -12,6 +12,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 let lineasData = []
 
 vi.mock('../../../hooks/useNomina', () => ({
+  // Reglas de la ley (useReglasLey): sin configuración, la ley vigente.
+  useConfigNomina: () => ({ data: undefined, isLoading: false }),
   useNominaLineas: () => ({ data: lineasData, isLoading: false, isError: false, refetch: vi.fn() }),
   useRevertirPagoLinea: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTasasPeriodo: () => ({ data: [], isLoading: false }),
@@ -121,5 +123,17 @@ describe('PeriodoDetalleModal — Bs congelado al pagar (migración 241)', () =>
     expect(within(recibo).getByText('$40,00')).toBeTruthy()
     expect(screen.getByText('Total del período')).toBeTruthy()
     expect(screen.getAllByText('Deducciones').length).toBeGreaterThan(0)
+  })
+
+  it('no ofrece «Importar Comisiones POS»: los vendedores no van en la nómina', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    lineasData = [lineaBase()]
+    render(
+      <QueryClientProvider client={qc}>
+        <PeriodoDetalleModal periodo={{ id: 'p1', estado: 'abierto', fecha_inicio: '2026-09-01', fecha_fin: '2026-09-07' }} esAdmin puedeGestionarNomina onClose={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await screen.findAllByText('pedro perez', { exact: false })
+    expect(screen.queryByRole('button', { name: /importar comisiones pos/i })).toBeNull()
   })
 })

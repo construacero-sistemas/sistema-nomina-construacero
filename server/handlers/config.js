@@ -1,6 +1,8 @@
 import { json, jsonError } from '../lib/utils.js'
-import { verifyAuth, supaServiceHeaders } from '../lib/auth.js'
+import { verifyAuth, supaServiceHeaders, validateOperator } from '../lib/auth.js'
 import { clearEgressCache } from '../lib/egressCache.js'
+import { requireCapacidad } from '../lib/permissions.js'
+import { COLUMNAS_REGLAS_LEY, validarReglasLey } from '../lib/nominaReglasLey.js'
 
 const PUBLIC_CONFIG_FIELDS = [
   'nombre_negocio',
@@ -22,7 +24,13 @@ const PUBLIC_CONFIG_FIELDS = [
   'nomina_hora_fin',
   'nomina_horas_jornada',
   'nomina_horas_descanso',
+  ...COLUMNAS_REGLAS_LEY,
 ]
+
+// Campos que solo el horario de la empresa toca (rol nómina incluido). Todo lo
+// demás —reglas de la ley, factores, montos y datos del negocio— cambia cuánto
+// se paga o la identidad de la empresa: exige `administrarSistema` (jefe).
+const CAMPOS_HORARIO = new Set(['nomina_hora_inicio', 'nomina_hora_fin', 'nomina_horas_jornada', 'nomina_horas_descanso'])
 
 export async function handleGetConfig(request, env) {
   const user = await verifyAuth(request, env)
@@ -63,7 +71,16 @@ export async function handleUpdateConfig(request, env) {
   if (!user?.id) return jsonError('No autenticado', 401, request)
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
+  const v = await validateOperator(request, env)
+  if (v.error) return v.error
+  const soloHorario = Object.keys(body || {}).every(campo => CAMPOS_HORARIO.has(campo))
+  const denegado = requireCapacidad(v.operador, soloHorario ? 'administrarNomina' : 'administrarSistema', request)
+  if (denegado) return denegado
   const fields = {}
+
+  const reglas = validarReglasLey(body || {})
+  if (reglas.error) return jsonError(reglas.error, 400, request)
+  Object.assign(fields, reglas.fields)
 
   for (const field of ['nomina_factor_hora_extra', 'nomina_factor_sabado', 'nomina_factor_feriado']) {
     if (body?.[field] !== undefined) {
@@ -84,8 +101,11 @@ export async function handleUpdateConfig(request, env) {
     const value = Number(body[field])
     if (!Number.isFinite(value) || value <= 0 || value > MAX_MONTO) return jsonError(`${field} inválido`, 400, request)
     fields[field] = value
-    // Construacero opera con un SOLO modo: montos fijos USD.
-    fields.nomina_feriado_modo = 'monto_fijo'
+  }
+  // El feriado usa el modo explícito; si no viene, lo decide su monto: con monto
+  // fijo paga el monto, sin él (vacío) vuelve al factor.
+  if (body?.nomina_feriado_modo === undefined && body?.nomina_monto_feriado_usd !== undefined) {
+    fields.nomina_feriado_modo = fields.nomina_monto_feriado_usd == null ? 'factor' : 'monto_fijo'
   }
 
   if (body?.nomina_feriado_modo !== undefined) {

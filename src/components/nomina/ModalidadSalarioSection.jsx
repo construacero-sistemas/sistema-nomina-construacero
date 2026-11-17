@@ -4,6 +4,7 @@
 // líneas del guardarraíl de proyecto.
 import { DollarSign, Sparkles } from 'lucide-react'
 import { normalizarMontoInput } from '../../utils/montoUtils.js'
+import { VENDEDORES_EN_NOMINA } from '../../config/comisionesVendedores.js'
 
 const inputCls = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
@@ -15,7 +16,7 @@ const MODALIDADES = [
 ]
 
 export default function ModalidadSalarioSection({
-  modalidad, montoInput, diasSemana, salarioDiaCalculado, horasJornada, cargando,
+  modalidad, montoInput, diasSemana, salarioDiaCalculado, horasJornada, divisorMensual = 30, cargando,
   onSeleccionarModalidad, onCambiarMonto,
 }) {
   const jornadaNum = Number(horasJornada) || 8
@@ -23,7 +24,9 @@ export default function ModalidadSalarioSection({
   // `diasSemana` son los días marcados en «Días que trabaja»: el monto semanal se
   // reparte entre ellos (una sola fuente; antes había un selector 5/6/7 aparte).
   const equivalenteSemanal = salarioDiaCalculado * (diasSemana || 6)
-  const equivalenteMensual = salarioDiaCalculado * 30
+  const equivalenteMensual = salarioDiaCalculado * divisorMensual
+  // Los vendedores no van en la nómina: «Por Comisión» solo se muestra si la ficha ya la tiene.
+  const modalidades = VENDEDORES_EN_NOMINA || modalidad === 'comision' ? MODALIDADES : MODALIDADES.filter(m => m.id !== 'comision')
 
   return (
     <div className="space-y-2 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80">
@@ -34,8 +37,8 @@ export default function ModalidadSalarioSection({
         </label>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 rounded-xl bg-slate-200/60 text-xs font-bold">
-        {MODALIDADES.map(m => (
+      <div className={`grid ${modalidades.length === 4 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'} gap-1.5 p-1 rounded-xl bg-slate-200/60 text-xs font-bold`}>
+        {modalidades.map(m => (
           <button
             key={m.id}
             type="button"
@@ -94,7 +97,7 @@ export default function ModalidadSalarioSection({
           )}
           {modalidad === 'mes' && (
             <div className="flex items-center text-[11px] text-slate-400 pt-5">
-              <span>Base estándar de 30 días mensuales</span>
+              <span>Sueldo diario = mensual ÷ {divisorMensual} días (se cambia en Configuración)</span>
             </div>
           )}
         </div>

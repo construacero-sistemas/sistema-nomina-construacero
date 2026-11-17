@@ -64,13 +64,13 @@ export async function handleGetConfigEmpleados(request, env) {
   // Días laborables por persona (tabla `nomina_horarios`): alimenta el estado
   // "Libre" de la asistencia y del reloj real sin que cada vista tenga que
   // consultarlos por su cuenta.
-  const { ok: horariosOk, porEmpleado } = await fetchDiasLaborablesPorEmpleado(env, headers, operador.cuenta_id)
+  const { ok: horariosOk, porEmpleado, defecto } = await fetchDiasLaborablesPorEmpleado(env, headers, operador.cuenta_id)
   if (!horariosOk) return jsonError('Error al leer los días laborables del personal', 500, request)
   const controlaDe = item => item.controla_asistencia !== false
   const diasDe = item => {
     const resuelto = porEmpleado.get(item.empleado_id)
     return {
-      dias_laborables: resuelto?.dias ?? [...DIAS_LABORABLES_DEFAULT],
+      dias_laborables: resuelto?.dias ?? [...(defecto || DIAS_LABORABLES_DEFAULT)],
       horario_configurado: Boolean(resuelto?.configurado),
     }
   }

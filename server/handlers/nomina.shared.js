@@ -2,6 +2,7 @@
 import { jsonError } from '../lib/utils.js'
 import { requireNominaTenant } from '../lib/nominaTenant.js'
 import { rolesConCapacidad } from '../lib/permissions.js'
+import { COLUMNAS_REGLAS_LEY } from '../lib/nominaReglasLey.js'
 
 // Roles con acceso a Nómina (matriz de permissions.js): nomina y los totales
 // (jefe/administracion/desarrollador). El rol finanzas NO ve nómina.
@@ -130,11 +131,16 @@ export function construirPayloadAsistenciaManual({ empleadoId, fecha, horaEntrad
 
 export async function fetchConfigNomina(env, headers, cuentaId) {
   const filtro = cuentaId ? `&cuenta_id=${cuentaId}` : ''
+  const base = 'nomina_factor_hora_extra,nomina_factor_sabado,nomina_factor_feriado,' +
+    'nomina_monto_hora_extra_usd,nomina_monto_sabado_usd,nomina_monto_feriado_usd,nomina_feriado_modo,nomina_tipo_periodo,' +
+    'nomina_horas_descanso,nomina_horas_jornada,nomina_hora_inicio,nomina_hora_fin'
+  const leer = select => fetch(`${env.SUPABASE_URL}/rest/v1/configuracion_negocio?limit=1${filtro}&select=${select}`, { headers })
   try {
-    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/configuracion_negocio?limit=1${filtro}` +
-      '&select=nomina_factor_hora_extra,nomina_factor_sabado,nomina_factor_feriado,' +
-      'nomina_monto_hora_extra_usd,nomina_monto_sabado_usd,nomina_monto_feriado_usd,nomina_feriado_modo,nomina_tipo_periodo,' +
-      'nomina_horas_descanso,nomina_horas_jornada,nomina_hora_inicio,nomina_hora_fin', { headers })
+    // Reglas de la ley (migración 263). Si la base aún no las tiene, se leen los
+    // factores igual y el cálculo usa la ley vigente para esas reglas: nunca se
+    // cae a los factores por defecto solo porque falta una columna nueva.
+    let res = await leer(`${base},${COLUMNAS_REGLAS_LEY.join(',')}`)
+    if (res.status === 400) res = await leer(base)
     if (res.ok) {
       const [cfg] = await res.json()
       if (cfg) return cfg

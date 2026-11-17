@@ -1,7 +1,7 @@
 import { Children, useState } from 'react'
 import { CheckCircle2, DollarSign, Plus, ShieldCheck, Sparkles, Clock, CalendarDays, Pencil, TrendingUp } from 'lucide-react'
 import { RateSelector } from './RateSelector.jsx'
-import { useConfigNomina, useGuardarConfigNomina } from '../../hooks/useNomina.js'
+import { useConfigNomina } from '../../hooks/useNomina.js'
 import {
   useCrearConcepto,
   useCrearReglaLegal,
@@ -20,6 +20,7 @@ import useTablistNav from '../../../compat/hooks/useTablistNav.js'
 import HolidaySummaryCard from './HolidaySummaryCard.jsx'
 import RetencionCard from './RetencionCard.jsx'
 import HorarioGeneralModal from './HorarioGeneralModal.jsx'
+import ReglasPagoPanel from './ReglasPagoPanel.jsx'
 import { formatRangoHoras12 } from '../../utils/timeUtils.js'
 
 const inputClass = 'w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50'
@@ -45,7 +46,7 @@ export default function TabConfiguracion() {
   const puedePurgar = tieneCapacidad(perfil, 'purgarRegistros')
   const secciones = [
     { id: 'calendario', label: 'Horarios y calendario', description: 'Jornada estándar de empresa y feriados' },
-    { id: 'recargos', label: 'Horas extra y recargos', description: 'Montos fijos en USD por hora extra, sábado y feriado' },
+    { id: 'recargos', label: 'Reglas de pago y de la ley', description: 'Horas extra, sábados, feriados, descanso pagado y sueldo diario' },
     { id: 'tasas', label: 'Tasas de cambio', description: 'BCV dólar, BCV euro, USDT o manual' },
     // { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales' }, // Oculto temporalmente
     { id: 'retencion', label: 'Almacenamiento', description: 'Retención y purga inteligente de la base' },
@@ -94,7 +95,7 @@ export default function TabConfiguracion() {
           configNomina={configNomina}
           onRefresh={() => feriados.refetch()}
         />}
-        {seccion === 'recargos' && <SurchargesPanel config={configNomina} />}
+        {seccion === 'recargos' && <ReglasPagoPanel config={configNomina} />}
         {seccion === 'tasas' && <TasasPanel />}
         {seccion === 'reglas' && <CatalogPanel conceptos={conceptos} reglas={reglas} />}
         {seccion === 'retencion' && <RetencionCard />}
@@ -204,7 +205,7 @@ function StandardScheduleCard({ configNomina }) {
             <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">Frecuencia por defecto</span>
             <span className="inline-flex items-center gap-1.5 text-sm font-black text-slate-800 rounded-lg bg-emerald-50 border border-emerald-200 px-2.5 py-1">
               <CheckCircle2 size={14} className="text-emerald-600" />
-              Semanal (Lunes a Sábado)
+              Semanal
             </span>
           </div>
         </div>
@@ -212,7 +213,7 @@ function StandardScheduleCard({ configNomina }) {
 
       <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-2 text-xs text-slate-500">
         <p>
-          <strong className="text-slate-700">Régimen semanal:</strong> Lunes a Viernes jornada fija. <span className="text-amber-700 font-bold">Sábados:</span> asistencia rotativa según los trabajadores que laboren cada fin de semana en el módulo de Asistencia.
+          <strong className="text-slate-700">Régimen semanal:</strong> los días laborables por defecto y el descanso pagado se ajustan en <span className="font-bold">Reglas de pago y de la ley</span>. Quien trabaje un sábado o un domingo se registra en Asistencia y se le paga aparte.
         </p>
       </div>
 
@@ -226,114 +227,6 @@ function StandardScheduleCard({ configNomina }) {
         />
       )}
     </section>
-  )
-}
-
-function SurchargesPanel({ config }) {
-  const guardar = useGuardarConfigNomina()
-  const [form, setForm] = useState({ montoExtra: '', montoSabado: '', montoFeriado: '' })
-  const [error, setError] = useState('')
-  const loaded = config.data?.config || config.data
-  const values = loaded || {
-    nomina_factor_hora_extra: 1.5, nomina_factor_sabado: 1.25, nomina_factor_feriado: 2,
-    nomina_feriado_modo: 'monto_fijo',
-  }
-
-  const formateaMonto = value => (value == null || value === '' ? 'sin monto fijo' : `$${Number(value).toLocaleString('es-VE', { maximumFractionDigits: 2 })}`)
-
-  async function submit(event) {
-    event.preventDefault()
-    const montoExtra = form.montoExtra === '' ? (values.nomina_monto_hora_extra_usd ?? null) : Number(form.montoExtra)
-    const montoSabado = form.montoSabado === '' ? (values.nomina_monto_sabado_usd ?? null) : Number(form.montoSabado)
-    const montoFeriado = form.montoFeriado === '' ? (values.nomina_monto_feriado_usd ?? null) : Number(form.montoFeriado)
-
-    const montosActivos = [montoExtra, montoSabado, montoFeriado]
-    if (montosActivos.some(monto => monto !== null && (!Number.isFinite(monto) || monto <= 0 || monto > 1000000))) {
-      setError('Cada monto fijo debe ser mayor que cero.')
-      return
-    }
-
-    // Construacero opera con MONTOS FIJOS (USD). No se envían los
-    // nomina_factor_* para evitar ambigüedad: un solo modo de pago.
-    const payload = {
-      nomina_monto_hora_extra_usd: montoExtra,
-      nomina_monto_sabado_usd: montoSabado,
-      nomina_monto_feriado_usd: montoFeriado,
-      nomina_feriado_modo: 'monto_fijo',
-    }
-    setError('')
-    try {
-      await guardar.mutateAsync(payload)
-      setForm({ montoExtra: '', montoSabado: '', montoFeriado: '' })
-    } catch (saveError) { setError(saveError.message) }
-  }
-
-  return (
-    <Panel icon={DollarSign} title="Pago de horas extra, sábados y feriados">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-700">
-          <CheckCircle2 size={12} /> Modo: montos fijos (USD)
-        </span>
-      </div>
-      <p className="text-xs text-slate-500">
-        Construacero paga estos conceptos con montos directos en dólares. Si dejas una casilla vacía, se calcula automáticamente según el sueldo proporcional.
-      </p>
-      <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Field label={`Monto fijo por hora extra (USD) · actual ${formateaMonto(values.nomina_monto_hora_extra_usd)}`}>
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={form.montoExtra}
-            onChange={event => setForm(current => ({ ...current, montoExtra: event.target.value }))}
-            placeholder="Ej. 4.00"
-            className={inputClass}
-            disabled={guardar.isPending}
-          />
-        </Field>
-        <Field label={`Monto fijo por sábado trabajado (USD) · actual ${formateaMonto(values.nomina_monto_sabado_usd)}`}>
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={form.montoSabado}
-            onChange={event => setForm(current => ({ ...current, montoSabado: event.target.value }))}
-            placeholder="Ej. 30.00"
-            className={inputClass}
-            disabled={guardar.isPending}
-          />
-        </Field>
-        {/* El motor solo lo paga si hubo registro ese feriado: el nombre del campo
-            dice exactamente eso (F-12). */}
-        <Field label={`Monto fijo por feriado trabajado (USD) · actual ${formateaMonto(values.nomina_monto_feriado_usd)}`}>
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={form.montoFeriado}
-            onChange={event => setForm(current => ({ ...current, montoFeriado: event.target.value }))}
-            placeholder="Ej. 30.00"
-            className={inputClass}
-            disabled={guardar.isPending}
-          />
-        </Field>
-        {error && (
-          <p className="sm:col-span-3 rounded-lg bg-red-50 border border-red-200 px-2.5 py-2 text-xs text-red-700" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="sm:col-span-3">
-          <button
-            type="submit"
-            disabled={guardar.isPending || config.isLoading}
-            className="inline-flex items-center min-h-11 gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-black text-white disabled:opacity-50 hover:bg-primary-hover transition-all active:scale-95 shadow-xs"
-            style={{ touchAction: 'manipulation' }}
-          >
-            {guardar.isPending ? 'Guardando...' : 'Guardar montos'}
-          </button>
-        </div>
-      </form>
-    </Panel>
   )
 }
 

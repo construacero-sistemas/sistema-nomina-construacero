@@ -13,7 +13,9 @@ import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import EmpleadoBajaModal from './EmpleadoBajaModal.jsx'
 import ModalidadSalarioSection from './ModalidadSalarioSection.jsx'
+import { VENDEDORES_EN_NOMINA } from '../../config/comisionesVendedores.js'
 import SemanaLaborableSection from './SemanaLaborableSection.jsx'
+import useReglasLey from '../../hooks/useReglasLey.js'
 
 const inputCls = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
@@ -24,9 +26,9 @@ const PREF_KEY_PREFIX = 'nomina_empleado_salario_pref_'
  * consulta aún no llegó, los días que el listado ya conoce. `hayHorario` evita el
  * aviso de "sin semana guardada" cuando la ficha sí la tiene.
  */
-function semanaBaseDe(config, horarios) {
+function semanaBaseDe(config, horarios, diasDefecto) {
   const base = semanaEditable(horarios, {
-    horaInicio: config?.hora_inicio, horaFin: config?.hora_fin, horasJornada: config?.horas_jornada,
+    horaInicio: config?.hora_inicio, horaFin: config?.hora_fin, horasJornada: config?.horas_jornada, diasDefecto,
   })
   const dias = config?.dias_laborables
   const conDias = Array.isArray(dias)
@@ -74,6 +76,9 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const [fechaIngreso, setFechaIngreso] = useState(config?.fecha_ingreso ?? '')
   const [posVendedorId] = useState(config?.pos_vendedor_id ?? '')
 
+  // Reglas de la ley editables (divisor mensual, días por defecto).
+  const reglasLey = useReglasLey()
+  const divisorMensual = reglasLey.divisorMensual
   const empKey = config?.empleado_id || config?.id
   const savedPref = useMemo(() => getSavedSalaryPref(empKey), [empKey])
 
@@ -85,7 +90,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const { data: horarios = [] } = useHorarios(horariosEmpleadoId)
   // La semana se deriva de sus horarios guardados; `semanaOverride` solo existe si
   // el usuario ya marcado o editado algún día en este formulario.
-  const semanaBase = useMemo(() => semanaBaseDe(config, horarios), [config, horarios])
+  const semanaBase = useMemo(() => semanaBaseDe(config, horarios, reglasLey.diasLaborablesDefault), [config, horarios, reglasLey.diasLaborablesDefault])
   const [semanaOverride, setSemanaOverride] = useState(null)
   const semana = semanaOverride ?? semanaBase
   const semanaTocada = semanaOverride !== null
@@ -98,7 +103,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const divisorSemana = diasSemana || 6
 
   // Modalidad salarial persistente: 'dia' | 'semana' | 'mes' | 'comision'
-  const [modalidad, setModalidad] = useState(() => savedPref?.modalidad || (Number(config?.salario_dia_usd) === 0 ? 'comision' : 'dia'))
+  const [modalidad, setModalidad] = useState(() => savedPref?.modalidad || (VENDEDORES_EN_NOMINA && Number(config?.salario_dia_usd) === 0 ? 'comision' : 'dia'))
 
   const [montoInput, setMontoInput] = useState(() => {
     const daily = Number(config?.salario_dia_usd)
@@ -120,10 +125,10 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
 
     if (mod === 'mes') {
       if (savedPref?.montoInput) {
-        const testDaily = Number(savedPref.montoInput) / 30
+        const testDaily = Number(savedPref.montoInput) / divisorMensual
         if (Math.abs(testDaily - daily) < 0.005) return String(savedPref.montoInput)
       }
-      const monthly = Math.round(daily * 30 * 100) / 100
+      const monthly = Math.round(daily * divisorMensual * 100) / 100
       return String(monthly)
     }
 
@@ -174,9 +179,9 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
     const val = Number(montoInput)
     if (!Number.isFinite(val) || val <= 0) return 0
     if (modalidad === 'semana') return val / divisorSemana
-    if (modalidad === 'mes') return val / 30
+    if (modalidad === 'mes') return val / divisorMensual
     return val
-  }, [montoInput, modalidad, divisorSemana])
+  }, [montoInput, modalidad, divisorSemana, divisorMensual])
 
   function handleCambioModalidad(nuevoModo) {
     if (nuevoModo === modalidad) return
@@ -188,7 +193,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
         const nuevoMonto = Math.round(baseDaily * divisorSemana * 100) / 100
         setMontoInput(String(nuevoMonto))
       } else if (nuevoModo === 'mes') {
-        const nuevoMonto = Math.round(baseDaily * 30 * 100) / 100
+        const nuevoMonto = Math.round(baseDaily * divisorMensual * 100) / 100
         setMontoInput(String(nuevoMonto))
       } else if (nuevoModo === 'dia') {
         const nuevoMonto = Math.round(baseDaily * 100) / 100
@@ -365,7 +370,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
                 onChange={e => {
                   const val = e.target.value
                   setCargo(val)
-                  if (val.toLowerCase().includes('vendedor') || val.toLowerCase().includes('ventas')) {
+                  if (VENDEDORES_EN_NOMINA && (val.toLowerCase().includes('vendedor') || val.toLowerCase().includes('ventas'))) {
                     if (modalidad !== 'comision' && (!montoInput || Number(montoInput) === 0)) {
                       setModalidad('comision')
                       setMontoInput('0')
@@ -389,7 +394,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
           {/* Presets rápidos de cargo */}
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             <span className="text-[10px] text-slate-400 font-semibold">Puestos sugeridos:</span>
-            {['Vendedor', 'Chofer', 'Operador', 'Soldador', 'Almacenista', 'Ayudante', 'Administración'].map(puesto => (
+            {(VENDEDORES_EN_NOMINA ? ['Vendedor'] : []).concat(['Chofer', 'Operador', 'Soldador', 'Almacenista', 'Ayudante', 'Administración']).map(puesto => (
               <button
                 key={puesto}
                 type="button"
@@ -428,6 +433,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
           diasSemana={diasSemana}
           salarioDiaCalculado={salarioDiaCalculado}
           horasJornada={horasJornada}
+          divisorMensual={divisorMensual}
           cargando={cargando}
           onSeleccionarModalidad={seleccionarModalidad}
           onCambiarMonto={setMontoInput}

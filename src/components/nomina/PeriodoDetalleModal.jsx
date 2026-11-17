@@ -13,11 +13,21 @@ import RateSelector from './RateSelector.jsx'
 import LiquidacionModal from './LiquidacionModal'
 import PagarNominaModal from './PagarNominaModal'
 import ImportarComisionesPosModal from './ImportarComisionesPosModal.jsx'
+import { VENDEDORES_EN_NOMINA } from '../../config/comisionesVendedores.js'
 import { logClientError } from '../../../compat/utils/errorLogger.js'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
+import { desgloseDescanso } from '../../utils/descansoRecibo.js'
+import useReglasLey from '../../hooks/useReglasLey.js'
 
 function fmt(n) {
   return (Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// Días trabajados y, si los hay, los de descanso pagados (art. 119): «5 + 2 desc.».
+function textoDias(linea) {
+  const trabajados = Number(linea.dias_trabajados) || 0
+  const { diasDescanso } = desgloseDescanso(linea)
+  return diasDescanso > 0 ? `${trabajados} + ${diasDescanso} desc.` : String(trabajados)
 }
 
 function ResumenDato({ label, value, emphasis = false }) {
@@ -34,6 +44,7 @@ function ReciboMovilCard({ linea, abierto, puedeGestionarNomina, puedePagarNomin
   const recargos = Number(linea.monto_extra_usd || 0) + Number(linea.monto_sabado_usd || 0) + Number(linea.monto_feriado_usd || 0)
   const neto = Number(linea.total_neto_usd || 0)
   const mostrarBsCongelados = linea.pagado && Number(linea.tasa_pago_usd_ves) > 0
+  const { divisorMensual } = useReglasLey()
 
   return (
     <article aria-label={`Recibo de ${nombre}`} className={`rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ${linea.pagado ? 'border-l-4 border-l-emerald-500' : ''}`}>
@@ -41,13 +52,13 @@ function ReciboMovilCard({ linea, abierto, puedeGestionarNomina, puedePagarNomin
         <div className="min-w-0">
           <h3 className="break-words text-sm font-black text-slate-800">{nombre}</h3>
           {linea.cargo_snap && <p className="text-[11px] font-medium text-slate-500">{linea.cargo_snap}</p>}
-          <p className="text-[10px] text-slate-500">Sueldo mensual: ${fmt(Number(linea.salario_dia_usd_snap || 0) * 30)}</p>
+          <p className="text-[10px] text-slate-500">Sueldo mensual: ${fmt(Number(linea.salario_dia_usd_snap || 0) * divisorMensual)}</p>
         </div>
         {linea.pagado && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-800">Pagado</span>}
       </div>
 
       <div className="mt-3 grid min-w-0 grid-cols-2 gap-2">
-        <ResumenDato label="Días" value={Number(linea.dias_trabajados) || 0} />
+        <ResumenDato label="Días" value={textoDias(linea)} />
         <ResumenDato label="Horas normales" value={`${Number(linea.horas_normales || 0).toFixed(1)}h`} />
         <ResumenDato label="Base" value={`$${fmt(linea.monto_normal_usd)}`} />
         <div className="min-w-0 rounded-lg border border-primary/20 bg-primary/[0.04] px-2.5 py-2">
@@ -87,6 +98,7 @@ function ReciboMovilCard({ linea, abierto, puedeGestionarNomina, puedePagarNomin
 // para ajustar bonos/deducciones o importar comisiones, `operarFinanzas` para pagar o
 // revertir un pago. Ver recibos, totales y descargar PDFs no requiere ninguna de las dos.
 export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = false, puedePagarNomina = false, onClose }) {
+  const { divisorMensual } = useReglasLey()
   const { data: lineas = [], isLoading, isError, refetch } = useNominaLineas(periodo.id)
   const { data: configNegocio } = useConfigNegocio()
   const { aBs, fmtBs, tasaActiva, shortLabelTasa, tipoTasa } = useMonedaNomina()
@@ -221,7 +233,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
             </div>
 
             <div className="flex items-center gap-2 ml-auto">
-              {puedeGestionarNomina && abierto && lineas.length > 0 && (
+              {VENDEDORES_EN_NOMINA && puedeGestionarNomina && abierto && lineas.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setImportandoComisiones(true)}
@@ -341,12 +353,12 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                             )}
                           </div>
                           {l.cargo_snap && <div className="text-[10px] text-slate-400 font-medium">{l.cargo_snap}</div>}
-                          <div className="text-[10px] text-slate-400 font-medium">Sueldo mensual: ${fmt(Number(l.salario_dia_usd_snap || 0) * 30)}</div>
+                          <div className="text-[10px] text-slate-400 font-medium">Sueldo mensual: ${fmt(Number(l.salario_dia_usd_snap || 0) * divisorMensual)}</div>
                           {l.dias_ausencia > 0 && (
                             <div className="text-[10px] text-red-500 font-bold">{l.dias_ausencia} falta(s)</div>
                           )}
                         </td>
-                        <td className="text-right px-2.5 py-2.5 text-slate-700 font-semibold">{Number(l.dias_trabajados)}</td>
+                        <td className="text-right px-2.5 py-2.5 text-slate-700 font-semibold whitespace-nowrap" title="Días trabajados + días de descanso y feriados pagados (LOTTT art. 119)">{textoDias(l)}</td>
                         <td className="text-right px-2.5 py-2.5 text-slate-500">{Number(l.horas_normales).toFixed(1)}h</td>
                         <td className="text-right px-2.5 py-2.5 font-bold">
                           {Number(l.horas_extra) > 0 ? (
@@ -488,7 +500,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
         </div>
       </Modal>}
 
-      {importandoComisiones && (
+      {VENDEDORES_EN_NOMINA && importandoComisiones && (
         <ImportarComisionesPosModal
           periodo={periodo}
           onClose={() => setImportandoComisiones(false)}

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { ENV, OPERADORES, IDS, makeRequest, readResponse, installFetchMock } from './_harness'
 
 const CUENTA_ID = OPERADORES.administracion.cuenta_id
+let operadorActual = OPERADORES.administracion
 
 vi.mock('../../lib/auth.js', () => ({
   verifyAuth: vi.fn(async () => ({ id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', email: 'admin@construacero.com' })),
@@ -12,7 +13,7 @@ vi.mock('../../lib/auth.js', () => ({
     'Content-Type': 'application/json',
   }),
   invalidateOperatorCache: vi.fn(),
-  validateOperator: vi.fn(async () => ({ id: OPERADORES.administracion.id, rol: 'jefe', cuenta_id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' })),
+  validateOperator: vi.fn(async () => ({ operador: operadorActual, headers: {} })),
 }))
 
 const { handleGetConfig, handleUpdateConfig } = await import('../config.js')
@@ -21,6 +22,7 @@ let mock
 afterEach(() => {
   mock?.restore()
   vi.clearAllMocks()
+  operadorActual = OPERADORES.administracion
 })
 
 describe('config handler', () => {
@@ -164,3 +166,56 @@ describe('config handler', () => {
     expect(String(b2.error)).toMatch(/nomina_horas_jornada/i)
   })
 })
+
+describe('reglas de pago y de la ley (migración 263)', () => {
+  const patchQueDevuelve = () => installFetchMock([{
+    match: '/configuracion_negocio', method: 'PATCH',
+    respond: (url, init) => [JSON.parse(init.body)],
+  }])
+
+  it('guarda factores y reglas de la ley, y el feriado sin monto vuelve al factor', async () => {
+    mock = patchQueDevuelve()
+    const res = await handleUpdateConfig(makeRequest({
+      nomina_factor_hora_extra: 2.5, nomina_monto_hora_extra_usd: null,
+      nomina_factor_sabado: 1, nomina_monto_sabado_usd: null,
+      nomina_factor_feriado: 1, nomina_monto_feriado_usd: null,
+      nomina_divisor_mensual: 30, nomina_dias_laborables_default: [5, 4, 3, 2, 1],
+      nomina_descanso_remunerado: true, nomina_faltas_pierde_descanso: 2,
+    }), ENV)
+    const { status } = await readResponse(res)
+    expect(status).toBe(200)
+    const enviado = mock.calls.find(c => c.method === 'PATCH').body
+    expect(enviado.nomina_factor_hora_extra).toBe(2.5)
+    expect(enviado.nomina_monto_hora_extra_usd).toBeNull()
+    expect(enviado.nomina_feriado_modo).toBe('factor')
+    expect(enviado.nomina_dias_laborables_default).toEqual([1, 2, 3, 4, 5])
+  })
+
+  it('un monto fijo de feriado pasa el modo a monto fijo', async () => {
+    mock = patchQueDevuelve()
+    const res = await handleUpdateConfig(makeRequest({ nomina_monto_feriado_usd: 10 }), ENV)
+    expect((await readResponse(res)).status).toBe(200)
+    expect(mock.calls.find(c => c.method === 'PATCH').body.nomina_feriado_modo).toBe('monto_fijo')
+  })
+
+  it('rechaza reglas de la ley fuera de rango', async () => {
+    const res = await handleUpdateConfig(makeRequest({ nomina_divisor_mensual: 45 }), ENV)
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(400)
+    expect(String(body.error)).toMatch(/divisor/i)
+  })
+
+  it('el rol nómina no puede cambiar cuánto se paga', async () => {
+    operadorActual = OPERADORES.nomina
+    const res = await handleUpdateConfig(makeRequest({ nomina_factor_hora_extra: 3 }), ENV)
+    expect((await readResponse(res)).status).toBe(403)
+  })
+
+  it('el rol nómina sí puede ajustar el horario general', async () => {
+    operadorActual = OPERADORES.nomina
+    mock = patchQueDevuelve()
+    const res = await handleUpdateConfig(makeRequest({ nomina_hora_inicio: '07:30' }), ENV)
+    expect((await readResponse(res)).status).toBe(200)
+  })
+})
+

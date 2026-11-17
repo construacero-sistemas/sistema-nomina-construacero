@@ -45,8 +45,14 @@ describe('días laborables en el front', () => {
     expect(semana.hayHorario).toBe(true)
     expect(semana.dias.map(dia => dia.activo)).toEqual([true, false, false, false, false, true])
     expect(semana.dias[5]).toMatchObject({ horaFin: '12:00', horasJornada: 4 })
-    // Sin filas propias se parte del horario de la ficha con todos los días marcados.
+    // Sin filas propias se parte del horario de la ficha con los días por defecto marcados.
     expect(semanaEditable([], { horaInicio: '07:00', horasJornada: 6 }).dias[0]).toMatchObject({ activo: true, horaInicio: '07:00', horasJornada: 6 })
+  })
+
+  it('sin semana guardada propone los días por defecto (lunes a viernes), no el sábado', () => {
+    const activos = dias => semanaEditable([], dias ? { diasDefecto: dias } : {}).dias.filter(d => d.activo).map(d => d.diaSemana)
+    expect(activos()).toEqual([1, 2, 3, 4, 5])
+    expect(activos([1, 2, 3, 4, 5, 6])).toEqual([1, 2, 3, 4, 5, 6])
   })
 
   it('ignora un horario que todavía no rige y los rotativos', () => {

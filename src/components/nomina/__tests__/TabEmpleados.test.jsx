@@ -175,7 +175,7 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
     expect(screen.queryByRole('button', { name: /Eliminar/i })).toBeNull()
   })
 
-  it('muestra Pagar Comisión en la barra y en la ficha cuando el operador puede operar Finanzas', () => {
+  it('no ofrece Pagar Comisión ni el filtro de vendedores: los vendedores no van en la nómina', () => {
     mockClientes = [{ id: 'emp-1', nombre: 'Niki Ramirez', tipo_cliente: 'personal', activo: true }]
     mockAllConfigs = [
       { id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Vendedor', salario_dia_usd: 0, horas_jornada: 8, activo: true, empleado: mockClientes[0] },
@@ -183,8 +183,10 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
 
     renderTab(true, true)
 
-    // Barra de acciones + barra inferior de la ficha del vendedor.
-    expect(screen.getAllByRole('button', { name: /Pagar Comisión/i })).toHaveLength(2)
+    // Aunque el operador pueda operar Finanzas, la bandera VENDEDORES_EN_NOMINA lo apaga.
+    expect(screen.queryByRole('button', { name: /Pagar Comisión/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Vendedores \(/ })).toBeNull()
+    expect(screen.queryByText('Vendedores (Comisión)')).toBeNull()
   })
 
   it('muestra en la ficha qué días trabaja cada persona y avisa cuando no está fijado', () => {

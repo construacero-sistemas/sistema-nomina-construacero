@@ -1,16 +1,12 @@
 // src/components/finanzas/FinanzasView.jsx
 // Libro financiero administrativo: ingresos, egresos, reportes y gestión por Carteras (USD & Bolívares).
 import { useEffect, useMemo, useState } from 'react'
-import {
-  ArrowRightLeft, BarChart3, Landmark,
-  Plus, ReceiptText, RefreshCw, Wallet, Settings2,
-} from 'lucide-react'
-import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
-import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
+import { ArrowRightLeft, Landmark, Plus, Wallet } from 'lucide-react'
 import PageHeader from '../../../compat/components/ui/PageHeader.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import MesAMesResumen from './MesAMesResumen.jsx'
+import FinanzasTabs from './FinanzasTabs.jsx'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
@@ -20,7 +16,6 @@ import {
   usePreviewConciliacion, useEliminarCategoria, useRestaurarCategoria, useCrearCategoria,
   useFinanzasPeriodoMensual, useOperarFinanzasPeriodoMensual, useRegistrarCuentaEnPeriodoMensual,
 } from '../../hooks/useFinanzas.js'
-import { showToast } from '../../../compat/components/ui/toastBus.js'
 import { useCuentasCustodia } from '../../hooks/useCuentasCustodia.js'
 import { tieneCapacidad } from '../../config/accesoModulos.js'
 import MovimientoForm from './MovimientoForm.jsx'
@@ -37,8 +32,7 @@ import CategoriasModal from './CategoriasModal.jsx'
 import AnularDialog from './AnularDialog.jsx'
 import { FinanzasFiltrosSeccion, InlineError } from './FinanzasFiltrosUI.jsx'
 import { isoToday, monthStart, mesAnteriorIso, etiquetaRango, rangoDeMes, RANGOS_RAPIDOS, rangoRapidoActivo, aplicarRangoRapido as resolverRango } from './fechasRapidas.js'
-import { formatNumber, formatUsd } from './formatos.js'
-import { contarMovimientosSinCuenta } from '../../utils/carterasHelper.js'
+import { formatNumber } from './formatos.js'
 import { summarizeConfirmedBalances } from '../../utils/confirmedBalances.js'
 import useCustodySave from '../../hooks/useCustodySave.js'
 import PeriodoMensualFinanzas from './PeriodoMensualFinanzas.jsx'
@@ -290,48 +284,10 @@ export default function FinanzasView() {
       {/* Barra de Pestañas Segmentada (Flujo de Movimientos vs. Tesorería) */}
       <div className="space-y-2.5 pt-1">
 
-        {/* Finanzas opera movimientos, pero la pestaña de tesorería está reservada a roles con verSaldos. */}
-        <div className={`grid ${puedeVerSaldos ? 'grid-cols-2' : 'grid-cols-1'} gap-1 p-1 bg-slate-200/70 border border-slate-200 rounded-2xl`}>
-          <button
-            type="button"
-            onClick={() => setActiveTab('movimientos')}
-            className={`inline-flex items-center justify-center gap-1.5 px-2.5 min-h-11 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              pestanaVisible === 'movimientos'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-            style={{ touchAction: 'manipulation' }}
-          >
-            <ReceiptText size={15} className={`shrink-0 ${pestanaVisible === 'movimientos' ? 'text-primary' : 'text-slate-400'}`} />
-            <span className="truncate">
-              <span className="sm:hidden">Movimientos</span>
-              <span className="hidden sm:inline">Movimientos y Flujo</span>
-            </span>
-          </button>
-
-          {puedeVerSaldos && <button
-            type="button"
-            onClick={() => setActiveTab('tesoreria')}
-            className={`inline-flex items-center justify-center gap-1.5 px-2.5 min-h-11 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              pestanaVisible === 'tesoreria'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-            style={{ touchAction: 'manipulation' }}
-          >
-            <Landmark size={15} className={`shrink-0 ${pestanaVisible === 'tesoreria' ? 'text-emerald-600' : 'text-slate-400'}`} />
-            <span className="truncate">
-              <span className="sm:hidden">Tesorería</span>
-              <span className="hidden sm:inline">Tesorería y Carteras</span>
-            </span>
-            {cierrePendiente && <span aria-label="Cierre pendiente" className="h-2 w-2 shrink-0 rounded-full bg-amber-500 animate-pulse" />}
-            {puedeVerSaldos && saldosCarteras?.patrimonioTotalUsd != null && (
-              <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold whitespace-nowrap shrink-0">
-                ${formatNumber(saldosCarteras.patrimonioTotalUsd)} USD
-              </span>
-            )}
-          </button>}
-        </div>
+        <FinanzasTabs
+          puedeVerSaldos={puedeVerSaldos} pestanaVisible={pestanaVisible} onCambiar={setActiveTab}
+          cierrePendiente={cierrePendiente} patrimonioTotalUsd={puedeVerSaldos ? saldosCarteras?.patrimonioTotalUsd : null}
+        />
 
         {puedeVerSaldos && pestanaVisible === 'movimientos' && <AvisoCierrePendiente previo={periodoPrevioMensual.data} actual={periodoActualMensual.data} hoy={isoToday()} onIr={() => setActiveTab('tesoreria')} />}
 

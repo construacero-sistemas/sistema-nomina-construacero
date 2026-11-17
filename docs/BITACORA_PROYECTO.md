@@ -4104,3 +4104,113 @@ En dispositivos móviles, la cuadrilla semanal intentaba encajar 7 días en 360p
 **Staging.** Contraseña de la base reseteada por el usuario; 259, 260 y 261 aplicadas en `wishglzpmcshyvlgpjxj` y probadas con transacciones que se deshacen (staging sigue vacío; le falta la 258).
 
 **Pruebas.** `test:db` +2 comprobaciones (259, 260) · `test:flujo-mes` +F3b (saldo con cierre pendiente; falla sin la 261) · `PeriodoMensualFinanzas.test.jsx` reescrito para el asistente y la tabla · `fechasRapidas` y `FinanzasView.cierre` actualizados.
+
+## 142. CI en verde otra vez: límite de 600 líneas y tests sin `.env` (2026-11-15)
+
+**Objetivo:** el CI de GitHub fallaba en los 5 últimos pushes (desde el 02/11), y `npm run verify` también fallaba en local.
+
+**Causas.** (1) `check:project` rechazaba `src/components/finanzas/FinanzasView.jsx` (632 líneas, el límite es 600) desde el commit del buscador. (2) 8 suites del cliente (`FinanzasView.*`, `PeriodoMensualFinanzas`, `PeriodoDetalleModal.tasaPago`, `TabEmpleados`…) importan el cliente de Supabase, que lanza «Faltan variables de entorno: VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY» cuando no hay `.env`, que es lo que pasa en CI. (3) `test:flujo-mes` F9, anotado como fallo con fechas fijas en la entrada 137, ya pasa (lo corrigió la 141): sin cambios.
+
+**Cambios.** `FinanzasTabs.jsx` (nuevo): la barra de pestañas Movimientos/Tesorería sale de `FinanzasView` sin cambiar marcado, clases ni comportamiento. Se quitaron de `FinanzasView` los imports sin uso (`BarChart3`, `RefreshCw`, `Settings2`, `CustomSelect`, `DatePicker`, `showToast`, `formatUsd`, `contarMovimientosSinCuenta`); el archivo queda en 588 líneas. `vitest.config.js`: el proyecto `client` define `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` ficticios (`127.0.0.1:54321`, `test-anon-key`), así los tests no dependen del `.env` y nunca llegan a un Supabase real aunque haya uno configurado en local.
+
+(4) Oculto detrás del primero: `test:responsive` fallaba porque el botón «Limpiar búsqueda» de `BuscadorMovimientos.jsx` medía 32 px (`h-8 w-8`): pasa a 44×44 (`h-11 w-11`, pegado al borde del campo, que mide 44 px). El campo de búsqueda usa `text-[16px] sm:text-sm` para que Safari en iOS no haga zoom al enfocarlo (regla 3 de `AGENT.md`).
+
+**Pruebas.** `check:project` OK (56 migraciones, 458 archivos) · `npm test` **sin `.env`**: 133 archivos / 1376 pruebas · `test:responsive` 41/41 · `test:flujo-mes` 15/15 fases · `npm run verify` completo **sin `.env`: EXIT 0** (lint, deterministas, `test:db`, build y `test:bundle-size` PASS, índice 263.9/400 KiB).
+
+**Pendientes.** Commit y push para confirmar el verde en GitHub Actions. Validación visual de las pestañas no necesaria (mismo JSX, solo movido); la del botón del buscador en iPhone no se hizo (requiere sesión real).
+
+## 143. Los vendedores no van en la nómina: se oculta todo lo de comisiones (2026-11-15)
+
+**Objetivo:** el usuario indicó que los vendedores a comisión no irán en la nómina y pidió ocultar todo lo que los mete en ella, incluido pagarles la comisión desde Empleados («No, ocultar todo»). Queda registrado como regla en `AGENT.md`.
+
+**Cambios.** `src/config/comisionesVendedores.js` (nuevo): bandera única `VENDEDORES_EN_NOMINA = false`. Con ella apagada:
+- `PeriodoDetalleModal.jsx`: no se muestra «Importar Comisiones POS» ni se monta `ImportarComisionesPosModal`.
+- `ModalidadSalarioSection.jsx`: la modalidad «Por Comisión (Vendedor)» solo aparece si la ficha ya la tiene, para que esa ficha se siga abriendo bien; si no, el selector queda en 3 opciones.
+- `EmpleadoConfigModal.jsx`: sin el puesto sugerido «Vendedor (Comisión)», sin el cambio automático a comisión al escribir «vendedor»/«ventas», y una ficha con sueldo 0 abre en «Por Día».
+- `TabEmpleados.jsx`: sin los dos botones «Pagar Comisión» (ni `ComisionPagoModal`), sin la tarjeta de indicador «Vendedores (Comisión)» (el resumen pasa a 3 columnas) ni el filtro «Vendedores»; `esVendedor` devuelve falso, así que ningún cargo activa la ficha especial de vendedor.
+
+Se conservan el código de los modales, el handler `nomina.comisiones.js` y la columna «Comis. POS» de los recibos (los recibos viejos con comisión se siguen viendo). Las rutas del servidor siguen activas: el cambio es solo de interfaz.
+
+**Pruebas.** Tres pruebas guardianas: «Importar Comisiones POS» oculto (`PeriodoDetalleModal.tasaPago`), «Pagar Comisión», filtro e indicador ocultos aunque el rol pueda operar Finanzas (`TabEmpleados`, reemplaza la prueba que exigía los dos botones) y ficha sin «Por Comisión» ni puesto de vendedor (`EmpleadoConfigModal`). Comprobado que las tres fallan con la bandera en `true`. `src/components/nomina`: 16 archivos / 89 pruebas.
+
+**Pendientes.** (1) **Dar de baja** desde Empleados a Edgar Ramírez, Niki Ramírez y al tercer vendedor: los saca de la nómina activa y de Asistencia, conserva sus recibos y se deshace desde «Bajas». No se hizo desde aquí porque el conector de Supabase de la sesión no tiene acceso al proyecto de producción. (2) La futura sincronización Personal → Nómina debe excluir a los vendedores. (3) Validación visual en navegador e iPhone no realizada (requiere sesión real). Sin commit ni deploy.
+
+## 144. Semana de 7 días con descanso pagado (LOTTT art. 119) (2026-11-17)
+
+**Objetivo:** ajustar la nómina a la ley venezolana: con sueldo mensual, el sábado y el domingo de descanso (y los feriados) se pagan aunque no se trabajen. Antes la app pagaba solo los días con asistencia: con 280 $ al mes, una semana completa daba 9,33 × 5 = 46,67 $ (≈ 200 $ al mes); ahora da 9,33 × 7 = 65,33 $. Pedido del usuario: «el sistema debe tener los 7 días de la semana donde sábado y domingo son de descanso», «por ahora solo corrige lo de los 7 días para ajustarnos a la ley y todo para adecuarnos al 119».
+
+**Base legal** (texto oficial LOTTT, Gaceta 6.076 Extraordinario, 2012): art. 113 (diario = mensual ÷ 30), art. 119 (descanso y feriados pagados; no se pierden por faltar un día), art. 173 (máximo 5 días y 2 de descanso continuos y remunerados), art. 184 (el domingo es feriado).
+
+**Cambios.**
+- `server/lib/nominaDescanso.js` (nuevo): `calcularDescansoRemunerado` recorre el período en bloques de 7 días desde su inicio. Son descanso los días que la persona no trabaja (domingo siempre) y los feriados no laborables. Se pagan salvo en el bloque con 2 o más faltas (día hábil pasado sin asistencia o marcado ausente). Los días antes de la fecha de ingreso no cuentan y los días hábiles futuros no son falta.
+- `server/lib/nominaUtils.js`: `calcularLineaNomina` recibe un `contexto` opcional del período. Con él suma los días de descanso a `monto_normal_usd` (salario diario × días) y devuelve `dias_descanso`. Una fila de domingo o feriado registrada sin trabajo ya no cuenta como día trabajado, porque la cubre el descanso y así no se paga dos veces. Sin contexto, el cálculo es el de antes.
+- `server/handlers/nomina.periodos.js`: el cálculo del período lee los días que trabaja cada persona (vigentes al cierre del período) y los feriados, y falla con 500 si no puede leerlos en vez de liquidar sin descanso. Quien tiene «sin control de asistencia» conserva el cálculo anterior. Si la base aún no tiene la columna, guarda sin `dias_descanso`.
+- `server/handlers/nomina.lineas.js`: lee `dias_descanso` y, si falta la migración, la retira de la consulta (igual que con los descuentos).
+- **Lunes a viernes por defecto:** `DIAS_LABORABLES_DEFAULT` pasa de lunes–sábado a lunes–viernes (`server/lib/nominaHorarios.js` y su espejo `src/utils/diasLaborables.js`), con el texto de `SemanaLaborableSection`. Quien no tenga días configurados pasa a tener sábado y domingo libres en Asistencia.
+- Migración **262_nomina_descanso_remunerado.sql**: columna informativa `nomina_lineas.dias_descanso` (≥ 0). El dinero no cambia de columna, así que los recálculos del total (ajuste de descuentos, comisiones) siguen cuadrando.
+- Interfaz y PDF (`src/utils/descansoRecibo.js` nuevo):
+  - `LiquidacionModal` separa «Días trabajados» de «Descanso y feriados pagados (N) · Art. 119».
+  - `PeriodoDetalleModal` muestra «5 + 2 desc.».
+  - El recibo PDF suma el renglón «Descanso y Feriados Pagados (LOTTT art. 119)».
+  - El resumen PDF muestra «5+2».
+
+**Pruebas.**
+- `nominaDescanso.test.js` (nuevo, 14): semana completa, 1 falta (conserva), 2 faltas (pierde), feriado no laborable y laborable, días futuros, ingreso a mitad de semana, lunes a sábado, quincenal por bloques, Frailin 65,33 / 56, sábado trabajado con monto fijo, domingo sin trabajo no se paga doble y compatibilidad sin contexto.
+- `nomina.flujo.test.js` +3: descanso pagado en el período (7 × 30 = 210), guardado sin la columna si falta la 262, y 500 si no se leen los feriados.
+- Mocks de `nomina.periodos-jornadas.test.js` actualizados. `npm run verify` completo **sin `.env`: EXIT 0**: 134 archivos / 1395 pruebas, `test:flujo-mes` 15 fases, `test:db` 44 comprobaciones / 57 migraciones (la 262 compila desde una base vacía), build y presupuesto de bundle PASS.
+
+**Pendientes.**
+1. **Aplicar la migración 262 en producción.** El código funciona sin ella, pero sin ella no guarda el conteo de días de descanso.
+2. **Recalcular los períodos abiertos** para que tomen el descanso; los pagados no cambian.
+3. **Revisar la semana de cada trabajador** en «Días que trabaja»: quien tenga marcado el sábado como laborable solo descansa el domingo.
+4. **Art. 120:** el sábado, domingo o feriado trabajado a $10 fijos queda por debajo de 1,5 × el salario diario con sueldos de más de $200, y falta el día compensatorio del art. 188. El usuario lo dejó para después.
+5. No hubo validación visual. Sin commit ni deploy.
+
+## 145. Reglas de pago y de la ley editables desde Configuración (2026-11-17)
+
+**Objetivo:** que todo lo que decide cuánto se paga se pueda cambiar desde la app si cambia la ley o la política de la empresa, sin tocar código. Pedido del usuario: «corrige la configuración de nómina para que todo sea editable y configurable por si cambian las leyes». Regla del dueño (audio del 17/11, confirmada por el usuario): **hora extra = factor 2,5** sobre la hora normal (no $2,50 fijos; lo de Frailin en el Excel fue un error), y **sábado, domingo o feriado trabajado = un día de sueldo adicional** a los 7 de la semana (9 días si trabaja los 7), para cualquier trabajador.
+
+**Hallazgos.**
+- La pantalla de Configuración **no permitía editar los factores**: solo montos fijos. Forzaba el «modo monto fijo» y una casilla vacía conservaba el monto anterior, así que no se podía volver al factor.
+- El servidor dejaba guardar la configuración a cualquier sesión de la cuenta, sin revisar la capacidad.
+- La ficha de un empleado sin semana guardada marcaba los **6 días** (sábado incluido); al guardarla, la persona quedaba con el sábado laborable.
+
+**Cambios.**
+- Migración **263_nomina_reglas_ley_configurables.sql** en `configuracion_negocio`:
+  - `nomina_divisor_mensual` (30, art. 113)
+  - `nomina_dias_laborables_default` ({1..5}, art. 173)
+  - `nomina_descanso_remunerado` (true, art. 119)
+  - `nomina_faltas_pierde_descanso` (2; 0 = nunca)
+  
+  Todas con CHECK de rango.
+- `server/lib/nominaReglasLey.js` (nuevo): única fuente de esos valores por defecto, de su lectura (un valor inválido vuelve al de la ley) y de su validación. La interfaz importa el mismo archivo.
+- Motor:
+  - `nominaDescanso.js` acepta el umbral de faltas.
+  - `calcularLineaNomina` respeta `descansoRemunerado: false`.
+  - `nomina.periodos.js` pasa las reglas al cálculo.
+  - `nominaHorarios.js` resuelve los días por defecto de la cuenta (`fetchDiasLaborablesDefecto`; si no puede leerlos, lunes a viernes), y `nomina.empleados.js` y la carga masiva los usan.
+- `fetchConfigNomina` lee las columnas nuevas y, si la base aún no las tiene (400), reintenta sin ellas. Así nunca cae en silencio a los factores por defecto.
+- `server/handlers/config.js`:
+  - Guarda y valida las reglas.
+  - El modo del feriado ya no se fuerza: sin monto vuelve a factor, con monto pasa a monto fijo.
+  - Exige `administrarSistema` (jefe) para pagos, reglas y datos del negocio; el rol nómina solo puede cambiar el horario general (`administrarNomina`).
+- Interfaz:
+  - `ReglasPagoPanel.jsx` (nuevo) reemplaza el panel de montos fijos. Hora extra, sábado y domingo/feriado se pagan por **factor o monto fijo**, cada uno con su ayuda y su artículo. Además: divisor mensual, días laborables por defecto (Lun–Sáb), descanso pagado (interruptor) y faltas, con el botón «Valores de la ley», que propone sin guardar. Solo lectura para quien no es jefe.
+  - `TabConfiguracion` renombra la sección y corrige los textos de «lunes a sábado».
+  - `useReglasLey` (nuevo) lleva el divisor a la ficha (`EmpleadoConfigModal`, `ModalidadSalarioSection`), al recibo (`LiquidacionModal`, `PeriodoDetalleModal`) y al resumen PDF.
+  - `semanaEditable` propone los días por defecto de la cuenta.
+
+**Pruebas.**
+- `nominaReglasLey.test.js` (nuevo, 15): valores por defecto, valores guardados, inválidos → ley, validación, umbral 0/2/3, descanso apagado, y el caso de la empresa (factor 2,5 en extras y factor 1 en sábado).
+- `config.test.js` +5: guarda factores y reglas, modo del feriado, rangos, el rol nómina no cambia pagos pero sí el horario.
+- `ReglasPagoPanel.test.jsx` (nuevo, 5).
+- `diasLaborables.test.js` +1: ficha nueva lunes a viernes.
+- Mocks de 3 suites con `useConfigNomina`.
+- `npm run verify` completo **sin `.env`: EXIT 0**: 136 archivos / 1421 pruebas, `test:db` 44 comprobaciones / 58 migraciones (la 263 compila desde una base vacía), paridad de permisos sin brechas, build y presupuesto de bundle PASS.
+
+**Pendientes.**
+1. Aplicar las migraciones **262 y 263** en producción.
+2. Configurar en la app la regla de la empresa: hora extra factor 2,5; sábado y domingo/feriado factor 1 y sin montos fijos. Es una decisión de la empresa por debajo del art. 120, que pide 1,5.
+3. Recalcular los períodos abiertos.
+4. Cambiar el divisor no recalcula los sueldos ya guardados en cada ficha.
+5. Sin validación visual ni commit.

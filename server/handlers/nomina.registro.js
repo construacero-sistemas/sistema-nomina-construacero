@@ -213,7 +213,7 @@ export async function handleRegistrarAsistenciaMasivo(request, env) {
   // cargar horario previsto o marcar falta ahí inventaría jornadas y ausencias.
   const diasResueltos = await fetchDiasLaborablesPorEmpleado(env, headers, operador.cuenta_id, { empleadoIds })
   if (!diasResueltos.ok) return jsonError('No se pudieron verificar los días laborables de la selección', 500, request)
-  const libres = empleadosLibresEseDia(empleadoIds, diasResueltos.porEmpleado, fecha)
+  const libres = empleadosLibresEseDia(empleadoIds, diasResueltos.porEmpleado, fecha, diasResueltos.defecto)
   if (libres.length) {
     return jsonError(`Ese día es libre para ${libres.length} de los ${empleadoIds.length} empleados seleccionados. Quítalos de la selección: la carga masiva solo escribe en los días laborables de cada uno.`, 409, request)
   }

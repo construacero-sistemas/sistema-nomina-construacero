@@ -25,11 +25,11 @@ export default function BuscadorMovimientos({ valor, onChange, encontrados, carg
           placeholder="Buscar: concepto, categoría, monto, # de registro, fecha…"
           aria-label="Buscar movimientos"
           autoComplete="off"
-          className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 text-sm font-medium text-slate-800 outline-none focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+          className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-11 text-[16px] sm:text-sm font-medium text-slate-800 outline-none focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
         />
         {valor && (
           <button type="button" onClick={() => onChange('')} aria-label="Limpiar búsqueda"
-            className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <X size={16} />
           </button>
         )}

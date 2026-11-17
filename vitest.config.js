@@ -33,6 +33,12 @@ export default defineConfig({
           testTimeout: 15_000,
           include: ['src/**/*.test.{js,jsx}', 'compat/**/*.test.{js,jsx}'],
           setupFiles: ['src/test/setup.js'],
+          // Valores ficticios: CI no tiene .env y los tests nunca deben llegar a un
+          // Supabase real, aunque el desarrollador tenga uno configurado en local.
+          env: {
+            VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
+            VITE_SUPABASE_ANON_KEY: 'test-anon-key',
+          },
         },
       },
     ],

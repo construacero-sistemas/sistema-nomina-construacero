@@ -117,3 +117,27 @@ En todo modal, diálogo o ventana emergente donde se listen, guarden, editen o c
 2. **Límite de registros por vista**: Las filas deben presentarse en bloques acotados y manejables (generalmente entre 5 y 15 filas por página según la densidad de las columnas), evitando listas infinitas que fuercen scroll desmedido dentro del modal.
 3. **Ergonomía táctil y diseño responsivo**: Los botones de cambio de página deben respetar el touch target de al menos 44 px de altura (`h-11`), mostrar el estado activo/deshabilitado con nitidez y adaptarse sin desbordes horizontales tanto en pantallas móviles (iPhone / Android) como en escritorio.
 
+
+## Regla obligatoria: los vendedores no van en la nómina
+
+Los vendedores a comisión **no forman parte de la nómina** (decisión del negocio, 15/11/2026), ni siquiera para pagarles la comisión desde Empleados. Todo lo que los mete en la nómina queda oculto detrás de una sola bandera, `VENDEDORES_EN_NOMINA` (`src/config/comisionesVendedores.js`, en `false`):
+
+- el botón «Importar Comisiones POS» del detalle de período;
+- la modalidad «Por Comisión (Vendedor)» y el puesto sugerido «Vendedor (Comisión)» de la ficha, y el cambio automático a comisión al escribir «vendedor»/«ventas» o con sueldo 0;
+- los botones «Pagar Comisión» de Empleados, la tarjeta de indicador «Vendedores (Comisión)», el filtro «Vendedores» y la ficha especial de vendedor.
+
+El código se conserva; reactivarlo requiere que el usuario lo pida.
+
+**Guardrail:** `PeriodoDetalleModal.tasaPago.test.jsx`, `TabEmpleados.test.jsx` y `EmpleadoConfigModal.test.jsx` fallan si alguna de esas piezas vuelve a aparecer.
+
+## Regla obligatoria: semana de 7 días con descanso pagado (LOTTT art. 119 y 173)
+
+La semana de nómina tiene los 7 días: **lunes a viernes son laborables y sábado y domingo son descanso** (valor por defecto cuando la persona no tiene «Días que trabaja» configurados; decisión del usuario, 17/11/2026). El sueldo diario es el **sueldo mensual ÷ 30** (art. 113).
+
+- Los días de descanso y los feriados no laborables **se pagan con el salario diario aunque no se trabajen** (art. 119). Solo se pierden los de la semana (bloque de 7 días desde el inicio del período) en que la persona faltó **dos o más** días hábiles; faltar uno no quita el derecho.
+- El dinero del descanso va dentro de `monto_normal_usd` y `nomina_lineas.dias_descanso` dice cuántos días son (migración 262). El recibo, la planilla y los PDF lo muestran como «Descanso y feriados pagados».
+- El trabajo hecho en sábado, domingo o feriado se sigue pagando aparte con el monto fijo o el recargo configurado. Pendiente: el art. 120 exige al menos 1,5 × el salario diario y los $10 fijos actuales quedan por debajo con sueldos de más de $200 al mes.
+- Única fuente de la regla: `server/lib/nominaDescanso.js`.
+- **Todo es editable** (Configuración → «Reglas de pago y de la ley», migración 263): divisor del sueldo mensual, días laborables por defecto, descanso pagado sí/no, faltas que lo hacen perder (0 = nunca), y hora extra, sábado y domingo/feriado trabajados por factor o por monto fijo. Los valores de la ley vigente viven en `server/lib/nominaReglasLey.js` (única fuente; la interfaz la importa). Ningún valor legal nuevo se escribe fijo en el código: se agrega ahí y en la configuración. Solo `administrarSistema` (jefe) guarda pagos y reglas; el rol nómina solo el horario general.
+
+**Guardrail:** `server/lib/__tests__/nominaDescanso.test.js` y las pruebas de cálculo de período en `server/handlers/__tests__/nomina.flujo.test.js`.
