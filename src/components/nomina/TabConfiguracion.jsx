@@ -44,12 +44,15 @@ export default function TabConfiguracion() {
   // La purga de mantenimiento es exclusiva del rol jefe (capacidad
   // `purgarRegistros` de la matriz única): los demás roles no ven la sección.
   const puedePurgar = tieneCapacidad(perfil, 'purgarRegistros')
+  // Almacenamiento purga Nómina y Finanzas (endpoint solo-admin): el rol
+  // nomina no lo ve; su configuración se limita a lo de nómina.
+  const puedeRetencion = tieneCapacidad(perfil, 'gestionarUsuarios')
   const secciones = [
     { id: 'calendario', label: 'Horarios y calendario', description: 'Jornada estándar de empresa y feriados' },
     { id: 'recargos', label: 'Reglas de pago y de la ley', description: 'Horas extra, sábados, feriados, descanso pagado y sueldo diario' },
     { id: 'tasas', label: 'Tasas de cambio', description: 'BCV dólar, BCV euro, USDT o manual' },
     // { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales' }, // Oculto temporalmente
-    { id: 'retencion', label: 'Almacenamiento', description: 'Retención y purga inteligente de la base' },
+    ...(puedeRetencion ? [{ id: 'retencion', label: 'Almacenamiento', description: 'Retención y purga inteligente de la base' }] : []),
     // { id: 'accesibilidad', label: 'Accesibilidad', description: 'Modo accesible: texto grande y alto contraste' }, // Oculto temporalmente
     ...(puedePurgar ? [{ id: 'mantenimiento', label: 'Mantenimiento', description: 'Purgar registros de Nómina y Finanzas con respaldo' }] : []),
   ]
@@ -98,7 +101,7 @@ export default function TabConfiguracion() {
         {seccion === 'recargos' && <ReglasPagoPanel config={configNomina} />}
         {seccion === 'tasas' && <TasasPanel />}
         {seccion === 'reglas' && <CatalogPanel conceptos={conceptos} reglas={reglas} />}
-        {seccion === 'retencion' && <RetencionCard />}
+        {seccion === 'retencion' && puedeRetencion && <RetencionCard />}
         {seccion === 'accesibilidad' && <AccesibilidadPanel />}
         {seccion === 'mantenimiento' && puedePurgar && <MantenimientoCard />}
       </div>

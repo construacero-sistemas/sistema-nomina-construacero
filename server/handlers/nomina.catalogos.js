@@ -95,8 +95,8 @@ export async function handleGetTasaManual(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  // La tasa manual alimenta equivalencias en Bs de Nómina y Finanzas: basta con
-  // operar cualquiera de los dos módulos para leerla.
+  // Leerla no cambia nada: basta con ver Nómina o Finanzas (el selector de la
+  // cabecera aparece en ambos).
   if (!tieneCapacidad(operador, 'verNomina') && !tieneCapacidad(operador, 'verFinanzas')) {
     return requireCapacidad(operador, 'verNomina', request)
   }
@@ -118,12 +118,11 @@ export async function handleGetTasaManual(request, env) {
 export async function handleFijarTasaManual(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
-  const { operador, headers, ip } = v
-  // Fijar la tasa manual la afecta tanto en Nómina como en Finanzas: la autoriza
-  // cualquiera que administre nómina u opere finanzas (jefe/desarrollador, ambos).
-  if (!tieneCapacidad(operador, 'administrarNomina') && !tieneCapacidad(operador, 'operarFinanzas')) {
-    return requireCapacidad(operador, 'administrarNomina', request)
-  }
+  const { operador, ip } = v
+  // La tasa manual solo se usa en Nómina (Finanzas la ignora y toma el BCV): la
+  // fija quien administra nómina (jefe, desarrollador y el rol nómina).
+  const denegado = requireCapacidad(operador, 'administrarNomina', request)
+  if (denegado) return denegado
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   let body
@@ -132,11 +131,10 @@ export async function handleFijarTasaManual(request, env) {
   if (!/^\d+(\.\d{1,8})?$/.test(valorTexto) || !(Number(valorTexto) > 0) || Number(valorTexto) > 1000000) {
     return jsonError('valor de tasa inválido', 400, request)
   }
-  const motivo = typeof body?.motivo === 'string' ? body.motivo.trim() : ''
-  if (motivo.length < 3 || motivo.length > 300) {
-    return jsonError('El motivo es obligatorio (entre 3 y 300 caracteres)', 400, request)
-  }
-  if (!textoNominaValido(motivo, 300)) return jsonError('Motivo demasiado largo', 400, request)
+  // El motivo ya no se pide: queda quién y cuándo la fijó. Si viene, se guarda.
+  const motivoTexto = typeof body?.motivo === 'string' ? body.motivo.trim() : ''
+  if (motivoTexto && !textoNominaValido(motivoTexto, 300)) return jsonError('Motivo demasiado largo', 400, request)
+  const motivo = motivoTexto || null
   const fila = {
     fecha: fechaOperativaNomina(env),
     moneda_origen: 'USD',

@@ -142,11 +142,11 @@ describe('compuertas derivadas — ninguna lista de roles escrita a mano', () =>
       expect(accesoUI(rol), String(rol)).toEqual({
         nomina: capacidades.verNomina,
         finanzas: capacidades.verFinanzas,
-        sistema: capacidades.administrarSistema,
+        sistema: capacidades.administrarSistema || capacidades.administrarNomina,
       })
     }
-    // El rol nomina nunca ve finanzas; finanzas nunca ve nómina.
-    expect(accesoUI('nomina')).toEqual({ nomina: true, finanzas: false, sistema: false })
+    // El rol nomina nunca ve finanzas (sí su configuración); finanzas nunca ve nómina.
+    expect(accesoUI('nomina')).toEqual({ nomina: true, finanzas: false, sistema: true })
     expect(accesoUI('finanzas')).toEqual({ nomina: false, finanzas: true, sistema: false })
   })
 

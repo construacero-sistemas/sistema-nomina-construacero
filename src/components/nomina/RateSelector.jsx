@@ -3,6 +3,8 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, DollarSign, Edit2, RefreshCw } from 'lucide-react'
 import useMonedaNomina, { formatBs } from '../../hooks/useMonedaNomina.js'
+import useAuthStore from '../../../compat/store/useAuthStore.js'
+import { tieneCapacidad } from '../../config/accesoModulos.js'
 
 export function RateSelector({ className = '', compact = false, light = false }) {
   const {
@@ -26,7 +28,10 @@ export function RateSelector({ className = '', compact = false, light = false })
   const [open, setOpen] = useState(false)
   const [editingManual, setEditingManual] = useState(false)
   const [customVal, setCustomVal] = useState(tasaManual > 0 ? String(tasaManual) : '')
-  const [motivoVal, setMotivoVal] = useState('')
+  // La tasa manual solo rige en Nómina: la ve y la fija quien administra nómina.
+  const perfil = useAuthStore(state => state.perfil)
+  const puedeTasaManual = tieneCapacidad(perfil, 'administrarNomina')
+  const opcionesVisibles = (opcionesTasa || []).filter(o => puedeTasaManual || o.id !== 'manual')
   const [errorManual, setErrorManual] = useState('')
   const triggerRef = useRef(null)
   const menuRef = useRef(null)
@@ -79,17 +84,15 @@ export function RateSelector({ className = '', compact = false, light = false })
     }
   }
 
-  // La tasa manual se guarda en el servidor con quién, cuándo y por qué
-  // (trazable) y se sincroniza entre navegadores; el motivo es obligatorio.
+  // La tasa manual se guarda en el servidor con quién y cuándo (trazable) y se
+  // sincroniza entre navegadores. Solo afecta a Nómina, no a Finanzas.
   async function handleSaveManual(e) {
     if (e) e.preventDefault()
     const num = parseFloat(String(customVal).replace(',', '.'))
     if (!(num > 0)) { setErrorManual('Escribe una tasa mayor que cero.'); return }
-    const motivo = motivoVal.trim()
-    if (motivo.length < 3) { setErrorManual('Explica el motivo de la tasa (mínimo 3 caracteres).'); return }
     setErrorManual('')
     try {
-      await fijarTasaManual(num, motivo)
+      await fijarTasaManual(num)
       setEditingManual(false)
       setOpen(false)
     } catch {
@@ -153,7 +156,7 @@ export function RateSelector({ className = '', compact = false, light = false })
             </div>
 
             <div className="space-y-1">
-              {opcionesTasa.map(opt => {
+              {opcionesVisibles.map(opt => {
                 const isSelected = tipoTasa === opt.id
                 let valor = 0
                 if (opt.id === 'bcv_usd') valor = tasasMercado.bcv_usd
@@ -189,7 +192,7 @@ export function RateSelector({ className = '', compact = false, light = false })
             </div>
 
             {/* Input para tasa manual */}
-            {editingManual && (
+            {editingManual && puedeTasaManual && (
               <form onSubmit={handleSaveManual} className="mt-2 pt-2 border-t border-slate-100 space-y-1.5 animate-in fade-in">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase">Ingresar tasa manual (Bs/$)</label>
                 <div className="flex min-w-0 gap-1.5">
@@ -212,16 +215,7 @@ export function RateSelector({ className = '', compact = false, light = false })
                     {guardandoTasaManual ? 'Guardando…' : 'Fijar'}
                   </button>
                 </div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase">Motivo (quién y por qué)</label>
-                <input
-                  type="text"
-                  maxLength={300}
-                  placeholder="Ej. Tasa acordada con finanzas para la semana"
-                  value={motivoVal}
-                  onChange={e => setMotivoVal(e.target.value)}
-                  disabled={guardandoTasaManual}
-                  className="h-11 w-full rounded-xl border border-slate-300 px-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
+                <p className="text-[10px] font-semibold text-slate-500">Solo cambia la tasa de Nómina; Finanzas sigue con la del BCV.</p>
                 {(errorManual || errorTasaManual) && (
                   <p role="alert" className="text-[10px] font-bold text-rose-700">{errorManual || errorTasaManual}</p>
                 )}

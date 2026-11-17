@@ -181,7 +181,11 @@ export function accesoUI(rol) {
   return {
     nomina: capacidades.verNomina,
     finanzas: capacidades.verFinanzas,
-    sistema: capacidades.administrarSistema,
+    // La pantalla Configuración la ve quien administra el sistema (jefe) o
+    // quien administra nómina: el rol nomina solo ve las secciones de nómina
+    // (horario, feriados, reglas de pago en lectura y tasas); el servidor
+    // sigue exigiendo `administrarSistema` para reglas, factores y montos.
+    sistema: capacidades.administrarSistema || capacidades.administrarNomina,
   }
 }
 

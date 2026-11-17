@@ -66,7 +66,9 @@ const ROUTES = [
 const ESCRITURAS_SOLO_ADMIN = [
   'handleCrearConfigEmpleado', 'handleActualizarConfigEmpleado',
   'handleRegistrarAsistenciaMasivo', 'handleEliminarAsistencia',
-  'handleCrearFeriado', 'handleCrearHorario',
+  // Los feriados son configuración propia de nómina (`administrarNomina`):
+  // el rol nomina sí los crea, por eso no están en esta lista.
+  'handleCrearHorario',
   'handleCrearConcepto', 'handleCrearReglaLegal', 'handleCrearTasaSnapshot',
   'handleCrearPeriodo', 'handleCalcularPeriodo', 'handleCerrarPeriodo',
   'handleReabrirPeriodo', 'handleEliminarPeriodo',
