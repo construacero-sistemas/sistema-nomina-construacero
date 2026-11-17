@@ -43,7 +43,7 @@ describe('snapshots de tasas por tenant', () => {
   })
 })
 
-describe('tasa manual trazable (quién, cuándo, por qué)', () => {
+describe('tasa manual trazable (quién y cuándo; motivo opcional)', () => {
   it('lee la última tasa manual de la cuenta', async () => {
     mock = installFetchMock([{ match: '/nomina_tasas_snapshot', respond: [{ valor: 42.5, motivo: 'Acuerdo finanzas', fijada_por_nombre: 'Admin Test', observado_en: '2026-09-27T10:00:00Z' }] }])
     const res = await H.handleGetTasaManual(makeRequest(undefined, { url: 'http://worker.test/api/nomina/tasa-manual' }), ENV)
@@ -72,11 +72,30 @@ describe('tasa manual trazable (quién, cuándo, por qué)', () => {
     expect(post.body.periodo_id).toBeNull()
   })
 
+  it('el rol nómina la fija sin motivo', async () => {
+    operadorActual = OPERADORES.nomina
+    mock = installFetchMock([
+      { match: '/nomina_tasas_snapshot', method: 'POST', respond: [{ id: IDS.registro, valor: 950 }] },
+    ])
+    const { status } = await readResponse(await H.handleFijarTasaManual(makeRequest({ valor: '950' }), ENV))
+    expect(status).toBe(201)
+    const post = mock.calls.find(call => call.method === 'POST' && call.url.includes('/nomina_tasas_snapshot'))
+    expect(post.body.motivo).toBeNull()
+    expect(post.body.fijada_por_nombre).toBe('Nomina Test')
+  })
+
+  it('el rol finanzas no la fija: es solo de Nómina', async () => {
+    operadorActual = OPERADORES.finanzas
+    mock = installFetchMock([])
+    const { status } = await readResponse(await H.handleFijarTasaManual(makeRequest({ valor: '950' }), ENV))
+    expect(status).toBe(403)
+    expectSinRed(mock)
+  })
+
   it.each([
-    ['valor inválido', { valor: 'abc', motivo: 'Motivo válido' }, /valor de tasa/i],
-    ['valor cero', { valor: '0', motivo: 'Motivo válido' }, /valor de tasa/i],
-    ['motivo demasiado corto', { valor: '42.50', motivo: 'x' }, /motivo/i],
-    ['sin motivo', { valor: '42.50' }, /motivo/i],
+    ['valor inválido', { valor: 'abc' }, /valor de tasa/i],
+    ['valor cero', { valor: '0' }, /valor de tasa/i],
+    ['motivo demasiado largo', { valor: '42.50', motivo: 'x'.repeat(301) }, /motivo/i],
   ])('rechaza %s sin escribir', async (_caso, payload, esperado) => {
     mock = installFetchMock([])
     const res = await H.handleFijarTasaManual(makeRequest(payload), ENV)

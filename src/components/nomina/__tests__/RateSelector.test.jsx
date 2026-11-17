@@ -2,12 +2,22 @@
 // src/components/nomina/__tests__/RateSelector.test.jsx
 // Guardarraíles: (1) el desplegable no desborda en móvil (regresión del scroll
 // horizontal); (2) avisa cuando la tasa elegida no tiene dato; (3) la tasa
-// manual exige motivo y se guarda trazable.
+// manual se fija sin motivo y solo la ve quien administra nómina.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 
 const fijarMock = vi.fn(async () => {})
+const auth = vi.hoisted(() => ({ rol: 'jefe' }))
+
+vi.mock('../../../../compat/store/useAuthStore.js', () => {
+  const useAuthStore = vi.fn(selector => {
+    const state = { perfil: { rol: auth.rol } }
+    return selector ? selector(state) : state
+  })
+  useAuthStore.getState = () => ({ perfil: { rol: auth.rol } })
+  return { default: useAuthStore }
+})
 
 const base = {
   tipoTasa: 'bcv_usd',
@@ -48,6 +58,7 @@ function abrirMenu() {
 
 beforeEach(() => {
   Object.assign(hookState, base)
+  auth.rol = 'jefe'
   fijarMock.mockClear()
   fijarMock.mockResolvedValue(undefined)
 })
@@ -99,29 +110,37 @@ describe('RateSelector — avisos de tasa de respaldo', () => {
   })
 })
 
-describe('RateSelector — tasa manual trazable', () => {
-  it('exige motivo antes de fijar la tasa', () => {
+describe('RateSelector — tasa manual de Nómina', () => {
+  it('se fija sin pedir motivo', async () => {
     abrirMenu()
     fireEvent.click(screen.getByRole('button', { name: /Tasa Manual/i }))
-    fireEvent.change(screen.getByPlaceholderText(/Ej\. 42\.50/i), { target: { value: '42.5' } })
+    expect(screen.queryByPlaceholderText(/Tasa acordada/i)).toBeNull()
+    expect(screen.getByText(/Solo cambia la tasa de Nómina/i)).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText(/Ej\. 42\.50/i), { target: { value: '950' } })
     fireEvent.click(screen.getByRole('button', { name: /Fijar/i }))
-    expect(screen.getByRole('alert')).toHaveTextContent(/motivo/i)
-    expect(fijarMock).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(fijarMock).toHaveBeenCalledWith(950))
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('guarda la tasa con el motivo declarado', async () => {
+  it('el rol nómina puede fijarla', async () => {
+    auth.rol = 'nomina'
     abrirMenu()
     fireEvent.click(screen.getByRole('button', { name: /Tasa Manual/i }))
-    fireEvent.change(screen.getByPlaceholderText(/Ej\. 42\.50/i), { target: { value: '42.5' } })
-    fireEvent.change(screen.getByPlaceholderText(/Ej\. Tasa acordada/i), { target: { value: 'Tasa acordada con finanzas' } })
+    fireEvent.change(screen.getByPlaceholderText(/Ej\. 42\.50/i), { target: { value: '950' } })
     fireEvent.click(screen.getByRole('button', { name: /Fijar/i }))
-    await vi.waitFor(() => expect(fijarMock).toHaveBeenCalledWith(42.5, 'Tasa acordada con finanzas'))
+    await vi.waitFor(() => expect(fijarMock).toHaveBeenCalledWith(950))
   })
 
-  it('muestra quién fijó la tasa manual y por qué', () => {
-    hookState.tasaManualInfo = { valor: 42.5, motivo: 'Acuerdo con finanzas', fijada_por_nombre: 'Admin Test', observado_en: '2026-09-27T10:00:00Z' }
+  it('el rol finanzas no ve la opción manual (no afecta a Finanzas)', () => {
+    auth.rol = 'finanzas'
+    abrirMenu()
+    expect(screen.queryByRole('button', { name: /Tasa Manual/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /BCV Dólar/i })).toBeInTheDocument()
+  })
+
+  it('muestra quién fijó la tasa manual', () => {
+    hookState.tasaManualInfo = { valor: 42.5, motivo: null, fijada_por_nombre: 'Admin Test', observado_en: '2026-09-27T10:00:00Z' }
     abrirMenu()
     expect(screen.getByText(/fijada por/i)).toHaveTextContent('Admin Test')
-    expect(screen.getByText(/fijada por/i)).toHaveTextContent('Acuerdo con finanzas')
   })
 })

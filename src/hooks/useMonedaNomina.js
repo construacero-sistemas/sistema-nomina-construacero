@@ -36,9 +36,12 @@ export const OPCIONES_TASA = [
 
 const KEY_TASA_MANUAL = ['nomina', 'tasa-manual']
 
-export default function useMonedaNomina() {
+// `ignorarManual`: Finanzas no usa la tasa manual (es solo de Nómina); si en la
+// cabecera está elegida «Manual», Finanzas trabaja con el BCV dólar.
+export default function useMonedaNomina({ ignorarManual = false } = {}) {
   const marketRates = useTasaCambioNomina()
-  const { tipoTasa, tasaManual: tasaManualLocal, setTipoTasa, setTasaManual, hidratarTasaManual } = useTasaNominaStore()
+  const { tipoTasa: tipoElegido, tasaManual: tasaManualLocal, setTipoTasa, setTasaManual, hidratarTasaManual } = useTasaNominaStore()
+  const tipoTasa = ignorarManual && tipoElegido === 'manual' ? 'bcv_usd' : tipoElegido
   const queryClient = useQueryClient()
 
   // Tasa manual del servidor (una por cuenta, con quién/cuándo/por qué). Si la

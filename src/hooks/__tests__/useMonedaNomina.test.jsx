@@ -2,7 +2,7 @@
 // src/hooks/__tests__/useMonedaNomina.test.jsx
 // Guardarraíles del flujo de tasas: (1) si la tasa elegida no tiene dato, se
 // avisa con `tasaFallback` en vez de mostrar un número mentiroso; (2) la tasa
-// manual se hidrata desde el servidor (trazable) y se fija con motivo.
+// manual se hidrata desde el servidor (trazable) y Finanzas la ignora.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -104,5 +104,27 @@ describe('useMonedaNomina — tasa manual sincronizada con el servidor', () => {
     await waitFor(() => expect(result.current.tipoTasa).toBe('manual'))
     expect(result.current.tasaManual).toBe(42.5)
     expect(result.current.tasaFallback).toBeNull()
+  })
+})
+
+describe('useMonedaNomina — Finanzas ignora la tasa manual', () => {
+  it('con «Manual» elegida, Finanzas usa el BCV dólar y Nómina la manual', async () => {
+    marketMock.usd = 857.01
+    apiMock.get.mockResolvedValue({ tasa: { valor: 950, observado_en: '2026-11-17T10:00:00Z' } })
+    useTasaNominaStore.setState({ tipoTasa: 'manual', tasaManual: 950 })
+    const nomina = renderHook(() => useMonedaNomina(), { wrapper })
+    const finanzas = renderHook(() => useMonedaNomina({ ignorarManual: true }), { wrapper })
+    await waitFor(() => expect(nomina.result.current.tasaActiva).toBe(950))
+    expect(finanzas.result.current.tasaActiva).toBe(857.01)
+    expect(finanzas.result.current.tipoTasa).toBe('bcv_usd')
+    expect(finanzas.result.current.nombreTasa).toBe('BCV Dólar ($)')
+  })
+
+  it('las demás tasas (USDT, euro) siguen siendo las mismas en ambos', async () => {
+    marketMock.usd = 857.01
+    marketMock.usdt = 966.54
+    useTasaNominaStore.setState({ tipoTasa: 'usdt' })
+    const finanzas = renderHook(() => useMonedaNomina({ ignorarManual: true }), { wrapper })
+    await waitFor(() => expect(finanzas.result.current.tasaActiva).toBe(966.54))
   })
 })
