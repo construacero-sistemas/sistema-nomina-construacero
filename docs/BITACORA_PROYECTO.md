@@ -4232,3 +4232,19 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 2. Mergear el PR #1 para desplegar el código que usa estas columnas.
 3. Recalcular los períodos abiertos (hoy no hay ninguno).
 4. Quitar la línea vieja de `DB_PASSWORD` del `.env`.
+
+## 147. Vendedores dados de baja en la nómina de producción y despliegue del PR #1 (2026-11-17)
+
+**Contexto.** La regla «los vendedores no van en la nómina» (AGENT.md) solo ocultaba en la app lo de comisiones. En producción seguían **3 fichas activas con cargo vendedor**: josue marciales ($8/día, sin control de asistencia, así que habría cobrado la semana completa), niki ramirez y edgar ramirez ($0/día). Las tres estaban ligadas a un vendedor del POS.
+
+**Qué se hizo.**
+- Baja de las 3 fichas (`nomina_config_empleado.activo = false`), lo mismo que hace «Dar de baja» en la app. No se borró nada: la persona y su ficha siguen en la vista de Bajas y se pueden reactivar. Los períodos solo toman fichas activas.
+- Respaldo previo de las 3 filas en `local-backups/backup_vendedores_baja_20261117.json` (fuera de git).
+- Resultado: 10 fichas activas y 3 de baja.
+- PR #1 (semana de 7 días, descanso pagado y reglas editables) mergeado a `main` con los 4 checks en verde (merge `c658264`); despliegue de Vercel en producción en verde para los dos proyectos.
+
+- Factores de pago puestos en producción (`configuracion_negocio`), a pedido del usuario: hora extra factor **2,5**; sábado y domingo/feriado factor **1**; sin montos fijos y feriado en modo `factor`. Antes: hora extra $2 fija, sábado $15 fijo y feriado en «monto fijo» sin monto. Valores anteriores respaldados en `local-backups/backup_pre_262_263_20261117.json`.
+
+**Pendientes.**
+1. Quitar la línea vieja de `DB_PASSWORD` del `.env` (línea 4).
+2. Validación visual en el teléfono de Configuración y del recibo con el descanso pagado.
