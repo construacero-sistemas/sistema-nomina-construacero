@@ -8,6 +8,7 @@ import { nominaTenantFilter } from '../lib/nominaTenant.js'
 import {
   booleanNominaValido,
   fechaNominaValida,
+  filtroIgual,
   horaNominaValida,
   svcHeaders,
   tenantGuard,
@@ -230,9 +231,20 @@ export async function handleMarcarSalida(request, env) {
     )
   } catch (error) { return jsonError(error.message || 'Horas inválidas', 400, request) }
   const { horas_descanso: _hd, ...calcCampos } = calculation
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?id=eq.${existing.row.id}${nominaTenantFilter(operador.cuenta_id)}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_feriado,es_ausencia,estado_marcaje,nota`, { method: 'PATCH', headers: { ...svcHeaders(env), Prefer: 'return=representation' }, body: JSON.stringify({ ...calcCampos, horas_descanso: descanso, hora_salida: mark.hora, estado_marcaje: existing.row.estado_marcaje === 'corregido' ? 'corregido' : 'completo', salida_marcada_en: mark.marcadoEn, salida_por: operador.id, salida_idempotency_key: idempotencyKey.trim(), registrado_por: operador.id, nota: nota || existing.row.nota || null }) })
+  // M-2 / G-3: concurrencia optimista. El PATCH solo cierra la jornada si sigue
+  // abierta tal como se leyó; si otro equipo marcó la salida en medio, no se pisa.
+  const filtroLeido = `id=eq.${existing.row.id}${nominaTenantFilter(operador.cuenta_id)}${filtroIgual('estado_marcaje', existing.row.estado_marcaje)}${filtroIgual('hora_entrada', existing.row.hora_entrada)}&hora_salida=is.null&es_ausencia=eq.false`
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?${filtroLeido}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_feriado,es_ausencia,estado_marcaje,nota`, { method: 'PATCH', headers: { ...svcHeaders(env), Prefer: 'return=representation' }, body: JSON.stringify({ ...calcCampos, horas_descanso: descanso, hora_salida: mark.hora, estado_marcaje: existing.row.estado_marcaje === 'corregido' ? 'corregido' : 'completo', salida_marcada_en: mark.marcadoEn, salida_por: operador.id, salida_idempotency_key: idempotencyKey.trim(), registrado_por: operador.id, nota: nota || existing.row.nota || null }) })
   if (!response.ok) return jsonError('No se pudo registrar la salida', 409, request)
   const [registro] = await response.json()
+  if (!registro) {
+    const actual = await fetchRegistroDelDia(env, headers, operador, empleadoId, mark.fecha)
+    if (!actual.error && actual.row?.salida_idempotency_key === idempotencyKey.trim()) {
+      return json({ ok: true, idempotente: true, registro: actual.row }, 200, request)
+    }
+    const horaGanadora = actual.row?.hora_salida ? ` a las ${String(actual.row.hora_salida).slice(0, 5)}` : ''
+    return jsonError(`Otra persona ya marcó la salida${horaGanadora} o el marcaje cambió. Actualiza la lista.`, 409, request)
+  }
   registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'MARCAR_SALIDA', entidadTipo: 'registro_asistencia', entidadId: existing.row.id, meta: { empleadoId, fecha: mark.fecha }, ip }).catch(() => {})
   return json({ ok: true, idempotente: false, registro }, 200, request)
 }

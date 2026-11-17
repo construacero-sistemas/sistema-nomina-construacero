@@ -110,7 +110,7 @@ describe('Marcaje real de hoy', () => {
     const view = renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' }))
-    expect(mocks.entrada).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-1' })
+    expect(mocks.entrada).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-1', idempotencyKey: expect.stringMatching(/^entrada-emp-1-/) })
 
     mocks.query = {
       ...mocks.query,
@@ -128,7 +128,7 @@ describe('Marcaje real de hoy', () => {
     const view = renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: 'Marcar salida para María Rodríguez' }))
-    expect(mocks.salida).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-2' })
+    expect(mocks.salida).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-2', idempotencyKey: expect.stringMatching(/^salida-emp-2-/) })
 
     mocks.query = {
       ...mocks.query,
@@ -179,8 +179,82 @@ describe('Marcaje real de hoy', () => {
     await waitFor(() => expect(mocks.anularAusencia).toHaveBeenCalledExactlyOnceWith({
       registroId: 'attendance-2',
       motivo: 'Entrada marcada por error; empleado ausente',
+      resultadoEsperado: 'ausencia',
     }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Anular entrada y registrar ausencia' })).not.toBeInTheDocument())
+  })
+
+  // M-1: en día libre o feriado no laborable no hay falta que registrar. El botón no
+  // promete una ausencia que el servidor rechazaría: anula la entrada y deja el día
+  // sin registro, y envía ese resultado esperado para que el servidor lo confirme.
+  it.each([
+    ['día libre (sábado de quien no trabaja)', '2026-09-26', null],
+    ['feriado no laborable', '2026-09-25', { fecha: '2026-09-25', nombre: 'Feriado patronal', laborable: false }],
+  ])('en %s ofrece «Anular entrada (no vino)» y no una ausencia', async (_caso, fecha, feriado) => {
+    mocks.hoy = fecha
+    mocks.query = { ...mocks.query, data: { fecha, registros: [
+      { id: 'attendance-9', empleado_id: 'emp-1', hora_entrada: '08:05:00', hora_salida: null, estado_marcaje: 'entrada' },
+    ] } }
+    renderPanel({
+      empleados: [{ id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Vendedor', empleado: { nombre: 'Niki Ramirez' }, dias_laborables: [1, 2, 3, 4, 5] }],
+      feriadosPorFecha: feriado ? new Map([[fecha, feriado]]) : null,
+    })
+
+    expect(screen.queryByRole('button', { name: /marcar ausente/i })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Anular entrada (no vino) de Niki Ramirez' }))
+    expect(screen.getByRole('dialog', { name: 'Anular entrada' })).toBeInTheDocument()
+    expect(screen.getByText(/el día quedará sin registro/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/Motivo de la anulación/), { target: { value: 'Marcado por error' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Anular entrada' }))
+
+    await waitFor(() => expect(mocks.anularAusencia).toHaveBeenCalledExactlyOnceWith({
+      registroId: 'attendance-9', motivo: 'Marcado por error', resultadoEsperado: 'sin-registro',
+    }))
+  })
+
+  it('si el servidor rechaza la anulación, el modal sigue abierto con el motivo del rechazo', async () => {
+    mocks.anularAusencia = vi.fn().mockRejectedValue(new Error('Hoy no es laborable para esta persona'))
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Anular entrada y marcar ausente a María Rodríguez' }))
+    fireEvent.change(screen.getByLabelText(/Motivo de la anulación/), { target: { value: 'Error de dedo' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar ausencia' }))
+
+    expect(await screen.findByText('Hoy no es laborable para esta persona')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Anular entrada y registrar ausencia' })).toBeInTheDocument()
+  })
+
+  // M-3: si no hubo respuesta del servidor la acción pudo guardarse. «Reintentar»
+  // repite la MISMA petición (misma clave) para que el servidor no la duplique.
+  it('tras un corte de red ofrece reintentar con la misma clave de idempotencia', async () => {
+    mocks.entrada = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ ok: true, idempotente: true })
+    renderPanel()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' }))
+    expect(await screen.findByText(/No hubo respuesta del servidor/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+
+    await waitFor(() => expect(mocks.entrada).toHaveBeenCalledTimes(2))
+    const [primera, segunda] = mocks.entrada.mock.calls.map(([variables]) => variables.idempotencyKey)
+    expect(primera).toMatch(/^entrada-emp-1-/)
+    expect(segunda).toBe(primera)
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument())
+  })
+
+  it('un rechazo con respuesta del servidor no ofrece reintentar y un clic nuevo usa otra clave', async () => {
+    const rechazo = Object.assign(new Error('El empleado ya tiene entrada marcada hoy'), { status: 409 })
+    mocks.entrada = vi.fn().mockRejectedValue(rechazo)
+    renderPanel()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' }))
+    expect(await screen.findByText('El empleado ya tiene entrada marcada hoy')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' }))
+    await waitFor(() => expect(mocks.entrada).toHaveBeenCalledTimes(2))
+    const [primera, segunda] = mocks.entrada.mock.calls.map(([variables]) => variables.idempotencyKey)
+    expect(segunda).not.toBe(primera)
   })
 
   it('busca nombres sin distinguir acentos y filtra por estado', () => {

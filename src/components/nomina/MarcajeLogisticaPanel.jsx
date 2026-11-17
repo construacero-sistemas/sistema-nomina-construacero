@@ -1,84 +1,21 @@
 // src/components/nomina/MarcajeLogisticaPanel.jsx
 // Marcaje real de hoy: una acción contextual por empleado, mobile-first.
 import { useMemo, useState } from 'react'
-import { CalendarDays, CheckCircle2, Clock3, LogIn, LogOut, PencilLine, RefreshCw, Search, Undo2, UserX, X } from 'lucide-react'
+import { CalendarDays, Clock3, RefreshCw, Search, X } from 'lucide-react'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import { tieneCapacidad } from '../../config/accesoModulos.js'
 import {
   useAnularEntradaComoAusencia, useConfigNomina, useCorregirMarcaje, useMarcajeHoy, useMarcarAusencia, useMarcarEntrada, useMarcarSalida,
 } from '../../hooks/useNomina'
 import CorreccionMarcajeModal from './CorreccionMarcajeModal.jsx'
-import { Modal } from '../../../compat/components/ui/Modal.jsx'
-import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
-import { formatHora12 } from '../../utils/timeUtils'
-import { NOMBRE_DIA_CORTO, diaSemanaDeFecha, trabajaEseDia } from '../../utils/diasLaborables.js'
+import TarjetaMarcaje from './marcaje/TarjetaMarcaje.jsx'
+import AnularEntradaModal from './marcaje/AnularEntradaModal.jsx'
+import {
+  FILTROS, PRIORIDAD_ESTADO, estadoDelRegistro, fechaLegible, nombreEmpleado, normalizarBusqueda,
+} from './marcaje/marcajeEstado.js'
+import { trabajaEseDia } from '../../utils/diasLaborables.js'
 import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
-
-const FILTROS = [
-  { id: 'pendientes', label: 'Pendientes', estado: 'pendiente' },
-  { id: 'en-curso', label: 'En jornada', estado: 'en-curso' },
-  { id: 'completados', label: 'Completados', estado: 'completado' },
-  { id: 'ausencias', label: 'Ausencias', estado: 'ausencia' },
-  { id: 'libres', label: 'Día libre', estado: 'libre' },
-  { id: 'manuales', label: 'Horarios fijos', estado: 'manual' },
-  { id: 'todos', label: 'Todos', estado: null },
-]
-
-const PRIORIDAD_ESTADO = {
-  pendiente: 0,
-  'en-curso': 1,
-  completado: 2,
-  manual: 3,
-  ausencia: 4,
-  libre: 5,
-}
-
-// `libre`: hoy no le toca según sus días laborables (p. ej. el sábado de quien no
-// viene). No es una falta: se muestra aparte y no pide acción.
-function estadoDelRegistro(registro, libre = false) {
-  if (registro?.es_ausencia) return 'ausencia'
-  if (registro?.estado_marcaje === 'manual') return 'manual'
-  if (!registro) return libre ? 'libre' : 'pendiente'
-  if (!registro.hora_entrada) return 'pendiente'
-  if (!registro.hora_salida) return 'en-curso'
-  return 'completado'
-}
-
-function nombreEmpleado(empleado) {
-  return capitalizarPalabras(empleado.empleado?.nombre || empleado.nombre) || 'Empleado sin nombre'
-}
-
-function normalizarBusqueda(value) {
-  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim()
-}
-
-function fechaLegible(fecha) {
-  if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return 'Fecha operativa de hoy'
-  return new Date(`${fecha}T12:00:00`).toLocaleDateString('es-VE', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  })
-}
-
-function formatoHora(hora) {
-  return hora ? formatHora12(hora) : '—'
-}
-
-function claseEstado(estado) {
-  if (estado === 'pendiente') return 'border-amber-200 bg-amber-50 text-amber-900'
-  if (estado === 'en-curso') return 'border-emerald-200 bg-emerald-50 text-emerald-900'
-  if (estado === 'ausencia') return 'border-rose-200 bg-rose-50 text-rose-800'
-  if (estado === 'libre') return 'border-slate-200 bg-slate-50 text-slate-600'
-  return 'border-slate-200 bg-slate-50 text-slate-700'
-}
-
-function etiquetaEstado(estado) {
-  if (estado === 'pendiente') return 'Sin entrada'
-  if (estado === 'en-curso') return 'Jornada en curso'
-  if (estado === 'ausencia') return 'Ausencia registrada'
-  if (estado === 'libre') return 'Día libre'
-  if (estado === 'manual') return 'Horario registrado, no es reloj real'
-  return 'Jornada completa'
-}
+import { makeIdempotencyKey } from '../../hooks/idempotencia.js'
 
 // `feriadosPorFecha`: Map fecha → feriado del calendario laboral (lo entrega la
 // pestaña de asistencia, que ya consulta el rango). Un feriado NO laborable se
@@ -107,9 +44,10 @@ export default function MarcajeLogisticaPanel({
   const [accionPendiente, setAccionPendiente] = useState(null)
   const [registroEnCorreccion, setRegistroEnCorreccion] = useState(null)
   const [registroParaAnular, setRegistroParaAnular] = useState(null)
-  const [motivoAnulacion, setMotivoAnulacion] = useState('')
-  const [errorAnulacion, setErrorAnulacion] = useState('')
   const [errorAccion, setErrorAccion] = useState('')
+  // Acción sin respuesta del servidor (corte de red): se ofrece repetirla con la
+  // MISMA clave de idempotencia, así no puede duplicarse aunque sí se haya guardado.
+  const [reintento, setReintento] = useState(null)
 
   const registros = useMemo(
     () => new Map((data?.registros || []).map(registro => [registro.empleado_id, registro])),
@@ -158,18 +96,26 @@ export default function MarcajeLogisticaPanel({
   const bloqueado = consultaEnCurso || consultaConError || !data?.fecha || data.fecha !== fechaOperativaHoy()
     || Boolean(accionPendiente) || marcarEntrada.isPending || marcarSalida.isPending || marcarAusencia.isPending || corregirMarcaje.isPending || anularEntrada.isPending
 
-  async function registrarMarcaje(empleadoId, tipo) {
+  async function registrarMarcaje(empleadoId, tipo, claveReintento = null) {
     const fila = filas.find(item => item.empleado.empleado_id === empleadoId)
     const estado = fila?.estado ?? estadoDelRegistro(registros.get(empleadoId))
     const puedeEntrada = estado === 'pendiente' || estado === 'libre'
     if (bloqueado || (tipo === 'entrada' && !puedeEntrada) || (tipo === 'salida' && estado !== 'en-curso')) return
     setErrorAccion('')
+    setReintento(null)
+    const idempotencyKey = claveReintento || makeIdempotencyKey(tipo, empleadoId)
     setAccionPendiente({ empleadoId, tipo })
     try {
-      if (tipo === 'entrada') await marcarEntrada.mutateAsync({ empleadoId })
-      else await marcarSalida.mutateAsync({ empleadoId })
+      if (tipo === 'entrada') await marcarEntrada.mutateAsync({ empleadoId, idempotencyKey })
+      else await marcarSalida.mutateAsync({ empleadoId, idempotencyKey })
     } catch (error) {
-      setErrorAccion(error?.message || `No se pudo registrar la ${tipo}. Intenta actualizar y vuelve a probar.`)
+      // Sin código HTTP no hubo respuesta: la acción pudo guardarse o no.
+      if (!error?.status) {
+        setReintento({ empleadoId, tipo, idempotencyKey })
+        setErrorAccion(`No hubo respuesta del servidor. Puede que la ${tipo} sí se haya guardado: «Reintentar» la repite sin duplicarla.`)
+      } else {
+        setErrorAccion(error?.message || `No se pudo registrar la ${tipo}. Intenta actualizar y vuelve a probar.`)
+      }
     } finally {
       setAccionPendiente(null)
     }
@@ -188,20 +134,19 @@ export default function MarcajeLogisticaPanel({
     }
   }
 
-  async function confirmarAnulacion() {
-    if (!registroParaAnular || motivoAnulacion.trim().length < 3 || bloqueado) return
-    setErrorAnulacion('')
-    try {
-      await anularEntrada.mutateAsync({ registroId: registroParaAnular.registro.id, motivo: motivoAnulacion.trim() })
-      setRegistroParaAnular(null)
-      setMotivoAnulacion('')
-    } catch (error) {
-      setErrorAnulacion(error?.message || 'No se pudo anular la entrada. Actualiza e inténtalo de nuevo.')
-    }
+  async function confirmarAnulacion(motivo) {
+    if (!registroParaAnular || bloqueado) return
+    await anularEntrada.mutateAsync({
+      registroId: registroParaAnular.registro.id,
+      motivo,
+      resultadoEsperado: registroParaAnular.resultadoEsperado,
+    })
+    setRegistroParaAnular(null)
   }
 
   function actualizar() {
     setErrorAccion('')
+    setReintento(null)
     void refetch()
     if (onReintentarEmpleados) void onReintentarEmpleados()
   }
@@ -343,6 +288,22 @@ export default function MarcajeLogisticaPanel({
       {errorAccion && (
         <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">
           {errorAccion}
+          {reintento && (
+            <button
+              type="button"
+              onClick={() => {
+                const { empleadoId, tipo, idempotencyKey } = reintento
+                setReintento(null)
+                setErrorAccion('')
+                void registrarMarcaje(empleadoId, tipo, idempotencyKey)
+              }}
+              disabled={bloqueado}
+              className="mt-2 block min-h-11 rounded-lg border border-rose-300 bg-white px-3 font-bold disabled:opacity-55"
+              style={{ touchAction: 'manipulation' }}
+            >
+              Reintentar
+            </button>
+          )}
         </div>
       )}
 
@@ -360,149 +321,19 @@ export default function MarcajeLogisticaPanel({
         </p>
       ) : (
         <div role="list" className="mt-3 grid min-w-0 grid-cols-1 gap-2.5 lg:grid-cols-2" aria-label="Lista de marcajes de hoy" aria-busy={Boolean(accionPendiente)}>
-          {listaVisible.map(({ empleado, registro, estado, libre, feriado, nombre }) => {
-            const pendienteDeEste = accionPendiente?.empleadoId === empleado.empleado_id
-            const tipoPendiente = accionPendiente?.tipo
-            const diaLibre = NOMBRE_DIA_CORTO[diaSemanaDeFecha(data.fecha)] ?? 'hoy'
-            const marcajeReal = registro && !registro.es_ausencia && Boolean(registro.hora_entrada)
-              && ['entrada', 'completo', 'corregido'].includes(registro.estado_marcaje)
-            return (
-
-              <article
-                role="listitem"
-                key={empleado.empleado_id}
-                className={`grid min-w-0 grid-cols-1 items-center gap-3 rounded-xl border p-3 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,auto)] ${claseEstado(estado)}`}
-              >
-                <div className="min-w-0">
-                  <h4 className="truncate text-sm font-black text-slate-900" title={nombre}>{nombre}</h4>
-                  {empleado.cargo && <p className="truncate text-xs text-slate-500">{empleado.cargo}</p>}
-                  {feriado && (
-                    <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-800">
-                      <CalendarDays size={11} aria-hidden="true" />
-                      {feriado.laborable === false ? 'Feriado no laborable' : 'Feriado laborable'}
-                    </span>
-                  )}
-                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-bold" role="status">
-                    {estado === 'completado'
-                      ? <CheckCircle2 size={14} aria-hidden="true" />
-                      : <span className="h-2 w-2 shrink-0 rounded-full bg-current" aria-hidden="true" />}
-                    <span>{etiquetaEstado(estado)}</span>
-                    {registro?.estado_marcaje === 'corregido' && (
-                      <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-800">Marcaje corregido</span>
-                    )}
-                  </p>
-                  {registro && !registro.es_ausencia && (registro.hora_entrada || registro.hora_salida) && (
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-600 tabular-nums">
-                      {registro.hora_entrada && <span>Entrada <strong>{formatoHora(registro.hora_entrada)}</strong></span>}
-                      {registro.hora_salida
-                        ? <span>Salida <strong>{formatoHora(registro.hora_salida)}</strong></span>
-                        : estado === 'en-curso' && <span className="text-amber-700">Salida pendiente</span>}
-                    </div>
-                  )}
-                </div>
-
-                {(estado === 'pendiente' || estado === 'libre') && (
-                  <div className="flex w-full flex-col gap-1.5">
-                    {estado === 'libre' && (
-                      <p className="text-[11px] font-semibold text-slate-500">
-                        {feriado && feriado.laborable === false
-                          ? `Hoy es feriado${feriado.nombre ? ` (${feriado.nombre})` : ''}: no es día laborable. Si vino, márcalo igual.`
-                          : `Hoy no le toca trabajar (${diaLibre}). Si vino, márcalo igual.`}
-                      </p>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => registrarMarcaje(empleado.empleado_id, 'entrada')}
-                      disabled={bloqueado}
-                      aria-label={estado === 'libre' ? `Marcar entrada en día libre para ${nombre}` : `Marcar entrada para ${nombre}`}
-                      aria-busy={Boolean(pendienteDeEste && tipoPendiente === 'entrada')}
-                      className={`inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-3 text-[16px] font-black shadow-sm transition-colors active:scale-[0.99] disabled:cursor-wait disabled:opacity-55 sm:text-sm ${estado === 'libre' ? 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50' : 'bg-emerald-700 text-white hover:bg-emerald-600'}`}
-                      style={{ touchAction: 'manipulation' }}
-                    >
-                      <LogIn size={17} aria-hidden="true" />
-                      {pendienteDeEste && tipoPendiente === 'entrada'
-                        ? 'Marcando entrada…'
-                        : estado === 'libre' ? 'Marcar entrada (vino)' : 'Marcar entrada'}
-                    </button>
-                    {estado === 'pendiente' && (
-                      <button
-                        type="button"
-                        onClick={() => registrarAusencia(empleado.empleado_id, false)}
-                        disabled={bloqueado}
-                        aria-label={`Marcar ausencia de hoy para ${nombre}`}
-                        aria-busy={Boolean(pendienteDeEste && tipoPendiente === 'ausencia')}
-                        className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-3 text-sm font-bold text-rose-700 transition-colors hover:bg-rose-50 disabled:cursor-wait disabled:opacity-55"
-                        style={{ touchAction: 'manipulation' }}
-                      >
-                        <UserX size={15} aria-hidden="true" />
-                        {pendienteDeEste && tipoPendiente === 'ausencia' ? 'Registrando ausencia…' : 'Marcar ausente'}
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {estado === 'ausencia' && (
-                  <button
-                    type="button"
-                    onClick={() => registrarAusencia(empleado.empleado_id, true)}
-                    disabled={bloqueado}
-                    aria-label={`Deshacer la ausencia de hoy de ${nombre}`}
-                    aria-busy={Boolean(pendienteDeEste && tipoPendiente === 'quitar-ausencia')}
-                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-rose-300 bg-white px-3 text-sm font-bold text-rose-800 transition-colors hover:bg-rose-50 disabled:cursor-wait disabled:opacity-55"
-                    style={{ touchAction: 'manipulation' }}
-                  >
-                    <Undo2 size={15} aria-hidden="true" />
-                    {pendienteDeEste && tipoPendiente === 'quitar-ausencia' ? 'Deshaciendo…' : 'Deshacer ausencia'}
-                  </button>
-                )}
-
-                {(estado === 'en-curso' || estado === 'completado') && (
-                  <div className="flex w-full flex-col gap-1.5">
-                    {estado === 'en-curso' && (
-                      <button
-                        type="button"
-                        onClick={() => registrarMarcaje(empleado.empleado_id, 'salida')}
-                        disabled={bloqueado}
-                        aria-label={`Marcar salida para ${nombre}`}
-                        aria-busy={Boolean(pendienteDeEste && tipoPendiente === 'salida')}
-                        className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-[16px] font-black text-white shadow-sm transition-colors hover:bg-slate-700 active:scale-[0.99] disabled:cursor-wait disabled:opacity-55 sm:text-sm"
-                        style={{ touchAction: 'manipulation' }}
-                      >
-                        <LogOut size={17} aria-hidden="true" />
-                        {pendienteDeEste && tipoPendiente === 'salida' ? 'Marcando salida…' : 'Marcar salida'}
-                      </button>
-                    )}
-                    {marcajeReal && (
-                      <button
-                        type="button"
-                        onClick={() => setRegistroEnCorreccion({ empleado, registro })}
-                        disabled={bloqueado}
-                        aria-label={`Corregir marcaje de ${nombre}`}
-                        className={`inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-55 ${estado === 'en-curso' ? 'text-xs font-semibold' : ''}`}
-                        style={{ touchAction: 'manipulation' }}
-                      >
-                        <PencilLine size={14} aria-hidden="true" />
-                        Corregir marcaje
-                      </button>
-                    )}
-                    {estado === 'en-curso' && marcajeReal && (
-                      <button
-                        type="button"
-                        onClick={() => { setRegistroParaAnular({ empleado, registro }); setMotivoAnulacion(''); setErrorAnulacion('') }}
-                        disabled={bloqueado}
-                        aria-label={`Anular entrada y marcar ausente a ${nombre}`}
-                        className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-rose-300 bg-white px-3 text-xs font-bold text-rose-800 transition-colors hover:bg-rose-50 disabled:cursor-wait disabled:opacity-55"
-                        style={{ touchAction: 'manipulation' }}
-                      >
-                        <UserX size={15} aria-hidden="true" />
-                        Anular entrada y marcar ausente
-                      </button>
-                    )}
-                  </div>
-                )}
-              </article>
-            )
-          })}
+          {listaVisible.map(fila => (
+            <TarjetaMarcaje
+              key={fila.empleado.empleado_id}
+              fila={fila}
+              fecha={data.fecha}
+              accionPendiente={accionPendiente}
+              bloqueado={bloqueado}
+              onMarcar={registrarMarcaje}
+              onAusencia={registrarAusencia}
+              onCorregir={setRegistroEnCorreccion}
+              onAnular={setRegistroParaAnular}
+            />
+          ))}
         </div>
       )}
       {registroEnCorreccion && (
@@ -516,34 +347,13 @@ export default function MarcajeLogisticaPanel({
         />
       )}
       {registroParaAnular && (
-        <Modal
-          isOpen
-          title="Anular entrada y registrar ausencia"
-          onClose={() => { if (!anularEntrada.isPending) setRegistroParaAnular(null) }}
-          busy={anularEntrada.isPending}
-          className="max-w-md"
-          footer={(
-            <div className="flex w-full flex-col-reverse gap-2 pb-3 sm:flex-row sm:justify-end sm:pb-4">
-              <button type="button" onClick={() => setRegistroParaAnular(null)} disabled={anularEntrada.isPending} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-50">Cancelar</button>
-              <button type="button" onClick={confirmarAnulacion} disabled={anularEntrada.isPending || motivoAnulacion.trim().length < 3 || bloqueado} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-rose-700 px-4 text-sm font-black text-white hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-50">
-                {anularEntrada.isPending ? 'Guardando…' : 'Confirmar ausencia'}
-              </button>
-            </div>
-          )}
-        >
-          <div className="space-y-4">
-            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm leading-relaxed text-rose-950">
-              <p><strong>{registroParaAnular.empleado.empleado?.nombre || registroParaAnular.empleado.nombre}</strong> quedará como ausente. Se limpiarán la entrada y las horas del marcaje, pero se conservará la acción en auditoría.</p>
-              <p className="mt-1 text-xs">Entrada registrada: {formatoHora(registroParaAnular.registro.hora_entrada)}. Solo disponible mientras no tenga salida y el período siga abierto.</p>
-            </div>
-            <label className="block space-y-1.5 text-sm font-bold text-slate-800">
-              Motivo de la anulación <span className="text-rose-600" aria-hidden="true">*</span>
-              <textarea value={motivoAnulacion} onChange={event => setMotivoAnulacion(event.target.value)} maxLength={500} minLength={3} rows={3} disabled={anularEntrada.isPending} placeholder="Ej.: entrada marcada por error; empleado no asistió" className="min-h-20 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-[16px] font-normal leading-relaxed text-slate-900 placeholder:text-slate-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60" />
-              <span className="block text-right text-[11px] font-normal text-slate-500">{motivoAnulacion.length}/500</span>
-            </label>
-            {errorAnulacion && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">{errorAnulacion}</p>}
-          </div>
-        </Modal>
+        <AnularEntradaModal
+          objetivo={registroParaAnular}
+          onConfirmar={confirmarAnulacion}
+          onClose={() => setRegistroParaAnular(null)}
+          isPending={anularEntrada.isPending}
+          bloqueado={bloqueado}
+        />
       )}
     </section>
   )

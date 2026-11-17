@@ -18,6 +18,7 @@ import {
   booleanNominaValido,
   construirPayloadAsistenciaManual,
   fechaOperativaNomina,
+  filtroIgual,
   horaNominaValida,
   svcHeaders,
   tenantGuard,
@@ -223,9 +224,17 @@ export async function handleMarcarAusencia(request, env) {
   return json({ ok: true, registro }, 201, request)
 }
 
-// Anula una entrada errónea de hoy y conserva el mismo registro como ausencia
-// manual. Solo admite jornadas abiertas: una salida ya marcada requiere revisión
-// contable específica y nunca debe borrarse por este atajo.
+const RESULTADOS_ANULACION = ['ausencia', 'sin-registro']
+
+// Anula una entrada errónea de hoy (solo jornadas abiertas: una salida ya marcada
+// requiere revisión contable y nunca se borra por este atajo). El resultado lo
+// decide el SERVIDOR según el calendario (M-1 de PLAN_MARCAJE_BOTONES_UX):
+// - día laborable o feriado laborable → el registro queda como ausencia manual;
+// - día libre o feriado no laborable → no hay falta que registrar: se elimina.
+// La interfaz manda `resultadoEsperado` (lo que mostró al confirmar); si no coincide
+// se responde 409 sin escribir, para que nunca confirme una cosa y pase otra.
+// Sin el campo se asume «ausencia», el único resultado que conocían las versiones
+// anteriores de la interfaz.
 export async function handleAnularEntradaComoAusencia(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
@@ -236,11 +245,12 @@ export async function handleAnularEntradaComoAusencia(request, env) {
 
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
-  const { registroId, motivo } = body || {}
+  const { registroId, motivo, resultadoEsperado = 'ausencia' } = body || {}
   if (!registroId || !isValidUuid(registroId)) return jsonError('registroId inválido', 400, request)
   if (typeof motivo !== 'string' || !textoNominaValido(motivo, 500) || motivo.trim().length < 3) {
     return jsonError('Indica el motivo de la anulación (mínimo 3 caracteres)', 400, request)
   }
+  if (!RESULTADOS_ANULACION.includes(resultadoEsperado)) return jsonError('resultadoEsperado inválido', 400, request)
 
   const tenantFilter = nominaTenantFilter(operador.cuenta_id)
   const registroResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?id=eq.${registroId}${tenantFilter}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,horas_descanso,es_sabado,es_domingo,es_feriado,es_ausencia,estado_marcaje,entrada_marcada_en,entrada_por,entrada_idempotency_key,salida_marcada_en,salida_por,salida_idempotency_key,nota&limit=1`, { headers })
@@ -267,13 +277,61 @@ export async function handleAnularEntradaComoAusencia(request, env) {
 
   const { ok: diasOk, dias } = await fetchDiasLaborablesEmpleado(env, headers, operador.cuenta_id, registro.empleado_id, registro.fecha)
   if (!diasOk) return jsonError('No se pudieron verificar sus días laborables', 500, request)
-  if (!trabajaEnFecha(dias, registro.fecha)) {
-    return jsonError('Ese día es libre según la ficha del empleado: no corresponde registrarlo como ausencia.', 400, request)
-  }
   const holiday = await fetchFeriadoDelDia(env, headers, operador, registro.fecha)
   if (holiday.error) return jsonError('No se pudo consultar el calendario laboral', 500, request)
-  if (holiday.row && holiday.row.laborable === false) {
-    return jsonError(`Ese día fue feriado (${holiday.row.nombre || 'feriado'}) no laborable: no corresponde registrarlo como ausencia.`, 400, request)
+  const diaLibre = !trabajaEnFecha(dias, registro.fecha)
+  const feriadoNoLaborable = Boolean(holiday.row && holiday.row.laborable === false)
+  const resultado = diaLibre || feriadoNoLaborable ? 'sin-registro' : 'ausencia'
+  if (resultado !== resultadoEsperado) {
+    const mensaje = resultado === 'sin-registro'
+      ? 'Hoy no es laborable para esta persona (día libre o feriado): la entrada se eliminaría en lugar de registrar una ausencia. Actualiza la lista y vuelve a intentarlo.'
+      : 'Hoy es laborable para esta persona: la entrada quedaría como ausencia en lugar de eliminarse. Actualiza la lista y vuelve a intentarlo.'
+    return json({ error: mensaje, resultado_real: resultado }, 409, request)
+  }
+
+  const entradaAnulada = {
+    hora: registro.hora_entrada,
+    marcadaEn: registro.entrada_marcada_en || null,
+    marcadaPor: registro.entrada_por || null,
+    idempotencyKey: registro.entrada_idempotency_key || null,
+  }
+  const horasAnuladas = {
+    trabajadas: Number(registro.horas_trabajadas || 0),
+    normales: Number(registro.horas_normales || 0),
+    extra: Number(registro.horas_extra || 0),
+  }
+  // G-3: la escritura solo aplica si la fila sigue exactamente como se leyó.
+  const filtroLeido = `id=eq.${registro.id}${tenantFilter}${filtroIgual('estado_marcaje', registro.estado_marcaje)}${filtroIgual('hora_entrada', registro.hora_entrada)}&hora_salida=is.null&es_ausencia=eq.false`
+
+  if (resultado === 'sin-registro') {
+    const borrado = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?${filtroLeido}&select=id`, {
+      method: 'DELETE',
+      headers: { ...svcHeaders(env), Prefer: 'return=representation' },
+    })
+    if (!borrado.ok) return jsonError('No se pudo anular la entrada', 500, request)
+    const [eliminado] = await borrado.json()
+    if (!eliminado) return jsonError('El marcaje cambió mientras confirmabas. Actualiza la lista e inténtalo de nuevo.', 409, request)
+    await registrarAuditoria(env, svcHeaders(env, 'return=minimal'), {
+      usuarioId: operador.id,
+      usuarioNombre: operador.nombre,
+      usuarioRol: operador.rol,
+      cuentaId: operador.cuenta_id,
+      categoria: 'NOMINA',
+      accion: 'ANULAR_ENTRADA_SIN_REGISTRO',
+      entidadTipo: 'registro_asistencia',
+      entidadId: registro.id,
+      meta: {
+        empleadoId: registro.empleado_id,
+        fecha: registro.fecha,
+        motivo: motivo.trim(),
+        razon: feriadoNoLaborable ? 'feriado-no-laborable' : 'dia-libre',
+        entradaAnulada,
+        horasAnuladas,
+        estadoNuevo: 'sin-registro',
+      },
+      ip,
+    }).catch(() => {})
+    return json({ ok: true, resultado, registro: null }, 200, request)
   }
 
   let calculoAusencia
@@ -305,8 +363,7 @@ export async function handleAnularEntradaComoAusencia(request, env) {
     nota: motivo.trim(),
     registrado_por: operador.id,
   }
-  const entradaFiltro = `&hora_entrada=eq.${encodeURIComponent(registro.hora_entrada)}`
-  const patch = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?id=eq.${registro.id}${tenantFilter}&estado_marcaje=eq.${encodeURIComponent(registro.estado_marcaje)}${entradaFiltro}&hora_salida=is.null&es_ausencia=eq.false&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,estado_marcaje,es_ausencia,nota`, {
+  const patch = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?${filtroLeido}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,estado_marcaje,es_ausencia,nota`, {
     method: 'PATCH',
     headers: { ...svcHeaders(env), Prefer: 'return=representation' },
     body: JSON.stringify(cambios),
@@ -328,21 +385,12 @@ export async function handleAnularEntradaComoAusencia(request, env) {
       empleadoId: registro.empleado_id,
       fecha: registro.fecha,
       motivo: motivo.trim(),
-      entradaAnulada: {
-        hora: registro.hora_entrada,
-        marcadaEn: registro.entrada_marcada_en || null,
-        marcadaPor: registro.entrada_por || null,
-        idempotencyKey: registro.entrada_idempotency_key || null,
-      },
-      horasAnuladas: {
-        trabajadas: Number(registro.horas_trabajadas || 0),
-        normales: Number(registro.horas_normales || 0),
-        extra: Number(registro.horas_extra || 0),
-      },
+      entradaAnulada,
+      horasAnuladas,
       estadoNuevo: 'ausencia',
     },
     ip,
   }).catch(() => {})
 
-  return json({ ok: true, registro: ausencia }, 200, request)
+  return json({ ok: true, resultado, registro: ausencia }, 200, request)
 }
