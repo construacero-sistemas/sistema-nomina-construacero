@@ -4243,7 +4243,8 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 - Resultado: 10 fichas activas y 3 de baja.
 - PR #1 (semana de 7 días, descanso pagado y reglas editables) mergeado a `main` con los 4 checks en verde (merge `c658264`); despliegue de Vercel en producción en verde para los dos proyectos.
 
+- Factores de pago puestos en producción (`configuracion_negocio`), a pedido del usuario: hora extra factor **2,5**; sábado y domingo/feriado factor **1**; sin montos fijos y feriado en modo `factor`. Antes: hora extra $2 fija, sábado $15 fijo y feriado en «monto fijo» sin monto. Valores anteriores respaldados en `local-backups/backup_pre_262_263_20261117.json`.
+
 **Pendientes.**
-1. En Nómina → Configuración → Reglas de pago y de la ley: hora extra factor 2,5; sábado y domingo/feriado factor 1, sin montos fijos. Hoy siguen hora extra $2 fija, sábado $15 fijo y feriado en «monto fijo» sin monto.
-2. Quitar la línea vieja de `DB_PASSWORD` del `.env` (línea 4).
-3. Validación visual en el teléfono de Configuración y del recibo con el descanso pagado.
+1. Quitar la línea vieja de `DB_PASSWORD` del `.env` (línea 4).
+2. Validación visual en el teléfono de Configuración y del recibo con el descanso pagado.
