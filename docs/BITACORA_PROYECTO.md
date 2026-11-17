@@ -4214,3 +4214,21 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 3. Recalcular los períodos abiertos.
 4. Cambiar el divisor no recalcula los sueldos ya guardados en cada ficha.
 5. Sin validación visual ni commit.
+
+## 146. Migraciones 262 y 263 aplicadas en producción (2026-11-17)
+
+**Qué se hizo.** Se aplicaron en la base de nómina de producción (proyecto `wlxcclidnwketrghqaxs`) las migraciones **262_nomina_descanso_remunerado** y **263_nomina_reglas_ley_configurables**, cada una en su transacción y registrada en `supabase_migrations.schema_migrations`.
+
+**Cómo.** Conexión directa por el pooler `aws-0-us-west-2` con `DB_PASSWORD` del `.env`. La Management API (token del `.env`) y el conector de Supabase devolvieron falta de permisos para ejecutar SQL. El `.env` tenía dos líneas `DB_PASSWORD`; la válida es la segunda.
+
+**Antes de aplicar.** Guardia de identidad (existen `nomina_lineas` y `configuracion_negocio`); última migración registrada: 261. Conteos: 0 líneas de nómina, 0 períodos, 13 fichas, 1 fila de configuración. Respaldo de `configuracion_negocio` en `local-backups/backup_pre_262_263_20261117.json` (fuera de git).
+
+**Verificación.** 1 columna (262) · 4 columnas (263) · 4 CHECK. Reglas guardadas: divisor 30, días {1..5}, descanso pagado sí, se pierde con 2 faltas.
+
+**Configuración de pagos encontrada (sin cambios).** Hora extra factor 1,50 con monto fijo $2; sábado factor 1,25 con monto fijo $15; feriado en modo `monto_fijo` **sin monto** (factor 2,00 guardado).
+
+**Pendientes.**
+1. En Nómina → Configuración → Reglas de pago y de la ley: hora extra factor 2,5; sábado y domingo/feriado factor 1, sin montos fijos.
+2. Mergear el PR #1 para desplegar el código que usa estas columnas.
+3. Recalcular los períodos abiertos (hoy no hay ninguno).
+4. Quitar la línea vieja de `DB_PASSWORD` del `.env`.
