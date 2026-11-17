@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../../hooks/useNomina', () => ({
+  // Reglas de la ley (useReglasLey): sin configuración, la ley vigente.
+  useConfigNomina: () => ({ data: undefined, isLoading: false }),
   useNominaEmpleados: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }),
   usePosVendedores: () => ({ data: [], isLoading: false }),
   useHorarios: () => ({ data: mocks.horarios, isLoading: false }),
@@ -140,5 +142,14 @@ describe('Ficha de empleado — días que trabaja', () => {
       empleadoId: 'emp-1',
       dias: [...DIAS_LUN_A_VIE, { diaSemana: 6, horaInicio: '08:00', horaFin: '13:00', horasJornada: 8 }],
     })
+  })
+})
+
+describe('Ficha de empleado — sin vendedores en la nómina', () => {
+  it('no ofrece la modalidad «Por Comisión» ni el puesto sugerido de vendedor', () => {
+    renderModal()
+    expect(screen.queryByRole('button', { name: /Por Comisión/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Vendedor \(Comisión\)/i })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Por Día' })).toBeTruthy()
   })
 })

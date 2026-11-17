@@ -2,6 +2,9 @@
 // Motor de cálculo de nómina: campos de asistencia + línea de liquidación.
 // Se usa desde api/handlers/nomina.js para calcular antes de insertar.
 
+import { calcularDescansoRemunerado, esDescansoSinTrabajo } from './nominaDescanso.js'
+import { trabajaEnFecha } from './nominaHorarios.js'
+
 /**
  * Calcula los campos derivados de un registro de asistencia.
  * @param {string} fecha - YYYY-MM-DD
@@ -98,8 +101,12 @@ export function esJornadaAbierta(asistencia) {
  * @param {object} configNomina   - factores de configuracion_negocio
  * @param {number} bonosUsd       - ajuste manual (puede venir de DB)
  * @param {number} deduccionesUsd - ajuste manual
+ * @param {number} comisionesPosUsd
+ * @param {object|null} contexto   - período para el descanso remunerado (art. 119):
+ *   `{ desde, hasta, diasLaborables, feriados, hoy, fechaIngreso }`. Sin contexto
+ *   no se paga descanso (comportamiento anterior, usado por pruebas y conciliación).
  */
-export function calcularLineaNomina(asistencias, configEmpleado, configNomina, bonosUsd = 0, deduccionesUsd = 0, comisionesPosUsd = 0) {
+export function calcularLineaNomina(asistencias, configEmpleado, configNomina, bonosUsd = 0, deduccionesUsd = 0, comisionesPosUsd = 0, contexto = null) {
   const salarioNumero = Number(configEmpleado.salario_dia_usd)
   const jornadaNumero = Number(configEmpleado.horas_jornada)
   const salarioDia    = Number.isFinite(salarioNumero) ? Math.max(0, salarioNumero) : 0
@@ -131,6 +138,15 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
   let diasFeriado    = 0
   let diasAusencia   = 0
 
+  // Art. 119: los descansos y feriados se pagan aunque no se trabajen. Una fila
+  // de esos días registrada sin trabajo no suma como día trabajado: ya la cubre
+  // el descanso pagado (evita pagar dos veces el mismo domingo o feriado).
+  // `descansoRemunerado: false` (Configuración) apaga la regla: cálculo anterior.
+  const usaDescanso = Boolean(contexto) && contexto.descansoRemunerado !== false
+  const descanso = usaDescanso ? calcularDescansoRemunerado({ ...contexto, asistencias }) : null
+  const esDiaDeDescanso = fila => usaDescanso && (fila.es_domingo || fila.es_feriado
+    || (fila.fecha && !trabajaEnFecha(contexto.diasLaborables, String(fila.fecha).slice(0, 10))))
+
   // Cada fila responde dos preguntas distintas y NINGUNA se infiere de qué
   // columnas pidió el llamador (antes el resultado cambiaba según la consulta
   // incluyera `horas_trabajadas` o no):
@@ -148,6 +164,7 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
       continue
     }
     if (esJornadaAbierta(a)) continue
+    if (esDiaDeDescanso(a) && esDescansoSinTrabajo(a)) continue
 
     diasTrabajados += 1
     if (a.es_feriado) diasFeriado += 1
@@ -172,7 +189,10 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
   const diasNormales = diasTrabajados
     - (usaSabadoFijo ? diasSabadoSinFeriado : 0)
     - (usaFeriadoFijo ? diasFeriado : 0)
-  const montoNormal  = round4(Math.max(0, diasNormales) * salarioDia)
+  const diasDescanso = descanso ? descanso.diasDescanso : 0
+  // El descanso pagado va dentro del monto normal (salario diario × días): así
+  // cualquier recálculo del total que sume los conceptos sigue cuadrando.
+  const montoNormal  = round4((Math.max(0, diasNormales) + diasDescanso) * salarioDia)
   const montoSabado  = usaSabadoFijo
     ? round4(diasSabadoSinFeriado * montoSabadoFijoNumero)
     : round4(diasSabado  * salarioDia * (factorSabado  - 1))
@@ -199,6 +219,7 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
     dias_sabado:          diasSabado,
     dias_feriado:         diasFeriado,
     dias_ausencia:        diasAusencia,
+    dias_descanso:        diasDescanso,
     monto_normal_usd:     montoNormal,
     monto_extra_usd:      montoExtra,
     monto_sabado_usd:     montoSabado,

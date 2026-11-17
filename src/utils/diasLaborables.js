@@ -6,7 +6,10 @@
 
 import { fechaOperativaHoy } from './fechaOperativa.js'
 
-export const DIAS_LABORABLES_DEFAULT = Object.freeze([1, 2, 3, 4, 5, 6])
+// LOTTT art. 173: máximo cinco días a la semana y dos de descanso continuos.
+// Sin semana configurada, la persona trabaja de lunes a viernes; sábado y domingo
+// son su descanso (se pagan por el art. 119 y, si los trabaja, aparte).
+export const DIAS_LABORABLES_DEFAULT = Object.freeze([1, 2, 3, 4, 5])
 export const DIA_DOMINGO = 0
 export const DIA_LABORABLE_MIN = 1
 export const DIA_LABORABLE_MAX = 6
@@ -22,7 +25,7 @@ export function diaSemanaDeFecha(fecha) {
   return date.getUTCDay()
 }
 
-/** Días laborables de una fila de configuración; sin dato, el horario histórico Lun–Sáb. */
+/** Días laborables de una fila de configuración; sin dato, lunes a viernes. */
 export function diasLaborablesDeConfig(config) {
   const dias = config?.dias_laborables
   if (Array.isArray(dias)) return dias
@@ -45,7 +48,7 @@ export function trabajaEseDia(config, fecha) {
 export function diasLaborablesTexto(dias) {
   const lista = Array.isArray(dias) ? [...dias].sort((a, b) => a - b) : [...DIAS_LABORABLES_DEFAULT]
   if (!lista.length) return 'Ningún día'
-  if (lista.join(',') === DIAS_LABORABLES_DEFAULT.join(',')) return 'Lun a Sáb'
+  if (lista.join(',') === '1,2,3,4,5,6') return 'Lun a Sáb'
   if (lista.join(',') === '1,2,3,4,5') return 'Lun a Vie'
   return lista.map(dia => NOMBRE_DIA_CORTO[dia]).join(' · ')
 }
@@ -59,7 +62,7 @@ export function diasLaborablesTexto(dias) {
  * aún no rige, la ficha muestra la semana que la persona tiene hoy y guardar no lo
  * borra (F-9, mismo criterio que `server/lib/nominaHorarios.js`).
  */
-export function semanaEditable(horarios = [], { horaInicio = '08:00', horaFin = '17:00', horasJornada = 8, fecha = fechaOperativaHoy() } = {}) {
+export function semanaEditable(horarios = [], { horaInicio = '08:00', horaFin = '17:00', horasJornada = 8, fecha = fechaOperativaHoy(), diasDefecto = DIAS_LABORABLES_DEFAULT } = {}) {
   const porDia = new Map()
   for (const horario of horarios || []) {
     if (!horario || horario.semana_ciclo != null || horario.fecha_hasta != null) continue
@@ -79,7 +82,9 @@ export function semanaEditable(horarios = [], { horaInicio = '08:00', horaFin = 
     dias: Array.from({ length: 6 }, (_, index) => {
       const dia = index + DIA_LABORABLE_MIN
       const fila = porDia.get(dia)
-      const activo = hayHorario ? Boolean(fila) : true
+      // Sin semana guardada se proponen los días por defecto de la cuenta
+      // (lunes a viernes por ley); antes se marcaban los seis, sábado incluido.
+      const activo = hayHorario ? Boolean(fila) : (diasDefecto || DIAS_LABORABLES_DEFAULT).includes(dia)
       return {
         diaSemana: dia,
         activo,

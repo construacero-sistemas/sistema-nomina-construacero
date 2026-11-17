@@ -14,6 +14,7 @@ import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
 import RateSelector from './RateSelector.jsx'
 import EmpleadoConfigModal from './EmpleadoConfigModal'
 import ComisionPagoModal from './ComisionPagoModal.jsx'
+import { VENDEDORES_EN_NOMINA } from '../../config/comisionesVendedores.js'
 import EmpleadoBajaModal from './EmpleadoBajaModal.jsx'
 import EmpleadoEliminarModal from './EmpleadoEliminarModal.jsx'
 import ControlAsistenciaToggle from './ControlAsistenciaToggle.jsx'
@@ -28,7 +29,9 @@ function fmt(n) {
 
 const normalizar = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
+// Sin vendedores en la nómina, ningún cargo activa la tarjeta ni el conteo de vendedor.
 function esVendedor(config) {
+  if (!VENDEDORES_EN_NOMINA) return false
   const cargo = String(config?.cargo || '').toLowerCase()
   return cargo.includes('vendedor') || cargo.includes('ventas')
 }
@@ -38,7 +41,9 @@ function esVendedor(config) {
 // eliminación y el interruptor de asistencia; `puedePagarComision` refleja `operarFinanzas`,
 // porque pagar una comisión crea un egreso en Finanzas. El servidor exige exactamente esas
 // capacidades, así que el rol de nómina no debe ver ninguno de esos botones.
-export default function TabEmpleados({ esAdmin, puedePagarComision = false, puedeGestionarNomina = false }) {
+export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarComisionRol = false, puedeGestionarNomina = false }) {
+  // Los vendedores no van en la nómina: sin la bandera no se ofrece pagar comisiones aquí.
+  const puedePagarComision = VENDEDORES_EN_NOMINA && puedePagarComisionRol
   const { data: allConfigs = [], isLoading, isError, refetch } = useConfigEmpleados({ incluirInactivas: true })
   const { data: clientes = [] } = useNominaEmpleados({ enabled: esAdmin && puedeGestionarNomina })
   const { fmtBs, shortLabelTasa } = useMonedaNomina()
@@ -118,10 +123,10 @@ export default function TabEmpleados({ esAdmin, puedePagarComision = false, pued
     <div className="flex flex-col gap-4">
       <details className="rounded-2xl border border-slate-200 bg-white p-3">
         <summary className="min-h-11 flex items-center cursor-pointer text-sm font-bold text-slate-700">Resumen de plantilla · {kpis.total} empleados</summary>
-      <div className={`grid grid-cols-2 gap-3 pt-3 ${esAdmin ? 'sm:grid-cols-4' : 'sm:grid-cols-2'}`}>
+      <div className={`grid grid-cols-2 gap-3 pt-3 ${esAdmin ? (VENDEDORES_EN_NOMINA ? 'sm:grid-cols-4' : 'sm:grid-cols-3') : 'sm:grid-cols-2'}`}>
         <KpiCard icon={Users} label="Total en plantilla" value={kpis.total} color="indigo" />
         <KpiCard icon={Briefcase} label="Nómina fija semanal" value={kpis.fijosCount} color="green" />
-        <KpiCard icon={Sparkles} label="Vendedores (Comisión)" value={kpis.vendedoresCount} sub="Egresos directos" color="amber" />
+        {VENDEDORES_EN_NOMINA && <KpiCard icon={Sparkles} label="Vendedores (Comisión)" value={kpis.vendedoresCount} sub="Egresos directos" color="amber" />}
         {esAdmin && (
           <KpiCard
             icon={DollarSign}
@@ -192,6 +197,7 @@ export default function TabEmpleados({ esAdmin, puedePagarComision = false, pued
             >
               Nómina Fija ({kpis.fijosCount})
             </button>
+            {VENDEDORES_EN_NOMINA && (
             <button
               type="button"
               onClick={() => { setFiltroTipo('vendedores'); setVerBajas(false) }}
@@ -199,6 +205,7 @@ export default function TabEmpleados({ esAdmin, puedePagarComision = false, pued
             >
               Vendedores ({kpis.vendedoresCount})
             </button>
+            )}
           </div>
         </div>
 

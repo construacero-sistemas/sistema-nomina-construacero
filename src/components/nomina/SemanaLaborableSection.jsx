@@ -52,7 +52,7 @@ export default function SemanaLaborableSection({
 
       {!semana.hayHorario && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
-          Sin semana guardada todavía: se asume el horario de la empresa (lunes a sábado). Guarda la ficha para
+          Sin semana guardada todavía: se asume el horario de la empresa (lunes a viernes; sábado y domingo de descanso). Guarda la ficha para
           fijar sus días.
         </p>
       )}

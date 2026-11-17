@@ -8,6 +8,8 @@ import '@testing-library/jest-dom/vitest'
 
 const capturas = { payload: null, llamadas: 0 }
 vi.mock('../../../hooks/useNomina', () => ({
+  // Reglas de la ley (useReglasLey): sin configuración, la ley vigente.
+  useConfigNomina: () => ({ data: undefined, isLoading: false }),
   useAjustarLinea: () => ({
     mutateAsync: async (campos) => { capturas.payload = campos; capturas.llamadas += 1; return { ok: true } },
     isPending: false,

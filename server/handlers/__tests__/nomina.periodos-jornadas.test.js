@@ -29,6 +29,8 @@ const rutasLectura = [
   { match: '/nomina_config_empleado', respond: [
     { empleado_id: IDS.empleado, cargo: 'Almacenista', salario_dia_usd: 30, horas_jornada: 8 },
   ]},
+  { match: '/nomina_horarios', respond: [] },
+  { match: '/nomina_feriados', respond: [] },
   { match: '/configuracion_negocio',  respond: [{}] },
   { match: '/registro_asistencia',    respond: [jornadaAbierta] },
   { match: '/nomina_lineas', method: 'GET', respond: [] },
@@ -77,11 +79,8 @@ describe('cálculo de período con jornadas abiertas', () => {
 
   it('sin jornadas abiertas el cálculo sigue sin confirmación', async () => {
     mock = installFetchMock([
-      { ...rutasLectura[0] },
-      { ...rutasLectura[1] },
-      { ...rutasLectura[2] },
       { match: '/registro_asistencia', respond: [{ ...jornadaAbierta, estado_marcaje: 'completo', hora_salida: '17:00:00', horas_normales: 8 }] },
-      { ...rutasLectura[4] },
+      ...rutasLectura.filter(ruta => ruta.match !== '/registro_asistencia'),
       { match: '/nomina_lineas', method: 'POST', respond: [] },
     ])
     const { status } = await readResponse(await H.handleCalcularPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV))

@@ -3,6 +3,8 @@
 import { jsPDF } from 'jspdf'
 import { cargarLogo } from '../../../compat/services/pdf/pdfLogo.js'
 import { WATERMARK_LOGO } from '../../../compat/services/pdf/watermarkBase64.js'
+import { desgloseDescanso } from '../../utils/descansoRecibo.js'
+import { reglasLeyDeConfig } from '../../../server/lib/nominaReglasLey.js'
 import {
   PAGE_W, PAGE_H, MARGIN, CONTENT_W,
   C_PRIMARY, C_DARK, C_WHITE, C_GRAY, C_AMBER, C_EMERALD, C_RED,
@@ -145,7 +147,9 @@ async function generarNominaResumenPDFImpl({ periodo = {}, lineas = [], config =
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6.5)
     doc.setTextColor(...C_DARK)
-    doc.text(String(Number(l.dias_trabajados) || 0),          cols[1].x + 1.5, y + 3)
+    // Días trabajados + descanso pagado (art. 119), en corto para la columna: «5+2».
+    const diasDesc = desgloseDescanso(l).diasDescanso
+    doc.text(`${Number(l.dias_trabajados) || 0}${diasDesc > 0 ? `+${diasDesc}` : ''}`, cols[1].x + 1.5, y + 3)
     doc.text(Number(l.horas_normales || 0).toFixed(1),        cols[2].x + 1.5, y + 3)
 
     const extras = Number(l.horas_extra || 0)
@@ -153,7 +157,7 @@ async function generarNominaResumenPDFImpl({ periodo = {}, lineas = [], config =
     doc.text(extras > 0 ? extras.toFixed(1) : '—',            cols[3].x + 1.5, y + 3)
 
     doc.setTextColor(...C_DARK)
-    const mensual = Number(l.salario_dia_usd_snap || 0) * 30
+    const mensual = Number(l.salario_dia_usd_snap || 0) * reglasLeyDeConfig(config).divisorMensual
     doc.text(mensual > 0 ? fmtUsd(mensual) : '—',               cols[4].x + 1.5, y + 3)
     doc.text(fmtUsd(l.monto_normal_usd),                      cols[5].x + 1.5, y + 3)
     doc.text(recargos > 0 ? fmtUsd(recargos) : '—',           cols[6].x + 1.5, y + 3)

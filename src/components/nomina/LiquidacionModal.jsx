@@ -4,6 +4,8 @@
 // Falta, Multa u Otro) y el neto nunca queda en negativo.
 import { useMemo, useState } from 'react'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
+import { desgloseDescanso } from '../../utils/descansoRecibo.js'
+import useReglasLey from '../../hooks/useReglasLey.js'
 import { useAjustarLinea } from '../../hooks/useNomina'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import DescuentosEditor from './DescuentosEditor.jsx'
@@ -24,6 +26,8 @@ export default function LiquidacionModal({ linea, onClose }) {
   const [error, setError]   = useState('')
 
   const cargando = ajustar.isPending
+  const descanso = desgloseDescanso(linea)
+  const { divisorMensual } = useReglasLey()
 
   // Base = todo lo calculado desde asistencia (sin ajustes manuales)
   const base = useMemo(() => (
@@ -80,8 +84,9 @@ export default function LiquidacionModal({ linea, onClose }) {
 Calculado con la asistencia
           </div>
           {[
-            { label: 'Sueldo mensual (referencia)', value: Number(linea.salario_dia_usd_snap || 0) * 30 },
-            { label: `Días trabajados (${Number(linea.dias_trabajados)})`, value: linea.monto_normal_usd },
+            { label: 'Sueldo mensual (referencia)', value: Number(linea.salario_dia_usd_snap || 0) * divisorMensual },
+            { label: `Días trabajados (${Number(linea.dias_trabajados)})`, value: descanso.montoTrabajado },
+            { label: `Descanso y feriados pagados (${descanso.diasDescanso}) · Art. 119`, value: descanso.montoDescanso },
             { label: `Horas extra (${Number(linea.horas_extra).toFixed(1)}h)`, value: linea.monto_extra_usd },
             { label: `Recargo sábados (${linea.dias_sabado})`, value: linea.monto_sabado_usd },
             { label: `Recargo feriados (${linea.dias_feriado})`, value: linea.monto_feriado_usd },

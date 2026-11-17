@@ -4,6 +4,8 @@ import { validateOperator } from '../lib/auth.js'
 import { registrarAuditoria } from '../lib/audit.js'
 import { calcularLineaNomina, esJornadaAbierta } from '../lib/nominaUtils.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
+import { diasLaborablesResueltos, fetchDiasLaborablesPorEmpleado } from '../lib/nominaHorarios.js'
+import { reglasLeyDeConfig } from '../lib/nominaReglasLey.js'
 import { requireCapacidad } from '../lib/permissions.js'
 import { fechaNominaValida, fechaOperativaNomina, fetchConfigNomina, r4, svcHeaders, tenantGuard, textoNominaValido } from './nomina.shared.js'
 
@@ -88,8 +90,8 @@ export async function handleCalcularPeriodo(request, env) {
   const [period] = periodResponse.ok ? await periodResponse.json() : []
   if (!period) return jsonError('Período no encontrado', 404, request)
   if (period.estado !== 'abierto') return jsonError(`El período está ${period.estado}; reábrelo para recalcular`, 400, request)
-  const [configResponse, payrollConfig, attendanceResponse, previousResponse] = await Promise.all([
-    fetch(`${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?activo=eq.true${account}&select=empleado_id,cargo,salario_dia_usd,horas_jornada`, { headers }),
+  const [configResponse, payrollConfig, attendanceResponse, previousResponse, horarios, feriadosResponse] = await Promise.all([
+    fetch(`${env.SUPABASE_URL}/rest/v1/nomina_config_empleado?activo=eq.true${account}&select=empleado_id,cargo,salario_dia_usd,horas_jornada,controla_asistencia,fecha_ingreso`, { headers }),
     fetchConfigNomina(env, headers, operador.cuenta_id),
     // El contrato del motor (lib/nominaUtils.js) exige estas columnas: sin ellas el
     // resultado de una línea cambiaría según qué pidió el llamador. `horas_trabajadas`
@@ -97,10 +99,22 @@ export async function handleCalcularPeriodo(request, env) {
     // identifican las jornadas abiertas que bloquean el cálculo (409 más abajo).
     fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?fecha=gte.${period.desde}&fecha=lte.${period.hasta}${account}&select=empleado_id,fecha,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,horas_trabajadas,estado_marcaje,hora_entrada,hora_salida`, { headers }),
     fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&select=empleado_id,bonos_usd,deducciones_usd,nota_bonos,nota_deducciones,comisiones_pos_usd,comisiones_despachos_ids,pagado`, { headers }),
+    // Art. 119: para pagar el descanso hay que saber qué días trabaja cada quien
+    // (vigentes al cierre del período) y cuáles son feriados no laborables.
+    fetchDiasLaborablesPorEmpleado(env, headers, operador.cuenta_id, { fecha: period.hasta }),
+    fetch(`${env.SUPABASE_URL}/rest/v1/nomina_feriados?fecha=gte.${period.desde}&fecha=lte.${period.hasta}${account}&select=fecha,laborable&limit=400`, { headers }),
   ])
   if (!configResponse.ok) return jsonError('Error al leer empleados', 500, request)
   if (!attendanceResponse.ok) return jsonError('Error al leer asistencia', 500, request)
   if (!previousResponse.ok) return jsonError('Error al leer líneas existentes', 500, request)
+  // Sin semana laboral o feriados no se puede saber qué descanso pagar: mejor no
+  // calcular que liquidar sin el descanso que exige la ley.
+  if (!horarios.ok) return jsonError('No se pudieron leer los días que trabaja cada persona', 500, request)
+  if (!feriadosResponse.ok) return jsonError('No se pudieron leer los feriados del período', 500, request)
+  const feriados = await feriadosResponse.json()
+  const hoy = fechaOperativaNomina(env)
+  // Reglas de la ley editables en Configuración (migración 263).
+  const reglas = reglasLeyDeConfig(payrollConfig)
   const employees = await configResponse.json()
   const attendance = await attendanceResponse.json()
   const previous = await previousResponse.json()
@@ -144,7 +158,19 @@ export async function handleCalcularPeriodo(request, env) {
       payrollConfig,
       Number(old.bonos_usd || 0),
       Number(old.deducciones_usd || 0),
-      Number(old.comisiones_pos_usd || 0)
+      Number(old.comisiones_pos_usd || 0),
+      // Quien no lleva control de asistencia no tiene faltas que evaluar: se
+      // conserva su cálculo anterior, sin descanso automático.
+      config.controla_asistencia === false ? null : {
+        desde: period.desde,
+        hasta: period.hasta,
+        diasLaborables: (horarios.porEmpleado.get(config.empleado_id) || diasLaborablesResueltos([], null, reglas.diasLaborablesDefault)).dias,
+        feriados,
+        hoy,
+        fechaIngreso: config.fecha_ingreso || null,
+        descansoRemunerado: reglas.descansoRemunerado,
+        faltasPierde: reglas.faltasPierdeDescanso,
+      },
     )
     return {
       periodo_id: periodoId,
@@ -161,7 +187,14 @@ export async function handleCalcularPeriodo(request, env) {
   const obsoleteIds = previous.filter(row => !row.pagado && !activeIds.has(row.empleado_id)).map(row => row.empleado_id)
   const toInsert = lines.filter(line => !paidIds.has(line.empleado_id))
   if (toInsert.length) {
-    const insertResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?on_conflict=periodo_id,empleado_id`, { method: 'POST', headers: svcHeaders(env, 'resolution=merge-duplicates,return=minimal'), body: JSON.stringify(toInsert) })
+    const upsert = filas => fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?on_conflict=periodo_id,empleado_id`, { method: 'POST', headers: svcHeaders(env, 'resolution=merge-duplicates,return=minimal'), body: JSON.stringify(filas) })
+    let insertResponse = await upsert(toInsert)
+    // Si la base aún no tiene la columna `dias_descanso` (migración 262), el
+    // dinero ya va en `monto_normal_usd`: se guarda sin el conteo informativo.
+    if (!insertResponse.ok && (await insertResponse.text().catch(() => '')).includes('dias_descanso')) {
+      console.warn('[nomina] Falta la migración 262 (dias_descanso); se guarda sin el conteo de descanso')
+      insertResponse = await upsert(toInsert.map(({ dias_descanso: _omitido, ...resto }) => resto))
+    }
     if (!insertResponse.ok) return jsonError('No se pudieron generar las líneas de nómina', 500, request)
   }
   if (obsoleteIds.length) {

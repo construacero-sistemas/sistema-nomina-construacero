@@ -6,13 +6,16 @@
 // El domingo nunca es día laborable: el cálculo de nómina lo trata siempre como
 // feriado, así que exigir registro ahí solo generaría ausencias falsas.
 //
-// Sin filas se conserva el horario histórico de la empresa (lunes a sábado), de
-// modo que activar esta función no cambia la asistencia de nadie hasta que se
-// configure su semana.
+// Sin filas se asume lunes a viernes (LOTTT art. 173); antes de la entrada 144
+// de la bitácora el valor por defecto era lunes a sábado.
 
 import { nominaTenantFilter } from './nominaTenant.js'
+import { reglasLeyDeConfig } from './nominaReglasLey.js'
 
-export const DIAS_LABORABLES_DEFAULT = Object.freeze([1, 2, 3, 4, 5, 6])
+// LOTTT art. 173: máximo cinco días a la semana y dos de descanso continuos.
+// Sin semana configurada, la persona trabaja de lunes a viernes; sábado y domingo
+// son su descanso (se pagan por el art. 119 y, si los trabaja, aparte).
+export const DIAS_LABORABLES_DEFAULT = Object.freeze([1, 2, 3, 4, 5])
 export const DIA_DOMINGO = 0
 export const DIA_LABORABLE_MIN = 1
 export const DIA_LABORABLE_MAX = 6
@@ -27,16 +30,16 @@ export function diaSemanaDeFecha(fecha) {
 
 /**
  * Días laborables a partir de las filas permanentes del empleado.
- * Devuelve `{ dias, configurado }`: sin filas, el horario histórico Lun–Sáb.
+ * Devuelve `{ dias, configurado }`: sin filas, lunes a viernes.
  */
-export function diasLaborablesResueltos(filasPropias = [], fecha = null) {
+export function diasLaborablesResueltos(filasPropias = [], fecha = null, defecto = DIAS_LABORABLES_DEFAULT) {
   const filas = (filasPropias || []).filter(fila => fila
     && (fila.semana_ciclo === null || fila.semana_ciclo === undefined)
     && (fila.fecha_hasta === null || fila.fecha_hasta === undefined)
     // Vigencia (F-9): un horario programado a futuro no se aplica todavía. Sin
     // fecha se resuelve la semana permanente completa (comportamiento anterior).
     && (!fecha || !fila.fecha_desde || String(fila.fecha_desde).slice(0, 10) <= fecha))
-  if (!filas.length) return { dias: [...DIAS_LABORABLES_DEFAULT], configurado: false }
+  if (!filas.length) return { dias: [...(defecto || DIAS_LABORABLES_DEFAULT)], configurado: false }
   const dias = [...new Set(filas
     .filter(fila => fila.trabaja !== false)
     .map(fila => Number(fila.dia_semana))
@@ -108,27 +111,49 @@ export async function fetchFilasHorarioPorEmpleado(env, headers, cuentaId, { emp
   return { ok: true, porEmpleado }
 }
 
-/** Mapa resuelto `empleado_id → { dias, configurado }` para pintar y validar la semana. */
-export async function fetchDiasLaborablesPorEmpleado(env, headers, cuentaId, opciones = {}) {
-  const { fecha = null, ...resto } = opciones
-  const { ok, porEmpleado } = await fetchFilasHorarioPorEmpleado(env, headers, cuentaId, { ...resto, fecha })
-  if (!ok) return { ok: false, porEmpleado: new Map() }
-  const resuelto = new Map()
-  for (const [empleadoId, filas] of porEmpleado) resuelto.set(empleadoId, diasLaborablesResueltos(filas, fecha))
-  return { ok: true, porEmpleado: resuelto }
+/**
+ * Días laborables por defecto de la cuenta (Configuración → reglas de la ley,
+ * migración 263). Si no se pueden leer, la ley vigente: lunes a viernes.
+ */
+export async function fetchDiasLaborablesDefecto(env, headers, cuentaId) {
+  try {
+    const response = await fetch(`${env.SUPABASE_URL}/rest/v1/configuracion_negocio?limit=1${nominaTenantFilter(cuentaId)}&select=nomina_dias_laborables_default`, { headers })
+    if (!response.ok) return [...DIAS_LABORABLES_DEFAULT]
+    const [config] = await response.json() ?? []
+    return reglasLeyDeConfig(config).diasLaborablesDefault
+  } catch {
+    return [...DIAS_LABORABLES_DEFAULT]
+  }
 }
 
-/** Días laborables resueltos de una persona: sin filas, el horario histórico. */
+/**
+ * Mapa resuelto `empleado_id → { dias, configurado }` para pintar y validar la semana.
+ * `defecto` = días de quien no tiene semana propia; si no se pasa, se lee de la cuenta.
+ * El mapa trae también `defecto` para resolver a quien no aparece en él.
+ */
+export async function fetchDiasLaborablesPorEmpleado(env, headers, cuentaId, opciones = {}) {
+  const { fecha = null, defecto: defectoDado = null, ...resto } = opciones
+  const [{ ok, porEmpleado }, defecto] = await Promise.all([
+    fetchFilasHorarioPorEmpleado(env, headers, cuentaId, { ...resto, fecha }),
+    defectoDado ? Promise.resolve(defectoDado) : fetchDiasLaborablesDefecto(env, headers, cuentaId),
+  ])
+  if (!ok) return { ok: false, porEmpleado: new Map(), defecto }
+  const resuelto = new Map()
+  for (const [empleadoId, filas] of porEmpleado) resuelto.set(empleadoId, diasLaborablesResueltos(filas, fecha, defecto))
+  return { ok: true, porEmpleado: resuelto, defecto }
+}
+
+/** Días laborables resueltos de una persona: sin filas, los días por defecto de la cuenta. */
 export async function fetchDiasLaborablesEmpleado(env, headers, cuentaId, empleadoId, fecha = null) {
-  const { ok, porEmpleado } = await fetchDiasLaborablesPorEmpleado(env, headers, cuentaId, { empleadoIds: [empleadoId], fecha })
-  if (!ok) return { ok: false, ...diasLaborablesResueltos([], fecha) }
-  return { ok: true, ...(porEmpleado.get(empleadoId) || diasLaborablesResueltos([], fecha)) }
+  const { ok, porEmpleado, defecto } = await fetchDiasLaborablesPorEmpleado(env, headers, cuentaId, { empleadoIds: [empleadoId], fecha })
+  if (!ok) return { ok: false, ...diasLaborablesResueltos([], fecha, defecto) }
+  return { ok: true, ...(porEmpleado.get(empleadoId) || diasLaborablesResueltos([], fecha, defecto)) }
 }
 
 /** Empleados de la lista que no trabajan esa fecha. */
-export function empleadosLibresEseDia(empleadoIds, porEmpleado, fecha) {
+export function empleadosLibresEseDia(empleadoIds, porEmpleado, fecha, defecto = DIAS_LABORABLES_DEFAULT) {
   return (empleadoIds || []).filter(empleadoId => {
     const resuelto = porEmpleado?.get(empleadoId)
-    return !trabajaEnFecha(resuelto?.dias, fecha)
+    return !trabajaEnFecha(resuelto?.dias ?? defecto, fecha)
   })
 }

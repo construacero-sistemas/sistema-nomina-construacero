@@ -138,6 +138,8 @@ describe('cálculo de período', () => {
     mock = installFetchMock([
       { match: '/nomina_periodos',        respond: [periodoAbierto] },
       { match: '/nomina_config_empleado', respond: [] },
+      { match: '/nomina_horarios', respond: [] },
+      { match: '/nomina_feriados', respond: [] },
       { match: '/configuracion_negocio',  respond: [{}] },
       { match: '/registro_asistencia',    respond: [] },
       { match: '/nomina_lineas',          respond: [] },
@@ -154,6 +156,8 @@ describe('cálculo de período', () => {
       { match: '/nomina_config_empleado', respond: [
         { empleado_id: IDS.empleado, cargo: 'Almacenista', salario_dia_usd: 30, horas_jornada: 8 },
       ]},
+      { match: '/nomina_horarios', respond: [] },
+      { match: '/nomina_feriados', respond: [] },
       { match: '/configuracion_negocio',  respond: [{
         nomina_factor_hora_extra: 1.5, nomina_factor_sabado: 1.25, nomina_factor_feriado: 2,
       }]},
@@ -188,6 +192,8 @@ describe('cálculo de período', () => {
         { empleado_id: IDS.empleado,  salario_dia_usd: 30, horas_jornada: 8 },
         { empleado_id: IDS.empleado2, salario_dia_usd: 40, horas_jornada: 8 },
       ]},
+      { match: '/nomina_horarios', respond: [] },
+      { match: '/nomina_feriados', respond: [] },
       { match: '/configuracion_negocio', respond: [{}] },
       { match: '/registro_asistencia',   respond: [] },
       // El empleado 1 ya cobró; el 2 no.
@@ -219,6 +225,8 @@ describe('cálculo de período', () => {
       { match: '/nomina_config_empleado', respond: [
         { empleado_id: IDS.empleado, salario_dia_usd: 30, horas_jornada: 8 },
       ]},
+      { match: '/nomina_horarios', respond: [] },
+      { match: '/nomina_feriados', respond: [] },
       { match: '/configuracion_negocio', respond: [{}] },
       { match: '/registro_asistencia',   respond: [
         { empleado_id: IDS.empleado, horas_normales: 8, horas_extra: 0, es_sabado: false, es_feriado: false, es_ausencia: false },
@@ -240,6 +248,66 @@ describe('cálculo de período', () => {
     expect(l.nota_deducciones).toBe('Adelanto')
     expect(l.total_bruto_usd).toBe(50)   // 30 + 20
     expect(l.total_neto_usd).toBe(40)    // 50 − 10
+  })
+
+  it('paga el sábado y el domingo de descanso con la semana completa (LOTTT art. 119)', async () => {
+    let insertadas = null
+    const semana = ['2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06', '2026-08-07']
+    mock = installFetchMock([
+      { match: '/nomina_periodos',        respond: [periodoAbierto] },
+      { match: '/nomina_config_empleado', respond: [{ empleado_id: IDS.empleado, salario_dia_usd: 30, horas_jornada: 8 }] },
+      { match: '/nomina_horarios', respond: [] },
+      { match: '/nomina_feriados', respond: [] },
+      { match: '/configuracion_negocio', respond: [{}] },
+      { match: '/registro_asistencia', respond: semana.map(fecha => (
+        { empleado_id: IDS.empleado, fecha, horas_normales: 8, horas_extra: 0, es_sabado: false, es_feriado: false, es_ausencia: false }
+      )) },
+      { match: '/nomina_lineas', method: 'GET',    respond: [] },
+      { match: '/nomina_lineas', method: 'POST',   respond: (url, init) => { insertadas = JSON.parse(init.body); return [] } },
+    ])
+    const res = await H.handleCalcularPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
+    expect((await readResponse(res)).status).toBe(200)
+    const l = insertadas[0]
+    expect(l.dias_trabajados).toBe(5)
+    expect(l.dias_descanso).toBe(2)
+    expect(l.monto_normal_usd).toBe(210)   // 7 × 30
+  })
+  it('si la base no tiene la columna dias_descanso, guarda sin ella', async () => {
+    const intentos = []
+    mock = installFetchMock([
+      { match: '/nomina_periodos',        respond: [periodoAbierto] },
+      { match: '/nomina_config_empleado', respond: [{ empleado_id: IDS.empleado, salario_dia_usd: 30, horas_jornada: 8 }] },
+      { match: '/nomina_horarios', respond: [] },
+      { match: '/nomina_feriados', respond: [] },
+      { match: '/configuracion_negocio', respond: [{}] },
+      { match: '/registro_asistencia', respond: [] },
+      { match: '/nomina_lineas', method: 'GET',    respond: [] },
+      { match: '/nomina_lineas', method: 'POST',   respond: (url, init) => {
+        const filas = JSON.parse(init.body)
+        intentos.push(filas)
+        if ('dias_descanso' in filas[0]) return { __raw: { code: 'PGRST204', message: "Could not find the 'dias_descanso' column" }, ok: false, status: 400 }
+        return []
+      } },
+    ])
+    const res = await H.handleCalcularPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
+    expect((await readResponse(res)).status).toBe(200)
+    expect(intentos).toHaveLength(2)
+    expect('dias_descanso' in intentos[1][0]).toBe(false)
+  })
+  it('no calcula si no puede leer los feriados del período', async () => {
+    mock = installFetchMock([
+      { match: '/nomina_periodos',        respond: [periodoAbierto] },
+      { match: '/nomina_config_empleado', respond: [{ empleado_id: IDS.empleado, salario_dia_usd: 30, horas_jornada: 8 }] },
+      { match: '/nomina_horarios', respond: [] },
+      { match: '/nomina_feriados', respond: { __raw: {}, ok: false, status: 500 } },
+      { match: '/configuracion_negocio', respond: [{}] },
+      { match: '/registro_asistencia', respond: [] },
+      { match: '/nomina_lineas', method: 'GET', respond: [] },
+    ])
+    const res = await H.handleCalcularPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
+    const { status, body } = await readResponse(res)
+    expect(status).toBe(500)
+    expect(String(body.error)).toMatch(/feriados/i)
   })
 
 })
