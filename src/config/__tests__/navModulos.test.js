@@ -16,7 +16,7 @@ describe('filtrarNavPorRol', () => {
     expect(filtrarNavPorRol(NAV, rol).map(item => item.to)).toEqual(['/nomina', '/finanzas', '/sistema'])
   })
 
-  it('mantiene solo Nómina para el rol nomina', () => {
-    expect(filtrarNavPorRol(NAV, 'nomina').map(item => item.to)).toEqual(['/nomina'])
+  it('el rol nomina ve Nómina y su Configuración, nunca Finanzas', () => {
+    expect(filtrarNavPorRol(NAV, 'nomina').map(item => item.to)).toEqual(['/nomina', '/sistema'])
   })
 })

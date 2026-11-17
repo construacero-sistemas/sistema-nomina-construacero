@@ -31,7 +31,7 @@ export function RateSelector({ className = '', compact = false, light = false })
   // La tasa manual solo rige en Nómina: la ve y la fija quien administra nómina.
   const perfil = useAuthStore(state => state.perfil)
   const puedeTasaManual = tieneCapacidad(perfil, 'administrarNomina')
-  const opcionesVisibles = puedeTasaManual ? opcionesTasa : opcionesTasa.filter(o => o.id !== 'manual')
+  const opcionesVisibles = (opcionesTasa || []).filter(o => puedeTasaManual || o.id !== 'manual')
   const [errorManual, setErrorManual] = useState('')
   const triggerRef = useRef(null)
   const menuRef = useRef(null)

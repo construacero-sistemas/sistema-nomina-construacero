@@ -118,7 +118,7 @@ export async function handleGetTasaManual(request, env) {
 export async function handleFijarTasaManual(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
-  const { operador, headers, ip } = v
+  const { operador, ip } = v
   // La tasa manual solo se usa en Nómina (Finanzas la ignora y toma el BCV): la
   // fija quien administra nómina (jefe, desarrollador y el rol nómina).
   const denegado = requireCapacidad(operador, 'administrarNomina', request)
