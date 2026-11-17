@@ -404,7 +404,7 @@ export async function handleCrearFeriado(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, ip } = v
-  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  const denegadoAdmin = requireCapacidad(operador, 'administrarNomina', request)
   if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
@@ -426,7 +426,7 @@ export async function handleEliminarFeriado(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, ip } = v
-  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  const denegadoAdmin = requireCapacidad(operador, 'administrarNomina', request)
   if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
