@@ -6,7 +6,7 @@ import { cargarLogo } from '../../../compat/services/pdf/pdfLogo.js'
 import { WATERMARK_LOGO } from '../../../compat/services/pdf/watermarkBase64.js'
 import {
   PAGE_W, PAGE_H, MARGIN, CONTENT_W,
-  C_PRIMARY, C_DARK, C_WHITE, C_GRAY, C_EMERALD, C_RED,
+  C_DARK, C_GRAY, C_EMERALD, C_RED,
   fmtUsd, fmtBs, drawWatermark, drawPremiumHeader, drawSimplifiedHeader,
 } from '../../../compat/services/pdf/pdfShared.js'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
@@ -87,7 +87,7 @@ function drawKpis(doc, y, kpis) {
 function drawSectionTitle(doc, y, titulo) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
-  doc.setTextColor(...C_PRIMARY)
+  doc.setTextColor(...C_DARK)
   doc.text(titulo, MARGIN, y)
   return y + 4
 }
@@ -171,7 +171,7 @@ async function generarFinanzasResumenPDFImpl({
   y = drawKpis(doc, y, [
     { label: 'Ingresos', value: fmtUsd(totalIngresosUsd), sub: `Bs ${totalIngresosVes.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: C_EMERALD },
     { label: 'Egresos', value: fmtUsd(totalEgresosUsd), sub: `Bs ${totalEgresosVes.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: C_RED },
-    { label: 'Flujo neto', value: fmtUsd(balanceUsd), sub: `Bs ${balanceVes.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: balanceUsd >= 0 ? C_PRIMARY : C_RED },
+    { label: 'Flujo neto', value: fmtUsd(balanceUsd), sub: `Bs ${balanceVes.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: balanceUsd >= 0 ? C_DARK : C_RED },
     { label: 'Movimientos', value: String(ingresos.length + egresos.length), sub: `${movimientos.filter(m => m.estado === 'anulado').length} anulado(s)`, color: C_DARK },
   ])
 
@@ -232,11 +232,12 @@ async function generarFinanzasResumenPDFImpl({
     ]
 
     function catHeaders(yPos) {
-      doc.setFillColor(...C_PRIMARY)
+      // Título de tabla gris muy claro con letras oscuras (ahorra tinta).
+      doc.setFillColor(240, 242, 245)
       doc.rect(MARGIN, yPos, CONTENT_W, 6.5, 'F')
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(6)
-      doc.setTextColor(...C_WHITE)
+      doc.setTextColor(...C_DARK)
       colsCat.forEach(c => {
         if (c.align === 'right') {
           doc.text(c.label, c.x + c.w - 2, yPos + 4.5, { align: 'right' })
@@ -263,7 +264,7 @@ async function generarFinanzasResumenPDFImpl({
       const tieneIngresos = cat.totalIngresosUsd > 0
       const tieneEgresos = cat.totalEgresosUsd > 0
       const tipoLabel = tieneIngresos && tieneEgresos ? 'Mixto' : tieneIngresos ? 'Ingreso' : 'Egreso'
-      const tipoColor = tieneIngresos && tieneEgresos ? C_PRIMARY : tieneIngresos ? C_EMERALD : C_RED
+      const tipoColor = tieneIngresos && tieneEgresos ? C_DARK : tieneIngresos ? C_EMERALD : C_RED
 
       // Nombre categoría
       doc.setFont('helvetica', 'bold')
@@ -320,11 +321,12 @@ async function generarFinanzasResumenPDFImpl({
     y = drawSectionTitle(doc, y, 'DETALLE DE MOVIMIENTOS POR CATEGORÍA')
 
     function movHeaders(yPos) {
-      doc.setFillColor(...C_PRIMARY)
+      // Título de tabla gris muy claro con letras oscuras (ahorra tinta).
+      doc.setFillColor(240, 242, 245)
       doc.rect(MARGIN, yPos, CONTENT_W, 6.5, 'F')
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(6)
-      doc.setTextColor(...C_WHITE)
+      doc.setTextColor(...C_DARK)
       cols.forEach(c => {
         if (c.label === 'MONTO' || c.label === 'CONTRAVALOR') {
           doc.text(c.label, c.x + c.w - 2, yPos + 4.5, { align: 'right' })
@@ -341,7 +343,7 @@ async function generarFinanzasResumenPDFImpl({
 
       const tieneIngresos = cat.totalIngresosUsd > 0
       const tieneEgresos = cat.totalEgresosUsd > 0
-      const catColor = tieneIngresos && !tieneEgresos ? C_EMERALD : !tieneIngresos && tieneEgresos ? C_RED : C_PRIMARY
+      const catColor = tieneIngresos && !tieneEgresos ? C_EMERALD : !tieneIngresos && tieneEgresos ? C_RED : C_GRAY
 
       // Banner de Categoría
       doc.setFillColor(243, 244, 246)
@@ -468,11 +470,14 @@ async function generarFinanzasResumenPDFImpl({
 
   // ═══ 6. GRAN TOTAL CONSOLIDADO ═════════════════════════════════════════════
   y = checkPage(doc, y, 12)
-  doc.setFillColor(...C_PRIMARY)
-  doc.rect(MARGIN, y, CONTENT_W, 8, 'F')
+  // Gran total en caja clara con borde fino (antes barra azul con letras blancas).
+  doc.setFillColor(248, 250, 252)
+  doc.setDrawColor(226, 232, 240)
+  doc.setLineWidth(0.3)
+  doc.rect(MARGIN, y, CONTENT_W, 8, 'FD')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7)
-  doc.setTextColor(...C_WHITE)
+  doc.setTextColor(...C_DARK)
   if (esResumido) {
     doc.text('TOTALES GENERALES', MARGIN + 2, y + 5.5)
     doc.text(`${ingresos.length} ing · ${egresos.length} egr`, MARGIN + 88 + 11, y + 5.5, { align: 'center' })

@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf'
 import { cargarLogo } from '../../../compat/services/pdf/pdfLogo.js'
 import {
   PAGE_W, PAGE_H, MARGIN, CONTENT_W,
-  C_PRIMARY, C_DARK, C_WHITE, C_GRAY, C_AMBER, C_EMERALD,
+  C_DARK, C_GRAY, C_AMBER, C_EMERALD,
   fmtUsd, fmtBs, drawWatermark, drawPremiumHeader,
 } from '../../../compat/services/pdf/pdfShared.js'
 
@@ -80,11 +80,6 @@ async function generarComisionReciboPDFImpl({ comision = {}, config = {}, action
     doc.setLineWidth(0.3)
     doc.roundedRect(bx + 1, y, kpiBoxW - 2, kpiBoxH, 2, 2, 'FD')
 
-    if (kpi.destacado) {
-      doc.setFillColor(...C_PRIMARY)
-      doc.rect(bx + 1, y, kpiBoxW - 2, 1.5, 'F')
-    }
-
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(6.5)
     doc.setTextColor(...C_GRAY)
@@ -92,7 +87,7 @@ async function generarComisionReciboPDFImpl({ comision = {}, config = {}, action
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(9.5)
-    doc.setTextColor(...(kpi.destacado ? C_PRIMARY : C_DARK))
+    doc.setTextColor(...(kpi.destacado ? C_DARK : C_DARK))
     doc.text(kpi.value, bx + 4, y + 13)
   })
 
@@ -106,7 +101,7 @@ async function generarComisionReciboPDFImpl({ comision = {}, config = {}, action
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
-  doc.setTextColor(...C_PRIMARY)
+  doc.setTextColor(...C_DARK)
   doc.text('DATOS DEL COMISIONISTA Y DEL PAGO', MARGIN + 4, y + 5.5)
 
   doc.setFont('helvetica', 'normal')
@@ -134,7 +129,7 @@ async function generarComisionReciboPDFImpl({ comision = {}, config = {}, action
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
-  doc.setTextColor(...C_PRIMARY)
+  doc.setTextColor(...C_DARK)
   doc.text('CONCEPTO Y DESCRIPCIÓN DE LA COMISIÓN', MARGIN + 4, y + 6)
 
   doc.setFont('helvetica', 'normal')
@@ -170,7 +165,7 @@ async function generarComisionReciboPDFImpl({ comision = {}, config = {}, action
 
   doc.setFont('helvetica', 'black')
   doc.setFontSize(13)
-  doc.setTextColor(...C_PRIMARY)
+  doc.setTextColor(...C_DARK)
   doc.text(`${fmtUsd(montoUsd)} USD`, MARGIN + CONTENT_W - 4, y + 10, { align: 'right' })
 
   y += 26

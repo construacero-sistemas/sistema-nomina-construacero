@@ -7,7 +7,7 @@ import { desgloseDescanso } from '../../utils/descansoRecibo.js'
 import { reglasLeyDeConfig } from '../../../server/lib/nominaReglasLey.js'
 import {
   PAGE_W, PAGE_H, MARGIN, CONTENT_W,
-  C_PRIMARY, C_DARK, C_WHITE, C_GRAY, C_AMBER, C_EMERALD, C_RED,
+  C_DARK, C_GRAY, C_AMBER, C_EMERALD, C_RED,
   fmtUsd, drawPremiumHeader,
 } from '../../../compat/services/pdf/pdfShared.js'
 
@@ -33,8 +33,9 @@ function drawFooter(doc, config) {
   const totalPages = doc.internal.getNumberOfPages()
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p)
-    doc.setDrawColor(...C_PRIMARY)
-    doc.setLineWidth(0.5)
+    // Línea fina negra: sin azul para ahorrar tinta.
+    doc.setDrawColor(0, 0, 0)
+    doc.setLineWidth(0.3)
     doc.line(MARGIN, PAGE_H - 15, MARGIN + CONTENT_W, PAGE_H - 15)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6)
@@ -55,6 +56,12 @@ async function generarNominaResumenPDFImpl({ periodo = {}, lineas = [], config =
     doc, logoData, config,
     title: 'Planilla de Nómina',
     subtitle: `${periodo.nombre || ''} · ${fecha(periodo.desde)} – ${fecha(periodo.hasta)}`,
+    // Encabezado blanco con trazos negros (ahorra tinta al imprimir).
+    customBgColor:       [255, 255, 255],
+    customAccentColor:   [0, 0, 0],
+    customTextColor:     [0, 0, 0],
+    customSubtitleColor: [0, 0, 0],
+    customBorderColor:   [0, 0, 0],
   })
 
   try {
@@ -72,10 +79,13 @@ async function generarNominaResumenPDFImpl({ periodo = {}, lineas = [], config =
   const colW = CONTENT_W / 4
   const labels = ['Empleados', 'Total bruto', 'Deducciones', 'Total neto']
   const values = [String(lineas.length), fmtUsd(totBruto), fmtUsd(totDeduc), fmtUsd(totNeto)]
-  const colors = [C_PRIMARY, C_DARK, C_RED, C_AMBER]
+  const colors = [C_DARK, C_DARK, C_RED, C_DARK]
 
-  doc.setFillColor(240, 242, 245)
-  doc.roundedRect(MARGIN, y, CONTENT_W, kpiBoxH, 2, 2, 'F')
+  // Caja clara con borde fino (ahorra tinta al imprimir)
+  doc.setFillColor(248, 250, 252)
+  doc.setDrawColor(226, 232, 240)
+  doc.setLineWidth(0.3)
+  doc.roundedRect(MARGIN, y, CONTENT_W, kpiBoxH, 2, 2, 'FD')
   for (let i = 0; i < 4; i++) {
     if (i > 0) {
       doc.setDrawColor(220, 225, 235)
@@ -94,25 +104,27 @@ async function generarNominaResumenPDFImpl({ periodo = {}, lineas = [], config =
   y += kpiBoxH + 6
 
   // ── Tabla ───────────────────────────────────────────────────────────────────
+  // Suman 188 mm = CONTENT_W: antes medían 201 y NETO se salía del margen.
   const cols = [
-    { label: 'EMPLEADO',  x: MARGIN,        w: 42 },
-    { label: 'DÍAS',      x: MARGIN + 42,   w: 13 },
-    { label: 'H.NORM',    x: MARGIN + 55,   w: 16 },
-    { label: 'H.EXTRA',   x: MARGIN + 71,   w: 16 },
-    { label: 'MENSUAL',   x: MARGIN + 87,   w: 22 },
-    { label: 'BASE',      x: MARGIN + 109,  w: 22 },
-    { label: 'RECARGOS',  x: MARGIN + 131,  w: 22 },
-    { label: 'BONOS',     x: MARGIN + 153,  w: 18 },
-    { label: 'DEDUC.',    x: MARGIN + 171,  w: 17 },
-    { label: 'NETO',      x: MARGIN + 188,  w: 13 },
+    { label: 'EMPLEADO',   x: MARGIN + 0,    w: 38 },
+    { label: 'DÍAS',       x: MARGIN + 38,   w: 11 },
+    { label: 'H.NORM',     x: MARGIN + 49,   w: 14 },
+    { label: 'H.EXTRA',    x: MARGIN + 63,   w: 14 },
+    { label: 'MENSUAL',    x: MARGIN + 77,   w: 20 },
+    { label: 'BASE',       x: MARGIN + 97,   w: 19 },
+    { label: 'RECARGOS',   x: MARGIN + 116,  w: 19 },
+    { label: 'BONOS',      x: MARGIN + 135,  w: 17 },
+    { label: 'DEDUC.',     x: MARGIN + 152,  w: 17 },
+    { label: 'NETO',       x: MARGIN + 169,  w: 19 },
   ]
 
   function headers(yPos) {
-    doc.setFillColor(...C_PRIMARY)
+    // Título de tabla gris muy claro con letras oscuras (antes azul con letras blancas).
+    doc.setFillColor(240, 242, 245)
     doc.rect(MARGIN, yPos, CONTENT_W, 7, 'F')
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(6)
-    doc.setTextColor(...C_WHITE)
+    doc.setTextColor(...C_DARK)
     cols.forEach(c => doc.text(c.label, c.x + 1.5, yPos + 5))
     return yPos + 8
   }
@@ -135,7 +147,7 @@ async function generarNominaResumenPDFImpl({ periodo = {}, lineas = [], config =
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(6.5)
     doc.setTextColor(...C_DARK)
-    doc.text(String(l.empleado?.nombre || '—').substring(0, 26), cols[0].x + 1.5, y + 3)
+    doc.text(String(l.empleado?.nombre || '—').substring(0, 24), cols[0].x + 1.5, y + 3)
 
     if (l.cargo_snap) {
       doc.setFont('helvetica', 'normal')
@@ -188,11 +200,14 @@ async function generarNominaResumenPDFImpl({ periodo = {}, lineas = [], config =
 
   // ── Fila de totales ─────────────────────────────────────────────────────────
   y = checkPage(doc, y, 12)
-  doc.setFillColor(...C_PRIMARY)
-  doc.rect(MARGIN, y, CONTENT_W, 8, 'F')
+  // Totales en caja clara con borde fino, como el Reporte de Ventas.
+  doc.setFillColor(248, 250, 252)
+  doc.setDrawColor(226, 232, 240)
+  doc.setLineWidth(0.3)
+  doc.rect(MARGIN, y, CONTENT_W, 8, 'FD')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7)
-  doc.setTextColor(...C_WHITE)
+  doc.setTextColor(...C_DARK)
   doc.text('TOTALES', cols[0].x + 1.5, y + 5.5)
   doc.text(fmtUsd(lineas.reduce((s, l) => s + Number(l.monto_normal_usd || 0), 0)), cols[5].x + 1.5, y + 5.5)
   doc.text(fmtUsd(lineas.reduce((s, l) =>
