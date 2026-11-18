@@ -13,7 +13,6 @@ import LogoutConfirmModal from './components/LogoutConfirmModal.jsx'
 import { accesoUI, etiquetaRol, rutaParaRol } from './config/accesoModulos.js'
 import { filtrarNavPorRol } from './config/navModulos.js'
 import { decisionPorteroPrivado, decisionPorteroPublico } from './utils/porterosSesion.js'
-import SistemaView from './views/SistemaView.jsx'
 import useTasaCambioNomina from './hooks/useTasaCambioNomina.js'
 import RateHeader from './components/layout/RateHeader.jsx'
 import HeaderDate from './components/layout/HeaderDate.jsx'
@@ -21,6 +20,8 @@ import MobileDrawerContent from './components/layout/MobileDrawerContent.jsx'
 
 const NominaView = lazy(() => import('./views/NominaView.jsx'))
 const FinanzasView = lazy(() => import('./components/finanzas/FinanzasView.jsx'))
+// Configuración se abre poco: no debe pesar en la carga inicial de la app.
+const SistemaView = lazy(() => import('./views/SistemaView.jsx'))
 
 const NAV = [
   { to: '/nomina', label: 'Nómina', desc: 'Salarios, asistencia y recibos', icon: Wallet },

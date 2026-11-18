@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   query: { cancelQueries: vi.fn(), clear: vi.fn() },
   disk: new Map(), get: vi.fn(), set: vi.fn(), del: vi.fn(),
 }))
-vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: mocks.auth }) }))
+vi.mock('@supabase/auth-js', () => ({ AuthClient: function AuthClient() { return mocks.auth } }))
 vi.mock('../../lib/queryClient', () => ({ default: mocks.query }))
 vi.mock('../../services/apiBase', () => ({ apiUrl: path => path }))
 vi.mock('idb-keyval', () => ({ get: mocks.get, set: mocks.set, del: mocks.del }))

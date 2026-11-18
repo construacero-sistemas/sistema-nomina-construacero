@@ -6,6 +6,34 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Auditoría y optimización de tiempos de carga — 18/11/2026
+
+Petición del usuario: auditar los tiempos de carga y optimizarlos.
+
+1. **Diagnóstico:**
+   - la carga inicial descargaba **738 kB de JS (~230 kB comprimido)** antes de mostrar nada;
+   - Configuración (`SistemaView`, con usuarios, feriados y reglas de pago) iba dentro del paquete principal aunque casi nunca se abre;
+   - el navegador cargaba supabase-js completo (base de datos, realtime, storage, functions: 206 kB) solo para la sesión; todos los datos ya van por `/api/*`;
+   - Nómina era un único bloque de 216 kB con las cuatro pestañas;
+   - en producción los archivos `/assets/*` (con huella en el nombre) se servían con `Cache-Control: public, max-age=0, must-revalidate`: cada visita volvía a consultar cada archivo al servidor;
+   - la API corre en Vercel `iad1` (EE. UU. Este). No se pudo confirmar la región del Supabase de producción desde el conector.
+2. **Cambios:**
+   - `src/NominaApp.jsx`: `SistemaView` con `React.lazy` (las líneas de los porteros de la entrada anterior no se tocaron);
+   - `src/views/NominaView.jsx`: cada pestaña (`TabEmpleados`, `TabAsistencia`, `TabPeriodos`, `TabHistorial`) se descarga al abrirla, con esqueleto de carga mientras tanto;
+   - `compat/services/supabase/client.js`: usa solo `AuthClient` de `@supabase/auth-js` con las mismas opciones que aplicaba `createClient` (URL `auth/v1`, cabeceras `apikey`/`Authorization`, clave `sb-<ref>-auth-token`, flujo implícito, `fetchWithTimeout`). Las sesiones guardadas siguen valiendo; nadie tiene que volver a iniciar sesión;
+   - `compat/hooks/useConfigNegocio.js`: se quitaron `validarGate`, `tieneGateConfigurado` y `hashSHA256` (sin uso y únicos llamados a `supabase.rpc`);
+   - `package.json`/`package-lock.json`: `@supabase/auth-js` 2.112.3 declarado (ya estaba instalado como dependencia de supabase-js);
+   - `vercel.json`: `/assets/*` con `public, max-age=31536000, immutable`, y el rewrite al `index.html` excluye `/assets/` para que un archivo viejo devuelva 404 (lo detecta `auto-recovery.js`) en vez de un HTML guardado como inmutable;
+   - pruebas `session-isolation`, `seleccion-operador` y `authFetch.session-fix`: simulan `@supabase/auth-js` en lugar de supabase-js.
+3. **Resultado medido (build local):** carga inicial **477 kB de JS / 143 kB comprimido** (−35 % / −38 %); `index` 287 → 136 kB; `cloud` 206 → 101 kB; Nómina 216 kB → 4 kB + la pestaña abierta (Empleados 58 kB). Ninguna vista arrastra jsPDF ni html2canvas.
+4. **Pruebas:** `npm run verify` completo correcto: check:project, qa, responsive, lint, deterministas, `npm test` 1570/1570 (150 archivos), test:db, build y presupuesto de bundle.
+5. **Pendientes:**
+   - comprobar después del próximo despliegue que `/assets/*` responde con `immutable` y que el inicio de sesión y la renovación del token funcionan igual en iPhone;
+   - confirmar la región del Supabase de producción: si no es `us-east-1`, fijar la función de Vercel en la región más cercana (cada consulta cruza el continente);
+   - otras mejoras posibles, no aplicadas: modales de Finanzas diferidos (`FinanzasView` 195 kB), `pdfShared` de 398 kB (probablemente la fuente incrustada; solo afecta al exportar), y el sondeo de la tasa cada 10 min en `useTasaCambioNomina`;
+   - el caché de IndexedDB se borra en cada arranque a propósito (política de datos sensibles), así que cada apertura vuelve a pedir los datos; cambiarlo requiere decisión del usuario;
+   - `@supabase/supabase-js` sigue en `package.json` sin uso en el frontend; se puede retirar más adelante.
+
 ## Finanzas: rebote sin fin entre el inicio de sesión y /finanzas — 18/11/2026
 
 Objetivo: eliminar el error «Attempt to use history.replaceState() more than 100 times per 10 seconds» que mostró «Algo salió mal» en `/finanzas` (1 registro en `auditoria`, 17/11 16:47 UTC, Safari, sin usuario identificado).
