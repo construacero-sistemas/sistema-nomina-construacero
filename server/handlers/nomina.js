@@ -31,6 +31,8 @@ export {
 
 export { handleDeshacerMarcaje } from './nomina.marcaje-deshacer.js'
 
+export { handleGetHojaSemanal } from './nomina.hoja.js'
+
 export {
   handleRegistrarAsistencia,
   handleRegistrarAsistenciaMasivo,

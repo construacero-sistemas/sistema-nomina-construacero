@@ -4291,3 +4291,20 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 1. Probar en el teléfono, con sesión real, «Deshacer», «Llegó» y «Más acciones». La demo visual se hizo sin sesión.
 2. Staging no tiene la migración 262 (`dias_descanso`); el smoke avisa y sigue.
 
+## 151. Hoja semanal de la contadora dentro de la app — Fase 1 (2026-11-17)
+
+**Contexto.** El usuario pidió una zona que se vaya llenando como la planilla Excel de la semana jueves → miércoles, sin la tabla verde «Nómina del personal sueldo legal»: el bono de $35 va en el primer recuadro (pedido de la contadora). Las decisiones se tomaron con preguntas de una en una y están en `docs/PLAN_HOJA_SEMANAL.md` (D-1 a D-8). Dos audios del dueño, transcritos en local, fijan la semana en mensual ÷ 30 × 7 y el día de descanso trabajado como un día adicional.
+
+**Qué se hizo.**
+- Pestaña **«Hoja semanal»** en el detalle del período, con las columnas de la planilla: sueldo mensual, días trabajados, sueldo semanal, bono semanal ($35), horas extra, total de extras, descanso o feriado trabajado, valor, otros pagos, total a cobrar, descuentos, neto en $ y en Bs.
+- **La hoja no recalcula la nómina:** reparte en columnas lo que ya calculó el motor (`server/lib/nominaHoja.js`). Cada fila cuadra con su recibo y los totales suman todas las filas (la planilla del 05–11/11 dejaba fuera a Julián Guaina).
+- **Descuento manual desde la hoja.** Descarga a Excel.
+- **100 % responsiva sin recortar datos:** fichas en teléfono y tablet, tabla completa en escritorio.
+
+**Verificación.** Pruebas nuevas: función pura (8), handler (5), pantalla (8) e integración con el detalle del período (1). El smoke de staging pasa con la hoja (`weeklySheetAddsUp`). Ver el PR para el resultado de `verify`.
+
+**Pendientes.**
+1. Fase 2: interruptor «Cobra bono semanal» por ficha.
+2. Fase 3: período automático jueves → miércoles y llenado en vivo con el marcaje.
+3. D-3: qué pasa con el bono si alguien falta (provisional: el bono queda en 35 y la falta sale del sueldo semanal).
+4. Hora extra a $2,50 fijos en producción (bitácora 150, PR #7).
