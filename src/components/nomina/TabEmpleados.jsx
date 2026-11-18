@@ -429,9 +429,6 @@ function EmpleadoNominaCard({ config, esAdmin, puedeGestionar = false, puedePaga
       </div>
 
       <div className="px-3 pt-2 pb-1.5 space-y-1.5 text-xs text-slate-500">
-        <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-          <CalendarDays size={11} />Ingreso: {config.fecha_ingreso || 'Sin fecha'}
-        </div>
         {!esVendedorRol && (
           <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
             <Clock size={11} />Jornada: {Number(config.horas_jornada) || 0}h ({formatRangoHoras12(config.hora_inicio || '08:00', config.hora_fin || '17:00')})

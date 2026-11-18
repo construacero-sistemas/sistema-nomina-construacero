@@ -134,14 +134,14 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(6.5)
   doc.setTextColor(100, 116, 139)
-  doc.text('FECHA DE INGRESO', MARGIN + 4, y + 16)
+  doc.text('DÍAS TRABAJADOS', MARGIN + 4, y + 16)
   doc.text('HORARIO ASIGNADO', MARGIN + 75, y + 16)
   doc.text('ESTADO DE CUENTA', MARGIN + 130, y + 16)
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.5)
   doc.setTextColor(71, 85, 105)
-  doc.text(fmtFechaVE(linea.fecha_ingreso_snap || linea.empleado?.fecha_ingreso), MARGIN + 4, y + 20)
+  doc.text(String(Number(linea.dias_trabajados || 0)), MARGIN + 4, y + 20)
   doc.text(`${formatHora12(linea.hora_inicio_snap || '08:00')} a ${formatHora12(linea.hora_fin_snap || '17:00')} (${Number(linea.horas_jornada_snap || 8)}h efectivas)`, MARGIN + 75, y + 20)
   doc.text(linea.pagado ? 'LIQUIDADO / PAGADO' : 'PENDIENTE DE PAGO', MARGIN + 130, y + 20)
 
