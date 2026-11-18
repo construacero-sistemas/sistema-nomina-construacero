@@ -27,10 +27,11 @@ const PUBLIC_CONFIG_FIELDS = [
   ...COLUMNAS_REGLAS_LEY,
 ]
 
-// Campos que solo el horario de la empresa toca (rol nómina incluido). Todo lo
-// demás —reglas de la ley, factores, montos y datos del negocio— cambia cuánto
-// se paga o la identidad de la empresa: exige `administrarSistema` (jefe).
-const CAMPOS_HORARIO = new Set(['nomina_hora_inicio', 'nomina_hora_fin', 'nomina_horas_jornada', 'nomina_horas_descanso'])
+// Campos de la empresa (identidad del negocio) y el interruptor de la versión
+// de nómina: los cambia solo quien administra el sistema (jefe). Todo lo demás
+// —horario, reglas de la ley, factores y montos— es configuración de nómina y
+// lo cambia quien administra nómina (jefe, desarrollador y el rol nómina).
+const CAMPOS_SISTEMA = new Set(['nombre_negocio', 'rif_negocio', 'logo_url', 'telefono_negocio', 'email_negocio', 'nomina_v2_enabled'])
 
 export async function handleGetConfig(request, env) {
   const user = await verifyAuth(request, env)
@@ -73,8 +74,8 @@ export async function handleUpdateConfig(request, env) {
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
   const v = await validateOperator(request, env)
   if (v.error) return v.error
-  const soloHorario = Object.keys(body || {}).every(campo => CAMPOS_HORARIO.has(campo))
-  const denegado = requireCapacidad(v.operador, soloHorario ? 'administrarNomina' : 'administrarSistema', request)
+  const tocaSistema = Object.keys(body || {}).some(campo => CAMPOS_SISTEMA.has(campo))
+  const denegado = requireCapacidad(v.operador, tocaSistema ? 'administrarSistema' : 'administrarNomina', request)
   if (denegado) return denegado
   const fields = {}
 

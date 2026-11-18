@@ -36,7 +36,7 @@ function fmtCorto(d) {
 
 // `esAdmin` (administrarNomina) controla las vistas de asistencia y el marcaje real,
 // que ese rol sí puede operar. La carga masiva y la eliminación de registros exigen
-// `gestionarUsuarios` en el servidor, así que se gatean con `puedeGestionarNomina`.
+// `administrarNomina` en el servidor y se gatean con `puedeGestionarNomina`.
 export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false }) {
   // La fecha operativa sale de un único helper (America/Caracas): el reloj del
   // navegador puede estar en otra zona y pintar «hoy» en el día equivocado (F-13).

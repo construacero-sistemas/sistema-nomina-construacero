@@ -162,8 +162,8 @@ for (const [name, source, markers] of [
   ['src/NominaApp.jsx', shellSource, ['Nómina y Finanzas', 'className="loader"', 'className="loader-square"', 'Array.from({ length: 7 }', 'md:hidden', 'translate-x-0', 'safe-area-inset-bottom', 'accesoUI']],
   ['src/hooks/useNomina.js', payrollHookSource, ['tieneCapacidad', "'verNomina'", "'administrarNomina'"]],
   // Las acciones de personal se gatean con la MISMA capacidad que exige el servidor
-  // (`gestionarUsuarios`): el rol nomina tiene administrarNomina pero no esa llave.
-  ['src/views/NominaView.jsx', payrollViewSource, ['administrarNomina', 'TabEmpleados', 'TabHistorial', "tieneCapacidad(perfil, 'gestionarUsuarios')", "tieneCapacidad(perfil, 'operarFinanzas')", 'puedeGestionarNomina', 'puedePagarNomina']],
+  // (`administrarNomina`); pagar exige `operarFinanzas`, que el rol nomina no tiene.
+  ['src/views/NominaView.jsx', payrollViewSource, ['administrarNomina', 'TabEmpleados', 'TabHistorial', "puedeGestionarNomina = tieneCapacidad(perfil, 'administrarNomina')", "tieneCapacidad(perfil, 'operarFinanzas')", 'puedeGestionarNomina', 'puedePagarNomina']],
   ['src/views/SistemaView.jsx', systemViewSource, ['Sistema', 'TabConfiguracion', 'Gestión de Personal Centralizada', '/nomina', 'tieneCapacidad', 'gestionarUsuarios']],
   // El contrato es que la interfaz advierta que la hora la pone el servidor; la
   // redacción del panel cambió al reescribirlo, así que el marcador sigue el texto vigente.
@@ -204,8 +204,8 @@ if (!permissionsGuardSource.includes('gestionarUsuarios') || !permissionsGuardSo
   fail('La matriz de permisos debe mantener las capacidades separadas por rol (finanzas sin saldos, nomina sin finanzas)')
 }
 
-// Paridad UI ↔ servidor: `administrarNomina` es la capacidad del MÓDULO (lectura y
-// marcaje); 31 rutas del Worker exigen `gestionarUsuarios` y 7 exigen `operarFinanzas`.
+// Paridad UI ↔ servidor: las escrituras de Nómina exigen `administrarNomina` y las que
+// mueven dinero (pagar, revertir, pagar comisión) exigen `operarFinanzas`.
 // Cada acción de escritura de Nómina debe gatearse con la capacidad de su endpoint, o
 // el rol `nomina` vuelve a ver botones que el servidor rechaza con 403.
 const paridadGates = [

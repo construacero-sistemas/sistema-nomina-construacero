@@ -59,16 +59,13 @@ const ROUTES = [
   ['handleRevertirPagoLinea', { operationId: IDS.registro, lineaId: IDS.linea, motivo: 'Corrección de prueba' }],
 ]
 
-// Escrituras del módulo que exigen una capacidad que el rol `nomina` NO tiene:
-// `gestionarUsuarios` (ROLES_ADMIN en el servidor) y `operarFinanzas` (pagos). Antes no
-// existía ninguna prueba para ese rol en rutas de escritura, y por eso la interfaz podía
-// ofrecer botones que el servidor rechazaba sin que nada lo detectara.
-const ESCRITURAS_SOLO_ADMIN = [
+// Escrituras del módulo de nómina: las autoriza `administrarNomina`, así que el
+// rol `nomina` (además de jefe/desarrollador) las ejecuta. Solo pagar y revertir
+// pagos exigen `operarFinanzas`, porque mueven dinero de las cuentas de Finanzas.
+const ESCRITURAS_DE_NOMINA = [
   'handleCrearConfigEmpleado', 'handleActualizarConfigEmpleado',
   'handleRegistrarAsistenciaMasivo', 'handleEliminarAsistencia',
-  // Los feriados son configuración propia de nómina (`administrarNomina`):
-  // el rol nomina sí los crea, por eso no están en esta lista.
-  'handleCrearHorario',
+  'handleCrearFeriado', 'handleCrearHorario',
   'handleCrearConcepto', 'handleCrearReglaLegal', 'handleCrearTasaSnapshot',
   'handleCrearPeriodo', 'handleCalcularPeriodo', 'handleCerrarPeriodo',
   'handleReabrirPeriodo', 'handleEliminarPeriodo',
@@ -149,7 +146,7 @@ describe('permisos — matriz de nómina', () => {
 
   // El rol `nomina` tiene el módulo (`administrarNomina`) pero no las capacidades de
   // estas acciones: 403 con la marca de capacidad, sin tocar la base.
-  for (const name of [...ESCRITURAS_SOLO_ADMIN, ...ESCRITURAS_CON_FINANZAS]) {
+  for (const name of ESCRITURAS_CON_FINANZAS) {
     it(`nomina recibe 403 por capacidad en ${name} sin consultar datos`, async () => {
       operadorActual = OPERADORES.nomina
       const [, body] = ROUTES.find(([ruta]) => ruta === name)
@@ -161,6 +158,18 @@ describe('permisos — matriz de nómina', () => {
       expect(result.body.code).toBe(CODIGO_CAPACIDAD_INSUFICIENTE)
       expect(result.body.error).toMatch(/no tienes permiso para esta acción/i)
       expect(mock.calls).toHaveLength(0)
+    })
+  }
+
+  for (const name of ESCRITURAS_DE_NOMINA) {
+    it(`nomina pasa la compuerta de capacidad en ${name}`, async () => {
+      operadorActual = OPERADORES.nomina
+      const [, body] = ROUTES.find(([ruta]) => ruta === name)
+      mock = installFetchMock([{ match: '', respond: [] }])
+
+      const result = await readResponse(await H[name](makeRequest(body), ENV))
+
+      expect(result.body?.code).not.toBe(CODIGO_CAPACIDAD_INSUFICIENTE)
     })
   }
 

@@ -26,7 +26,7 @@ export async function handleCrearConcepto(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador } = v
-  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  const denegadoAdmin = requireCapacidad(operador, 'administrarNomina', request)
   if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
@@ -167,7 +167,7 @@ export async function handleCrearTasaSnapshot(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  const denegadoAdmin = requireCapacidad(operador, 'administrarNomina', request)
   if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
@@ -207,7 +207,7 @@ export async function handleCrearReglaLegal(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador } = v
-  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  const denegadoAdmin = requireCapacidad(operador, 'administrarNomina', request)
   if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError

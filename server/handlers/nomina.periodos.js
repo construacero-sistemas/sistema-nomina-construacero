@@ -50,7 +50,7 @@ export async function handleCrearPeriodo(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers } = v
-  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  const denegadoAdmin = requireCapacidad(operador, 'administrarNomina', request)
   if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
@@ -77,7 +77,7 @@ export async function handleCalcularPeriodo(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers, ip } = v
-  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  const denegadoAdmin = requireCapacidad(operador, 'administrarNomina', request)
   if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
@@ -209,7 +209,7 @@ export async function handleCerrarPeriodo(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers, ip } = v
-  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  const denegadoAdmin = requireCapacidad(operador, 'administrarNomina', request)
   if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
@@ -265,7 +265,7 @@ export async function handleReabrirPeriodo(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers, ip } = v
-  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  const denegadoAdmin = requireCapacidad(operador, 'administrarNomina', request)
   if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
@@ -291,7 +291,7 @@ export async function handleEliminarPeriodo(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, headers, ip } = v
-  const denegadoAdmin = requireCapacidad(operador, 'gestionarUsuarios', request)
+  const denegadoAdmin = requireCapacidad(operador, 'administrarNomina', request)
   if (denegadoAdmin) return denegadoAdmin
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError

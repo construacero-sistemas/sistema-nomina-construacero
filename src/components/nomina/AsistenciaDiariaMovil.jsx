@@ -32,8 +32,7 @@ export default function AsistenciaDiariaMovil({
   onIrHoy,
   esAdmin,
   // La carga masiva (POST /nomina/asistencia/registrar-masivo) exige
-  // `gestionarUsuarios` en el servidor; `esAdmin` (administrarNomina) basta para
-  // registrar o editar un día a la vez, que es lo que sí puede el rol `nomina`.
+  // `administrarNomina` en el servidor, la misma llave que `puedeGestionarNomina`.
   puedeGestionarNomina = false,
   onAbrirDetalle,
   onAbrirMasivo,

@@ -205,9 +205,16 @@ describe('reglas de pago y de la ley (migración 263)', () => {
     expect(String(body.error)).toMatch(/divisor/i)
   })
 
-  it('el rol nómina no puede cambiar cuánto se paga', async () => {
+  it('el rol nómina sí puede cambiar las reglas de pago', async () => {
     operadorActual = OPERADORES.nomina
+    mock = patchQueDevuelve()
     const res = await handleUpdateConfig(makeRequest({ nomina_factor_hora_extra: 3 }), ENV)
+    expect((await readResponse(res)).status).toBe(200)
+  })
+
+  it('el rol nómina no puede cambiar los datos de la empresa', async () => {
+    operadorActual = OPERADORES.nomina
+    const res = await handleUpdateConfig(makeRequest({ nombre_negocio: 'Otra', nomina_factor_hora_extra: 3 }), ENV)
     expect((await readResponse(res)).status).toBe(403)
   })
 
