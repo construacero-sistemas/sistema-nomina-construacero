@@ -61,6 +61,7 @@ Queda **estrictamente prohibido el scroll horizontal innecesario o accidental** 
 - Garantizar que los dropdowns y selects sean redondeados y profesionales.
 - No cachear respuestas `/api/*` en el service worker.
 - No hacer commit, push o deploy salvo solicitud explícita.
+- Regla de cuenta GitHub: la cuenta de este sistema es `construacero-sistemas` y todos los push se hacen con ella (`gh auth switch -u construacero-sistemas`, luego volver a `luiggiberaldi`). La cuenta personal `luiggiberaldi` no tiene permiso de escritura en el repositorio.
 - Mantener los textos de la interfaz claros y sin tecnicismos innecesarios.
 - Regla de notificaciones: todo toast o aviso temporal debe desaparecer automáticamente; nunca puede quedar fijado esperando que el usuario lo cierre. El cierre manual solo es una opción adicional.
 
