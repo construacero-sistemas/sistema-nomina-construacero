@@ -37,7 +37,22 @@ describe('avanceSemanaPorEmpleado', () => {
       { empleado_id: 'a', fecha: '2026-11-14', es_ausencia: true },
       { empleado_id: 'b', fecha: '2026-11-12' },
     ])
-    expect(mapa.get('a')).toEqual({ trabajados: 2, faltas: 1 })
-    expect(mapa.get('b')).toEqual({ trabajados: 0, faltas: 0 })
+    expect(mapa.get('a')).toEqual({ trabajados: 2, descansoTrabajados: 0, faltas: 1 })
+    expect(mapa.get('b')).toEqual({ trabajados: 0, descansoTrabajados: 0, faltas: 0 })
+  })
+
+  it('el sábado y el domingo trabajados cuentan aparte, como descanso trabajado (no «6 de 5 días»)', () => {
+    const lunAVie = new Map([['a', [1, 2, 3, 4, 5]], ['s', [1, 2, 3, 4, 5, 6]]])
+    const semana = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20']
+      .map(fecha => ({ empleado_id: 'a', fecha, hora_entrada: '08:00', hora_salida: '17:00', horas_normales: 8 }))
+    const mapa = avanceSemanaPorEmpleado([
+      ...semana,
+      { empleado_id: 'a', fecha: '2026-11-21', es_sabado: true, hora_entrada: '08:00', hora_salida: '12:00', horas_normales: 4 },
+      { empleado_id: 'a', fecha: '2026-11-22', es_domingo: true, hora_entrada: '08:00', estado_marcaje: 'entrada' },
+      // Quien tiene el sábado en su semana: es un día laborable más.
+      { empleado_id: 's', fecha: '2026-11-21', es_sabado: true, hora_entrada: '08:00', hora_salida: '12:00', horas_normales: 4 },
+    ], lunAVie)
+    expect(mapa.get('a')).toEqual({ trabajados: 5, descansoTrabajados: 2, faltas: 0 })
+    expect(mapa.get('s')).toEqual({ trabajados: 1, descansoTrabajados: 0, faltas: 0 })
   })
 })

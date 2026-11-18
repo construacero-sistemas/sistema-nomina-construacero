@@ -70,7 +70,10 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
   const { divisorMensual } = useReglasLey()
   const semanaActual = useMemo(() => rangoSemana(fechaOperativaHoy(), semanaDeConfig(configNomina || {}).inicio), [configNomina])
   const { data: asistenciaSemana } = useAsistencia({ desde: semanaActual.desde, hasta: semanaActual.hasta })
-  const avancePorEmpleado = useMemo(() => avanceSemanaPorEmpleado(asistenciaSemana?.registros), [asistenciaSemana])
+  const avancePorEmpleado = useMemo(() => avanceSemanaPorEmpleado(
+    asistenciaSemana?.registros,
+    new Map(configs.map(c => [c.empleado_id, Array.isArray(c.dias_laborables) && c.dias_laborables.length ? c.dias_laborables : [1, 2, 3, 4, 5]])),
+  ), [asistenciaSemana, configs])
   const bajas   = useMemo(() => (allConfigs || []).filter(c => c.activo === false), [allConfigs])
 
   const empleadosYaConfigurados = useMemo(() => {
@@ -290,7 +293,7 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
               config={c}
               esAdmin={esAdmin}
               resumen={resumenSalario({ salarioDia: c.salario_dia_usd, horasJornada: c.horas_jornada, divisorMensual, configNomina })}
-              avance={asistenciaSemana ? (avancePorEmpleado.get(c.empleado_id) || { trabajados: 0, faltas: 0 }) : null}
+              avance={asistenciaSemana ? (avancePorEmpleado.get(c.empleado_id) || { trabajados: 0, descansoTrabajados: 0, faltas: 0 }) : null}
               puedeGestionar={puedeGestionarNomina}
               puedePagarComision={puedePagarComision}
               mostrarMontos={esAdmin}
@@ -458,6 +461,11 @@ function EmpleadoNominaCard({ config, esAdmin, resumen, avance = null, puedeGest
             <Clock size={11} />
             <span>
               Esta semana: <strong className="text-slate-800">{avance.trabajados} de {diasPorSemana} días</strong>
+              {avance.descansoTrabajados > 0 && (
+                <span className="ml-1 font-bold text-emerald-700" title="Sábado, domingo o feriado trabajado: se paga como un día adicional">
+                  · +{avance.descansoTrabajados} de descanso
+                </span>
+              )}
               {avance.faltas > 0 && <span className="ml-1 font-bold text-rose-700">· {avance.faltas} falta{avance.faltas === 1 ? '' : 's'}</span>}
             </span>
           </div>

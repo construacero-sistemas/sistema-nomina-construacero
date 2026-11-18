@@ -7,6 +7,7 @@
 //   · hora extra: el monto fijo de Configuración si existe; si no, tarifa × factor
 import { esDescansoSinTrabajo } from '../../server/lib/nominaDescanso.js'
 import { BONO_SEMANAL_USD } from '../../server/lib/nominaHoja.js'
+import { trabajaEnFecha } from '../../server/lib/nominaHorarios.js'
 
 const r2 = n => Math.round(Number(n || 0) * 100) / 100
 
@@ -35,17 +36,25 @@ export function resumenSalario({ salarioDia, horasJornada = 8, divisorMensual = 
 }
 
 /**
- * Cómo va la semana en curso de cada persona, desde el marcaje: días trabajados
- * (incluye la jornada abierta de hoy) y faltas registradas.
- * @returns {Map<string, { trabajados: number, faltas: number }>}
+ * Cómo va la semana en curso de cada persona, desde el marcaje: días laborables
+ * trabajados (incluye la jornada abierta de hoy), días de descanso trabajados
+ * (domingo, feriado o un día fuera de su semana, como el sábado de quien trabaja
+ * de lunes a viernes: se pagan como un día adicional, D-7) y faltas. Misma regla
+ * que la columna «Desc. o feriado trab.» de la hoja semanal.
+ * @param {Map<string, number[]>} [diasPorEmpleado] semana laboral de cada persona
+ * @returns {Map<string, { trabajados: number, descansoTrabajados: number, faltas: number }>}
  */
-export function avanceSemanaPorEmpleado(registros = []) {
+export function avanceSemanaPorEmpleado(registros = [], diasPorEmpleado = new Map()) {
   const porEmpleado = new Map()
   for (const fila of registros || []) {
     if (!fila?.empleado_id) continue
-    const actual = porEmpleado.get(fila.empleado_id) || { trabajados: 0, faltas: 0 }
-    if (fila.es_ausencia) actual.faltas += 1
-    else if (!esDescansoSinTrabajo(fila)) actual.trabajados += 1
+    const actual = porEmpleado.get(fila.empleado_id) || { trabajados: 0, descansoTrabajados: 0, faltas: 0 }
+    if (fila.es_ausencia) { actual.faltas += 1 } else if (!esDescansoSinTrabajo(fila)) {
+      const fecha = fila.fecha ? String(fila.fecha).slice(0, 10) : null
+      const esDescanso = fila.es_domingo || fila.es_feriado || (fecha && !trabajaEnFecha(diasPorEmpleado.get(fila.empleado_id), fecha))
+      if (esDescanso) actual.descansoTrabajados += 1
+      else actual.trabajados += 1
+    }
     porEmpleado.set(fila.empleado_id, actual)
   }
   return porEmpleado

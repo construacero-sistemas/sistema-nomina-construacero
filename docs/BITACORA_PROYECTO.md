@@ -4358,3 +4358,4 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 - «Tarifa / hora» se reemplaza por **«Hora extra»**: el monto fijo de Configuración si existe; si no, tarifa por hora × factor. Sin configuración no se muestra.
 - Días y horario en una línea («Lun a Vie · 08:00 AM – 05:00 PM (8 h)»); «(sin fijar)» pasa a «(por defecto)», con explicación al pasar el cursor.
 - **«Esta semana: X de N días · N faltas»**, tomado del marcaje de la semana en curso (según el día de inicio de Configuración), sin esperar a que se recalcule el período.
+- **Sábado y domingo trabajados en la tarjeta:** se cuentan aparte («5 de 5 días · +1 de descanso») con la misma regla que la hoja (domingo, feriado o día fuera de su semana), en vez de mostrar «6 de 5 días». Quien tiene el sábado en su semana lo cuenta como día laborable.
