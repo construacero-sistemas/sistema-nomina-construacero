@@ -6,6 +6,16 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Despliegue a producción de las actualizaciones de la app — 18/11/2026
+
+Petición del usuario: desplegar a producción el PR #13.
+
+1. **Cómo se publicó:** `sistema-nomina-construacero.vercel.app` vive en un proyecto de Vercel conectado a GitHub que se despliega solo con cada push a `main`; la fusión del PR #14 (`a1c1dcb`) lo publicó. No se usó `vercel deploy --prod`: la CLI está vinculada al proyecto antiguo `nomina-construacero` (`nomina-construacero-ten.vercel.app`, último deploy hace 13 días), que no es la web oficial.
+2. **Sin migraciones:** el cambio solo toca el frontend; no hubo respaldo ni migración de base de datos.
+3. **Verificación:** el dominio sirve `index-F4skCUEJ.js` (idéntico al build local) con el texto «Hay una versión nueva del sistema», `auto-recovery.js` con el límite de intentos y `sw.js` versión `d82101dac9cf4ce6`.
+4. **Humo de solo lectura:** `/`, `/nomina`, `/finanzas` y `/api/rates` → 200; `/api/auth/me` sin sesión → 401; el bundle se sirve como `application/javascript`.
+5. **Pendientes:** validar en iPhone físico con el siguiente despliegue (caso 1.4 de `docs/ACEPTACION_IPHONE_FISICO.md`). Quien tenía la app abierta con la versión anterior recibe esta con el comportamiento viejo (recarga automática); el nuevo comportamiento rige desde la próxima versión.
+
 ## Actualizaciones de la app: aviso, momento seguro y límite de recargas — 18/11/2026
 
 Objetivo: que una versión nueva no recargue la pantalla en medio de un formulario o pago, que llegue antes a quien deja la app abierta y que la recuperación ante archivos viejos no recargue sin fin.
