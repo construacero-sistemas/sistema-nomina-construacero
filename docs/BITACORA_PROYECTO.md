@@ -6,6 +6,14 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Publicación de la optimización de carga — 18/11/2026
+
+Petición del usuario: «push».
+
+1. Rama `nomina/optimizar-carga` (commit `9bb0d0a`), PR #18 fusionado en `main` (`ad7cdaa`) con la cuenta `construacero-sistemas`; Vercel lo desplegó solo desde `main`. Sin migraciones.
+2. **Humo de solo lectura en producción:** sirve `index-DvzPUccl.js` (igual al build local) con `Cache-Control: public, max-age=31536000, immutable`; un asset inexistente devuelve 404; `/`, `/nomina`, `/finanzas` y `/api/rates` → 200; `/api/auth/me` sin sesión → 401.
+3. **Pendientes:** probar inicio de sesión, cambio de operador y renovación del token en iPhone con la versión nueva.
+
 ## Auditoría y optimización de tiempos de carga — 18/11/2026
 
 Petición del usuario: auditar los tiempos de carga y optimizarlos.
