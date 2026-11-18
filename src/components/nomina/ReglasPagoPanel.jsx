@@ -6,7 +6,7 @@
 //     laborables por defecto, descanso pagado y faltas que lo hacen perder.
 // Solo quien tiene `administrarSistema` (jefe) guarda; el servidor exige lo mismo.
 import { useState } from 'react'
-import { DollarSign, RotateCcw, Scale } from 'lucide-react'
+import { AlertTriangle, DollarSign, Lock, RotateCcw, Scale } from 'lucide-react'
 import { useGuardarConfigNomina } from '../../hooks/useNomina.js'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import { tieneCapacidad } from '../../config/accesoModulos.js'
@@ -18,6 +18,14 @@ const inputCls = 'w-full min-h-11 rounded-xl border border-slate-200 bg-slate-50
 
 // Valores mínimos de la LOTTT para el botón «Valores de la ley».
 const LEY_PAGOS = { extra: 1.5, sabado: 1.5, feriado: 1.5 }
+
+// ¿El factor escrito queda por debajo del mínimo legal? Se permite guardarlo (es
+// decisión de la empresa), pero la pantalla lo advierte en vez de callarlo.
+function debajoDeLaLey(concepto, pago) {
+  if (pago.modo !== 'factor') return false
+  const factor = Number(String(pago.factor).replace(',', '.'))
+  return Number.isFinite(factor) && factor < LEY_PAGOS[concepto.id]
+}
 
 const CONCEPTOS = [
   {
@@ -164,7 +172,7 @@ export default function ReglasPagoPanel({ config }) {
                 {[['factor', 'Por factor'], ['monto', 'Monto fijo']].map(([modo, etiqueta]) => (
                   <button key={modo} type="button" role="radio" aria-checked={p.modo === modo} disabled={bloqueado}
                     onClick={() => cambiarPago(c.id, { modo })}
-                    className={`min-h-11 rounded-lg text-xs font-bold transition-all ${p.modo === modo ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                    className={`min-h-11 rounded-lg text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${p.modo === modo ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
                     style={{ touchAction: 'manipulation' }}>{etiqueta}</button>
                 ))}
               </div>
@@ -177,6 +185,12 @@ export default function ReglasPagoPanel({ config }) {
                   value={p.modo === 'factor' ? p.factor : p.monto}
                   onChange={e => cambiarPago(c.id, p.modo === 'factor' ? { factor: e.target.value } : { monto: e.target.value })} />
               </label>
+              {debajoDeLaLey(c, p) && (
+                <p className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] font-semibold text-amber-900">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  Por debajo del mínimo de la ley ({String(LEY_PAGOS[c.id]).replace('.', ',')}). Se puede guardar, pero no cumple la LOTTT.
+                </p>
+              )}
               <p className="text-[11px] leading-relaxed text-slate-500">{p.modo === 'factor' ? c.ayudaFactor : c.ayudaMonto}</p>
             </Bloque>
           )
@@ -194,25 +208,33 @@ export default function ReglasPagoPanel({ config }) {
         </Bloque>
 
         <Bloque titulo="Días laborables por defecto">
-          <div className="grid grid-cols-6 gap-1" role="group" aria-label="Días laborables por defecto">
-            {[1, 2, 3, 4, 5, 6].map(dia => {
-              const activo = actual.dias.includes(dia)
-              return (
-                <button key={dia} type="button" aria-pressed={activo} disabled={bloqueado} onClick={() => alternarDia(dia)}
-                  className={`min-h-11 rounded-lg border text-xs font-bold ${activo ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-500'}`}
-                  style={{ touchAction: 'manipulation' }}>{NOMBRE_DIA_CORTO[dia]}</button>
-              )
-            })}
+          <div className="grid grid-cols-7 gap-1">
+            <div className="col-span-6 grid grid-cols-6 gap-1" role="group" aria-label="Días laborables por defecto">
+              {[1, 2, 3, 4, 5, 6].map(dia => {
+                const activo = actual.dias.includes(dia)
+                return (
+                  <button key={dia} type="button" aria-pressed={activo} disabled={bloqueado} onClick={() => alternarDia(dia)}
+                    className={`min-h-11 rounded-lg border text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60 ${activo ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-500'}`}
+                    style={{ touchAction: 'manipulation' }}>{NOMBRE_DIA_CORTO[dia]}</button>
+                )
+              })}
+            </div>
+            {/* El domingo es el descanso semanal (arts. 173 y 184): se ve, pero no se elige. */}
+            <div aria-label="Domingo: descanso semanal, no es laborable" title="Domingo: descanso semanal obligatorio (arts. 173 y 184)"
+              className="flex min-h-11 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400">
+              <span className="flex items-center gap-0.5 text-xs font-bold"><Lock size={10} aria-hidden="true" />{NOMBRE_DIA_CORTO[0]}</span>
+              <span className="text-[9px] font-semibold leading-none">Descanso</span>
+            </div>
           </div>
-          <p className="text-[11px] text-slate-500">Para quien no tiene su semana guardada. El domingo nunca es laborable. Ley: lunes a viernes (art. 173).</p>
+          <p className="text-[11px] text-slate-500">Para quien no tiene su semana guardada. El domingo es el descanso semanal y no se puede marcar (arts. 173 y 184). Ley: lunes a viernes.</p>
         </Bloque>
 
         <Bloque titulo="Descanso pagado">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-xs text-slate-600">Pagar sábado, domingo y feriados aunque no se trabajen</span>
-            <Switch checked={actual.descanso} onChange={() => !bloqueado && cambiar({ descanso: !actual.descanso })} label="Descanso pagado" />
+            <span className="text-xs text-slate-600">Pagar los días de descanso y los feriados aunque no se trabajen</span>
+            <Switch checked={actual.descanso} onChange={() => cambiar({ descanso: !actual.descanso })} label="Descanso pagado" disabled={bloqueado} />
           </div>
-          <p className="text-[11px] text-slate-500">Ley: sí (art. 119).</p>
+          <p className="text-[11px] text-slate-500">Días de descanso: los que no están en la semana laboral de cada persona (siempre el domingo). Ley: sí (art. 119).</p>
         </Bloque>
 
         <Bloque titulo="Faltas que hacen perder el descanso">
@@ -228,11 +250,14 @@ export default function ReglasPagoPanel({ config }) {
       {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700">{error}</p>}
       {puedeEditar && (
         <div className="flex flex-wrap gap-2">
-          <button type="submit" disabled={bloqueado}
-            className="inline-flex items-center min-h-11 rounded-xl bg-primary px-4 text-xs font-black text-white disabled:opacity-50 hover:bg-primary-hover active:scale-95 shadow-xs"
+          <button type="submit" disabled={bloqueado || !form}
+            className="inline-flex items-center min-h-11 rounded-xl bg-primary px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-primary-hover active:scale-95 shadow-xs"
             style={{ touchAction: 'manipulation' }}>
             {guardar.isPending ? 'Guardando...' : 'Guardar reglas'}
           </button>
+          {form && (
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 text-[11px] font-bold text-amber-900">Cambios sin guardar</span>
+          )}
           {form && (
             <button type="button" onClick={() => { setForm(null); setError('') }} disabled={guardar.isPending}
               className="inline-flex items-center min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700"

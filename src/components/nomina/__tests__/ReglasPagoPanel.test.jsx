@@ -87,5 +87,54 @@ describe('ReglasPagoPanel', () => {
     renderPanel()
     expect(screen.getByText('Solo quien administra la nómina puede cambiar estas reglas.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Guardar reglas' })).toBeNull()
+    // El interruptor también se ve y se comporta como deshabilitado (antes solo ignoraba el clic).
+    const descanso = screen.getByRole('switch', { name: 'Descanso pagado' })
+    expect(descanso).toBeDisabled()
+    fireEvent.click(descanso)
+    expect(descanso).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('el interruptor de descanso pagado cambia y se guarda', async () => {
+    renderPanel()
+    const descanso = screen.getByRole('switch', { name: 'Descanso pagado' })
+    expect(descanso).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(descanso)
+    expect(descanso).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('textbox', { name: 'Faltas que hacen perder el descanso' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar reglas' }))
+    await vi.waitFor(() => expect(mocks.guardar).toHaveBeenCalledTimes(1))
+    expect(mocks.guardar.mock.calls[0][0].nomina_descanso_remunerado).toBe(false)
+  })
+
+  // Ley (arts. 173 y 184): el domingo es el descanso semanal. Se muestra para que
+  // la semana se lea completa, pero no se puede marcar como laborable.
+  it('muestra el domingo como descanso fijo, no seleccionable', () => {
+    renderPanel()
+    const grupo = screen.getByRole('group', { name: 'Días laborables por defecto' })
+    expect(grupo.querySelectorAll('button')).toHaveLength(6)
+    const domingo = screen.getByLabelText('Domingo: descanso semanal, no es laborable')
+    expect(domingo.tagName).not.toBe('BUTTON')
+    expect(domingo).toHaveTextContent('Dom')
+    expect(screen.queryByRole('button', { name: /Dom/ })).toBeNull()
+  })
+
+  it('«Guardar reglas» solo se habilita con cambios y avisa de los cambios sin guardar', () => {
+    renderPanel()
+    expect(screen.getByRole('button', { name: 'Guardar reglas' })).toBeDisabled()
+    expect(screen.queryByText('Cambios sin guardar')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Sáb' }))
+    expect(screen.getByRole('button', { name: 'Guardar reglas' })).toBeEnabled()
+    expect(screen.getByText('Cambios sin guardar')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Descartar cambios' }))
+    expect(screen.getByRole('button', { name: 'Guardar reglas' })).toBeDisabled()
+  })
+
+  // Se permite (es decisión de la empresa), pero no en silencio.
+  it('avisa cuando un factor queda por debajo del mínimo de la ley', () => {
+    renderPanel({ ...CONFIG_EXCEL, nomina_monto_hora_extra_usd: null, nomina_factor_hora_extra: 2.5, nomina_monto_sabado_usd: null, nomina_factor_sabado: 1 })
+    const sabado = screen.getByRole('textbox', { name: 'Sábado trabajado: factor' }).closest('div.rounded-xl')
+    expect(sabado).toHaveTextContent('Por debajo del mínimo de la ley (1,5)')
+    const extra = screen.getByRole('textbox', { name: 'Hora extra: factor' }).closest('div.rounded-xl')
+    expect(extra).not.toHaveTextContent('Por debajo del mínimo')
   })
 })
