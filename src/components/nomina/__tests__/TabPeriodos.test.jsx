@@ -11,12 +11,16 @@ const periodos = [
   { id: 'p-cerrado', nombre: 'Semana 35', desde: '2026-08-24', hasta: '2026-08-29', tipo: 'semanal', estado: 'cerrado', total_empleados: 4, total_bruto_usd: 160, total_deducciones_usd: 10, total_neto_usd: 150 },
 ]
 const mockEliminar = vi.fn()
+const mockAsegurar = vi.fn()
+let configActual = { nomina_periodo_modo: 'automatico', nomina_semana_inicio: 4 }
 
 vi.mock('../../../hooks/useNomina', () => ({
   useNominaPeriodos: () => ({ data: periodos, isLoading: false, isError: false, refetch: vi.fn() }),
   useCalcularPeriodo: () => ({ mutate: vi.fn(), isPending: false }),
   useCerrarPeriodo: () => ({ mutate: vi.fn(), isPending: false }),
   useEliminarPeriodo: () => ({ mutate: mockEliminar, isPending: false }),
+  useConfigNomina: () => ({ data: configActual, isSuccess: true, isLoading: false }),
+  useAsegurarSemanaActual: () => ({ mutate: mockAsegurar, isPending: false }),
 }))
 
 vi.mock('../../../hooks/useMonedaNomina.js', () => ({
@@ -98,5 +102,24 @@ describe('TabPeriodos — tarjetas de período y permisos', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Eliminar período' }))
     fireEvent.click(screen.getByRole('button', { name: 'Eliminar período' }))
     expect(mockEliminar).toHaveBeenCalledWith('p-abierto', expect.objectContaining({ onSuccess: expect.any(Function) }))
+  })
+
+  it('en modo automático abre sola la semana (jueves → miércoles) y oculta «Crear Nuevo Período»', () => {
+    mockAsegurar.mockClear()
+    configActual = { nomina_periodo_modo: 'automatico', nomina_semana_inicio: 4 }
+    renderTab({ puedeGestionarNomina: true })
+    expect(mockAsegurar).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: /Crear Nuevo Período/i })).not.toBeInTheDocument()
+    expect(screen.getByText('jueves')).toBeInTheDocument()
+    expect(screen.getByText('miércoles')).toBeInTheDocument()
+  })
+
+  it('en modo manual no crea nada solo y ofrece «Crear Nuevo Período»', () => {
+    mockAsegurar.mockClear()
+    configActual = { nomina_periodo_modo: 'manual', nomina_semana_inicio: 4 }
+    renderTab({ puedeGestionarNomina: true })
+    expect(mockAsegurar).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /Crear Nuevo Período/i })).toBeInTheDocument()
+    configActual = { nomina_periodo_modo: 'automatico', nomina_semana_inicio: 4 }
   })
 })

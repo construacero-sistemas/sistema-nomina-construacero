@@ -53,6 +53,7 @@ export {
 export {
   handleGetPeriodos,
   handleCrearPeriodo,
+  handleAsegurarSemanaActual,
   handleCalcularPeriodo,
   handleCerrarPeriodo,
   handleReabrirPeriodo,

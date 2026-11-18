@@ -7,7 +7,7 @@ import {
   handleGetConceptos, handleCrearConcepto,
   handleGetReglasLegales, handleCrearReglaLegal,
   handleGetTasasSnapshots, handleCrearTasaSnapshot, handleGetTasaManual, handleFijarTasaManual,
-  handleGetPeriodos, handleCrearPeriodo, handleCalcularPeriodo, handleCerrarPeriodo, handleReabrirPeriodo, handleEliminarPeriodo,
+  handleGetPeriodos, handleCrearPeriodo, handleAsegurarSemanaActual, handleCalcularPeriodo, handleCerrarPeriodo, handleReabrirPeriodo, handleEliminarPeriodo,
   handleGetLineas, handleAjustarLinea, handlePagarLineas, handleRevertirPagoLinea,
   handleListarPosVendedores, handlePreviewComisionesPos, handleAplicarComisionesPos,
 } from './server/handlers/nomina.js'
@@ -158,6 +158,7 @@ const routes = new Map([
   ['GET /api/nomina/periodos', handleGetPeriodos],
   ['GET /api/nomina/periodos/hoja', handleGetHojaSemanal],
   ['POST /api/nomina/periodos/crear', handleCrearPeriodo],
+  ['POST /api/nomina/periodos/asegurar-semana', handleAsegurarSemanaActual],
   ['POST /api/nomina/periodos/calcular', handleCalcularPeriodo],
   ['POST /api/nomina/periodos/cerrar', handleCerrarPeriodo],
   ['POST /api/nomina/periodos/reabrir', handleReabrirPeriodo],

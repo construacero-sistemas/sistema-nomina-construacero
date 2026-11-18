@@ -1,9 +1,10 @@
 ﻿// src/components/nomina/TabPeriodos.jsx
 // Gestión visual y fluida de períodos de nómina, cálculo y pagos.
 // Regla: La moneda principal es SIEMPRE USD ($), y la secundaria es Bs, calculada con la tasa seleccionada.
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Plus, ClipboardList, Calculator, Lock, Unlock, Eye, DollarSign, Users, Sparkles, CheckCircle2, ArrowRight, Trash2, MoreVertical, AlertCircle } from 'lucide-react'
-import { useNominaPeriodos, useCalcularPeriodo, useCerrarPeriodo, useEliminarPeriodo } from '../../hooks/useNomina'
+import { useNominaPeriodos, useCalcularPeriodo, useCerrarPeriodo, useEliminarPeriodo, useConfigNomina, useAsegurarSemanaActual } from '../../hooks/useNomina'
+import { semanaDeConfig, DIAS_SEMANA } from '../../../server/lib/nominaSemana.js'
 import useMonedaNomina, { formatBs, formatUsd } from '../../hooks/useMonedaNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
@@ -36,6 +37,20 @@ export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNo
   const [detalle, setDetalle] = useState(null)
   const [tarjetaEliminar, setTarjetaEliminar] = useState(null)
 
+  // Períodos automáticos (por defecto) o manuales: se elige en Configuración.
+  const configNomina = useConfigNomina()
+  const cfg = configNomina.data?.config || configNomina.data || {}
+  const { modo, inicio } = semanaDeConfig(cfg)
+  const automatico = modo === 'automatico'
+  const diaFin = DIAS_SEMANA[(inicio + 6) % 7]
+  const asegurarSemana = useAsegurarSemanaActual()
+  const asegurada = useRef(false)
+  useEffect(() => {
+    if (asegurada.current || !puedeGestionarNomina || !configNomina.isSuccess || !automatico) return
+    asegurada.current = true
+    asegurarSemana.mutate()
+  }, [puedeGestionarNomina, configNomina.isSuccess, automatico, asegurarSemana])
+
   const activos = useMemo(() => periodos.filter(p => p.estado !== 'pagado'), [periodos])
   const kpis = useMemo(() => ({
     abiertos: activos.filter(p => p.estado === 'abierto').length,
@@ -53,13 +68,17 @@ export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNo
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <p className="text-xs text-slate-500 font-medium hidden sm:block">Genera los períodos de pago basados en la asistencia registrada.</p>
+          <p className="text-xs text-slate-500 font-medium hidden sm:block">
+            {automatico
+              ? <>Automático: cada semana va de <strong>{DIAS_SEMANA[inicio]}</strong> a <strong>{diaFin}</strong> y se abre sola. Cámbialo en Configuración.</>
+              : 'Modo manual: crea cada período con sus fechas.'}
+          </p>
           <div className="hidden md:flex items-center gap-1">
             <span className="text-[11px] text-slate-400 font-medium">Tasa:</span>
             <RateSelector light />
           </div>
         </div>
-        {puedeGestionarNomina && (
+        {puedeGestionarNomina && !automatico && (
           <button type="button" onClick={() => setModalNuevo(true)} className="ml-auto flex items-center gap-2 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-primary/20 hover:brightness-110 active:scale-95 bg-primary">
             <Plus size={15} /><span>Crear Nuevo Período</span>
           </button>
@@ -73,7 +92,9 @@ export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNo
           No se pudieron cargar los períodos. <button type="button" onClick={() => refetch()} className="underline font-bold">Reintentar</button>
         </div>
       ) : activos.length === 0 ? (
-        <EmptyState icon={ClipboardList} title="No hay períodos de nómina activos" description="Crea un período (ej. semanal o quincenal) para procesar la asistencia y liquidar salarios." actionLabel={puedeGestionarNomina ? 'Crear período ahora' : undefined} onAction={puedeGestionarNomina ? () => setModalNuevo(true) : undefined} />
+        <EmptyState icon={ClipboardList} title="No hay períodos de nómina activos"
+          description={automatico ? (asegurarSemana.isPending ? 'Abriendo la semana en curso…' : 'La semana en curso se abre sola al entrar. Si ya la pagaste, la próxima se abrirá cuando empiece.') : 'Crea un período (ej. semanal o quincenal) para procesar la asistencia y liquidar salarios.'}
+          actionLabel={puedeGestionarNomina && !automatico ? 'Crear período ahora' : undefined} onAction={puedeGestionarNomina && !automatico ? () => setModalNuevo(true) : undefined} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {activos.map(p => (

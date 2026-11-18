@@ -221,6 +221,21 @@ export function useCrearPeriodo() {
   })
 }
 
+// Modo automático: crea (si falta) el período de la semana en curso. Silencioso:
+// solo avisa cuando de verdad creó uno.
+export function useAsegurarSemanaActual() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiPost('/api/nomina/periodos/asegurar-semana', {}),
+    onSuccess: (res) => {
+      if (res?.creado) {
+        showToast.success(`Se abrió automáticamente ${res.periodo?.nombre || 'la semana en curso'}`)
+        qc.invalidateQueries({ queryKey: KEY_PERIODOS })
+      }
+    },
+  })
+}
+
 export function useCalcularPeriodo() {
   const qc = useQueryClient()
   return useMutation({
@@ -378,6 +393,7 @@ export function useGuardarConfigNomina() {
     onSuccess: () => {
       showToast.success('Configuración guardada')
       qc.invalidateQueries({ queryKey: ['nomina', 'configuracion'] })
+      qc.invalidateQueries({ queryKey: ['config_negocio'] })
     },
     onError: e => showToast.error(e.message || 'Error al guardar la configuración'),
   })

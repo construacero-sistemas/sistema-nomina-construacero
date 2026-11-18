@@ -3,6 +3,7 @@ import { verifyAuth, supaServiceHeaders, validateOperator } from '../lib/auth.js
 import { clearEgressCache } from '../lib/egressCache.js'
 import { requireCapacidad } from '../lib/permissions.js'
 import { COLUMNAS_REGLAS_LEY, validarReglasLey } from '../lib/nominaReglasLey.js'
+import { COLUMNAS_SEMANA, validarSemana } from '../lib/nominaSemana.js'
 
 const PUBLIC_CONFIG_FIELDS = [
   'nombre_negocio',
@@ -25,6 +26,7 @@ const PUBLIC_CONFIG_FIELDS = [
   'nomina_horas_jornada',
   'nomina_horas_descanso',
   ...COLUMNAS_REGLAS_LEY,
+  ...COLUMNAS_SEMANA,
 ]
 
 // Campos de la empresa (identidad del negocio) y el interruptor de la versión
@@ -82,6 +84,10 @@ export async function handleUpdateConfig(request, env) {
   const reglas = validarReglasLey(body || {})
   if (reglas.error) return jsonError(reglas.error, 400, request)
   Object.assign(fields, reglas.fields)
+
+  const semana = validarSemana(body || {})
+  if (semana.error) return jsonError(semana.error, 400, request)
+  Object.assign(fields, semana.fields)
 
   for (const field of ['nomina_factor_hora_extra', 'nomina_factor_sabado', 'nomina_factor_feriado']) {
     if (body?.[field] !== undefined) {

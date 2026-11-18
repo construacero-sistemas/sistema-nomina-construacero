@@ -6,6 +6,7 @@ import { useCrearPeriodo } from '../../hooks/useNomina'
 import { useConfigNegocio } from '../../../compat/hooks/useConfigNegocio.js'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
+import { moverSemana, rangoSemana, semanaDeConfig } from '../../../server/lib/nominaSemana.js'
 
 const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all font-medium'
 
@@ -14,17 +15,11 @@ function iso(d) {
 }
 
 /** Rango sugerido según el tipo de período */
-function rangoSugerido(tipo) {
+function rangoSugerido(tipo, inicioSemana) {
   const hoy = new Date()
 
-  if (tipo === 'semanal') {
-    const dow = hoy.getDay()
-    const lunes = new Date(hoy)
-    lunes.setDate(hoy.getDate() + (dow === 0 ? -6 : 1 - dow))
-    const sabado = new Date(lunes)
-    sabado.setDate(lunes.getDate() + 5) // Lunes a Sábado estándar Construacero
-    return { desde: iso(lunes), hasta: iso(sabado) }
-  }
+  // Semana de 7 días que arranca el día configurado (por defecto jueves → miércoles).
+  if (tipo === 'semanal') return rangoSemana(iso(hoy), inicioSemana)
 
   if (tipo === 'quincenal') {
     const dia = hoy.getDate()
@@ -67,7 +62,8 @@ export default function PeriodoFormModal({ onClose }) {
   const { data: config = {} } = useConfigNegocio()
 
   const tipoDefault = config.nomina_tipo_periodo || 'semanal'
-  const rangoInicial = rangoSugerido(tipoDefault)
+  const { inicio: inicioSemana } = semanaDeConfig(config)
+  const rangoInicial = rangoSugerido(tipoDefault, inicioSemana)
   const [tipo, setTipo] = useState(tipoDefault)
   const [desde, setDesde] = useState(rangoInicial.desde)
   const [hasta, setHasta] = useState(rangoInicial.hasta)
@@ -76,7 +72,7 @@ export default function PeriodoFormModal({ onClose }) {
   const [error, setError] = useState('')
 
   function cambiarTipo(nuevoTipo) {
-    const r = rangoSugerido(nuevoTipo)
+    const r = rangoSugerido(nuevoTipo, inicioSemana)
     setTipo(nuevoTipo)
     setDesde(r.desde)
     setHasta(r.hasta)
@@ -84,14 +80,7 @@ export default function PeriodoFormModal({ onClose }) {
   }
 
   function aplicarAtajoSemanaPasada() {
-    const hoy = new Date()
-    const dow = hoy.getDay()
-    const lunes = new Date(hoy)
-    lunes.setDate(hoy.getDate() + (dow === 0 ? -6 : 1 - dow) - 7)
-    const sabado = new Date(lunes)
-    sabado.setDate(lunes.getDate() + 5)
-    const dIso = iso(lunes)
-    const hIso = iso(sabado)
+    const { desde: dIso, hasta: hIso } = moverSemana(rangoSemana(iso(new Date()), inicioSemana), -1, inicioSemana)
     setTipo('semanal')
     setDesde(dIso)
     setHasta(hIso)

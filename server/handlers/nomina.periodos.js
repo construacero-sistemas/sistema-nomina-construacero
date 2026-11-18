@@ -7,6 +7,7 @@ import { nominaTenantFilter } from '../lib/nominaTenant.js'
 import { diasLaborablesResueltos, fetchDiasLaborablesPorEmpleado } from '../lib/nominaHorarios.js'
 import { reglasLeyDeConfig } from '../lib/nominaReglasLey.js'
 import { requireCapacidad } from '../lib/permissions.js'
+import { COLUMNAS_SEMANA, nombreSemana, rangoSemana, semanaDeConfig } from '../lib/nominaSemana.js'
 import { fechaNominaValida, fechaOperativaNomina, fetchConfigNomina, r4, svcHeaders, tenantGuard, textoNominaValido } from './nomina.shared.js'
 
 export async function handleGetPeriodos(request, env) {
@@ -71,6 +72,39 @@ export async function handleCrearPeriodo(request, env) {
   if (!response.ok) return jsonError('No se pudo crear el período', 500, request)
   const [period] = await response.json()
   return json({ ok: true, periodo: period }, 201, request)
+}
+
+// Modo automático (por defecto): asegura que exista el período de la semana en
+// curso (jueves → miércoles salvo que se configure otro día). Idempotente: si ya
+// hay un período que toca esas fechas, no crea nada. En modo manual no hace nada.
+export async function handleAsegurarSemanaActual(request, env) {
+  const v = await validateOperator(request, env)
+  if (v.error) return v.error
+  const { operador, headers, ip } = v
+  const denegadoAdmin = requireCapacidad(operador, 'administrarNomina', request)
+  if (denegadoAdmin) return denegadoAdmin
+  const tenantError = tenantGuard(operador, request)
+  if (tenantError) return tenantError
+  const account = nominaTenantFilter(operador.cuenta_id)
+  // Si la base aún no tiene las columnas (migración 264), se usan los predeterminados.
+  let config = {}
+  const cfgRes = await fetch(`${env.SUPABASE_URL}/rest/v1/configuracion_negocio?limit=1${account}&select=${COLUMNAS_SEMANA.join(',')}`, { headers })
+  if (cfgRes.ok) [config = {}] = await cfgRes.json()
+  const { modo, inicio } = semanaDeConfig(config)
+  if (modo !== 'automatico') return json({ ok: true, modo, creado: false, periodo: null }, 200, request)
+
+  const { desde, hasta } = rangoSemana(fechaOperativaNomina(env), inicio)
+  const overlap = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_periodos?desde=lte.${hasta}&hasta=gte.${desde}${account}&select=id,nombre,desde,hasta,tipo,estado&order=desde.asc&limit=1`, { headers })
+  if (!overlap.ok) return jsonError('Error al leer períodos', 500, request)
+  const [existente] = await overlap.json()
+  if (existente) return json({ ok: true, modo, creado: false, periodo: existente }, 200, request)
+
+  const nombre = nombreSemana(desde, hasta)
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_periodos`, { method: 'POST', headers: svcHeaders(env), body: JSON.stringify({ nombre, desde, hasta, tipo: 'semanal', estado: 'abierto', cuenta_id: operador.cuenta_id }) })
+  if (!response.ok) return jsonError('No se pudo crear el período de la semana', 500, request)
+  const [period] = await response.json()
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CREAR_PERIODO_AUTOMATICO', entidadTipo: 'nomina_periodo', entidadId: period?.id, meta: { periodo: nombre, desde, hasta }, ip }).catch(() => {})
+  return json({ ok: true, modo, creado: true, periodo: period }, 201, request)
 }
 
 export async function handleCalcularPeriodo(request, env) {

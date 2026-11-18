@@ -21,6 +21,7 @@ import HolidaySummaryCard from './HolidaySummaryCard.jsx'
 import RetencionCard from './RetencionCard.jsx'
 import HorarioGeneralModal from './HorarioGeneralModal.jsx'
 import ReglasPagoPanel from './ReglasPagoPanel.jsx'
+import PeriodosAutoCard from './PeriodosAutoCard.jsx'
 import { formatRangoHoras12 } from '../../utils/timeUtils.js'
 
 const inputClass = 'w-full h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50'
@@ -48,7 +49,7 @@ export default function TabConfiguracion() {
   // nomina no lo ve; su configuración se limita a lo de nómina.
   const puedeRetencion = tieneCapacidad(perfil, 'gestionarUsuarios')
   const secciones = [
-    { id: 'calendario', label: 'Horarios y calendario', description: 'Jornada estándar de empresa y feriados' },
+    { id: 'calendario', label: 'Horarios y calendario', description: 'Jornada, semana de pago y feriados' },
     { id: 'recargos', label: 'Reglas de pago y de la ley', description: 'Horas extra, sábados, feriados, descanso pagado y sueldo diario' },
     { id: 'tasas', label: 'Tasas de cambio', description: 'BCV dólar, BCV euro, USDT o manual' },
     // { id: 'reglas', label: 'Conceptos y reglas', description: 'Conceptos de recibos y reglas legales' }, // Oculto temporalmente
@@ -144,6 +145,7 @@ function CalendarPanel({ feriados, configNomina, onRefresh }) {
   return (
     <div className="space-y-4">
       <StandardScheduleCard configNomina={configNomina} />
+      <PeriodosAutoCard configNomina={configNomina} />
       <HolidaySummaryCard feriados={feriados} onRefresh={onRefresh} />
     </div>
   )
