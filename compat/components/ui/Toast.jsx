@@ -89,13 +89,15 @@ export function ToastProvider({ children }) {
           return (
             <div
               key={toast.id}
-              className={`pointer-events-auto flex items-start gap-2.5 px-3.5 py-3 rounded-xl border backdrop-blur-xl shadow-2xl shadow-black/40 ${colors.bg}`}
+              className={`pointer-events-auto relative flex items-start gap-2.5 pl-3.5 pr-11 py-3 rounded-xl border backdrop-blur-xl shadow-2xl shadow-black/40 ${colors.bg}`}
             >
               <IconComp size={18} className={`${colors.icon} shrink-0 mt-0.5`} />
               <p className="text-sm text-white/90 font-medium flex-1 leading-snug">{toast.message}</p>
+              {/* Botón absoluto: el tap target de 44px (modo accesible) no
+                  estira el toast ni desalinea la X respecto al texto. */}
               <button
                 onClick={() => removeToast(toast.id)}
-                className="text-white/30 hover:text-white/70 transition-colors shrink-0 mt-0.5"
+                className="absolute top-0 right-0 h-11 w-11 flex items-center justify-center rounded-xl text-white/40 hover:text-white/80 transition-colors"
                 aria-label="Cerrar notificación"
               >
                 <X size={14} />
