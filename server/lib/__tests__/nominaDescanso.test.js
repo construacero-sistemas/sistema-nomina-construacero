@@ -27,10 +27,24 @@ describe('calcularDescansoRemunerado', () => {
     expect(r.fechasDescanso).toEqual(['2026-09-12', '2026-09-13'])
   })
 
-  it('faltar UN día no quita el descanso', () => {
+  it('regla del usuario: faltar UN día descuenta UN día de descanso', () => {
     const r = calcularDescansoRemunerado({ ...contexto(), asistencias: HABILES.slice(1).map(f => dia(f)) })
+    expect(r.diasDescanso).toBe(1)
+    expect(r.diasDescansoPerdidos).toBe(1)
+    expect(r.semanasConPerdida).toBe(1)
+    expect(r.fechasDescanso).toEqual(['2026-09-12'])
+  })
+
+  it('con el umbral de la ley (2), faltar UN día no quita el descanso', () => {
+    const r = calcularDescansoRemunerado({ ...contexto(), asistencias: HABILES.slice(1).map(f => dia(f)), faltasPierde: 2 })
     expect(r.diasDescanso).toBe(2)
     expect(r.diasDescansoPerdidos).toBe(0)
+  })
+
+  it('nunca se descuentan más descansos de los que tiene la semana (3 faltas → pierde 2)', () => {
+    const r = calcularDescansoRemunerado({ ...contexto(), asistencias: HABILES.slice(3).map(f => dia(f)) })
+    expect(r.diasDescanso).toBe(0)
+    expect(r.diasDescansoPerdidos).toBe(2)
   })
 
   it('faltar DOS días hábiles hace perder el descanso de esa semana', () => {
@@ -90,10 +104,10 @@ describe('calcularLineaNomina con descanso (art. 119)', () => {
     expect(r.total_neto_usd).toBeCloseTo(65.3333, 3)
   })
 
-  it('falta un día: pierde solo ese día (6 × 9,33 = 56)', () => {
+  it('falta un día: pierde ese día y un descanso (4 + 1 = 5 × 9,33 = 46,67)', () => {
     const r = calcularLineaNomina(HABILES.slice(1).map(f => dia(f)), FRAILIN, {}, 0, 0, 0, contexto())
-    expect(r.dias_descanso).toBe(2)
-    expect(r.monto_normal_usd).toBeCloseTo(56, 3)
+    expect(r.dias_descanso).toBe(1)
+    expect(r.monto_normal_usd).toBeCloseTo(46.6667, 3)
   })
 
   it('sábado trabajado: el descanso se paga y el trabajo se paga aparte con el monto fijo', () => {

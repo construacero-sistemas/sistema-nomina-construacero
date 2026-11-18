@@ -12,7 +12,7 @@ import useAuthStore from '../../../compat/store/useAuthStore.js'
 import { tieneCapacidad } from '../../config/accesoModulos.js'
 import { Switch } from '../ui/index.js'
 import { NOMBRE_DIA_CORTO } from '../../utils/diasLaborables.js'
-import { LIMITES_REGLAS_LEY, REGLAS_LEY_DEFAULT, reglasLeyDeConfig } from '../../../server/lib/nominaReglasLey.js'
+import { FALTAS_PIERDE_DESCANSO_LEY, LIMITES_REGLAS_LEY, REGLAS_LEY_DEFAULT, reglasLeyDeConfig } from '../../../server/lib/nominaReglasLey.js'
 
 const inputCls = 'w-full min-h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50'
 
@@ -123,7 +123,7 @@ export default function ReglasPagoPanel({ config }) {
       divisor: String(REGLAS_LEY_DEFAULT.divisorMensual),
       dias: [...REGLAS_LEY_DEFAULT.diasLaborablesDefault],
       descanso: REGLAS_LEY_DEFAULT.descansoRemunerado,
-      faltas: String(REGLAS_LEY_DEFAULT.faltasPierdeDescanso),
+      faltas: String(FALTAS_PIERDE_DESCANSO_LEY),
     })
   }
 
@@ -217,11 +217,11 @@ export default function ReglasPagoPanel({ config }) {
 
         <Bloque titulo="Faltas que hacen perder el descanso">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-bold text-slate-500">Faltas en la semana (0 = nunca se pierde)</span>
+            <span className="mb-1 block text-[11px] font-bold text-slate-500">Desde cuántas faltas en la semana (0 = nunca se descuenta)</span>
             <input type="text" inputMode="numeric" className={inputCls} disabled={bloqueado || !actual.descanso} aria-label="Faltas que hacen perder el descanso"
               value={actual.faltas} onChange={e => cambiar({ faltas: e.target.value })} />
           </label>
-          <p className="text-[11px] text-slate-500">Ley: 2. Faltar un solo día no quita el descanso (art. 119).</p>
+          <p className="text-[11px] text-slate-500">Cada falta descuenta un día de descanso pagado de esa semana. Empresa: {REGLAS_LEY_DEFAULT.faltasPierdeDescanso} (desde la primera falta). Ley: {FALTAS_PIERDE_DESCANSO_LEY} (art. 119).</p>
         </Bloque>
       </div>
 
