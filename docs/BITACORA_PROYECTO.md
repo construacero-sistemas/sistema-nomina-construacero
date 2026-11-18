@@ -6,6 +6,31 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Regla: «push» incluye la fusión a main — 18/11/2026
+
+Petición del usuario: cuando pida push, el cambio debe fusionarse de una vez a `main`.
+
+1. **Regla nueva** en `AGENT.md` (Calidad y seguridad): push de la rama + pull request hacia `main` + fusión inmediata con merge commit, usando la cuenta `construacero-sistemas`; la rama se conserva.
+2. Aplicada en el mismo turno: los commits del toast y de la documentación pasan a `main` mediante PR.
+3. Pruebas: no aplica (solo documentación).
+
+## Regla de cuenta GitHub y CLAUDE.md del sistema — 18/11/2026
+
+Petición del usuario: documentar que la cuenta de GitHub del sistema es `construacero-sistemas` y que allí se hace el push; actualizar el CLAUDE.md con lo necesario del sistema.
+
+1. **Regla nueva** en `AGENT.md` (Calidad y seguridad): los push se hacen con `construacero-sistemas`; `luiggiberaldi` recibe 403.
+2. **CLAUDE.md** en la carpeta superior (fuera del repositorio): importa `AGENT.md` y resume arquitectura, entornos (producción y staging), comandos, cuenta GitHub y documentación clave.
+3. Pruebas: no aplica (solo documentación).
+
+## Toast: el botón de cerrar ya no estira la notificación — 18/11/2026
+
+Objetivo: corregir el toast («Entrada deshecha») que se veía demasiado alto y con la X desalineada respecto al título.
+
+1. **Causa:** en modo accesible (`src/modo-accesible.css`) todo botón mide al menos 44×44 px; el botón de cerrar crecía y estiraba la tarjeta.
+2. **Cambio** (`compat/components/ui/Toast.jsx`): el botón de cerrar es absoluto en la esquina superior derecha (caja de 44×44 px con la X centrada) y la tarjeta reserva margen derecho para el texto. Aplica a todos los tipos de toast. X con algo más de contraste.
+3. **Pruebas:** `npx vitest run compat/components/ui`: 3 archivos · 28 pruebas en verde. Sin validación visual en dispositivo.
+4. **Git:** commit `c4023cf` en `nomina/ficha-empleado`, publicado con la cuenta `construacero-sistemas`. Pendiente: validar en iPhone.
+
 ## Purga con rango de fechas, exclusiva del rol jefe, y release a producción — 28/09/2026
 
 Petición del usuario: extender la purga de mantenimiento con rango de fechas, reservarla al rol jefe y ejecutar los 4 pasos de producción del checklist (backup → migración → deploy → smoke).
