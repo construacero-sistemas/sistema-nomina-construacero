@@ -6,6 +6,15 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Publicación de la regla de faltas y del desglose de la hoja — 18/11/2026
+
+Petición del usuario: «push» y «aplica las migraciones que faltan».
+
+1. **Migraciones:** en producción solo faltaba la **266**. Respaldo previo en `local-backups/backup_pre_266_20261118.json` (fuera de git; la cuenta tenía el umbral en 2). Se aplicó en una transacción por la Management API y se registró en `schema_migrations`. Verificado: umbral = 1, valor por defecto = 1, última versión = 266.
+2. **Código:** rama `nomina/hoja-dias-descanso` (commit `90c2614`), PR #20 fusionado en `main` (`b18cabe`) con la cuenta `construacero-sistemas`; Vercel lo publicó en ~40 s.
+3. **Humo de solo lectura en producción:** sirve el mismo `index` del build local con caché `immutable`; `/`, `/nomina`, `/finanzas` y `/api/rates` → 200; `/api/auth/me` sin sesión → 401.
+4. **Pendientes:** recalcular el período abierto para que los recibos apliquen la regla nueva; revisar en iPhone la hoja con las tres columnas nuevas.
+
 ## Regla: cada falta descuenta un día de descanso pagado — 18/11/2026
 
 Petición del usuario (regla): «si falta 1 día se descuenta del día de descanso». Además, sobre la hoja a mano que envió (sueldo semanal 5 días × $8 = $40, descanso semanal 2 × $8 = $16, descanso o feriado trabajado 1 × $8 = $8, horas extra, total $64, descuento, neto): «por ahora mantén el bono», así que el bono semanal de $35 sigue en la hoja.
