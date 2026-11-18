@@ -6,6 +6,14 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Regla: «push» incluye la fusión a main — 18/11/2026
+
+Petición del usuario: cuando pida push, el cambio debe fusionarse de una vez a `main`.
+
+1. **Regla nueva** en `AGENT.md` (Calidad y seguridad): push de la rama + pull request hacia `main` + fusión inmediata con merge commit, usando la cuenta `construacero-sistemas`; la rama se conserva.
+2. Aplicada en el mismo turno: los commits del toast y de la documentación pasan a `main` mediante PR.
+3. Pruebas: no aplica (solo documentación).
+
 ## Regla de cuenta GitHub y CLAUDE.md del sistema — 18/11/2026
 
 Petición del usuario: documentar que la cuenta de GitHub del sistema es `construacero-sistemas` y que allí se hace el push; actualizar el CLAUDE.md con lo necesario del sistema.

@@ -62,6 +62,7 @@ Queda **estrictamente prohibido el scroll horizontal innecesario o accidental** 
 - No cachear respuestas `/api/*` en el service worker.
 - No hacer commit, push o deploy salvo solicitud explícita.
 - Regla de cuenta GitHub: la cuenta de este sistema es `construacero-sistemas` y todos los push se hacen con ella (`gh auth switch -u construacero-sistemas`, luego volver a `luiggiberaldi`). La cuenta personal `luiggiberaldi` no tiene permiso de escritura en el repositorio.
+- Regla de push con fusión: cuando el usuario pide «push», el cambio debe terminar en `main` en el mismo paso: push de la rama, pull request hacia `main` y fusión inmediata (merge commit), todo con la cuenta `construacero-sistemas`. La rama no se borra.
 - Mantener los textos de la interfaz claros y sin tecnicismos innecesarios.
 - Regla de notificaciones: todo toast o aviso temporal debe desaparecer automáticamente; nunca puede quedar fijado esperando que el usuario lo cierre. El cierre manual solo es una opción adicional.
 
