@@ -6,6 +6,24 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Actualizaciones de la app: aviso, momento seguro y límite de recargas — 18/11/2026
+
+Objetivo: que una versión nueva no recargue la pantalla en medio de un formulario o pago, que llegue antes a quien deja la app abierta y que la recuperación ante archivos viejos no recargue sin fin.
+
+1. **Antes:** la versión nueva se detectaba solo al abrir o recargar; se activaba al instante (`SKIP_WAITING`) y recargaba todas las pestañas sin aviso. El evento `app-update-ready` no lo escuchaba nadie. `auto-recovery.js` no limitaba los intentos.
+2. **Módulo nuevo** `compat/lib/actualizacionApp.js` (reemplaza el bloque de `src/main.jsx`):
+   - la versión nueva queda en espera y se aplica **solo en un momento seguro**: sin diálogo abierto (`role="dialog"`), sin campo enfocado y sin operación enviándose (`queryClient.isMutating()`);
+   - momentos de aplicación: al cambiar de pantalla, al volver a la app tras 2 minutos o más fuera, o con «Actualizar ahora» (este último ignora el diálogo abierto, pero nunca una operación en curso);
+   - revisa si hay versión nueva al volver a la app y cada 30 minutos con la app visible (mínimo 1 minuto entre consultas). Solo pide `/sw.js`; no consume egress de Supabase;
+   - si otra pestaña cambia la versión mientras aquí hay trabajo abierto, espera en vez de recargar;
+   - ya no recarga en la primera visita (cuando aún no había service worker).
+3. **Aviso** `compat/components/ui/AvisoActualizacion.jsx`: «Hay una versión nueva del sistema · Se aplicará sola cuando no tengas nada abierto», botón «Actualizar ahora» (44 px), cierre con X. Desaparece solo a los 15 s (regla de avisos temporales) y vuelve a mostrarse al regresar a la app si sigue pendiente. En móvil queda sobre la barra inferior respetando la zona segura.
+4. **Límite de recargas:** `public/auto-recovery.js` y el manejador `vite:preloadError` de `main.jsx` comparten el registro `recuperacion-version` en `sessionStorage`: como máximo un intento cada 2 minutos (antes `vite:preloadError` solo permitía uno por sesión). Si vuelve a fallar y la app no llegó a mostrarse, aparece la pantalla «No se pudo cargar el sistema» con el botón «Reintentar»; si la app ya estaba en pantalla se muestra un toast. Sin `sessionStorage` disponible no se recarga, para evitar bucles.
+5. **Corrección de paso** (`src/components/nomina/PeriodosAutoCard.jsx`): el selector «La semana empieza el» usaba `<select>` nativo (ya en `main`) y hacía fallar `check:project`; ahora usa `CustomSelect`.
+6. **Pruebas:** `compat/lib/__tests__/actualizacionApp.test.js` (11) y `compat/components/ui/__tests__/AvisoActualizacion.test.jsx` (4) en verde. `npm run verify` en verde: 148 archivos · 1546 pruebas (+1 pendiente), lint, responsive, determinísticas, test:db, build e índice de 279,6 / 400 KiB.
+7. **Git:** commit `9ebee29` en `nomina/actualizaciones-app`, PR #13 fusionado a `main` (merge `83204b9`) con la cuenta `construacero-sistemas`. Sin deploy.
+8. **Pendientes:** desplegar a producción cuando se ordene y validar en iPhone físico (PWA en segundo plano y regreso), caso 1.4 de `docs/ACEPTACION_IPHONE_FISICO.md`.
+
 ## Regla: «push» incluye la fusión a main — 18/11/2026
 
 Petición del usuario: cuando pida push, el cambio debe fusionarse de una vez a `main`.

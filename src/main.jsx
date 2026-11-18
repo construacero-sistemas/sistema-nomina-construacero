@@ -7,6 +7,9 @@ import { ErrorBoundary } from '../compat/components/ui/ErrorBoundary.jsx'
 import OfflineBanner from '../compat/components/ui/OfflineBanner.jsx'
 import queryClient from '../compat/lib/queryClient.js'
 import { indexedDbPersister } from '../compat/lib/queryPersister.js'
+import { showToast } from '../compat/components/ui/toastBus.js'
+import AvisoActualizacion from '../compat/components/ui/AvisoActualizacion.jsx'
+import { iniciarActualizaciones, marcarIntentoRecuperacion, puedeIntentarRecuperacion } from '../compat/lib/actualizacionApp.js'
 import NominaApp from './NominaApp.jsx'
 // Inter auto-hospedada (400–700): se empaqueta con la app, funciona offline en
 // el PWA y no depende de CDNs de fuentes. Sin esto, Inter solo estaba declarada
@@ -23,39 +26,12 @@ if (typeof localStorage !== 'undefined' && localStorage.getItem('modo-accesible'
   document.documentElement.classList.add('modo-accesible')
 }
 
+// Versión nueva: se avisa y se aplica en un momento seguro (sin diálogos
+// abiertos, campos en edición ni operaciones enviándose). Ver actualizacionApp.js.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(registration => {
-    const activateNewSw = () => {
-      if (registration.waiting) {
-        // Enviar SKIP_WAITING al SW para que llame self.skipWaiting() y
-        // luego self.clients.claim() en su evento activate. Esto fuerza
-        // que todas las pestañas pasen a la nueva versión inmediatamente,
-        // evitando errores de MIME type por hashes de assets obsoletos.
-        registration.waiting.postMessage({ type: 'SKIP_WAITING' })
-      }
-    }
-    const notify = () => {
-      if (registration.waiting) {
-        window.dispatchEvent(new Event('app-update-ready'))
-        // Auto-activar sin esperar interacción del usuario
-        activateNewSw()
-      }
-    }
-    notify()
-    registration.addEventListener('updatefound', () => {
-      registration.installing?.addEventListener('statechange', (e) => {
-        if (e.target.state === 'installed') notify()
-      })
-    })
-    // Si otra pestaña ya activó un nuevo SW, recargar para obtener los assets correctos
-    let refreshing = false
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!refreshing) {
-        refreshing = true
-        window.location.reload()
-      }
-    })
-  }).catch(() => undefined), { once: true })
+  window.addEventListener('load', () => {
+    iniciarActualizaciones({ mutando: () => queryClient.isMutating() }).catch(() => undefined)
+  }, { once: true })
 }
 
 // El zoom voluntario sigue disponible. La prevención de autozoom se hace con
@@ -64,12 +40,15 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 indexedDbPersister.removeClient().catch(() => undefined)
 
 // Auto-recovery en app: si un chunk dinámico falla (hash viejo tras deploy),
-// destruir caches/SW y recargar UNA sola vez para evitar bucles.
+// destruir caches/SW y recargar. Comparte con auto-recovery.js el registro del
+// último intento: como máximo uno cada 2 minutos, para no recargar sin fin.
 window.addEventListener('vite:preloadError', (event) => {
   event.preventDefault()
-  const KEY = 'sw-recovery-attempt'
-  if (sessionStorage.getItem(KEY)) return
-  sessionStorage.setItem(KEY, String(Date.now()))
+  if (!puedeIntentarRecuperacion()) {
+    showToast.error('No se pudo cargar esta parte del sistema. Recarga la página.', 8000)
+    return
+  }
+  marcarIntentoRecuperacion()
   ;(async () => {
     try {
       const ks = await caches.keys()
@@ -92,6 +71,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <OfflineBanner>
               <NominaApp />
             </OfflineBanner>
+            <AvisoActualizacion />
             {import.meta.env.MODE === 'staging' && (
               <div className="staging-watermark" role="status" aria-label="Entorno de pruebas staging">
                 STAGING
