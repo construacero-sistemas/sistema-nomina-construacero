@@ -20,14 +20,13 @@ const TABS = [
 
 export default function NominaView() {
   const perfil = useAuthStore(s => s.perfil)
-  // OJO: `administrarNomina` es la capacidad del MÓDULO (lectura, marcaje y registro
-  // de asistencia). No sirve para gatear acciones de escritura: 31 de las rutas del
-  // Worker exigen `gestionarUsuarios` y 2 exigen `operarFinanzas`, y el rol `nomina`
-  // no tiene ninguna de las dos. Cada acción usa la MISMA llave que su endpoint.
+  // `administrarNomina` es la capacidad del MÓDULO: lectura, marcaje y todas las
+  // escrituras de nómina (el rol `nomina` la tiene). Solo pagar exige
+  // `operarFinanzas`. Cada acción usa la MISMA llave que su endpoint.
   const esAdmin = tieneCapacidad(perfil, 'administrarNomina')
   // Escrituras administrativas de nómina y de personal: períodos, líneas, catálogos,
-  // carga masiva, eliminaciones, alta/edición/baja de empleados (ROLES_ADMIN).
-  const puedeGestionarNomina = tieneCapacidad(perfil, 'gestionarUsuarios')
+  // carga masiva, eliminaciones, alta/edición/baja de empleados.
+  const puedeGestionarNomina = tieneCapacidad(perfil, 'administrarNomina')
   // Pagar nómina y pagar comisión registran egresos en Finanzas
   // (POST /api/nomina/lineas/pagar y /api/finanzas/movimientos/crear exigen
   // `operarFinanzas`): la interfaz usa la misma capacidad para no ofrecer una acción
