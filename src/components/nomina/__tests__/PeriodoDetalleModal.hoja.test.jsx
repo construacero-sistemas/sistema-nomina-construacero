@@ -51,7 +51,7 @@ describe('Detalle del período → Hoja semanal', () => {
     expect(screen.getByRole('tab', { name: 'Hoja semanal' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('table', { name: 'Hoja semanal del período' })).toBeInTheDocument()
     // Neto en Bs con la tasa activa: 56 × 100.
-    expect(screen.getByRole('rowheader', { name: 'Pedro Perez' }).closest('tr')).toHaveTextContent('5600.00 Bs')
+    expect(screen.getByRole('rowheader', { name: /^Pedro Perez/ }).closest('tr')).toHaveTextContent('5600.00 Bs')
 
     fireEvent.click(screen.getByRole('button', { name: 'Descuento a Pedro Perez' }))
     expect(screen.getByRole('dialog', { name: /Ajustar pago: Pedro Perez/ })).toBeInTheDocument()
