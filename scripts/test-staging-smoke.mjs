@@ -125,6 +125,77 @@ async function main() {
     if (sunday.status !== 400 || holiday.status !== 400) throw new Error(`Non-working absence accepted (${sunday.status}/${holiday.status}).`)
     if ((await check('/api/nomina/asistencia?desde=2026-09-21&hasta=2026-09-27')).registros?.length) throw new Error('Absence tests left attendance rows behind.')
 
+    // PLAN_MARCAJE_BOTONES_UX M-1: anular una entrada errónea según el calendario.
+    // M-2: dos salidas simultáneas → exactamente una gana y su hora no se pisa.
+    const serviceHeaders = { apikey: localWorker.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${localWorker.SUPABASE_SERVICE_KEY}` }
+    const borrarRegistroDePrueba = async id => {
+      const url = new URL(`${SUPABASE_URL}/rest/v1/registro_asistencia`)
+      url.searchParams.set('cuenta_id', `eq.${session.user.id}`)
+      url.searchParams.set('empleado_id', `eq.${employee.id}`)
+      url.searchParams.set('id', `eq.${id}`)
+      const res = await fetch(url, { method: 'DELETE', headers: { ...serviceHeaders, Prefer: 'return=minimal' } })
+      if (!res.ok) throw new Error(`Could not clean synthetic marcaje ${id} (${res.status}).`)
+    }
+    const registrosDelDia = async fecha => (await check(`/api/nomina/asistencia?desde=${fecha}&hasta=${fecha}`)).registros || []
+    const marcar = async (tipo, now, idempotencyKey) => request(`/api/nomina/marcaje/${tipo}`, {
+      method: 'POST', body: { empleadoId: employee.id, idempotencyKey }, now,
+    })
+    const anular = async (registroId, resultadoEsperado, now) => request('/api/nomina/marcaje/anular-entrada-ausencia', {
+      method: 'POST', body: { registroId, motivo: 'Smoke M-1: entrada marcada por error', resultadoEsperado }, now,
+    })
+
+    for (const [caso, now, fecha] of [
+      ['domingo libre', '2026-09-27T13:00:00.000Z', '2026-09-27'],
+      ['feriado no laborable', '2026-09-25T13:00:00.000Z', '2026-09-25'],
+    ]) {
+      const entrada = await marcar('entrada', now, `smoke-m1-${fecha}-${Date.now()}`)
+      if (entrada.status !== 201) throw new Error(`M-1 ${caso}: entrada failed (${entrada.status}).`)
+      const registroId = (await entrada.json()).registro?.id
+      try {
+        const comoAusencia = await anular(registroId, 'ausencia', now)
+        const rechazo = await comoAusencia.json()
+        if (comoAusencia.status !== 409 || rechazo.resultado_real !== 'sin-registro') throw new Error(`M-1 ${caso}: expected 409 sin-registro, got ${comoAusencia.status}.`)
+        if ((await registrosDelDia(fecha)).length !== 1) throw new Error(`M-1 ${caso}: a rejected annulment changed the row.`)
+        const anulada = await anular(registroId, 'sin-registro', now)
+        if (anulada.status !== 200 || (await anulada.json()).resultado !== 'sin-registro') throw new Error(`M-1 ${caso}: annulment failed (${anulada.status}).`)
+        if ((await registrosDelDia(fecha)).length) throw new Error(`M-1 ${caso}: the entry was not removed.`)
+      } finally {
+        if ((await registrosDelDia(fecha)).length) await borrarRegistroDePrueba(registroId)
+      }
+    }
+
+    const sabadoEntrada = await marcar('entrada', saturday, `smoke-m1-sabado-${Date.now()}`)
+    if (sabadoEntrada.status !== 201) throw new Error(`M-1 sábado: entrada failed (${sabadoEntrada.status}).`)
+    const sabadoId = (await sabadoEntrada.json()).registro?.id
+    try {
+      const sinRegistro = await anular(sabadoId, 'sin-registro', saturday)
+      if (sinRegistro.status !== 409) throw new Error(`M-1 sábado: a working day accepted deletion (${sinRegistro.status}).`)
+      const ausencia = await anular(sabadoId, 'ausencia', saturday)
+      if (ausencia.status !== 200) throw new Error(`M-1 sábado: annulment as absence failed (${ausencia.status}).`)
+      const filas = await registrosDelDia('2026-09-26')
+      if (filas.length !== 1 || filas[0].es_ausencia !== true || filas[0].hora_entrada) throw new Error('M-1 sábado: the row is not a clean absence.')
+    } finally {
+      if ((await registrosDelDia('2026-09-26')).length) await borrarRegistroDePrueba(sabadoId)
+    }
+
+    const m2Entrada = await marcar('entrada', saturday, `smoke-m2-entrada-${Date.now()}`)
+    if (m2Entrada.status !== 201) throw new Error(`M-2: entrada failed (${m2Entrada.status}).`)
+    const m2Id = (await m2Entrada.json()).registro?.id
+    try {
+      const salidas = await Promise.all([
+        marcar('salida', '2026-09-26T21:00:00.000Z', `smoke-m2-a-${Date.now()}`),
+        marcar('salida', '2026-09-26T21:05:00.000Z', `smoke-m2-b-${Date.now()}`),
+      ])
+      const estados = salidas.map(res => res.status).sort()
+      if (estados.join(',') !== '200,409') throw new Error(`M-2: concurrent exits returned ${estados.join(',')}; expected one 200 and one 409.`)
+      const ganadora = await salidas.find(res => res.status === 200).json()
+      const [fila] = await registrosDelDia('2026-09-26')
+      if (String(fila?.hora_salida).slice(0, 5) !== String(ganadora.registro?.hora_salida).slice(0, 5)) throw new Error('M-2: the stored exit time is not the winning one.')
+    } finally {
+      if ((await registrosDelDia('2026-09-26')).length) await borrarRegistroDePrueba(m2Id)
+    }
+    if ((await check('/api/nomina/asistencia?desde=2026-09-21&hasta=2026-09-27')).registros?.length) throw new Error('Marcaje tests left attendance rows behind.')
+
     const calc = await request('/api/nomina/periodos/calcular', { method: 'POST', body: { periodoId: stagingPeriod.id } })
     if (calc.status !== 200) throw new Error(`Staging payroll calculation failed (${calc.status}).`)
     const lines = await check(`/api/nomina/lineas?periodoId=${stagingPeriod.id}`)
@@ -205,7 +276,9 @@ async function main() {
 
     initialAttendanceRows: 0, reversibleSaturdayAbsence: 'PASS',
     forgedCommissionWithoutPOSLink: 'REJECTED',
-    SundayAndHolidayAbsencesRejected: 'PASS', finalAttendanceRows: 0,
+    SundayAndHolidayAbsencesRejected: 'PASS',
+    annulEntryOnNonWorkingDayLeavesNoRow: 'PASS', annulEntryOnWorkingDayIsAbsence: 'PASS',
+    concurrentExitsOneWins: 'PASS', finalAttendanceRows: 0,
     zeroValuePayrollCalculation: 'PASS', repeatedCalculationIdempotent: 'PASS',
     generatedLineCleanup: 'PASS', openFixturePeriodPreserved: 'PASS', payrollPayment: false,
   }, null, 2))
