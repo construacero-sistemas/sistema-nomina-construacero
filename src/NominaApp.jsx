@@ -12,6 +12,7 @@ import LoginPage from '../compat/modules/auth/LoginPage.jsx'
 import LogoutConfirmModal from './components/LogoutConfirmModal.jsx'
 import { accesoUI, etiquetaRol, rutaParaRol } from './config/accesoModulos.js'
 import { filtrarNavPorRol } from './config/navModulos.js'
+import { decisionPorteroPrivado, decisionPorteroPublico } from './utils/porterosSesion.js'
 import SistemaView from './views/SistemaView.jsx'
 import useTasaCambioNomina from './hooks/useTasaCambioNomina.js'
 import RateHeader from './components/layout/RateHeader.jsx'
@@ -96,26 +97,25 @@ function Protected() {
   const initialized = useAuthStore(useCallback(state => state.initialized, []))
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
   const user = useAuthStore(useCallback(state => state.user, []))
-  const loadingProfile = useAuthStore(useCallback(state => state._cargandoPerfil, []))
-  const status = useAuthStore(state => state.authStatus)
+  const authStatus = useAuthStore(state => state.authStatus)
   const generation = useAuthStore(state => state.sessionGeneration)
-  if (!initialized) return <Loading />
-  if (user && (!perfil || loadingProfile && status !== 'authenticated')) return <LoginPage />
-  // Roles operativos del sistema (migración 242): jefe/administracion/desarrollador
-  // = total; finanzas y nomina = módulo propio. Qué módulos ve cada rol lo decide
-  // accesoUI (espejo de la matriz del servidor); el servidor revalida todo endpoint.
-  if (!perfil || status !== 'authenticated' || !accesoUI(perfil.rol).finanzas && !accesoUI(perfil.rol).nomina) {
-    return <Navigate to="/login" replace />
-  }
+  // Regla única compartida con Public (src/utils/porterosSesion.js): los dos
+  // porteros nunca pueden mandarse la persona de uno a otro sin parar. Qué
+  // módulos ve cada rol lo decide accesoUI; el servidor revalida todo endpoint.
+  const decision = decisionPorteroPrivado({ initialized, perfil, user, authStatus })
+  if (decision === 'cargando') return <Loading />
+  if (decision === 'acceso-en-sitio') return <LoginPage />
+  if (decision === 'ir-login') return <Navigate to="/login" replace />
   return <Outlet key={`${user?.id}:${generation}`} />
 }
 
 function Public() {
   const initialized = useAuthStore(useCallback(state => state.initialized, []))
   const perfil = useAuthStore(useCallback(state => state.perfil, []))
-  const status = useAuthStore(state => state.authStatus)
-  if (!initialized) return <Loading />
-  if (perfil && status === 'authenticated') return <Navigate to={rutaParaRol(perfil?.rol)} replace />
+  const authStatus = useAuthStore(state => state.authStatus)
+  const decision = decisionPorteroPublico({ initialized, perfil, authStatus })
+  if (decision === 'cargando') return <Loading />
+  if (decision === 'ir-modulo') return <Navigate to={rutaParaRol(perfil?.rol)} replace />
   return <Outlet />
 }
 
