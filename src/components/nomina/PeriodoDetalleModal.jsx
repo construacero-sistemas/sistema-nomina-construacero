@@ -77,7 +77,7 @@ function ReciboMovilCard({ linea, abierto, puedeGestionarNomina, puedePagarNomin
         <div className="flex justify-between gap-2"><dt className="text-slate-500">H. extra</dt><dd className="font-semibold text-slate-800">{Number(linea.horas_extra) > 0 ? `${Number(linea.horas_extra).toFixed(1)}h` : '—'}</dd></div>
         <div className="flex justify-between gap-2"><dt className="text-slate-500">Recargos</dt><dd className="font-semibold text-slate-800">{recargos > 0 ? `$${fmt(recargos)}` : '—'}</dd></div>
         <div className="flex justify-between gap-2"><dt className="text-slate-500">Bonos</dt><dd className="font-semibold text-emerald-700">{Number(linea.bonos_usd) > 0 ? `+$${fmt(linea.bonos_usd)}` : '—'}</dd></div>
-        <div className="flex justify-between gap-2"><dt className="text-slate-500">Comis. POS</dt><dd className="font-semibold text-amber-800">{Number(linea.comisiones_pos_usd) > 0 ? `+$${fmt(linea.comisiones_pos_usd)}` : '—'}</dd></div>
+        {(VENDEDORES_EN_NOMINA || Number(linea.comisiones_pos_usd) > 0) && <div className="flex justify-between gap-2"><dt className="text-slate-500">Comis. POS</dt><dd className="font-semibold text-amber-800">{Number(linea.comisiones_pos_usd) > 0 ? `+$${fmt(linea.comisiones_pos_usd)}` : '—'}</dd></div>}
         <div className="flex justify-between gap-2"><dt className="text-slate-500">Deducciones</dt><dd className="font-semibold text-rose-700">{Number(linea.deducciones_usd) > 0 ? `-$${fmt(linea.deducciones_usd)}` : '—'}</dd></div>
         {Number(linea.dias_ausencia) > 0 && <div className="flex justify-between gap-2"><dt className="text-slate-500">Ausencias</dt><dd className="font-bold text-rose-700">{linea.dias_ausencia}</dd></div>}
       </dl>
@@ -130,14 +130,22 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
       || tasasCierre.find(t => t.moneda_origen === 'USD')
       || null
   }, [abierto, tasasCierre, tipoTasa])
+  // Los vendedores no van en la nómina: «Comis. POS» solo aparece si se reactiva la
+  // bandera o si algún recibo antiguo del período trae comisiones (para que cuadre).
+  const mostrarComisiones = VENDEDORES_EN_NOMINA || lineas.some(l => Number(l.comisiones_pos_usd) > 0)
   const fmtBsPeriodo = tasaCongelada
     ? (monto) => formatBs((Number(monto) || 0) * (Number(tasaCongelada.valor) || 0))
     : fmtBs
   // Neto en Bs de una fila de la hoja: el congelado al pagar manda; si no, la tasa
-  // congelada al cerrar o la activa (las mismas reglas que los recibos).
+  // congelada al cerrar o la activa (las mismas reglas que los recibos). Convierte el
+  // neto SIN redondear del recibo, como la pestaña Recibos, para que el Bs coincida.
+  const netoReciboUsd = fila => {
+    const linea = lineas.find(l => l.id === fila.lineaId)
+    return Number(linea ? linea.total_neto_usd : fila.neto) || 0
+  }
   const bsDeFilaHoja = fila => (fila.pagado && Number(fila.tasaPago) > 0 && fila.totalPagadoBs != null
     ? Number(fila.totalPagadoBs)
-    : (Number(fila.neto) || 0) * (tasaCongelada ? Number(tasaCongelada.valor) || 0 : (aBs(1) || 0)))
+    : netoReciboUsd(fila) * (tasaCongelada ? Number(tasaCongelada.valor) || 0 : (aBs(1) || 0)))
 
   const totales = useMemo(() => ({
     empleados: lineas.length,
@@ -354,7 +362,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                     <th className="text-right px-2.5 py-3 font-bold">Base ($)</th>
                     <th className="text-right px-2.5 py-3 font-bold">Recargos</th>
                     <th className="text-right px-2.5 py-3 font-bold">Bonos</th>
-                    <th className="text-right px-2.5 py-3 font-bold">Comis. POS</th>
+                    {mostrarComisiones && <th className="text-right px-2.5 py-3 font-bold">Comis. POS</th>}
                     <th className="text-right px-2.5 py-3 font-bold">Deduc.</th>
                     <th className="text-right px-3 py-3 font-black">Neto (USD / Bs)</th>
                     <th className="text-right px-3 py-3 font-bold">Acciones</th>
@@ -399,13 +407,13 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                             <span className="text-emerald-600">+${fmt(l.bonos_usd)}</span>
                           ) : <span className="text-slate-300">—</span>}
                         </td>
-                        <td className="text-right px-2.5 py-2.5 font-bold">
+                        {mostrarComisiones && <td className="text-right px-2.5 py-2.5 font-bold">
                           {Number(l.comisiones_pos_usd) > 0 ? (
                             <span className="text-amber-800 font-mono" title={`${(l.comisiones_despachos_ids || []).length} despachos liquidados`}>
                               +${fmt(l.comisiones_pos_usd)}
                             </span>
                           ) : <span className="text-slate-300">—</span>}
-                        </td>
+                        </td>}
                         <td className="text-right px-2.5 py-2.5 font-bold">
                           {Number(l.deducciones_usd) > 0 ? (
                             <span className="text-red-500">-${fmt(l.deducciones_usd)}</span>
@@ -473,9 +481,9 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                     <td className="text-right px-2.5 py-3 font-black text-emerald-700">
                       +${fmt(totales.bonos)}
                     </td>
-                    <td className="text-right px-2.5 py-3 font-black text-amber-800">
+                    {mostrarComisiones && <td className="text-right px-2.5 py-3 font-black text-amber-800">
                       {totales.comisiones > 0 ? `+$${fmt(totales.comisiones)}` : '—'}
-                    </td>
+                    </td>}
                     <td className="text-right px-2.5 py-3 font-black text-red-600">
                       -${fmt(totales.deduc)}
                     </td>
