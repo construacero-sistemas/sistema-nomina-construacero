@@ -207,6 +207,12 @@ async function main() {
     if (recalc.status !== 200) throw new Error(`Idempotent recalculation failed (${recalc.status}).`)
     const recalcLines = await check(`/api/nomina/lineas?periodoId=${stagingPeriod.id}`)
     if (recalcLines.length !== 1 || recalcLines[0].id !== line.id) throw new Error('Recalculation duplicated/replaced the line.')
+    // PLAN_HOJA_SEMANAL: la hoja reparte el recibo sin perder ni inventar montos.
+    const hojaSemanal = await check(`/api/nomina/periodos/hoja?periodoId=${stagingPeriod.id}`)
+    const filaHoja = hojaSemanal.filas?.[0]
+    if (hojaSemanal.filas?.length !== 1 || filaHoja.lineaId !== line.id) throw new Error('Weekly sheet does not list the synthetic line.')
+    const sumaHoja = filaHoja.sueldoSemanal + filaHoja.bonoSemanal + filaHoja.totalExtras + filaHoja.valorDescansoTrabajado + filaHoja.otrosPagos
+    if (Math.abs(sumaHoja - Number(line.total_bruto_usd)) > 0.01 || Math.abs(hojaSemanal.totales.neto - Number(line.total_neto_usd)) > 0.01) throw new Error('Weekly sheet does not add up to the payroll line.')
   } finally {
     if (mutationsStarted) {
       const headers = { apikey: localWorker.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${localWorker.SUPABASE_SERVICE_KEY}` }
@@ -279,7 +285,7 @@ async function main() {
     SundayAndHolidayAbsencesRejected: 'PASS',
     annulEntryOnNonWorkingDayLeavesNoRow: 'PASS', annulEntryOnWorkingDayIsAbsence: 'PASS',
     concurrentExitsOneWins: 'PASS', finalAttendanceRows: 0,
-    zeroValuePayrollCalculation: 'PASS', repeatedCalculationIdempotent: 'PASS',
+    zeroValuePayrollCalculation: 'PASS', repeatedCalculationIdempotent: 'PASS', weeklySheetAddsUp: 'PASS',
     generatedLineCleanup: 'PASS', openFixturePeriodPreserved: 'PASS', payrollPayment: false,
   }, null, 2))
 }

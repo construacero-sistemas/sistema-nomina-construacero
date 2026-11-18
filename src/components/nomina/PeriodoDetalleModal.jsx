@@ -11,6 +11,7 @@ import HorizontalScroll from '../../../compat/components/ui/HorizontalScroll.jsx
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import RateSelector from './RateSelector.jsx'
 import LiquidacionModal from './LiquidacionModal'
+import HojaSemanal from './HojaSemanal.jsx'
 import PagarNominaModal from './PagarNominaModal'
 import ImportarComisionesPosModal from './ImportarComisionesPosModal.jsx'
 import { VENDEDORES_EN_NOMINA } from '../../config/comisionesVendedores.js'
@@ -114,6 +115,8 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
   const paginaActual = Math.min(pagina, totalPaginas)
   const [exportando, setExportando]   = useState(false)
   const [importandoComisiones, setImportandoComisiones] = useState(false)
+  // «Recibos» o «Hoja semanal» (docs/PLAN_HOJA_SEMANAL.md): la planilla de la contadora.
+  const [vista, setVista] = useState('recibos')
 
   const abierto = periodo.estado === 'abierto'
 
@@ -130,6 +133,11 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
   const fmtBsPeriodo = tasaCongelada
     ? (monto) => formatBs((Number(monto) || 0) * (Number(tasaCongelada.valor) || 0))
     : fmtBs
+  // Neto en Bs de una fila de la hoja: el congelado al pagar manda; si no, la tasa
+  // congelada al cerrar o la activa (las mismas reglas que los recibos).
+  const bsDeFilaHoja = fila => (fila.pagado && Number(fila.tasaPago) > 0 && fila.totalPagadoBs != null
+    ? Number(fila.totalPagadoBs)
+    : (Number(fila.neto) || 0) * (tasaCongelada ? Number(tasaCongelada.valor) || 0 : (aBs(1) || 0)))
 
   const totales = useMemo(() => ({
     empleados: lineas.length,
@@ -278,8 +286,25 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
             </div>
           )}
 
+          <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 sm:inline-grid sm:w-auto" role="tablist" aria-label="Vista del período">
+            {[['recibos', 'Recibos'], ['hoja', 'Hoja semanal']].map(([id, etiqueta]) => (
+              <button key={id} type="button" role="tab" aria-selected={vista === id} onClick={() => setVista(id)}
+                className={`min-h-11 rounded-lg px-4 text-xs font-bold transition-all ${vista === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                style={{ touchAction: 'manipulation' }}>{etiqueta}</button>
+            ))}
+          </div>
+
           {/* Tabla de recibos */}
-          {isLoading ? (
+          {vista === 'hoja' ? (
+            <HojaSemanal
+              periodo={periodo}
+              lineas={lineas}
+              abierto={abierto}
+              puedeGestionarNomina={puedeGestionarNomina}
+              bsDe={bsDeFilaHoja}
+              onAgregarDescuento={setLiquidando}
+            />
+          ) : isLoading ? (
             <Skeleton className="h-64 rounded-2xl" />
           ) : lineas.length === 0 ? (
             <div className="text-center py-12 text-slate-400 text-sm bg-slate-50 rounded-2xl border border-dashed border-slate-200">
