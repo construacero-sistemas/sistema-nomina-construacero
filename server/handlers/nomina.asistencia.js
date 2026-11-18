@@ -5,6 +5,7 @@ import { requireCapacidad, tieneCapacidad } from '../lib/permissions.js'
 import { registrarAuditoria } from '../lib/audit.js'
 import { calcularCamposAsistencia } from '../lib/nominaUtils.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
+import { UMBRAL_SALIDA_CORTA_MINUTOS, minutosEntre } from '../lib/marcajeReglas.js'
 import {
   booleanNominaValido,
   fechaNominaValida,
@@ -74,7 +75,7 @@ export function nowInNominaZone(env) {
   return { fecha: fechaOperativaNomina(env), hora: `${values.hour === '24' ? '00' : values.hour}:${values.minute}`, marcadoEn: now.toISOString() }
 }
 
-function idempotencyKeyValida(value) {
+export function idempotencyKeyValida(value) {
   return typeof value === 'string' && /^[A-Za-z0-9._:-]{8,128}$/.test(value.trim())
 }
 
@@ -159,10 +160,11 @@ export async function handleMarcarEntrada(request, env) {
   if (tenantError) return tenantError
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
-  const { empleadoId, idempotencyKey, nota } = body || {}
+  const { empleadoId, idempotencyKey, nota, reemplazarAusencia } = body || {}
   if (!empleadoId || !isValidUuid(empleadoId)) return jsonError('empleadoId inválido', 400, request)
   if (!idempotencyKeyValida(idempotencyKey)) return jsonError('idempotencyKey inválida', 400, request)
   if (!textoNominaValido(nota, 500)) return jsonError('nota inválida', 400, request)
+  if (!booleanNominaValido(reemplazarAusencia)) return jsonError('reemplazarAusencia inválido', 400, request)
   const mark = nowInNominaZone(env)
   const period = await periodoBloqueadoParaFecha(env, headers, operador, mark.fecha)
   if (period) return jsonError(`No se puede marcar: el período está ${period.estado}`, 400, request)
@@ -175,6 +177,9 @@ export async function handleMarcarEntrada(request, env) {
   const existing = await fetchRegistroDelDia(env, headers, operador, empleadoId, mark.fecha)
   if (existing.error) return jsonError('Error al leer asistencia del día', 500, request)
   if (existing.row?.entrada_idempotency_key === idempotencyKey.trim()) return json({ ok: true, idempotente: true, registro: existing.row }, 200, request)
+  if (existing.row?.es_ausencia) {
+    return reemplazarAusenciaPorEntrada({ env, request, operador, ip, empleadoId, idempotencyKey, nota, mark, holiday, ausencia: existing.row, reemplazarAusencia })
+  }
   if (existing.row?.hora_entrada) return jsonError('El empleado ya tiene entrada marcada hoy', 409, request)
   const row = { empleado_id: empleadoId, fecha: mark.fecha, hora_entrada: mark.hora, hora_salida: null, horas_trabajadas: 0, horas_normales: 0, horas_extra: 0, es_sabado: new Date(`${mark.fecha}T12:00:00`).getDay() === 6, es_domingo: new Date(`${mark.fecha}T12:00:00`).getDay() === 0, es_feriado: !!holiday.row, es_ausencia: false, estado_marcaje: 'entrada', entrada_marcada_en: mark.marcadoEn, entrada_por: operador.id, entrada_idempotency_key: idempotencyKey.trim(), nota: nota || null, registrado_por: operador.id, cuenta_id: operador.cuenta_id }
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_feriado,es_ausencia,estado_marcaje,nota`, { method: 'POST', headers: { ...svcHeaders(env), Prefer: 'return=representation' }, body: JSON.stringify(row) })
@@ -182,6 +187,33 @@ export async function handleMarcarEntrada(request, env) {
   const [registro] = await response.json()
   registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'MARCAR_ENTRADA', entidadTipo: 'registro_asistencia', entidadId: registro?.id || null, meta: { empleadoId, fecha: mark.fecha }, ip }).catch(() => {})
   return json({ ok: true, idempotente: false, registro }, 201, request)
+}
+
+// M-7 (PLAN_MARCAJE_BOTONES_UX): quien llega tarde tras ser marcado ausente queda en
+// jornada con un solo toque. Solo con el flag explícito, solo sobre una ausencia
+// manual, y con un PATCH condicional (G-3) que conserva el mismo registro.
+async function reemplazarAusenciaPorEntrada({ env, request, operador, ip, empleadoId, idempotencyKey, nota, mark, holiday, ausencia, reemplazarAusencia }) {
+  if (reemplazarAusencia !== true) {
+    return jsonError('Hoy está registrado como ausente. Usa «Llegó: marcar entrada» para convertir la ausencia en entrada.', 409, request)
+  }
+  if (ausencia.estado_marcaje !== 'manual' || ausencia.hora_entrada) {
+    return jsonError('Esa ausencia no es un registro manual del día y no se puede convertir desde aquí.', 409, request)
+  }
+  const tenantFilter = nominaTenantFilter(operador.cuenta_id)
+  const cambios = {
+    hora_entrada: mark.hora, hora_salida: null, horas_trabajadas: 0, horas_normales: 0, horas_extra: 0,
+    es_feriado: !!holiday.row, es_ausencia: false, estado_marcaje: 'entrada',
+    entrada_marcada_en: mark.marcadoEn, entrada_por: operador.id, entrada_idempotency_key: idempotencyKey.trim(),
+    nota: nota || null, registrado_por: operador.id,
+  }
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?id=eq.${ausencia.id}${tenantFilter}&es_ausencia=eq.true&estado_marcaje=eq.manual&hora_entrada=is.null&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_feriado,es_ausencia,estado_marcaje,nota`, {
+    method: 'PATCH', headers: { ...svcHeaders(env), Prefer: 'return=representation' }, body: JSON.stringify(cambios),
+  })
+  if (!response.ok) return jsonError('No se pudo registrar la entrada', 500, request)
+  const [registro] = await response.json()
+  if (!registro) return jsonError('La ausencia cambió mientras marcabas. Actualiza la lista e inténtalo de nuevo.', 409, request)
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'MARCAR_ENTRADA', entidadTipo: 'registro_asistencia', entidadId: ausencia.id, meta: { empleadoId, fecha: mark.fecha, ausenciaReemplazada: { registroId: ausencia.id, nota: ausencia.nota || null } }, ip }).catch(() => {})
+  return json({ ok: true, idempotente: false, registro }, 200, request)
 }
 
 export async function handleMarcarSalida(request, env) {
@@ -213,6 +245,8 @@ export async function handleMarcarSalida(request, env) {
   if (existing.row.hora_salida) return jsonError('El empleado ya tiene salida marcada hoy', 409, request)
   const dow = new Date(`${mark.fecha}T12:00:00`).getDay()
   const esSabado = dow === 6
+  // M-8: una salida a minutos de la entrada puede ser un doble toque; se audita aparte.
+  const minutosJornada = minutosEntre(existing.row.hora_entrada, mark.hora)
   let descanso = 0
   if (!esSabado) {
     const configNomina = await fetchConfigNomina(env, headers, operador.cuenta_id)
@@ -245,7 +279,7 @@ export async function handleMarcarSalida(request, env) {
     const horaGanadora = actual.row?.hora_salida ? ` a las ${String(actual.row.hora_salida).slice(0, 5)}` : ''
     return jsonError(`Otra persona ya marcó la salida${horaGanadora} o el marcaje cambió. Actualiza la lista.`, 409, request)
   }
-  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'MARCAR_SALIDA', entidadTipo: 'registro_asistencia', entidadId: existing.row.id, meta: { empleadoId, fecha: mark.fecha }, ip }).catch(() => {})
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'MARCAR_SALIDA', entidadTipo: 'registro_asistencia', entidadId: existing.row.id, meta: { empleadoId, fecha: mark.fecha, minutosJornada, jornadaCorta: minutosJornada !== null && minutosJornada < UMBRAL_SALIDA_CORTA_MINUTOS }, ip }).catch(() => {})
   return json({ ok: true, idempotente: false, registro }, 200, request)
 }
 

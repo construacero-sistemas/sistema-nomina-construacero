@@ -1,25 +1,40 @@
 // Mutaciones del flujo de marcaje real.
+// Los errores NO se anuncian aquí con un toast: el panel de marcaje los muestra en
+// línea junto a la lista (con «Reintentar» cuando aplica) y los modales en su propio
+// cuerpo. Un toast además duplicaba el mensaje (M-9 de PLAN_MARCAJE_BOTONES_UX).
 import { useMutation } from '@tanstack/react-query'
 import { useAccountQueryClient as useQueryClient } from '../../compat/lib/accountQueries.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
+import { formatHora12 } from '../utils/timeUtils'
 import { apiPost, KEY_ASISTENCIA, KEY_MARCAJE } from './nominaApi.js'
 import { makeIdempotencyKey } from './idempotencia.js'
+import { aplicarMarcajeEnCache } from './marcajeCache.js'
 
 // La clave llega desde el clic (M-3): si se reintenta tras un corte de red, el
 // servidor recibe la misma y responde idempotente. Solo se genera aquí si falta.
 
+function refrescar(qc) {
+  qc.invalidateQueries({ queryKey: KEY_MARCAJE })
+  qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
+}
+
+// «Entrada de Omar Patti · 07:58 AM» (M-12): dice a quién y a qué hora.
+function mensaje(accion, nombre, hora) {
+  return [accion + (nombre ? ` de ${nombre}` : ''), hora ? formatHora12(hora) : null].filter(Boolean).join(' · ')
+}
+
 export function useMarcarEntrada() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ empleadoId, nota, idempotencyKey }) => apiPost('/api/nomina/marcaje/entrada', {
+    mutationFn: ({ empleadoId, nota, idempotencyKey, reemplazarAusencia }) => apiPost('/api/nomina/marcaje/entrada', {
       empleadoId, nota, idempotencyKey: idempotencyKey || makeIdempotencyKey('entrada', empleadoId),
+      ...(reemplazarAusencia ? { reemplazarAusencia: true } : {}),
     }),
-    onSuccess: () => {
-      showToast.success('Entrada marcada')
-      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
-      qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
+    onSuccess: (data, variables) => {
+      showToast.success(mensaje('Entrada', variables?.nombre, data?.registro?.hora_entrada))
+      if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
+      refrescar(qc)
     },
-    onError: error => showToast.error(error.message || 'Error al marcar entrada'),
   })
 }
 
@@ -29,12 +44,26 @@ export function useMarcarSalida() {
     mutationFn: ({ empleadoId, nota, idempotencyKey }) => apiPost('/api/nomina/marcaje/salida', {
       empleadoId, nota, idempotencyKey: idempotencyKey || makeIdempotencyKey('salida', empleadoId),
     }),
-    onSuccess: () => {
-      showToast.success('Salida marcada')
-      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
-      qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
+    onSuccess: (data, variables) => {
+      showToast.success(mensaje('Salida', variables?.nombre, data?.registro?.hora_salida))
+      if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
+      refrescar(qc)
     },
-    onError: error => showToast.error(error.message || 'Error al marcar salida'),
+  })
+}
+
+// Ausencia del día con su reversa. Solo escribe sobre días laborables del empleado
+// y nunca borra horas reales del reloj (eso vive en «Corregir marcaje»).
+export function useMarcarAusencia() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ empleadoId, quitar = false }) => apiPost('/api/nomina/marcaje/ausencia', { empleadoId, quitar }),
+    onSuccess: (data, variables) => {
+      showToast.success(variables?.quitar ? 'Ausencia deshecha' : 'Ausencia registrada')
+      if (variables?.quitar) aplicarMarcajeEnCache(qc, { quitarEmpleadoId: variables.empleadoId })
+      else if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
+      refrescar(qc)
+    },
   })
 }
 
@@ -44,10 +73,8 @@ export function useCorregirMarcaje() {
     mutationFn: campos => apiPost('/api/nomina/marcaje/corregir', campos),
     onSuccess: () => {
       showToast.success('Marcaje corregido y registrado en auditoría')
-      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
-      qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
+      refrescar(qc)
     },
-    onError: error => showToast.error(error.message || 'No se pudo corregir el marcaje'),
   })
 }
 
@@ -57,13 +84,27 @@ export function useAnularEntradaComoAusencia() {
     // El servidor decide si la entrada queda como ausencia o se elimina (día libre o
     // feriado no laborable) y rechaza con 409 si no coincide con `resultadoEsperado`.
     mutationFn: ({ registroId, motivo, resultadoEsperado = 'ausencia' }) => apiPost('/api/nomina/marcaje/anular-entrada-ausencia', { registroId, motivo, resultadoEsperado }),
-    onSuccess: data => {
+    onSuccess: (data, variables) => {
       showToast.success(data?.resultado === 'sin-registro'
         ? 'Entrada anulada: el día quedó sin registro (auditado)'
         : 'Entrada anulada y ausencia registrada en auditoría')
-      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
-      qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
+      if (data?.resultado === 'sin-registro') aplicarMarcajeEnCache(qc, { quitarRegistroId: variables.registroId })
+      else if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro })
+      refrescar(qc)
     },
-    onError: error => showToast.error(error.message || 'No se pudo anular la entrada'),
+  })
+}
+
+// M-6: deshacer con un toque la entrada o salida recién marcada desde este equipo.
+export function useDeshacerMarcaje() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ registroId, tipo, idempotencyKey }) => apiPost('/api/nomina/marcaje/deshacer', { registroId, tipo, idempotencyKey }),
+    onSuccess: (data, variables) => {
+      showToast.success(variables.tipo === 'entrada' ? 'Entrada deshecha' : 'Salida deshecha: la jornada sigue abierta')
+      if (variables.tipo === 'entrada') aplicarMarcajeEnCache(qc, { quitarRegistroId: variables.registroId })
+      else if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro })
+      refrescar(qc)
+    },
   })
 }

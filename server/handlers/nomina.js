@@ -29,6 +29,8 @@ export {
   handleAnularEntradaComoAusencia,
 } from './nomina.horarios.js'
 
+export { handleDeshacerMarcaje } from './nomina.marcaje-deshacer.js'
+
 export {
   handleRegistrarAsistencia,
   handleRegistrarAsistenciaMasivo,

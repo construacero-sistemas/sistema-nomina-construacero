@@ -2,23 +2,37 @@
 // Tarjeta de un empleado en el marcaje real de hoy: su estado y la acción
 // contextual que le corresponde. No decide nada contra el servidor: recibe el
 // estado ya calculado por el panel y le devuelve la intención del operador.
-import { CalendarDays, CheckCircle2, LogIn, LogOut, PencilLine, Undo2, UserX } from 'lucide-react'
+import { CalendarDays, CheckCircle2, LogIn, LogOut, PencilLine, RotateCcw, Undo2, UserX } from 'lucide-react'
 import { NOMBRE_DIA_CORTO, diaSemanaDeFecha } from '../../../utils/diasLaborables.js'
 import { claseEstado, esMarcajeReal, etiquetaEstado, formatoHora } from './marcajeEstado.js'
 
+function cuentaRegresiva(segundos) {
+  const minutos = Math.floor(segundos / 60)
+  return `${minutos}:${String(segundos % 60).padStart(2, '0')}`
+}
+
+// Props de estado por tarjeta (M-4/M-6/M-8, ver useAccionesMarcaje):
+// - pendiente: tipo de la acción en curso de ESTA persona (o null).
+// - bloqueada: no se puede actuar sobre ella (carga, error o acción en curso).
+// - deshacer: { tipo, segundos } mientras se puede deshacer lo recién marcado.
+// - confirmandoSalida: { minutos } si la salida es sospechosamente corta.
 export default function TarjetaMarcaje({
   fila,
   fecha,
-  accionPendiente,
-  bloqueado,
+  pendiente = null,
+  bloqueada = false,
+  deshacer = null,
+  confirmandoSalida = null,
   onMarcar,
   onAusencia,
   onCorregir,
   onAnular,
+  onDeshacer,
 }) {
   const { empleado, registro, estado, feriado, nombre, libre } = fila
-  const pendienteDeEste = accionPendiente?.empleadoId === empleado.empleado_id
-  const tipoPendiente = accionPendiente?.tipo
+  const pendienteDeEste = Boolean(pendiente)
+  const tipoPendiente = pendiente
+  const bloqueado = bloqueada
   const diaLibre = NOMBRE_DIA_CORTO[diaSemanaDeFecha(fecha)] ?? 'hoy'
   const marcajeReal = esMarcajeReal(registro)
   // Mismo criterio que el servidor (M-1): en día libre o feriado no laborable no hay
@@ -55,6 +69,22 @@ export default function TarjetaMarcaje({
               ? <span>Salida <strong>{formatoHora(registro.hora_salida)}</strong></span>
               : estado === 'en-curso' && <span className="text-amber-700">Salida pendiente</span>}
           </div>
+        )}
+        {deshacer && (
+          <button
+            type="button"
+            onClick={() => onDeshacer(empleado.empleado_id)}
+            disabled={bloqueado}
+            aria-label={`Deshacer ${deshacer.tipo} de ${nombre}`}
+            aria-busy={Boolean(pendienteDeEste && tipoPendiente === `deshacer-${deshacer.tipo}`)}
+            className="mt-1.5 inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-55"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <RotateCcw size={13} aria-hidden="true" />
+            {pendienteDeEste && tipoPendiente === `deshacer-${deshacer.tipo}`
+              ? 'Deshaciendo…'
+              : <>Deshacer {deshacer.tipo} <span className="tabular-nums text-slate-500">({cuentaRegresiva(deshacer.segundos)})</span></>}
+          </button>
         )}
       </div>
 
@@ -99,6 +129,19 @@ export default function TarjetaMarcaje({
       )}
 
       {estado === 'ausencia' && (
+        <div className="flex w-full flex-col gap-1.5">
+        <button
+          type="button"
+          onClick={() => onMarcar(empleado.empleado_id, 'entrada', { reemplazarAusencia: true })}
+          disabled={bloqueado}
+          aria-label={`Llegó: marcar entrada de ${nombre}`}
+          aria-busy={Boolean(pendienteDeEste && tipoPendiente === 'entrada')}
+          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-3 text-[16px] font-black text-white shadow-sm transition-colors hover:bg-emerald-600 active:scale-[0.99] disabled:cursor-wait disabled:opacity-55 sm:text-sm"
+          style={{ touchAction: 'manipulation' }}
+        >
+          <LogIn size={17} aria-hidden="true" />
+          {pendienteDeEste && tipoPendiente === 'entrada' ? 'Marcando entrada…' : 'Llegó: marcar entrada'}
+        </button>
         <button
           type="button"
           onClick={() => onAusencia(empleado.empleado_id, true)}
@@ -111,6 +154,7 @@ export default function TarjetaMarcaje({
           <Undo2 size={15} aria-hidden="true" />
           {pendienteDeEste && tipoPendiente === 'quitar-ausencia' ? 'Deshaciendo…' : 'Deshacer ausencia'}
         </button>
+        </div>
       )}
 
       {(estado === 'en-curso' || estado === 'completado') && (
@@ -120,13 +164,17 @@ export default function TarjetaMarcaje({
               type="button"
               onClick={() => onMarcar(empleado.empleado_id, 'salida')}
               disabled={bloqueado}
-              aria-label={`Marcar salida para ${nombre}`}
+              aria-label={confirmandoSalida
+                ? `¿Salida tras ${confirmandoSalida.minutos} min? Toca otra vez para confirmar la salida de ${nombre}`
+                : `Marcar salida para ${nombre}`}
               aria-busy={Boolean(pendienteDeEste && tipoPendiente === 'salida')}
               className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-[16px] font-black text-white shadow-sm transition-colors hover:bg-slate-700 active:scale-[0.99] disabled:cursor-wait disabled:opacity-55 sm:text-sm"
               style={{ touchAction: 'manipulation' }}
             >
               <LogOut size={17} aria-hidden="true" />
-              {pendienteDeEste && tipoPendiente === 'salida' ? 'Marcando salida…' : 'Marcar salida'}
+              {pendienteDeEste && tipoPendiente === 'salida'
+                ? 'Marcando salida…'
+                : confirmandoSalida ? `¿Salida tras ${confirmandoSalida.minutos} min? Toca otra vez` : 'Marcar salida'}
             </button>
           )}
           {marcajeReal && (

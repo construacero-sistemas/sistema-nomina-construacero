@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 
 const mocks = vi.hoisted(() => ({
   // Fecha operativa del servidor (America/Caracas) para esta prueba: cada caso la
   // ancla a la fecha de su fixture y así no depende del día real de ejecución.
   hoy: '2026-09-25',
+  // Hora operativa (America/Caracas) para la regla de salida corta (M-8).
+  hora: '12:00',
   session: { perfil: { rol: 'nomina', nombre: 'Operadora' } },
   query: { data: null, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() },
   entrada: vi.fn().mockResolvedValue({ ok: true }),
@@ -14,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   ausencia: vi.fn().mockResolvedValue({ ok: true }),
   corregir: vi.fn().mockResolvedValue({ ok: true }),
   anularAusencia: vi.fn().mockResolvedValue({ ok: true }),
+  deshacer: vi.fn().mockResolvedValue({ ok: true }),
   entradaPending: false,
   salidaPending: false,
   ausenciaPending: false,
@@ -26,6 +29,7 @@ vi.mock('../../../../compat/store/useAuthStore.js', () => ({
 // fixture para que la prueba no dependa del día real en que se ejecute.
 vi.mock('../../../utils/fechaOperativa.js', () => ({
   fechaOperativaHoy: () => mocks.hoy,
+  horaOperativaAhora: () => mocks.hora,
 }))
 vi.mock('../../../hooks/useNomina.js', () => ({
   useMarcajeHoy: () => mocks.query,
@@ -35,6 +39,7 @@ vi.mock('../../../hooks/useNomina.js', () => ({
   useMarcarAusencia: () => ({ mutateAsync: mocks.ausencia, isPending: mocks.ausenciaPending }),
   useCorregirMarcaje: () => ({ mutateAsync: mocks.corregir, isPending: false }),
   useAnularEntradaComoAusencia: () => ({ mutateAsync: mocks.anularAusencia, isPending: false }),
+  useDeshacerMarcaje: () => ({ mutateAsync: mocks.deshacer, isPending: false }),
 }))
 
 import MarcajeLogisticaPanel from '../MarcajeLogisticaPanel.jsx'
@@ -47,12 +52,20 @@ const empleados = [
   { id: 'cfg-5', empleado_id: 'emp-5', cargo: 'Almacén', empleado: { nombre: 'José Duarte' } },
 ]
 
-function renderPanel(props = {}) {
-  return render(<MarcajeLogisticaPanel empleados={empleados} {...props} />)
+// El panel abre en «Pendientes» cuando los hay (D-2). La mayoría de los casos
+// revisan varios estados a la vez, así que pasan a «Todos» salvo que se pida lo contrario.
+function renderPanel(props = {}, { verTodos = true } = {}) {
+  const vista = render(<MarcajeLogisticaPanel empleados={empleados} {...props} />)
+  if (verTodos) {
+    const todos = screen.queryByRole('button', { name: /^Todos \d+$/ })
+    if (todos) fireEvent.click(todos)
+  }
+  return vista
 }
 
 beforeEach(() => {
   mocks.hoy = '2026-09-25'
+  mocks.hora = '12:00'
   mocks.session.perfil = { rol: 'nomina', nombre: 'Operadora' }
   mocks.query = {
     data: {
@@ -74,6 +87,7 @@ beforeEach(() => {
   mocks.ausencia = vi.fn().mockResolvedValue({ ok: true })
   mocks.corregir = vi.fn().mockResolvedValue({ ok: true })
   mocks.anularAusencia = vi.fn().mockResolvedValue({ ok: true })
+  mocks.deshacer = vi.fn().mockResolvedValue({ ok: true })
   mocks.entradaPending = false
   mocks.salidaPending = false
   mocks.ausenciaPending = false
@@ -110,7 +124,7 @@ describe('Marcaje real de hoy', () => {
     const view = renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' }))
-    expect(mocks.entrada).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-1', idempotencyKey: expect.stringMatching(/^entrada-emp-1-/) })
+    expect(mocks.entrada).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-1', nombre: 'Alejandra Hidalgo', idempotencyKey: expect.stringMatching(/^entrada-emp-1-/) })
 
     mocks.query = {
       ...mocks.query,
@@ -128,7 +142,7 @@ describe('Marcaje real de hoy', () => {
     const view = renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: 'Marcar salida para María Rodríguez' }))
-    expect(mocks.salida).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-2', idempotencyKey: expect.stringMatching(/^salida-emp-2-/) })
+    expect(mocks.salida).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-2', nombre: 'María Rodríguez', idempotencyKey: expect.stringMatching(/^salida-emp-2-/) })
 
     mocks.query = {
       ...mocks.query,
@@ -270,17 +284,124 @@ describe('Marcaje real de hoy', () => {
     expect(screen.queryByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' })).not.toBeInTheDocument()
   })
 
-  it('pausa acciones si falla una consulta o si ya hay un marcaje en proceso', () => {
+  it('pausa todas las acciones si falla una consulta', () => {
     mocks.query = { ...mocks.query, isError: true }
-    const view = renderPanel()
+    renderPanel()
     expect(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Marcar salida para María Rodríguez' })).toBeDisabled()
     expect(screen.getByRole('alert')).toHaveTextContent('las acciones están pausadas')
     expect(mocks.entrada).not.toHaveBeenCalled()
+  })
 
-    mocks.query = { ...mocks.query, isError: false }
-    mocks.entradaPending = true
+  // M-4: el bloqueo es por persona. Mientras se marca a una, las demás siguen
+  // operables, y una recarga de fondo no congela el panel.
+  it('bloquea solo la tarjeta en acción y no se congela con una recarga de fondo', async () => {
+    let resolver
+    mocks.entrada = vi.fn(() => new Promise(resolve => { resolver = resolve }))
+    mocks.query = { ...mocks.query, isFetching: true }
+    renderPanel()
+    expect(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' })).toBeDisabled())
+    expect(screen.getByRole('button', { name: 'Marcar salida para María Rodríguez' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' }))
+    expect(mocks.entrada).toHaveBeenCalledTimes(1)
+
+    await act(async () => { resolver({ ok: true }) })
+    expect(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' })).toBeEnabled()
+  })
+
+  // D-2: se abre en lo que pide acción; M-5: lo recién marcado no desaparece.
+  it('abre en «Pendientes» y la persona recién marcada sigue visible con su nuevo estado', async () => {
+    const view = renderPanel({}, { verTodos: false })
+    expect(screen.getByRole('button', { name: 'Pendientes 1' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('heading', { name: 'María Rodríguez' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' }))
+    await waitFor(() => expect(mocks.entrada).toHaveBeenCalledTimes(1))
+    mocks.query = { ...mocks.query, data: { ...mocks.query.data, registros: [...mocks.query.data.registros, {
+      id: 'attendance-1', empleado_id: 'emp-1', hora_entrada: '08:42:00', hora_salida: null, estado_marcaje: 'entrada',
+    }] } }
     view.rerender(<MarcajeLogisticaPanel empleados={empleados} />)
-    expect(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' })).toBeDisabled()
+
+    expect(await screen.findByRole('button', { name: 'Marcar salida para Alejandra Hidalgo' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pendientes 0' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('sin pendientes abre en «En jornada»', () => {
+    mocks.query = { ...mocks.query, data: { ...mocks.query.data, registros: [...mocks.query.data.registros, {
+      empleado_id: 'emp-1', hora_entrada: '08:00:00', hora_salida: null, estado_marcaje: 'entrada',
+    }] } }
+    renderPanel({}, { verTodos: false })
+    expect(screen.getByRole('button', { name: 'En jornada 2' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('el orden no cambia al marcar; se reordena al pulsar «Actualizar»', async () => {
+    const nombres = () => screen.getAllByRole('heading', { level: 4 }).map(h => h.textContent)
+    const view = renderPanel()
+    const antes = nombres()
+    expect(antes.slice(0, 3)).toEqual(['Alejandra Hidalgo', 'María Rodríguez', 'Edgar Ramirez'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar salida para María Rodríguez' }))
+    await waitFor(() => expect(mocks.salida).toHaveBeenCalledTimes(1))
+    mocks.query = { ...mocks.query, data: { ...mocks.query.data, registros: mocks.query.data.registros.map(r => (r.empleado_id === 'emp-2'
+      ? { ...r, hora_salida: '17:00:00', estado_marcaje: 'completo' } : r)) } }
+    view.rerender(<MarcajeLogisticaPanel empleados={empleados} />)
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Marcar salida para María Rodríguez' })).not.toBeInTheDocument())
+    expect(nombres()).toEqual(antes)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar marcajes y empleados' }))
+    expect(nombres().slice(0, 3)).toEqual(['Alejandra Hidalgo', 'Edgar Ramirez', 'María Rodríguez'])
+  })
+
+  // M-6: deshacer con un toque, con la misma clave de la acción y solo un rato.
+  it('ofrece deshacer la entrada recién marcada con su clave y lo retira al vencer el plazo', async () => {
+    // Solo se falsea el reloj (Date): el intervalo real de 1 s refresca la cuenta regresiva.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      mocks.entrada = vi.fn().mockResolvedValue({ ok: true, registro: { id: 'r-nuevo', empleado_id: 'emp-1', hora_entrada: '08:02:00' } })
+      mocks.salida = vi.fn().mockResolvedValue({ ok: true, registro: { id: 'attendance-2', empleado_id: 'emp-2', hora_salida: '12:00:00' } })
+      renderPanel()
+      fireEvent.click(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' }))
+      const deshacer = await screen.findByRole('button', { name: 'Deshacer entrada de Alejandra Hidalgo' })
+      expect(deshacer).toHaveTextContent(/Deshacer entrada \(1:5\d\)/)
+
+      fireEvent.click(deshacer)
+      await waitFor(() => expect(mocks.deshacer).toHaveBeenCalledExactlyOnceWith({
+        registroId: 'r-nuevo', tipo: 'entrada', idempotencyKey: mocks.entrada.mock.calls[0][0].idempotencyKey,
+      }))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Marcar salida para María Rodríguez' }))
+      await screen.findByRole('button', { name: 'Deshacer salida de María Rodríguez' })
+      vi.setSystemTime(Date.now() + 116_000)
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Deshacer salida de María Rodríguez' })).not.toBeInTheDocument(), { timeout: 2500 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // M-7: «Llegó» convierte la ausencia en entrada con un solo toque.
+  it('desde una ausencia, «Llegó» marca la entrada reemplazando la ausencia', async () => {
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Llegó: marcar entrada de Lucía Pérez' }))
+    await waitFor(() => expect(mocks.entrada).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      empleadoId: 'emp-4', reemplazarAusencia: true,
+    })))
+    expect(screen.getByRole('button', { name: 'Deshacer la ausencia de hoy de Lucía Pérez' })).toBeInTheDocument()
+  })
+
+  // M-8: una salida a minutos de la entrada (p. ej. doble toque) pide un segundo toque.
+  it('una salida antes de 15 min pide confirmar con un segundo toque', async () => {
+    mocks.hora = '08:15'
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar salida para María Rodríguez' }))
+    const confirmar = await screen.findByRole('button', { name: /¿Salida tras 5 min\? Toca otra vez para confirmar la salida de María Rodríguez/ })
+    expect(confirmar).toHaveTextContent('¿Salida tras 5 min? Toca otra vez')
+    expect(mocks.salida).not.toHaveBeenCalled()
+
+    fireEvent.click(confirmar)
+    await waitFor(() => expect(mocks.salida).toHaveBeenCalledTimes(1))
   })
 
   it('expone controles cómodos para iPhone y no muestra acciones al rol sin capacidad', () => {
