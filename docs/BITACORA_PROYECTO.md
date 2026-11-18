@@ -4269,3 +4269,25 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 1. Casos de staging de M-1 (entrada en sábado libre → anular → sin registro) y M-2 (dos salidas simultáneas → una 200 y una 409) en `test-staging-smoke` y `test-staging-concurrency`.
 2. Validación en el teléfono del botón «Anular entrada (no vino)» y del banner «Reintentar».
 3. Fases 2 y 3 del plan; requieren las decisiones D-1 a D-5.
+
+## 149. Marcaje real: deshacer rápido, «Llegó», una acción por tarjeta y accesibilidad (PR 2 de PLAN_MARCAJE_BOTONES_UX) (2026-11-17)
+
+**Contexto.** El PR 1 (entrada 148) quedó en producción el 17/11 (PR #4, merge `7d4a183`, despliegues de Vercel y `verify` en verde). Este PR completa el plan: los casos de staging pendientes y las fases 2, 3 y 4. Las decisiones D-1 a D-5 se adoptaron con la propuesta por defecto, a pedido del usuario: deshacer 120 s; abrir en Pendientes, luego En jornada y luego Todos; salida corta bajo 15 min; tolerancia de retraso 10 min; anular en día libre elimina el registro.
+
+**Qué se hizo.**
+- **Staging:** `test-staging-smoke` cubre M-1 (domingo libre, feriado no laborable y sábado laborable) y M-2 (dos salidas simultáneas). Pasó contra staging y deja la semana vacía.
+- **Servidor:** `POST /api/nomina/marcaje/deshacer`; `reemplazarAusencia` en la entrada; `jornadaCorta` en la auditoría de la salida. Reglas compartidas en `server/lib/marcajeReglas.js`.
+- **Interfaz:**
+  - La caché se actualiza al confirmar y el bloqueo es por persona.
+  - El orden se mantiene estable durante la tanda.
+  - «Deshacer» con cuenta regresiva; «Llegó: marcar entrada»; segundo toque para una salida corta.
+  - Una acción principal por tarjeta, con «Más acciones».
+  - Tiempo en jornada y retraso.
+  - Nombres accesibles que contienen el texto visible y una sola región viva.
+
+**Verificación.** Pruebas en rojo antes de cada fix del servidor (15). Ver el PR para el resultado de `verify`.
+
+**Pendientes.**
+1. Probar en el teléfono, con sesión real, «Deshacer», «Llegó» y «Más acciones». La demo visual se hizo sin sesión.
+2. Staging no tiene la migración 262 (`dias_descanso`); el smoke avisa y sigue.
+

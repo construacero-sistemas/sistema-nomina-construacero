@@ -1,6 +1,6 @@
 // src/components/nomina/MarcajeLogisticaPanel.jsx
 // Marcaje real de hoy: una acción contextual por empleado, mobile-first.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CalendarDays, Clock3, RefreshCw, Search, X } from 'lucide-react'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import { tieneCapacidad } from '../../config/accesoModulos.js'
@@ -16,7 +16,7 @@ import {
   FILTROS, estadoDelRegistro, fechaLegible, nombreEmpleado, normalizarBusqueda,
 } from './marcaje/marcajeEstado.js'
 import { trabajaEseDia } from '../../utils/diasLaborables.js'
-import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
+import { fechaOperativaHoy, horaOperativaAhora } from '../../utils/fechaOperativa.js'
 
 // D-2 (PLAN_MARCAJE_BOTONES_UX): se abre en lo que pide acción. Se decide una sola
 // vez, al tener datos; después el filtro solo cambia cuando el operador lo elige.
@@ -54,6 +54,12 @@ export default function MarcajeLogisticaPanel({
   const [semillaOrden, setSemillaOrden] = useState(0)
   const [registroEnCorreccion, setRegistroEnCorreccion] = useState(null)
   const [registroParaAnular, setRegistroParaAnular] = useState(null)
+  // M-11: hora operativa para «En jornada» y «Retraso»; un solo reloj por minuto.
+  const [horaActual, setHoraActual] = useState(() => horaOperativaAhora())
+  useEffect(() => {
+    const intervalo = setInterval(() => setHoraActual(horaOperativaAhora()), 60_000)
+    return () => clearInterval(intervalo)
+  }, [])
 
   const registros = useMemo(
     () => new Map((data?.registros || []).map(registro => [registro.empleado_id, registro])),
@@ -120,6 +126,9 @@ export default function MarcajeLogisticaPanel({
       resultadoEsperado: registroParaAnular.resultadoEsperado,
     })
     marcarReciente(registroParaAnular.empleado.empleado_id)
+    acciones.anunciar(registroParaAnular.resultadoEsperado === 'sin-registro'
+      ? `Entrada de ${registroParaAnular.nombre} anulada`
+      : `Entrada de ${registroParaAnular.nombre} anulada y ausencia registrada`)
     setRegistroParaAnular(null)
   }
 
@@ -147,7 +156,7 @@ export default function MarcajeLogisticaPanel({
           type="button"
           onClick={() => setVistaCompacta(valor => !valor)}
           aria-pressed={vistaCompacta}
-          aria-label={vistaCompacta ? 'Mostrar todos los marcajes' : 'Mostrar solo pendientes y jornadas en curso'}
+          title={vistaCompacta ? 'Mostrar todos los marcajes' : 'Mostrar solo pendientes y jornadas en curso'}
           className={`inline-flex min-h-11 items-center justify-center rounded-xl border px-3 text-xs font-bold ${vistaCompacta ? 'border-sky-300 bg-sky-50 text-sky-900' : 'border-slate-200 bg-white text-slate-700'}`}
         >
           {vistaCompacta ? 'Ver todos' : 'Operativo'}
@@ -300,6 +309,7 @@ export default function MarcajeLogisticaPanel({
               key={fila.empleado.empleado_id}
               fila={fila}
               fecha={data.fecha}
+              horaActual={horaActual}
               {...acciones.estadoTarjeta(fila.empleado.empleado_id)}
               onMarcar={acciones.marcar}
               onAusencia={acciones.marcarAusencia}
@@ -329,6 +339,8 @@ export default function MarcajeLogisticaPanel({
           bloqueado={modalBloqueado}
         />
       )}
+      {/* M-14: una sola región viva anuncia la última acción (no una por tarjeta). */}
+      <p aria-live="polite" className="sr-only">{acciones.anuncio}</p>
     </section>
   )
 }

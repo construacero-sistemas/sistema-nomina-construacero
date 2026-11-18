@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react'
 import { makeIdempotencyKey } from '../../../hooks/idempotencia.js'
 import { horaOperativaAhora } from '../../../utils/fechaOperativa.js'
+import { formatHora12 } from '../../../utils/timeUtils'
 import { UMBRAL_SALIDA_CORTA_MINUTOS, VENTANA_DESHACER_SEGUNDOS, minutosEntre } from '../../../../server/lib/marcajeReglas.js'
 
 const CONFIRMACION_SALIDA_MS = 4000
@@ -27,6 +28,8 @@ export default function useAccionesMarcaje({ filas, bloqueoGlobal, entrada, sali
   const [error, setError] = useState('')
   const [reintento, setReintento] = useState(null)
   const [ahora, setAhora] = useState(() => Date.now())
+  // M-14: texto de la región viva del panel («Entrada de X marcada a las 08:02 AM»).
+  const [anuncio, setAnuncio] = useState('')
 
   const hayCuentaRegresiva = deshacibles.size > 0 || confirmaciones.size > 0
   useEffect(() => {
@@ -72,6 +75,8 @@ export default function useAccionesMarcaje({ filas, bloqueoGlobal, entrada, sali
     const variables = { empleadoId, idempotencyKey, nombre: fila?.nombre, ...(reemplazarAusencia ? { reemplazarAusencia: true } : {}) }
     try {
       const respuesta = await ejecutar(empleadoId, tipo, () => (tipo === 'entrada' ? entrada : salida).mutateAsync(variables))
+      const hora = respuesta?.registro?.[tipo === 'entrada' ? 'hora_entrada' : 'hora_salida']
+      setAnuncio(`${tipo === 'entrada' ? 'Entrada' : 'Salida'} de ${fila?.nombre || 'la persona'} marcada${hora ? ` a las ${formatHora12(hora)}` : ''}`)
       const registroId = respuesta?.registro?.id
       if (registroId) {
         setDeshacibles(actual => new Map(actual).set(empleadoId, {
@@ -94,6 +99,7 @@ export default function useAccionesMarcaje({ filas, bloqueoGlobal, entrada, sali
     if (bloqueada(empleadoId)) return
     try {
       await ejecutar(empleadoId, quitar ? 'quitar-ausencia' : 'ausencia', () => ausencia.mutateAsync({ empleadoId, quitar }))
+      setAnuncio(`${quitar ? 'Ausencia deshecha' : 'Ausencia registrada'} de ${filaDe(empleadoId)?.nombre || 'la persona'}`)
     } catch (err) {
       setError(err?.message || 'No se pudo actualizar la ausencia. Actualiza y vuelve a intentarlo.')
     }
@@ -106,6 +112,7 @@ export default function useAccionesMarcaje({ filas, bloqueoGlobal, entrada, sali
       await ejecutar(empleadoId, `deshacer-${objetivo.tipo}`, () => deshacer.mutateAsync({
         registroId: objetivo.registroId, tipo: objetivo.tipo, idempotencyKey: objetivo.idempotencyKey,
       }))
+      setAnuncio(`${objetivo.tipo === 'entrada' ? 'Entrada' : 'Salida'} de ${filaDe(empleadoId)?.nombre || 'la persona'} deshecha`)
     } catch (err) {
       setError(err?.message || 'No se pudo deshacer. Usa «Corregir marcaje».')
     } finally {
@@ -141,7 +148,7 @@ export default function useAccionesMarcaje({ filas, bloqueoGlobal, entrada, sali
   }
 
   return {
-    marcar, marcarAusencia, deshacerUltima, reintentar, limpiarError, estadoTarjeta,
+    marcar, marcarAusencia, deshacerUltima, reintentar, limpiarError, estadoTarjeta, anuncio, anunciar: setAnuncio,
     error, hayReintento: Boolean(reintento), hayPendientes: pendientes.size > 0,
   }
 }
