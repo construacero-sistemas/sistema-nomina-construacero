@@ -1,16 +1,21 @@
 // src/store/useTasaNominaStore.js
-// Store para almacenar la tasa activa seleccionada (BCV USD, BCV EUR, USDT o Manual)
+// Stores para almacenar la tasa activa seleccionada (BCV USD, BCV EUR, USDT o Manual)
 // garantizando que la moneda principal sea siempre USD y la secundaria Bs.
+//
+// Cada módulo tiene su PROPIA elección de tasa: cambiar la tasa en Nómina no
+// afecta a Finanzas y viceversa. Nómina conserva la clave histórica.
 import { create } from 'zustand'
 
-const STORAGE_KEY = 'nomina_tasa_seleccionada_v1'
+const STORAGE_KEYS = {
+  nomina: 'nomina_tasa_seleccionada_v1',
+  finanzas: 'finanzas_tasa_seleccionada_v1',
+}
 
-function getInitialState() {
-  if (typeof window === 'undefined') {
-    return { tipoTasa: 'bcv_usd', tasaManual: 0 }
-  }
+function getInitialState(storageKey) {
+  const fallback = { tipoTasa: 'bcv_usd', tasaManual: 0 }
+  if (typeof window === 'undefined') return fallback
   try {
-    const saved = localStorage.getItem(STORAGE_KEY)
+    const saved = localStorage.getItem(storageKey)
     if (saved) {
       const parsed = JSON.parse(saved)
       return {
@@ -21,53 +26,47 @@ function getInitialState() {
   } catch {
     // Ignorar errores de acceso a localStorage
   }
-  return { tipoTasa: 'bcv_usd', tasaManual: 0 }
+  return fallback
 }
 
-export const useTasaNominaStore = create((set, get) => ({
-  ...getInitialState(),
-
-  setTipoTasa: (tipoTasa) => {
-    set({ tipoTasa })
+function crearStoreTasa(storageKey) {
+  const persistir = (tipoTasa, tasaManual) => {
     try {
-      const current = get()
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        tipoTasa,
-        tasaManual: current.tasaManual,
-      }))
+      localStorage.setItem(storageKey, JSON.stringify({ tipoTasa, tasaManual }))
     } catch {
       // Ignorar errores de escritura en localStorage
     }
-  },
+  }
 
-  setTasaManual: (tasaManual) => {
-    const val = Number(tasaManual) || 0
-    set({ tasaManual: val, tipoTasa: 'manual' })
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        tipoTasa: 'manual',
-        tasaManual: val,
-      }))
-    } catch {
-      // Ignorar errores de escritura en localStorage
-    }
-  },
+  return create((set, get) => ({
+    ...getInitialState(storageKey),
 
-  // Hidratación desde el servidor: actualiza el valor (respaldo local) SIN tocar
-  // la preferencia de tasa de este navegador. La tasa manual es única por cuenta
-  // (trazable en nomina_tasas_snapshot); cada quien elige cuál de las 4 usar.
-  hidratarTasaManual: (tasaManual) => {
-    const val = Number(tasaManual) || 0
-    if (!(val > 0)) return
-    const current = get()
-    set({ tasaManual: val })
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        tipoTasa: current.tipoTasa,
-        tasaManual: val,
-      }))
-    } catch {
-      // Ignorar errores de escritura en localStorage
-    }
-  },
-}))
+    setTipoTasa: (tipoTasa) => {
+      set({ tipoTasa })
+      persistir(tipoTasa, get().tasaManual)
+    },
+
+    setTasaManual: (tasaManual) => {
+      const val = Number(tasaManual) || 0
+      set({ tasaManual: val, tipoTasa: 'manual' })
+      persistir('manual', val)
+    },
+
+    // Hidratación desde el servidor: actualiza el valor (respaldo local) SIN tocar
+    // la preferencia de tasa de este navegador. La tasa manual es única por cuenta
+    // (trazable en nomina_tasas_snapshot); cada quien elige cuál de las 4 usar.
+    hidratarTasaManual: (tasaManual) => {
+      const val = Number(tasaManual) || 0
+      if (!(val > 0)) return
+      set({ tasaManual: val })
+      persistir(get().tipoTasa, val)
+    },
+  }))
+}
+
+export const useTasaNominaStore = crearStoreTasa(STORAGE_KEYS.nomina)
+export const useTasaFinanzasStore = crearStoreTasa(STORAGE_KEYS.finanzas)
+
+export function storeTasaPorAmbito(ambito) {
+  return ambito === 'finanzas' ? useTasaFinanzasStore : useTasaNominaStore
+}

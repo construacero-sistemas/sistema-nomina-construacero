@@ -6,7 +6,7 @@ import useMonedaNomina, { formatBs } from '../../hooks/useMonedaNomina.js'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import { tieneCapacidad } from '../../config/accesoModulos.js'
 
-export function RateSelector({ className = '', compact = false, light = false }) {
+export function RateSelector({ className = '', compact = false, light = false, ambito = 'nomina' }) {
   const {
     tipoTasa,
     setTipoTasa,
@@ -23,14 +23,14 @@ export function RateSelector({ className = '', compact = false, light = false })
     errorTasaManual = '',
     tasaFallback = null,
     stale = false,
-  } = useMonedaNomina()
+  } = useMonedaNomina({ ambito })
 
   const [open, setOpen] = useState(false)
   const [editingManual, setEditingManual] = useState(false)
   const [customVal, setCustomVal] = useState(tasaManual > 0 ? String(tasaManual) : '')
   // La tasa manual solo rige en Nómina: la ve y la fija quien administra nómina.
   const perfil = useAuthStore(state => state.perfil)
-  const puedeTasaManual = tieneCapacidad(perfil, 'administrarNomina')
+  const puedeTasaManual = ambito === 'nomina' && tieneCapacidad(perfil, 'administrarNomina')
   const opcionesVisibles = (opcionesTasa || []).filter(o => puedeTasaManual || o.id !== 'manual')
   const [errorManual, setErrorManual] = useState('')
   const triggerRef = useRef(null)
@@ -215,7 +215,7 @@ export function RateSelector({ className = '', compact = false, light = false })
                     {guardandoTasaManual ? 'Guardando…' : 'Fijar'}
                   </button>
                 </div>
-                <p className="text-[10px] font-semibold text-slate-500">Solo cambia la tasa de Nómina; Finanzas sigue con la del BCV.</p>
+                <p className="text-[10px] font-semibold text-slate-500">Solo cambia la tasa de Nómina; Finanzas tiene su propia tasa.</p>
                 {(errorManual || errorTasaManual) && (
                   <p role="alert" className="text-[10px] font-bold text-rose-700">{errorManual || errorTasaManual}</p>
                 )}

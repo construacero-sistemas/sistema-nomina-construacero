@@ -4,14 +4,15 @@ import { AlertTriangle } from 'lucide-react'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
 import RateSelector from '../nomina/RateSelector.jsx'
 
-export function RateHeader() {
+// `ambito`: módulo activo; la tasa elegida aquí solo aplica a ese módulo.
+export function RateHeader({ ambito = 'nomina' }) {
   const { usd, eur, usdt, loading, stale, error, refresh } = useTasaCambioNomina()
   const format = value => value > 0 ? `${value.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'
 
   return (
     <div className="flex items-center gap-1.5 md:gap-2 text-[11px]" aria-label="Tasas de cambio">
       <span className="hidden lg:inline text-white/45 font-medium">Tasa Activa:</span>
-      <RateSelector />
+      <RateSelector ambito={ambito} />
       <div className="hidden lg:flex items-center gap-1.5 ml-1 text-white/50 text-[10px]">
         <span title="BCV Dólar">USD: {loading ? '...' : format(usd)}</span>
         <span>·</span>

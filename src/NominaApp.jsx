@@ -221,7 +221,7 @@ function Shell() {
         </div>
 
         <div className="flex-1" />
-        <RateHeader />
+        <RateHeader ambito={current.to === '/finanzas' ? 'finanzas' : 'nomina'} />
       </header>
 
       {menuOpen && <MobileDrawerOverlay onClose={() => setMenuOpen(false)} onLogout={() => { setMenuOpen(false); setConfirmLogoutOpen(true) }} onChangeUser={ejecutarCambiarUsuario} />}

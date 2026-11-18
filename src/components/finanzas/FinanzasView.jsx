@@ -48,7 +48,7 @@ export default function FinanzasView() {
   const puede = usePuedeFinanzas()
   const puedeVerSaldos = tieneCapacidad(perfil, 'verSaldos')
   const puedeEditar = tieneCapacidad(perfil, 'operarFinanzas')
-  const { tasaActiva, nombreTasa, tipoTasa, tasaFallback } = useMonedaNomina({ ignorarManual: true })
+  const { tasaActiva, nombreTasa, tipoTasa, tasaFallback } = useMonedaNomina({ ambito: 'finanzas' })
 
   // Pestaña activa: 'movimientos' (operación diaria) o 'tesoreria' (saldos y carteras)
   const [activeTab, setActiveTab] = useState('movimientos')

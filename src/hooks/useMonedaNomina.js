@@ -10,7 +10,7 @@
 import { useMemo, useCallback, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import useTasaCambioNomina from './useTasaCambioNomina.js'
-import { useTasaNominaStore } from '../store/useTasaNominaStore.js'
+import { storeTasaPorAmbito } from '../store/useTasaNominaStore.js'
 import { apiGet, apiPost } from './nominaApi.js'
 
 export function formatUsd(n) {
@@ -36,11 +36,14 @@ export const OPCIONES_TASA = [
 
 const KEY_TASA_MANUAL = ['nomina', 'tasa-manual']
 
-// `ignorarManual`: Finanzas no usa la tasa manual (es solo de Nómina); si en la
-// cabecera está elegida «Manual», Finanzas trabaja con el BCV dólar.
-export default function useMonedaNomina({ ignorarManual = false } = {}) {
+// `ambito`: cada módulo ('nomina' | 'finanzas') guarda su propia elección de
+// tasa; cambiarla en Nómina no afecta a Finanzas y viceversa.
+// `ignorarManual`: Finanzas no usa la tasa manual (es solo de Nómina); si quedó
+// elegida «Manual», Finanzas trabaja con el BCV dólar.
+export default function useMonedaNomina({ ambito = 'nomina', ignorarManual = ambito === 'finanzas' } = {}) {
   const marketRates = useTasaCambioNomina()
-  const { tipoTasa: tipoElegido, tasaManual: tasaManualLocal, setTipoTasa, setTasaManual, hidratarTasaManual } = useTasaNominaStore()
+  const useStoreTasa = storeTasaPorAmbito(ambito)
+  const { tipoTasa: tipoElegido, tasaManual: tasaManualLocal, setTipoTasa, setTasaManual, hidratarTasaManual } = useStoreTasa()
   const tipoTasa = ignorarManual && tipoElegido === 'manual' ? 'bcv_usd' : tipoElegido
   const queryClient = useQueryClient()
 
