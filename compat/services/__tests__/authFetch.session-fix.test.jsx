@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   auth: { getSession: vi.fn(), refreshSession: vi.fn() },
   store: { getState: vi.fn(), setState: vi.fn() },
 }))
-vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ auth: mocks.auth }) }))
+vi.mock('@supabase/auth-js', () => ({ AuthClient: function AuthClient() { return mocks.auth } }))
 vi.mock('../../store/useAuthStore', () => ({ default: mocks.store }))
 vi.mock('../apiBase', () => ({ apiUrl: path => path }))
 

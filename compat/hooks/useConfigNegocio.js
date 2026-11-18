@@ -12,7 +12,6 @@
 // useRealtimeSync sobre configuracion_negocio.
 import { useMutation } from '@tanstack/react-query'
 import { useAccountQuery as useQuery, useAccountQueryClient as useQueryClient } from '../lib/accountQueries.js'
-import supabase from '../services/supabase/client'
 import { apiUrl, getAuthHeaders } from '../services/apiBase'
 import { broadcastEntidad } from '../services/supabase/realtimeBus'
 
@@ -57,42 +56,3 @@ export function useActualizarConfig() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: KEY }); broadcastEntidad('config') },
   })
 }
-
-// ─── Validar gate de acceso (server-side via RPC) ──────────────────────────────
-// El hash NUNCA sale de la BD — se compara server-side
-
-async function hashSHA256(text) {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(text)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(hashBuffer))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-export async function validarGate(emailInput, passwordInput) {
-  const inputHash = await hashSHA256(passwordInput)
-  const { data, error } = await supabase.rpc('validar_gate_acceso', {
-    p_email: emailInput.trim(),
-    p_password_hash: inputHash,
-  })
-
-  if (error) {
-    return { ok: false, error: 'No se pudo verificar el acceso' }
-  }
-
-  // data es boolean: true = acceso permitido
-  if (!data) {
-    return { ok: false, error: 'Correo o contraseña incorrectos' }
-  }
-
-  return { ok: true }
-}
-
-export async function tieneGateConfigurado() {
-  const { data, error } = await supabase.rpc('tiene_gate_configurado')
-  if (error) return false
-  return !!data
-}
-
-export { hashSHA256 }

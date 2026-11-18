@@ -1,15 +1,29 @@
 // src/views/NominaView.jsx
 // Módulo de nómina: empleados, asistencia, períodos e historial.
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Wallet, Users, CalendarClock, ClipboardList, Archive } from 'lucide-react'
 import useAuthStore from '../../compat/store/useAuthStore.js'
 import PageHeader from '../../compat/components/ui/PageHeader.jsx'
+import Skeleton from '../../compat/components/ui/Skeleton.jsx'
 import useTablistNav from '../../compat/hooks/useTablistNav.js'
-import TabEmpleados from '../components/nomina/TabEmpleados.jsx'
-import TabAsistencia from '../components/nomina/TabAsistencia.jsx'
-import TabPeriodos from '../components/nomina/TabPeriodos.jsx'
-import TabHistorial from '../components/nomina/TabHistorial.jsx'
 import { tieneCapacidad } from '../config/accesoModulos.js'
+
+// Cada pestaña se descarga solo cuando se abre: la primera pantalla de
+// Nómina no espera el código de las otras tres.
+const TabEmpleados = lazy(() => import('../components/nomina/TabEmpleados.jsx'))
+const TabAsistencia = lazy(() => import('../components/nomina/TabAsistencia.jsx'))
+const TabPeriodos = lazy(() => import('../components/nomina/TabPeriodos.jsx'))
+const TabHistorial = lazy(() => import('../components/nomina/TabHistorial.jsx'))
+
+function CargandoPestana() {
+  return (
+    <div className="space-y-3" role="status" aria-label="Cargando sección">
+      <Skeleton className="h-11 w-full rounded-xl" />
+      <Skeleton className="h-40 w-full rounded-2xl" />
+      <Skeleton className="h-40 w-full rounded-2xl" />
+    </div>
+  )
+}
 
 const TABS = [
   { id: 'empleados', label: 'Empleados', short: 'Emple.', icon: Users },
@@ -62,6 +76,7 @@ export default function NominaView() {
       </div>
 
       <div id={`nomina-panel-${tabActivo}`} role="tabpanel" aria-labelledby={tabActivo} tabIndex={-1}>
+        <Suspense fallback={<CargandoPestana />}>
         {tabActivo === 'empleados' && (
           <TabEmpleados
             esAdmin={esAdmin}
@@ -79,6 +94,7 @@ export default function NominaView() {
           />
         )}
         {tabActivo === 'historial' && esAdmin && <TabHistorial />}
+        </Suspense>
       </div>
     </div>
   )

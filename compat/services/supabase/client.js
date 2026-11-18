@@ -1,5 +1,5 @@
 // Shared Supabase client and cancellation scope for authenticated requests.
-import { createClient } from '@supabase/supabase-js'
+import { AuthClient } from '@supabase/auth-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -55,9 +55,25 @@ export async function fetchWithTimeout(url, options = {}) {
   }
 }
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-  global: { fetch: fetchWithTimeout },
+// El navegador solo usa Supabase para la sesión: todos los datos pasan por
+// /api/*. Por eso se carga únicamente el cliente de autenticación (auth-js) y
+// no supabase-js completo (base de datos, realtime, storage y functions), que
+// pesaba ~200 kB en la carga inicial. Se replican las opciones que aplicaba
+// createClient — sobre todo la clave de almacenamiento — para que las
+// sesiones guardadas sigan siendo válidas sin volver a iniciar sesión.
+const baseUrl = new URL(supabaseUrl.endsWith('/') ? supabaseUrl : `${supabaseUrl}/`)
+
+const auth = new AuthClient({
+  url: new URL('auth/v1', baseUrl).href,
+  headers: { Authorization: `Bearer ${supabaseAnonKey}`, apikey: supabaseAnonKey },
+  storageKey: `sb-${baseUrl.hostname.split('.')[0]}-auth-token`,
+  autoRefreshToken: true,
+  persistSession: true,
+  detectSessionInUrl: true,
+  flowType: 'implicit',
+  fetch: fetchWithTimeout,
 })
+
+const supabase = { auth }
 
 export default supabase
