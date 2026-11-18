@@ -4,6 +4,7 @@ import { clearEgressCache } from '../lib/egressCache.js'
 import { requireCapacidad } from '../lib/permissions.js'
 import { COLUMNAS_REGLAS_LEY, validarReglasLey } from '../lib/nominaReglasLey.js'
 import { COLUMNAS_SEMANA, validarSemana } from '../lib/nominaSemana.js'
+import { COLUMNA_PUESTOS, validarPuestos } from '../lib/nominaPuestos.js'
 
 const PUBLIC_CONFIG_FIELDS = [
   'nombre_negocio',
@@ -27,6 +28,7 @@ const PUBLIC_CONFIG_FIELDS = [
   'nomina_horas_descanso',
   ...COLUMNAS_REGLAS_LEY,
   ...COLUMNAS_SEMANA,
+  COLUMNA_PUESTOS,
 ]
 
 // Campos de la empresa (identidad del negocio) y el interruptor de la versión
@@ -88,6 +90,10 @@ export async function handleUpdateConfig(request, env) {
   const semana = validarSemana(body || {})
   if (semana.error) return jsonError(semana.error, 400, request)
   Object.assign(fields, semana.fields)
+
+  const puestos = validarPuestos(body || {})
+  if (puestos.error) return jsonError(puestos.error, 400, request)
+  Object.assign(fields, puestos.fields)
 
   for (const field of ['nomina_factor_hora_extra', 'nomina_factor_sabado', 'nomina_factor_feriado']) {
     if (body?.[field] !== undefined) {

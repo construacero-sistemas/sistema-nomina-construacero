@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { RefreshCw, Clock, Calendar, Sparkles, Trash2, AlertTriangle } from 'lucide-react'
+import { RefreshCw, Trash2 } from 'lucide-react'
 import {
   useNominaEmpleados,
   useCrearConfigEmpleado,
@@ -10,16 +10,17 @@ import {
 import { diasActivosSemana, semanaEditable } from '../../utils/diasLaborables.js'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
-import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
 import EmpleadoBajaModal from './EmpleadoBajaModal.jsx'
 import ModalidadSalarioSection from './ModalidadSalarioSection.jsx'
+import PuestosSugeridos from './PuestosSugeridos.jsx'
 import { VENDEDORES_EN_NOMINA } from '../../config/comisionesVendedores.js'
 import SemanaLaborableSection from './SemanaLaborableSection.jsx'
 import useReglasLey from '../../hooks/useReglasLey.js'
 
-const inputCls = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
+// D-1: la semana pagada son 7 días (laborables + descanso), como la hoja semanal.
+const DIAS_SEMANA_PAGADOS = 7
 
-const PREF_KEY_PREFIX = 'nomina_empleado_salario_pref_'
+const inputCls = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
 /**
  * Semana mostrada en la ficha: días y horas guardados en `nomina_horarios` y, si la
@@ -35,25 +36,6 @@ function semanaBaseDe(config, horarios, diasDefecto) {
     ? { ...base, dias: base.dias.map(dia => ({ ...dia, activo: dias.includes(dia.diaSemana) })) }
     : base
   return { ...conDias, hayHorario: base.hayHorario || config?.horario_configurado === true }
-}
-
-function getSavedSalaryPref(id) {
-  if (!id) return null
-  try {
-    const raw = localStorage.getItem(`${PREF_KEY_PREFIX}${id}`)
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
-  }
-}
-
-function saveSalaryPref(id, pref) {
-  if (!id || !pref) return
-  try {
-    localStorage.setItem(`${PREF_KEY_PREFIX}${id}`, JSON.stringify(pref))
-  } catch {
-    // Ignore storage errors
-  }
 }
 
 export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina = [], onClose }) {
@@ -73,14 +55,11 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const [nombre, setNombre] = useState(config?.empleado?.nombre ?? '')
   const [documento, setDocumento] = useState(config?.empleado?.documento ?? '')
   const [cargo, setCargo]           = useState(config?.cargo ?? '')
-  const [fechaIngreso, setFechaIngreso] = useState(config?.fecha_ingreso ?? '')
   const [posVendedorId] = useState(config?.pos_vendedor_id ?? '')
 
   // Reglas de la ley editables (divisor mensual, días por defecto).
   const reglasLey = useReglasLey()
   const divisorMensual = reglasLey.divisorMensual
-  const empKey = config?.empleado_id || config?.id
-  const savedPref = useMemo(() => getSavedSalaryPref(empKey), [empKey])
 
   // Semana laboral de la persona: qué días trabaja y con qué jornada cada uno.
   // De ella depende el estado «Libre» de la asistencia, del reloj real y el
@@ -93,52 +72,31 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const semanaBase = useMemo(() => semanaBaseDe(config, horarios, reglasLey.diasLaborablesDefault), [config, horarios, reglasLey.diasLaborablesDefault])
   const [semanaOverride, setSemanaOverride] = useState(null)
   const semana = semanaOverride ?? semanaBase
-  const semanaTocada = semanaOverride !== null
 
-  // UNA sola fuente de verdad para el divisor semanal (F-3): SIEMPRE son los días
-  // marcados en «Días que trabaja». Antes había un selector 5/6/7 independiente y
-  // el monto semanal acordado se pagaba a 5/6 sin aviso. Sin días marcados la
-  // ficha no se puede guardar; entretanto se usa el default histórico (6).
-  const diasSemana = useMemo(() => diasActivosSemana(semana.dias).length, [semana])
-  const divisorSemana = diasSemana || 6
+  // D-1 (PLAN_HOJA_SEMANAL): la semana se paga con 7 días (los laborables más los
+  // de descanso), igual que la hoja semanal y el cálculo de la nómina. Antes se
+  // dividía entre los días marcados (5) y «$65/semana» guardaba $13 diarios, que
+  // la nómina terminaba pagando como $91 a la semana.
+  const divisorSemana = DIAS_SEMANA_PAGADOS
+  // Jornada de referencia para la tarifa por hora: la del primer día marcado.
+  const jornadaReferencia = Number(diasActivosSemana(semana.dias)[0]?.horasJornada) || 8
 
-  // Modalidad salarial persistente: 'dia' | 'semana' | 'mes' | 'comision'
-  const [modalidad, setModalidad] = useState(() => savedPref?.modalidad || (VENDEDORES_EN_NOMINA && Number(config?.salario_dia_usd) === 0 ? 'comision' : 'dia'))
+  // Modalidad: 'mes' | 'semana' | 'dia' | 'comision'. Siempre abre en «Por Mes»
+  // (igual en todos los navegadores): lo que se guarda es el sueldo diario.
+  const [modalidad, setModalidad] = useState(() => (VENDEDORES_EN_NOMINA && Number(config?.salario_dia_usd) === 0 ? 'comision' : 'mes'))
 
   const [montoInput, setMontoInput] = useState(() => {
     const daily = Number(config?.salario_dia_usd)
-    if (!Number.isFinite(daily) || daily <= 0) {
-      if (savedPref?.modalidad === 'comision' || daily === 0) return '0'
-      return ''
-    }
-    const mod = savedPref?.modalidad || 'dia'
-    const ds = divisorSemana
-
-    if (mod === 'semana') {
-      if (savedPref?.montoInput) {
-        const testDaily = Number(savedPref.montoInput) / ds
-        if (Math.abs(testDaily - daily) < 0.005) return String(savedPref.montoInput)
-      }
-      const weekly = Math.round(daily * ds * 100) / 100
-      return String(weekly)
-    }
-
-    if (mod === 'mes') {
-      if (savedPref?.montoInput) {
-        const testDaily = Number(savedPref.montoInput) / divisorMensual
-        if (Math.abs(testDaily - daily) < 0.005) return String(savedPref.montoInput)
-      }
-      const monthly = Math.round(daily * divisorMensual * 100) / 100
-      return String(monthly)
-    }
-
-    return String(daily)
+    if (!Number.isFinite(daily)) return ''
+    if (daily <= 0) return daily === 0 ? '0' : ''
+    return String(Math.round(daily * divisorMensual * 100) / 100)
   })
 
-  const [horasJornada, setHorasJornada] = useState(config?.horas_jornada ?? 8)
-  const [horaInicio, setHoraInicio] = useState(String(config?.hora_inicio ?? '08:00').slice(0, 5))
-  const [horaFin, setHoraFin]       = useState(String(config?.hora_fin ?? '17:00').slice(0, 5))
-  const [activo, setActivo]         = useState(config?.activo ?? true)
+  // Sueldo diario exacto mientras solo se cambia de modalidad: convertir mes → día →
+  // mes con montos redondeados a 2 decimales perdía precisión (280 → 9,33 → 279,90).
+  // Se borra en cuanto el usuario escribe un monto; entonces manda lo escrito.
+  const [diaExacto, setDiaExacto] = useState(null)
+
   const [confirmandoBaja, setConfirmandoBaja] = useState(false)
   const [error, setError]           = useState('')
 
@@ -176,19 +134,22 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   // Cálculo del salario diario en USD según la modalidad elegida
   const salarioDiaCalculado = useMemo(() => {
     if (modalidad === 'comision') return 0
+    if (diaExacto !== null) return diaExacto
     const val = Number(montoInput)
     if (!Number.isFinite(val) || val <= 0) return 0
     if (modalidad === 'semana') return val / divisorSemana
     if (modalidad === 'mes') return val / divisorMensual
     return val
-  }, [montoInput, modalidad, divisorSemana, divisorMensual])
+  }, [montoInput, modalidad, divisorSemana, divisorMensual, diaExacto])
 
   function handleCambioModalidad(nuevoModo) {
     if (nuevoModo === modalidad) return
     if (nuevoModo === 'comision') {
       setMontoInput('0')
+      setDiaExacto(null)
     } else if (salarioDiaCalculado > 0 || (modalidad === 'comision' && Number(montoInput) === 0)) {
       const baseDaily = salarioDiaCalculado > 0 ? salarioDiaCalculado : 10
+      setDiaExacto(baseDaily)
       if (nuevoModo === 'semana') {
         const nuevoMonto = Math.round(baseDaily * divisorSemana * 100) / 100
         setMontoInput(String(nuevoMonto))
@@ -224,10 +185,13 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
     handleCambioModalidad(nuevoModo)
   }
 
-  function aplicarPresetHorarioEstandar() {
-    setHoraInicio('08:00')
-    setHoraFin('17:00')
-    setHorasJornada(8)
+  // Horario estándar en todos los días marcados (antes vivía en una sección aparte
+  // que repetía el horario de «Días que trabaja»).
+  function aplicarHorarioEstandar() {
+    actualizarSemana(actual => ({
+      ...actual,
+      dias: actual.dias.map(dia => (dia.activo ? { ...dia, horaInicio: '08:00', horaFin: '17:00', horasJornada: 8 } : dia)),
+    }))
   }
 
   async function guardar(e) {
@@ -236,12 +200,10 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
 
     if (!esEdicion && !empleadoId && !nombre.trim()) { setError('Escribe el nombre del empleado'); return }
     if (modalidad !== 'comision' && salarioDiaCalculado <= 0) { setError('El salario debe ser mayor a 0'); return }
-    if (modalidad !== 'comision' && Number(horasJornada) <= 0) { setError('La jornada debe ser mayor a 0 horas'); return }
-    // Si nadie tocó la semana, los días activos toman el horario de la ficha.
-    const jornadaFicha = Number(horasJornada) || 8
-    const diasPayload = diasActivosSemana(semana.dias).map(dia => (semanaTocada
-      ? dia
-      : { ...dia, horaInicio: String(horaInicio).slice(0, 5), horaFin: String(horaFin).slice(0, 5), horasJornada: jornadaFicha }))
+    // La semana se guarda tal como se ve en «Días que trabaja»; el horario general
+    // de la ficha (jornada, entrada y salida) es el del primer día marcado.
+    const diasPayload = diasActivosSemana(semana.dias)
+    if (diasPayload.some(dia => !(Number(dia.horasJornada) > 0))) { setError('La jornada de cada día debe ser mayor a 0 horas'); return }
     if (!diasPayload.length) {
       setError('Marca al menos un día laborable. Si esta persona no debe controlar asistencia, desactiva el interruptor de Asistencia en su ficha.')
       return
@@ -249,32 +211,29 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
 
     try {
       const salarioFinal = modalidad === 'comision' ? 0 : Math.round(salarioDiaCalculado * 10000) / 10000
-      // El divisor no se persiste: se recalcula de los días marcados (F-3).
-      const prefData = { modalidad, montoInput }
+      const [primerDia] = diasPayload
+      const horarioFicha = {
+        horasJornada: Number(primerDia.horasJornada) || 8,
+        horaInicio: String(primerDia.horaInicio || '08:00').slice(0, 5),
+        horaFin: String(primerDia.horaFin || '17:00').slice(0, 5),
+      }
       if (esEdicion) {
         const res = await actualizar.mutateAsync({
           id: config.id,
-          cargo, fechaIngreso: fechaIngreso || null,
+          cargo,
           salarioDiaUsd: salarioFinal,
-          horasJornada:  Number(horasJornada) || 8,
-          horaInicio, horaFin, activo,
+          ...horarioFicha,
           posVendedorId: posVendedorId || null,
         })
-        const targetId = res?.config?.empleado_id || config?.empleado_id || config?.id
-        saveSalaryPref(targetId, prefData)
-        if (config?.id) saveSalaryPref(config.id, prefData)
-        if (config?.empleado_id) saveSalaryPref(config.empleado_id, prefData)
         await guardarSemana(res?.config?.empleado_id || config?.empleado_id, diasPayload)
       } else {
         const res = await crear.mutateAsync({
-          empleadoId: empleadoId || undefined, nombre, documento, cargo, fechaIngreso: fechaIngreso || null,
+          empleadoId: empleadoId || undefined, nombre, documento, cargo,
           salarioDiaUsd: salarioFinal,
-          horasJornada:  Number(horasJornada) || 8,
-          horaInicio, horaFin,
+          ...horarioFicha,
           posVendedorId: posVendedorId || null,
         })
         const targetId = res?.config?.empleado_id || res?.config?.id || empleadoId
-        if (targetId) saveSalaryPref(targetId, prefData)
         await guardarSemana(targetId, diasPayload)
       }
       onClose()
@@ -317,7 +276,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
     <Modal
       isOpen onClose={onClose}
       title={esEdicion ? `Configurar: ${config?.empleado?.nombre ?? 'empleado'}` : 'Agregar empleado a nómina'}
-      className="max-w-lg">
+      className="max-w-lg lg:max-w-4xl">
       <form onSubmit={guardar} className="space-y-4">
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5 text-xs text-red-700 font-medium">
@@ -360,150 +319,57 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
           </div>
         )}
 
-        {/* Cargo y Fecha de Ingreso */}
+        {/* En PC, dos columnas: cargo y salario a la izquierda, semana a la derecha. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <div className="space-y-4 min-w-0">
+        {/* Cargo y puestos */}
         <div className="space-y-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-600">Cargo u ocupación</label>
-              <input
-                type="text" value={cargo}
-                onChange={e => {
-                  const val = e.target.value
-                  setCargo(val)
-                  if (VENDEDORES_EN_NOMINA && (val.toLowerCase().includes('vendedor') || val.toLowerCase().includes('ventas'))) {
-                    if (modalidad !== 'comision' && (!montoInput || Number(montoInput) === 0)) {
-                      setModalidad('comision')
-                      setMontoInput('0')
-                    }
-                  }
-                }}
-                placeholder="Ej: Vendedor, Chofer, Soldador"
-                className={inputCls} disabled={cargando}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-600">Fecha de ingreso</label>
-              <DatePicker
-                value={fechaIngreso}
-                onChange={setFechaIngreso}
-                disabled={cargando}
-              />
-            </div>
+          <div className="space-y-1">
+            <label htmlFor="ficha-cargo" className="text-xs font-bold text-slate-600">Cargo u ocupación</label>
+            <input
+              id="ficha-cargo"
+              type="text" value={cargo}
+              onChange={e => setCargo(e.target.value)}
+              placeholder="Ej: Chofer, Soldador, Administración"
+              maxLength={160}
+              className={inputCls} disabled={cargando}
+            />
           </div>
-
-          {/* Presets rápidos de cargo */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-            <span className="text-[10px] text-slate-400 font-semibold">Puestos sugeridos:</span>
-            {(VENDEDORES_EN_NOMINA ? ['Vendedor'] : []).concat(['Chofer', 'Operador', 'Soldador', 'Almacenista', 'Ayudante', 'Administración']).map(puesto => (
-              <button
-                key={puesto}
-                type="button"
-                onClick={() => {
-                  setCargo(puesto)
-                  if (puesto === 'Vendedor') {
-                    setModalidad('comision')
-                    setMontoInput('0')
-                  } else if (modalidad === 'comision') {
-                    setModalidad('dia')
-                    setMontoInput('')
-                  }
-                }}
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-all ${
-                  cargo.toLowerCase() === puesto.toLowerCase()
-                    ? 'bg-primary text-white'
-                    : puesto === 'Vendedor'
-                    ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {puesto === 'Vendedor' ? (
-                  <span className="inline-flex items-center gap-1">
-                    <Sparkles size={11} className="text-amber-700" />
-                    Vendedor (Comisión)
-                  </span>
-                ) : puesto}
-              </button>
-            ))}
-          </div>
+          <PuestosSugeridos
+            cargo={cargo}
+            disabled={cargando}
+            onElegir={puesto => {
+              setCargo(puesto)
+              if (modalidad === 'comision') { setModalidad('mes'); setMontoInput(''); setDiaExacto(null) }
+            }}
+          />
         </div>
 
         <ModalidadSalarioSection
           modalidad={modalidad}
           montoInput={montoInput}
-          diasSemana={diasSemana}
+          diasSemanaPagados={DIAS_SEMANA_PAGADOS}
           salarioDiaCalculado={salarioDiaCalculado}
-          horasJornada={horasJornada}
+          horasJornada={jornadaReferencia}
           divisorMensual={divisorMensual}
           cargando={cargando}
           onSeleccionarModalidad={seleccionarModalidad}
-          onCambiarMonto={setMontoInput}
+          onCambiarMonto={valor => { setMontoInput(valor); setDiaExacto(null) }}
         />
-
-        {/* Horario y Jornada */}
-        <div className="space-y-2 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-              <Clock size={15} className="text-primary" />
-              Horario Laboral y Jornada
-            </label>
-            <button
-              type="button"
-              onClick={aplicarPresetHorarioEstandar}
-              className="text-[11px] font-bold text-primary hover:text-primary-hover flex items-center gap-1"
-            >
-              <Sparkles size={12} />
-              Estándar 08:00 AM a 05:00 PM
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-slate-500">Entrada</label>
-              <input
-                type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)}
-                className={inputCls} disabled={cargando}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-slate-500">Salida</label>
-              <input
-                type="time" value={horaFin} onChange={e => setHoraFin(e.target.value)}
-                className={inputCls} disabled={cargando}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-slate-500">Jornada (h)</label>
-              <input
-                type="number" min="1" max="24" step="0.5" value={horasJornada}
-                onChange={e => setHorasJornada(e.target.value)}
-                className={inputCls} disabled={cargando}
-              />
-            </div>
-          </div>
         </div>
 
+        <div className="min-w-0">
         <SemanaLaborableSection
           semana={semana}
           cargando={cargando}
           onAlternarDia={alternarDiaLaborable}
           onCambiarJornada={cambiarJornadaDelDia}
           onCopiarJornada={copiarJornadaAlResto}
+          onHorarioEstandar={aplicarHorarioEstandar}
         />
+        </div>
+        </div>
 
-        {/* Activo (solo al editar) */}
-        {esEdicion && (
-          <label className="min-h-11 flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer pt-1">
-            <input
-              type="checkbox" checked={activo} onChange={e => setActivo(e.target.checked)}
-              disabled={cargando}
-              className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
-            />
-            Activo en nómina
-            <span className="text-[11px] text-slate-400 font-normal">
-              (si se desactiva, no se incluirá en nuevos períodos)
-            </span>
-          </label>
-        )}
       </form>
 
       {/* Footer */}

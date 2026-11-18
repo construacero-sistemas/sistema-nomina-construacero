@@ -10,14 +10,19 @@ const mocks = vi.hoisted(() => ({
   actualizar: vi.fn(),
   guardarHorario: vi.fn(),
   horarios: [],
+  configs: [],
+  configNomina: undefined,
+  guardarConfig: vi.fn(),
 }))
 
 vi.mock('../../../hooks/useNomina', () => ({
   // Reglas de la ley (useReglasLey): sin configuración, la ley vigente.
-  useConfigNomina: () => ({ data: undefined, isLoading: false }),
+  useConfigNomina: () => ({ data: mocks.configNomina, isLoading: false }),
+  useGuardarConfigNomina: () => ({ mutateAsync: mocks.guardarConfig, mutate: mocks.guardarConfig, isPending: false }),
   useNominaEmpleados: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }),
   usePosVendedores: () => ({ data: [], isLoading: false }),
   useHorarios: () => ({ data: mocks.horarios, isLoading: false }),
+  useConfigEmpleados: () => ({ data: mocks.configs, isLoading: false }),
   useCrearConfigEmpleado: () => ({ mutateAsync: mocks.crear, isPending: false }),
   useActualizarConfigEmpleado: () => ({ mutateAsync: mocks.actualizar, isPending: false }),
   useGuardarHorarioEmpleado: () => ({ mutateAsync: mocks.guardarHorario, isPending: false }),
@@ -50,6 +55,9 @@ beforeEach(() => {
   mocks.actualizar = vi.fn().mockResolvedValue({ ok: true, config: { id: 'cfg-1', empleado_id: 'emp-1' } })
   mocks.guardarHorario = vi.fn().mockResolvedValue({ ok: true })
   mocks.horarios = []
+  mocks.configs = []
+  mocks.configNomina = undefined
+  mocks.guardarConfig = vi.fn().mockResolvedValue({ ok: true })
 })
 
 afterEach(() => {
@@ -79,25 +87,18 @@ describe('Ficha de empleado — días que trabaja', () => {
     expect(screen.getByText('Semanal')).toBeInTheDocument()
   })
 
-  // F-3: una sola fuente de verdad para los días por semana. El divisor del monto
-  // semanal sale de «Días que trabaja»; ya no existe un selector 5/6/7 que pudiera
-  // pagar el acuerdo semanal a 5/6 sin aviso.
-  it('el divisor del monto semanal son los días marcados y se recalcula al marcar otro', () => {
-    localStorage.setItem('nomina_empleado_salario_pref_emp-1', JSON.stringify({ modalidad: 'semana', montoInput: '180' }))
-    render(<EmpleadoConfigModal modo="editar" config={{ ...config, salario_dia_usd: 36 }} onClose={vi.fn()} />)
+  // D-1: la semana se paga con 7 días (laborables + descanso), como la hoja semanal.
+  // Antes se dividía entre los días marcados y «$65/semana» terminaba pagándose a $91.
+  it('el monto semanal se divide entre 7 y no cambia al marcar otro día', () => {
+    renderModal()
+    fireEvent.click(screen.getByRole('button', { name: 'Por Semana' }))
+    expect(screen.getByDisplayValue('105')).toBeInTheDocument() // $15/día × 7
+    expect(screen.getByText(/Sueldo diario = semanal ÷ 7 días/)).toBeInTheDocument()
+    expect(screen.getByText('$105.00')).toBeInTheDocument()
 
-    // Lun–Vie marcados (5 días) y $180/semana → $36,00 por día.
-    expect(screen.getByText('5 días — se toma de «Días que trabaja»')).toBeInTheDocument()
-    expect(screen.getByText('$36.00')).toBeInTheDocument()
-    expect(screen.getByText('$180.00')).toBeInTheDocument()
-    // El selector manual de días desapareció: no hay forma de contradecir la semana.
-    expect(screen.queryByText('5 días (Lun-Vie)')).not.toBeInTheDocument()
-    expect(screen.queryByText('6 días (Lun-Sáb estándar)')).not.toBeInTheDocument()
-
-    // Marcar el sábado reparte el mismo monto entre 6 días: $30,00 por día.
     fireEvent.click(screen.getByRole('button', { name: 'Sábado: no trabaja' }))
-    expect(screen.getByText('6 días — se toma de «Días que trabaja»')).toBeInTheDocument()
-    expect(screen.getByText('$30.00')).toBeInTheDocument()
+    expect(screen.getByText('$15.00')).toBeInTheDocument()
+    expect(screen.getByText('$105.00')).toBeInTheDocument()
   })
 
   it('al guardar envía la ficha y los días laborables con el horario de la ficha', async () => {
@@ -106,8 +107,10 @@ describe('Ficha de empleado — días que trabaja', () => {
 
     await waitFor(() => expect(mocks.actualizar).toHaveBeenCalledTimes(1))
     expect(mocks.actualizar.mock.calls[0][0]).toMatchObject({
-      id: 'cfg-1', cargo: 'Vendedor', salarioDiaUsd: 15, horasJornada: 8, horaInicio: '08:00', horaFin: '17:00', activo: true,
+      id: 'cfg-1', cargo: 'Vendedor', salarioDiaUsd: 15, horasJornada: 8, horaInicio: '08:00', horaFin: '17:00',
     })
+    // «Activo en nómina» ya no está en la ficha: la baja se hace con «Dar de baja».
+    expect(mocks.actualizar.mock.calls[0][0]).not.toHaveProperty('activo')
     await waitFor(() => expect(mocks.guardarHorario).toHaveBeenCalledTimes(1))
     expect(mocks.guardarHorario.mock.calls[0][0]).toEqual({ empleadoId: 'emp-1', dias: DIAS_LUN_A_VIE })
   })
@@ -151,5 +154,92 @@ describe('Ficha de empleado — sin vendedores en la nómina', () => {
     expect(screen.queryByRole('button', { name: /Por Comisión/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /Vendedor \(Comisión\)/i })).toBeNull()
     expect(screen.getByRole('button', { name: 'Por Día' })).toBeTruthy()
+  })
+})
+
+describe('Ficha de empleado — cargo, fecha y modalidad', () => {
+  it('ya no pide la fecha de ingreso y no la envía al guardar (conserva la que hubiera)', async () => {
+    renderModal()
+    expect(screen.queryByText('Fecha de ingreso')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar empleado' }))
+    await waitFor(() => expect(mocks.actualizar).toHaveBeenCalledTimes(1))
+    expect(mocks.actualizar.mock.calls[0][0]).not.toHaveProperty('fechaIngreso')
+  })
+
+  it('ordena las modalidades Mes, Semana, Día y abre en «Por Mes»', () => {
+    renderModal()
+    const nombres = ['Por Mes', 'Por Semana', 'Por Día']
+    const botones = screen.getAllByRole('button').filter(b => nombres.includes(b.textContent))
+    expect(botones.map(b => b.textContent)).toEqual(nombres)
+    expect(screen.getByText('Monto mensual (USD) *')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('450')).toBeInTheDocument()
+  })
+
+  it('280 al mes no baja a 279,90 al pasar por «Por Día» y vuelve a «Por Mes»', async () => {
+    render(<EmpleadoConfigModal modo="editar" config={{ ...config, salario_dia_usd: 9.3333 }} onClose={vi.fn()} />)
+    expect(screen.getByDisplayValue('280')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Por Día' }))
+    expect(screen.getByDisplayValue('9.33')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Por Semana' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Por Mes' }))
+    expect(screen.getByDisplayValue('280')).toBeInTheDocument()
+    expect(screen.getByText('$280.00')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar empleado' }))
+    await waitFor(() => expect(mocks.actualizar).toHaveBeenCalledTimes(1))
+    expect(mocks.actualizar.mock.calls[0][0].salarioDiaUsd).toBe(9.3333)
+  })
+
+  it('escribir 280 en «Por Mes» guarda 9,3333 por día', async () => {
+    renderModal()
+    fireEvent.change(screen.getByDisplayValue('450'), { target: { value: '280' } })
+    expect(screen.getByText('$280.00')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar empleado' }))
+    await waitFor(() => expect(mocks.actualizar).toHaveBeenCalledTimes(1))
+    expect(mocks.actualizar.mock.calls[0][0].salarioDiaUsd).toBe(9.3333)
+  })
+
+  it('ofrece los cargos que ya usa alguien y permite agregar un puesto personalizado', async () => {
+    mocks.configs = [{ id: 'c-2', cargo: 'electricista' }, { id: 'c-3', cargo: 'Chofer' }]
+    renderModal()
+    expect(screen.getByRole('button', { name: 'Electricista' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Chofer' })).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: /Agregar puesto/ }))
+    fireEvent.change(screen.getByLabelText('Nombre del nuevo puesto'), { target: { value: 'pintor de estructuras' } })
+    fireEvent.keyDown(screen.getByLabelText('Nombre del nuevo puesto'), { key: 'Enter' })
+    expect(screen.getByLabelText('Cargo u ocupación')).toHaveValue('Pintor de estructuras')
+    // Se guarda en la configuración de la cuenta para que aparezca en cualquier PC.
+    await waitFor(() => expect(mocks.guardarConfig).toHaveBeenCalledWith({ nomina_puestos: ['Pintor de estructuras'] }))
+  })
+
+  it('muestra los puestos guardados y deja quitar los que nadie usa', () => {
+    mocks.configNomina = { nomina_puestos: ['Electricista', 'Pintor'] }
+    mocks.configs = [{ id: 'c-2', cargo: 'Pintor' }]
+    renderModal()
+    expect(screen.getByRole('button', { name: 'Electricista' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Quitar el puesto Pintor' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar el puesto Electricista' }))
+    expect(mocks.guardarConfig).toHaveBeenCalledWith({ nomina_puestos: ['Pintor'] })
+  })
+
+  it('sin «Activo en nómina» ni la sección de horario duplicada; el horario vive en cada día', async () => {
+    renderModal()
+    expect(screen.queryByText('Activo en nómina')).toBeNull()
+    expect(screen.queryByText('Horario Laboral y Jornada')).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('Hora de entrada del Lunes'), { target: { value: '07:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar empleado' }))
+    await waitFor(() => expect(mocks.actualizar).toHaveBeenCalledTimes(1))
+    // El horario general de la ficha es el del primer día marcado.
+    expect(mocks.actualizar.mock.calls[0][0]).toMatchObject({ horaInicio: '07:00', horaFin: '17:00', horasJornada: 8 })
+  })
+
+  it('avisa si la jornada es mayor que el tiempo entre entrada y salida, y aplica el horario estándar', () => {
+    renderModal()
+    fireEvent.change(screen.getByLabelText('Hora de salida del Viernes'), { target: { value: '12:00' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('La jornada (8 h) es mayor que el tiempo entre entrada y salida (4 h)')
+    fireEvent.click(screen.getByRole('button', { name: /Horario estándar 08:00 a 17:00/ }))
+    expect(screen.getByLabelText('Hora de salida del Viernes')).toHaveValue('17:00')
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

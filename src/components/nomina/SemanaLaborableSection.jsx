@@ -5,10 +5,25 @@
 import { CalendarDays } from 'lucide-react'
 import { NOMBRE_DIA, NOMBRE_DIA_CORTO, diasLaborablesTexto } from '../../utils/diasLaborables.js'
 
+// Horas entre entrada y salida (salida al día siguiente si es menor). null si falta un dato.
+function horasEntre(inicio, fin) {
+  const aMin = hora => {
+    const [h, m] = String(hora || '').split(':').map(Number)
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null
+  }
+  const desde = aMin(inicio)
+  const hasta = aMin(fin)
+  if (desde === null || hasta === null) return null
+  const minutos = hasta > desde ? hasta - desde : hasta + 24 * 60 - desde
+  return Math.round((minutos / 60) * 100) / 100
+}
+
+const fmtHoras = n => `${Number(n).toLocaleString('es-VE', { maximumFractionDigits: 2 })} h`
+
 const inputDiaCls = 'w-full min-h-11 px-2 rounded-xl border border-slate-200 bg-white text-[16px] sm:text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
 export default function SemanaLaborableSection({
-  semana, cargando, onAlternarDia, onCambiarJornada, onCopiarJornada,
+  semana, cargando, onAlternarDia, onCambiarJornada, onCopiarJornada, onHorarioEstandar,
 }) {
   const diasActivos = semana.dias.filter(dia => dia.activo)
   const resumenSemana = diasLaborablesTexto(diasActivos.map(dia => dia.diaSemana))
@@ -63,8 +78,18 @@ export default function SemanaLaborableSection({
         </p>
       ) : (
         <div className="space-y-1.5 pt-0.5">
-          {diasActivos.map(dia => (
-            <div key={dia.diaSemana} className="grid grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,1fr)_4.75rem] items-center gap-1.5">
+          <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,1fr)_4.75rem] gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400" aria-hidden="true">
+            <span />
+            <span>Entrada</span>
+            <span>Salida</span>
+            <span>Jornada (h)</span>
+          </div>
+          {diasActivos.map(dia => {
+            const tramo = horasEntre(dia.horaInicio, dia.horaFin)
+            const excede = tramo !== null && Number(dia.horasJornada) > tramo
+            return (
+            <div key={dia.diaSemana} className="space-y-1">
+            <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,1fr)_4.75rem] items-center gap-1.5">
               <span className="text-[11px] font-bold text-slate-600">{NOMBRE_DIA_CORTO[dia.diaSemana]}</span>
               <input
                 type="time"
@@ -94,17 +119,36 @@ export default function SemanaLaborableSection({
                 className={inputDiaCls}
               />
             </div>
-          ))}
+            {excede && (
+              <p role="alert" className="pl-11 text-[10px] font-semibold text-amber-800">
+                La jornada ({fmtHoras(dia.horasJornada)}) es mayor que el tiempo entre entrada y salida ({fmtHoras(tramo)}).
+              </p>
+            )}
+            </div>
+            )
+          })}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
+          {onHorarioEstandar && (
+            <button
+              type="button"
+              onClick={onHorarioEstandar}
+              disabled={cargando}
+              className="text-[11px] font-bold text-primary hover:text-primary-hover disabled:opacity-50"
+            >
+              Horario estándar 08:00 a 17:00 (8 h)
+            </button>
+          )}
           {diasActivos.length > 1 && (
             <button
               type="button"
               onClick={onCopiarJornada}
               disabled={cargando}
-              className="text-[11px] font-bold text-primary hover:text-primary-hover pt-0.5 disabled:opacity-50"
+              className="text-[11px] font-bold text-primary hover:text-primary-hover disabled:opacity-50"
             >
               Usar el mismo horario en todos los días marcados
             </button>
           )}
+          </div>
         </div>
       )}
     </div>

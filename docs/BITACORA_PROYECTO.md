@@ -4361,3 +4361,31 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 2. Fase 3: período automático jueves → miércoles y llenado en vivo con el marcaje.
 3. D-3: qué pasa con el bono si alguien falta (provisional: el bono queda en 35 y la falta sale del sueldo semanal).
 4. Hora extra a $2,50 fijos en producción (bitácora 150, PR #7).
+
+## 152. Ficha del empleado: auditoría y limpieza (2026-11-18)
+
+**Contexto.** El usuario pidió quitar la fecha de ingreso, poder agregar puestos propios, ordenar la modalidad Mes → Semana → Día y que 280 al mes no bajara a 279,90. Se auditó el modal y el usuario aprobó todas las correcciones y mejoras propuestas.
+
+**Qué se hizo.**
+- **280 → 279,90 (bug):** al pasar por «Por Día» el sueldo diario se redondeaba a 2 decimales (9,33 × 30 = 279,90). Ahora se conserva el diario exacto mientras solo se cambia de modalidad.
+- **Semana ÷ 7 (bug grave):** «Por Semana» y el equivalente semanal dividían entre los días marcados (5). «$65/semana» guardaba $13 diarios y la nómina pagaba $91. Ahora se divide entre 7, como la hoja semanal y el motor (D-1).
+- **Modalidad igual en todos los navegadores:** se quitó la preferencia guardada en `localStorage`; la ficha siempre abre en «Por Mes».
+- **Puestos personalizados persistentes:** migración `265_nomina_puestos.sql` (`configuracion_negocio.nomina_puestos`), validación en `server/lib/nominaPuestos.js` y botón «+ Agregar puesto». Los botones muestran los fijos, los guardados y los cargos en uso; un guardado que nadie usa se puede quitar.
+- **Fuera:** fecha de ingreso (modal, tarjeta del empleado; en el recibo PDF la celda pasa a «Días trabajados»), casilla «Activo en nómina» (duplicaba «Dar de baja») y la sección «Horario laboral y jornada» (duplicaba «Días que trabaja»; el horario general de la ficha es el del primer día marcado).
+- **Mejoras:** aviso si la jornada supera el tiempo entre entrada y salida, botón de horario estándar por día y modal en dos columnas en PC.
+- **CI de `main` en verde:** `PeriodosAutoCard.jsx` usaba un `<select>` nativo que el guardarraíl rechaza; ahora usa `CustomSelect`.
+
+**Pendientes.**
+1. ~~Aplicar la migración 265 en producción.~~ Hecho el 18/11/2026 (ver abajo).
+2. La fecha de ingreso que ya tenían algunas fichas se conserva en la base y la sigue usando el cálculo del descanso de la primera semana; las fichas nuevas quedan sin fecha.
+
+**Migración 265 aplicada en producción (2026-11-18).** Proyecto `wlxcclidnwketrghqaxs`, vía Management API con el `SUPABASE_ACCESS_TOKEN` del `.env` (la segunda línea; la primera da 403), porque el conector de Supabase de la sesión solo veía «nube-pruebas». Guardia de identidad previa (existen `nomina_lineas` y `configuracion_negocio`; última versión registrada 263; sin la columna). Respaldo de `configuracion_negocio` (1 fila) en `local-backups/backup_pre_265_20261118.json`. Una sola transacción: la migración tal cual y el registro en `supabase_migrations.schema_migrations`. **Hallazgo:** la 264 estaba aplicada (columnas y CHECK presentes) pero sin registrar; se registró junto con la 265. Verificación: `nomina_puestos` jsonb con valor por defecto `[]`, CHECK `config_nomina_puestos_lista`, la fila de configuración en `[]` y última versión 265. El procedimiento quedó en `docs/OPERACIONES.md`.
+
+**Tarjeta del empleado (pestaña Empleados), mismo PR (2026-11-18).** A pedido del usuario se aplicaron todas las mejoras propuestas, con los cálculos en `src/utils/resumenFichaEmpleado.js` (mismas reglas que la hoja semanal; 5 pruebas):
+- Dato principal: **sueldo mensual**. Debajo, la **semana** (diario × 7) repartida en sueldo + bono, con su equivalente en Bs, y el salario por día como dato pequeño.
+- «Tarifa / hora» se reemplaza por **«Hora extra»**: el monto fijo de Configuración si existe; si no, tarifa por hora × factor. Sin configuración no se muestra.
+- Días y horario en una línea («Lun a Vie · 08:00 AM – 05:00 PM (8 h)»); «(sin fijar)» pasa a «(por defecto)», con explicación al pasar el cursor.
+- **«Esta semana: X de N días · N faltas»**, tomado del marcaje de la semana en curso (según el día de inicio de Configuración), sin esperar a que se recalcule el período.
+- **Sábado y domingo trabajados en la tarjeta:** se cuentan aparte («5 de 5 días · +1 de descanso») con la misma regla que la hoja (domingo, feriado o día fuera de su semana), en vez de mostrar «6 de 5 días». Quien tiene el sábado en su semana lo cuenta como día laborable.
+
+**Hora extra a $2,50 fijos en producción (2026-11-18).** A pedido del usuario (D-7), en `configuracion_negocio` de `wlxcclidnwketrghqaxs`: `nomina_monto_hora_extra_usd` de `null` a `2.50` (el factor 2,50 queda guardado pero ya no manda). Vía Management API con el token del `.env`, según `docs/OPERACIONES.md`. Respaldo previo en `local-backups/backup_pre_hora_extra_20261118.json`. El único período abierto (12–18 nov.) no tiene horas extra, así que ningún recibo cambia. Cambio hecho por SQL, no desde la pantalla: no queda registro en la auditoría de la app. Cierra el pendiente «hora extra a $2,50 fijos en producción» (bitácora 150 y 151).

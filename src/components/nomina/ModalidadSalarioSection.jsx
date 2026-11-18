@@ -9,21 +9,20 @@ import { VENDEDORES_EN_NOMINA } from '../../config/comisionesVendedores.js'
 const inputCls = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
 const MODALIDADES = [
-  { id: 'dia', label: 'Por Día' },
-  { id: 'semana', label: 'Por Semana' },
   { id: 'mes', label: 'Por Mes' },
+  { id: 'semana', label: 'Por Semana' },
+  { id: 'dia', label: 'Por Día' },
   { id: 'comision', label: 'Por Comisión (Vendedor)' },
 ]
 
 export default function ModalidadSalarioSection({
-  modalidad, montoInput, diasSemana, salarioDiaCalculado, horasJornada, divisorMensual = 30, cargando,
+  modalidad, montoInput, diasSemanaPagados = 7, salarioDiaCalculado, horasJornada, divisorMensual = 30, cargando,
   onSeleccionarModalidad, onCambiarMonto,
 }) {
   const jornadaNum = Number(horasJornada) || 8
   const tarifaHora = salarioDiaCalculado > 0 && jornadaNum > 0 ? salarioDiaCalculado / jornadaNum : 0
-  // `diasSemana` son los días marcados en «Días que trabaja»: el monto semanal se
-  // reparte entre ellos (una sola fuente; antes había un selector 5/6/7 aparte).
-  const equivalenteSemanal = salarioDiaCalculado * (diasSemana || 6)
+  // D-1: la semana pagada son 7 días (laborables + descanso), como la hoja semanal.
+  const equivalenteSemanal = salarioDiaCalculado * diasSemanaPagados
   const equivalenteMensual = salarioDiaCalculado * divisorMensual
   // Los vendedores no van en la nómina: «Por Comisión» solo se muestra si la ficha ya la tiene.
   const modalidades = VENDEDORES_EN_NOMINA || modalidad === 'comision' ? MODALIDADES : MODALIDADES.filter(m => m.id !== 'comision')
@@ -79,20 +78,8 @@ export default function ModalidadSalarioSection({
             />
           </div>
           {modalidad === 'semana' && (
-            <div className="space-y-1">
-              <span className="text-[11px] font-semibold text-slate-500">Días laborables / semana</span>
-              <p
-                className={`flex min-h-11 items-center rounded-xl border px-3 text-xs font-bold ${diasSemana > 0
-                  ? 'border-slate-200 bg-slate-100 text-slate-600'
-                  : 'border-red-200 bg-red-50 text-red-700'}`}
-              >
-                {diasSemana > 0
-                  ? `${diasSemana} día${diasSemana === 1 ? '' : 's'} — se toma de «Días que trabaja»`
-                  : 'Marca sus días en «Días que trabaja» para poder guardar'}
-              </p>
-              <p className="text-[10px] leading-relaxed text-slate-400">
-                El monto semanal se reparte entre los días marcados; si cambias la semana, el salario por día se recalcula.
-              </p>
+            <div className="flex items-center text-[11px] text-slate-400 pt-5">
+              <span>Sueldo diario = semanal ÷ {diasSemanaPagados} días (los laborables más los de descanso, como la hoja semanal)</span>
             </div>
           )}
           {modalidad === 'mes' && (
