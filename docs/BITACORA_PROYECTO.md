@@ -6,6 +6,21 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Finanzas: rebote sin fin entre el inicio de sesión y /finanzas — 18/11/2026
+
+Objetivo: eliminar el error «Attempt to use history.replaceState() more than 100 times per 10 seconds» que mostró «Algo salió mal» en `/finanzas` (1 registro en `auditoria`, 17/11 16:47 UTC, Safari, sin usuario identificado).
+
+1. **Causa:** el error indicaba que la redirección venía de uno de los dos porteros de rutas de `src/NominaApp.jsx`. El portero privado (Nómina, Finanzas, Configuración) mandaba a `/login` y el público (`/login`) devolvía a `/finanzas`, cada uno con una condición distinta. Mientras la sesión cambiaba de estado rápido (perfil cargando, error, autenticada), los dos se mandaban la persona de uno a otro. También chocaban con un perfil autenticado sin rol reconocido.
+2. **Arreglo:** regla única en `src/utils/porterosSesion.js` (`sesionAdmitida`, `decisionPorteroPrivado` y `decisionPorteroPublico`), usada por los dos porteros:
+   - para un mismo estado, a lo sumo uno de los dos redirige;
+   - con sesión abierta, el portero privado ya no cambia la dirección: muestra la pantalla de acceso en el mismo lugar (cargando, error o acceso negado) y solo manda a `/login` cuando no hay sesión.
+3. **Archivos:** `src/NominaApp.jsx` (solo `Protected` y `Public`), `src/utils/porterosSesion.js` (nuevo) y `src/utils/__tests__/porterosSesion.test.jsx` (nuevo).
+4. **Pruebas:**
+   - todas las combinaciones de estado de sesión (nunca redirigen los dos);
+   - una réplica del árbol de rutas con 60 parpadeos de sesión. Con las reglas anteriores provoca **121 cambios de dirección**, lo que reproduce el corte de Safari; con la regla nueva provoca 0.
+   - `npm test` 1570/1570, `npm run lint`, `npm run test:responsive`, `npm run build` y `check:project`: correctos.
+5. **Pendientes:** el registro no guardó qué hizo parpadear la sesión. Si vuelve a aparecer un error de sesión en `auditoria`, revisar la renovación del token ante un 401 en `compat/services/authFetch.js`.
+
 ## Despliegue a producción de las actualizaciones de la app — 18/11/2026
 
 Petición del usuario: desplegar a producción el PR #13.
