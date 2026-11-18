@@ -5,7 +5,7 @@ import { jsPDF } from 'jspdf'
 import { cargarLogo } from '../../../compat/services/pdf/pdfLogo.js'
 import {
   PAGE_W, PAGE_H, MARGIN, CONTENT_W,
-  C_PRIMARY, C_DARK, C_WHITE, C_GRAY, C_AMBER, C_EMERALD, C_RED,
+  C_DARK, C_GRAY, C_AMBER, C_EMERALD, C_RED,
   fmtUsd, fmtBs, fmtFecha, drawWatermark, drawPremiumHeader,
 } from '../../../compat/services/pdf/pdfShared.js'
 import { formatHora12 } from '../../utils/timeUtils.js'
@@ -82,12 +82,11 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
     doc.setLineWidth(0.3)
     doc.roundedRect(bx + 1, y, kpiBoxW - 2, kpiBoxH, 2, 2, 'FD')
 
-    // Borde acentuado si es destacado
+    // Destacado: solo un borde fino más oscuro, sin relleno de color (ahorra tinta).
     if (kpi.destacado) {
-      doc.setFillColor(236, 253, 245)
-      doc.setDrawColor(16, 185, 129)
-      doc.setLineWidth(0.5)
-      doc.roundedRect(bx + 1, y, kpiBoxW - 2, kpiBoxH, 2, 2, 'FD')
+      doc.setDrawColor(148, 163, 184)
+      doc.setLineWidth(0.3)
+      doc.roundedRect(bx + 1, y, kpiBoxW - 2, kpiBoxH, 2, 2, 'S')
     }
 
     doc.setFont('helvetica', 'normal')
@@ -332,12 +331,8 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
   y += 2
   doc.setFillColor(248, 250, 252)
   doc.setDrawColor(226, 232, 240)
-  doc.setLineWidth(0.4)
+  doc.setLineWidth(0.3)
   doc.roundedRect(MARGIN, y, CONTENT_W, 14, 2, 2, 'FD')
-
-  // Barra de acento verde
-  doc.setFillColor(16, 185, 129)
-  doc.rect(MARGIN, y, 3, 14, 'F')
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9)
@@ -352,9 +347,10 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
 
   // ═══ 6. COMPROBANTE DE PAGO (SI APLICA) ═════════════════════════════════════
   if (linea.pagado) {
-    doc.setFillColor(236, 253, 245)
+    // Caja clara con borde fino verde: el estado se lee sin gastar tinta en relleno.
+    doc.setFillColor(248, 250, 252)
     doc.setDrawColor(16, 185, 129)
-    doc.setLineWidth(0.4)
+    doc.setLineWidth(0.3)
     doc.roundedRect(MARGIN, y, CONTENT_W, 11, 2, 2, 'FD')
 
     doc.setFont('helvetica', 'bold')

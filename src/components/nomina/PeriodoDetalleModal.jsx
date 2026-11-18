@@ -179,7 +179,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
 
   return (
     <>
-      <Modal isOpen onClose={onClose} title={periodo.nombre} className="max-w-5xl">
+      <Modal isOpen onClose={onClose} title={periodo.nombre} className="max-w-7xl">
         <div className="space-y-4">
           {/* KPIs del período (Dual USD + Bs) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
