@@ -6,6 +6,23 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Hoja semanal más ordenada: 10 columnas y sin palabras partidas — 18/11/2026
+
+Petición del usuario: «¿qué propones para que esto no quede así amontonado?», con una captura donde los encabezados se partían a mitad de palabra («DÍA S TRA B.», «HORA S EXTR A», «VALO R $»).
+
+1. **Causa:** 17 columnas apretadas dentro del modal, que aplica `overflow-wrap: anywhere` (`compat/styles/base.css`); el navegador cortaba los encabezados en cualquier letra.
+2. **Archivos:** `src/components/nomina/hojaSemanalCsv.js` (nuevas `COLUMNAS_PANTALLA`, `GRUPOS_PANTALLA` y `columnasVisibles`), `src/components/nomina/HojaSemanal.jsx`, `src/components/nomina/__tests__/HojaSemanal.test.jsx`, `src/components/nomina/__tests__/PeriodoDetalleModal.hoja.test.jsx`.
+3. **Comportamiento:**
+   - cada cantidad va debajo de su monto en la misma celda: «Días trab. $40,00 / 5 días», «Descanso $16,00 / 2 días», «Horas extra $15,00 / 6 h», «Desc. o feriado trab. $8,00 / 1 día»;
+   - el sueldo mensual va debajo del nombre («$240,00 al mes») y el neto en Bs debajo del neto en $;
+   - franja de grupos sobre los encabezados: Semana · Pago · Adicionales;
+   - «Otros pagos» solo aparece si alguna persona tiene un monto;
+   - la tabla usa `overflow-wrap: normal`: los encabezados solo se parten entre palabras;
+   - las fichas del teléfono usan las mismas columnas («Días trab. · 5 días  $40,00»);
+   - **el Excel no cambia**: conserva todas las columnas por separado para que la contadora pueda sumar.
+4. **Pruebas:** `npx vitest run src/components/nomina`: 149/149 en verde (nuevas: grupos y sin cortes de palabra, «Otros pagos» opcional, cantidades debajo del monto). `npm run verify`: completo y en verde (lint, pruebas, responsivo, determinísticas, migraciones, build y presupuesto de bundle). Imagen de muestra con los datos de la simulación: `hoja-semanal-compacta-propuesta.png` (carpeta superior, fuera del repositorio).
+5. **Pendientes:** sin commit, push ni deploy; revisar en el iPhone.
+
 ## Publicación de la regla de faltas y del desglose de la hoja — 18/11/2026
 
 Petición del usuario: «push» y «aplica las migraciones que faltan».

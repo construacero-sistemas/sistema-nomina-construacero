@@ -13,14 +13,14 @@ import { hojaACsv } from '../hojaSemanalCsv.js'
 
 const PERIODO = { id: 'p-1', nombre: 'Semana 05–11/11', desde: '2026-11-05', hasta: '2026-11-11', estado: 'abierto' }
 const fila = (extra) => ({
-  sueldoMensual: 240, diasTrabajados: 5, semana: 56, sueldoSemanal: 21, bonoSemanal: 35, horasExtra: 2, totalExtras: 5,
+  sueldoMensual: 240, diasTrabajados: 5, valorDiasTrabajados: 40, diasDescansoPagados: 2, valorDescansoPagado: 16, semana: 56, sueldoSemanal: 21, bonoSemanal: 35, horasExtra: 2, totalExtras: 5,
   diasDescansoTrabajados: 0, valorDescansoTrabajado: 0, otrosPagos: 0, totalACobrar: 61, descuentos: 0, neto: 61, pagado: false, ...extra,
 })
 const FILAS = [
-  fila({ lineaId: 'l-1', empleadoId: 'e-1', nombre: 'fralin lozano', sueldoMensual: 280, sueldoSemanal: 30.33, semana: 65.33, totalExtras: 7.5, horasExtra: 3, diasDescansoTrabajados: 1, valorDescansoTrabajado: 9.34, totalACobrar: 82.17, neto: 82.17 }),
+  fila({ lineaId: 'l-1', empleadoId: 'e-1', nombre: 'fralin lozano', sueldoMensual: 280, valorDiasTrabajados: 46.67, valorDescansoPagado: 18.66, sueldoSemanal: 30.33, semana: 65.33, totalExtras: 7.5, horasExtra: 3, diasDescansoTrabajados: 1, valorDescansoTrabajado: 9.34, totalACobrar: 82.17, neto: 82.17 }),
   fila({ lineaId: 'l-2', empleadoId: 'e-2', nombre: 'julian guaina', pagado: true, tasaPago: 1000, totalPagadoBs: 61000 }),
 ]
-const TOTALES = { empleados: 2, sueldoSemanal: 51.33, bonoSemanal: 70, horasExtra: 5, totalExtras: 12.5, diasDescansoTrabajados: 1, valorDescansoTrabajado: 9.34, otrosPagos: 0, totalACobrar: 143.17, descuentos: 0, neto: 143.17 }
+const TOTALES = { empleados: 2, valorDiasTrabajados: 86.67, valorDescansoPagado: 34.66, sueldoSemanal: 51.33, bonoSemanal: 70, horasExtra: 5, totalExtras: 12.5, diasDescansoTrabajados: 1, valorDescansoTrabajado: 9.34, otrosPagos: 0, totalACobrar: 143.17, descuentos: 0, neto: 143.17 }
 const bsDe = f => (f.pagado ? f.totalPagadoBs : f.neto * 1000)
 
 function renderHoja(props = {}) {
@@ -43,13 +43,35 @@ describe('HojaSemanal', () => {
     renderHoja()
     const tabla = screen.getByRole('table', { name: 'Hoja semanal del período' })
     const encabezados = within(tabla).getAllByRole('columnheader').map(th => th.textContent)
-    expect(encabezados).toEqual(['Nombre', 'Sueldo mensual', 'Días trab.', 'Valor días trab. $', 'Días descanso', 'Valor descanso $', 'Sueldo semanal', 'Bono semanal', 'Horas extra', 'Total extras $',
-      'Desc. o feriado trab.', 'Valor $', 'Otros pagos', 'Total a cobrar', 'Descuentos', 'Neto $', 'Neto Bs'])
+    expect(encabezados).toEqual(['Nombre', 'Días trab.', 'Descanso', 'Sueldo semanal', 'Bono semanal', 'Horas extra',
+      'Desc. o feriado trab.', 'Total a cobrar', 'Descuentos', 'Neto'])
     expect(screen.queryByText(/sueldo legal/i)).toBeNull()
-    const fralin = within(tabla).getByRole('rowheader', { name: 'Fralin Lozano' }).closest('tr')
+    const fralin = within(tabla).getByRole('rowheader', { name: /^Fralin Lozano/ }).closest('tr')
     expect(fralin).toHaveTextContent('30,33')
     expect(fralin).toHaveTextContent('35,00')
     expect(fralin).toHaveTextContent('82,17')
+    // Cada cantidad va debajo de su monto y el sueldo mensual debajo del nombre.
+    expect(fralin).toHaveTextContent('280,00 al mes')
+    expect(fralin).toHaveTextContent('46,675 días')
+    expect(fralin).toHaveTextContent('18,662 días')
+    expect(fralin).toHaveTextContent('7,503 h')
+    expect(fralin).toHaveTextContent('9,341 día')
+  })
+
+  it('agrupa las columnas (Semana · Pago · Adicionales) y no corta palabras a la mitad', () => {
+    renderHoja()
+    const tabla = screen.getByRole('table', { name: 'Hoja semanal del período' })
+    expect(tabla).toHaveClass('[overflow-wrap:normal]')
+    const grupos = tabla.querySelector('thead tr[aria-hidden="true"]')
+    expect(grupos).toHaveTextContent(/Semana.*Pago.*Adicionales/)
+  })
+
+  it('«Otros pagos» solo aparece si alguien tiene un monto', () => {
+    expect(screen.queryByRole('columnheader', { name: 'Otros pagos' })).toBeNull()
+    cleanup()
+    mocks.hoja = { ...mocks.hoja, data: { ...mocks.hoja.data, filas: [FILAS[0], { ...FILAS[1], otrosPagos: 12 }] } }
+    renderHoja()
+    expect(screen.getByRole('columnheader', { name: 'Otros pagos' })).toBeInTheDocument()
   })
 
   it('la fila de totales suma todas las filas, incluido el neto en Bs', () => {
@@ -76,10 +98,11 @@ describe('HojaSemanal', () => {
     expect(lista).toHaveClass('lg:hidden')
     expect(screen.getByRole('table', { name: 'Hoja semanal del período' }).closest('.hidden')).toHaveClass('lg:block')
     const fralin = within(lista).getByRole('heading', { name: 'Fralin Lozano' }).closest('li')
-    for (const etiqueta of ['Sueldo mensual', 'Días trab.', 'Valor días trab. $', 'Días descanso', 'Valor descanso $', 'Sueldo semanal', 'Bono semanal', 'Horas extra', 'Total extras $',
-      'Desc. o feriado trab.', 'Valor $', 'Otros pagos', 'Total a cobrar', 'Descuentos']) {
-      expect(within(fralin).getByText(etiqueta)).toBeInTheDocument()
+    for (const etiqueta of ['Días trab.', 'Descanso', 'Sueldo semanal', 'Bono semanal', 'Horas extra',
+      'Desc. o feriado trab.', 'Total a cobrar', 'Descuentos']) {
+      expect(within(fralin).getByText((_, el) => el?.tagName === 'DT' && el.textContent.startsWith(etiqueta))).toBeInTheDocument()
     }
+    expect(fralin).toHaveTextContent('280,00 al mes')
     expect(fralin).toHaveTextContent('82,17')
     expect(fralin).not.toHaveClass('truncate')
     fireEvent.click(within(fralin).getByRole('button', { name: 'Agregar descuento a Fralin Lozano' }))

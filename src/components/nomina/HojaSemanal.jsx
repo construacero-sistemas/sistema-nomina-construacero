@@ -1,7 +1,8 @@
 // src/components/nomina/HojaSemanal.jsx
 // «Hoja semanal» (docs/PLAN_HOJA_SEMANAL.md): la planilla de la contadora dentro de
-// la app, con las mismas columnas y el bono de $35 en el primer recuadro (sin la
-// tabla aparte de «sueldo legal»). Los números vienen de los recibos ya calculados;
+// la app, con el bono de $35 en el primer recuadro (sin la tabla aparte de
+// «sueldo legal»). En pantalla cada cantidad va debajo de su monto y las columnas
+// se agrupan (Semana · Pago · Adicionales); el Excel conserva todas por separado. Los números vienen de los recibos ya calculados;
 // los totales suman TODAS las filas. El descuento manual se agrega desde aquí.
 // Responsiva sin recortar datos: en teléfono y tablet, una ficha por persona con
 // TODOS los campos (sin desplazamiento lateral); desde 1024 px, la tabla completa.
@@ -10,15 +11,28 @@ import HorizontalScroll from '../../../compat/components/ui/HorizontalScroll.jsx
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import useHojaSemanal from '../../hooks/useHojaSemanal.js'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
-import { COLUMNAS, cantidad, hojaACsv, usd } from './hojaSemanalCsv.js'
+import { GRUPOS_PANTALLA, columnasVisibles, hojaACsv, usd } from './hojaSemanalCsv.js'
 import { formatBs } from '../../hooks/useMonedaNomina.js'
 
-function FichaPersona({ fila, bs, puedeDescontar, onAgregarDescuento }) {
+// Monto con su cantidad debajo (en gris), para no gastar una columna en cada una.
+function Celda({ monto, detalle, fuerte = false }) {
+  return (
+    <>
+      <span className={`block ${fuerte ? 'font-black text-slate-900' : ''}`}>{usd(monto)}</span>
+      {detalle && <span className="block text-[10px] font-semibold text-slate-400">{detalle}</span>}
+    </>
+  )
+}
+
+function FichaPersona({ fila, columnas, bs, puedeDescontar, onAgregarDescuento }) {
   const nombre = capitalizarPalabras(fila.nombre)
   return (
     <li className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <h4 className="min-w-0 break-words text-sm font-black text-slate-900">{nombre}</h4>
+        <div className="min-w-0">
+          <h4 className="break-words text-sm font-black text-slate-900">{nombre}</h4>
+          <span className="block text-[11px] font-semibold text-slate-500">${usd(fila.sueldoMensual)} al mes</span>
+        </div>
         <div className="shrink-0 text-right">
           <span className="block text-[10px] font-bold uppercase text-slate-500">Neto</span>
           <strong className="block text-base font-black tabular-nums text-emerald-800">${usd(fila.neto)}</strong>
@@ -26,10 +40,10 @@ function FichaPersona({ fila, bs, puedeDescontar, onAgregarDescuento }) {
         </div>
       </div>
       <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 border-t border-slate-100 pt-2 text-xs min-[360px]:grid-cols-2">
-        {COLUMNAS.map(c => (
+        {columnas.map(c => (
           <div key={c.id} className="flex items-baseline justify-between gap-2">
-            <dt className="min-w-0 text-slate-500">{c.titulo}</dt>
-            <dd className={`shrink-0 tabular-nums ${c.fuerte ? 'font-black text-slate-900' : 'font-semibold text-slate-800'}`}>{c.formato(fila[c.id])}</dd>
+            <dt className="min-w-0 text-slate-500">{c.titulo}{c.detalle && <span className="text-slate-400"> · {c.detalle(fila)}</span>}</dt>
+            <dd className={`shrink-0 tabular-nums ${c.fuerte ? 'font-black text-slate-900' : 'font-semibold text-slate-800'}`}>{usd(fila[c.id])}</dd>
           </div>
         ))}
         <div className="flex items-baseline justify-between gap-2">
@@ -73,6 +87,14 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
     )
   }
   const totalBs = filas.reduce((s, fila) => s + bsDe(fila), 0)
+  const columnas = columnasVisibles(filas)
+  // Franja de grupos sobre los encabezados: un tramo por grupo consecutivo.
+  const tramos = []
+  for (const c of columnas) {
+    const ultimo = tramos[tramos.length - 1]
+    if (ultimo && c.grupo && ultimo.grupo === c.grupo) ultimo.span += 1
+    else tramos.push({ grupo: c.grupo || null, span: 1 })
+  }
 
   function descargar() {
     const csv = hojaACsv({ periodo, filas, totales, bsDe })
@@ -100,7 +122,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
         {filas.map(fila => {
           const linea = lineaPorId.get(fila.lineaId)
           return (
-            <FichaPersona key={fila.lineaId} fila={fila} bs={bsDe(fila)}
+            <FichaPersona key={fila.lineaId} fila={fila} columnas={columnas} bs={bsDe(fila)}
               puedeDescontar={Boolean(abierto && puedeGestionarNomina && !fila.pagado && linea)}
               onAgregarDescuento={() => onAgregarDescuento(linea)} />
           )
@@ -114,10 +136,10 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
             </div>
           </div>
           <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 border-t border-slate-200 pt-2 text-xs min-[360px]:grid-cols-2">
-            {COLUMNAS.filter(c => c.total).map(c => (
+            {columnas.map(c => (
               <div key={c.id} className="flex items-baseline justify-between gap-2">
-                <dt className="min-w-0 text-slate-500">{c.titulo}</dt>
-                <dd className="shrink-0 font-black tabular-nums text-slate-900">{c.formato(totales[c.id])}</dd>
+                <dt className="min-w-0 text-slate-500">{c.titulo}{c.detalleTotal && <span className="text-slate-400"> · {c.detalleTotal(totales)}</span>}</dt>
+                <dd className="shrink-0 font-black tabular-nums text-slate-900">{usd(totales[c.id])}</dd>
               </div>
             ))}
             <div className="flex items-baseline justify-between gap-2">
@@ -129,14 +151,24 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
       </ul>
       <div className="hidden lg:block">
       <HorizontalScroll>
-        <table className="w-full whitespace-nowrap text-[11px] tabular-nums" aria-label="Hoja semanal del período">
-          <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase leading-tight text-slate-500">
-            <tr>
-              <th className="px-2 py-2 text-left font-black">Nombre</th>
-              {COLUMNAS.map(c => <th key={c.id} className="whitespace-normal px-1.5 py-2 text-right align-bottom font-bold">{c.titulo}</th>)}
-              <th className="px-1.5 py-2 text-right align-bottom font-bold">Descuentos</th>
-              <th className="px-1.5 py-2 text-right align-bottom font-black">Neto $</th>
-              <th className="px-2 py-2 text-right align-bottom font-black">Neto Bs</th>
+        {/* El modal permite cortar palabras en cualquier letra (overflow-wrap: anywhere);
+            en la tabla los encabezados solo se parten entre palabras. */}
+        <table className="w-full text-[12px] tabular-nums [overflow-wrap:normal] [word-break:normal]" aria-label="Hoja semanal del período">
+          <thead className="bg-slate-50 text-[10px] uppercase leading-tight text-slate-500">
+            <tr aria-hidden="true" className="text-[9px] tracking-wide text-slate-400">
+              <td className="px-3 pt-2" />
+              {tramos.map((t, i) => (
+                <td key={i} colSpan={t.span} className={`px-2 pt-2 text-center font-black ${t.grupo ? 'border-b border-slate-200' : ''}`}>
+                  {t.grupo ? GRUPOS_PANTALLA.find(g => g.id === t.grupo)?.titulo : ''}
+                </td>
+              ))}
+              <td colSpan={2} />
+            </tr>
+            <tr className="border-b border-slate-200">
+              <th className="px-3 py-2 text-left font-black">Nombre</th>
+              {columnas.map(c => <th key={c.id} className="min-w-[4.5rem] px-2 py-2 text-right align-bottom font-bold">{c.titulo}</th>)}
+              <th className="px-2 py-2 text-right align-bottom font-bold">Descuentos</th>
+              <th className="px-3 py-2 text-right align-bottom font-black">Neto</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -146,9 +178,14 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
               const puedeDescontar = abierto && puedeGestionarNomina && !fila.pagado && linea
               return (
                 <tr key={fila.lineaId}>
-                  <th scope="row" className="min-w-[7rem] whitespace-normal px-2 py-2 text-left font-bold text-slate-800">{nombre}</th>
-                  {COLUMNAS.map(c => (
-                    <td key={c.id} className={`px-1.5 py-2 text-right ${c.fuerte ? 'font-black text-slate-900' : 'text-slate-700'}`}>{c.formato(fila[c.id])}</td>
+                  <th scope="row" className="min-w-[8.5rem] px-3 py-2 text-left font-normal">
+                    <span className="block font-bold text-slate-800">{nombre}</span>
+                    <span className="block text-[10px] font-semibold text-slate-400">${usd(fila.sueldoMensual)} al mes</span>
+                  </th>
+                  {columnas.map(c => (
+                    <td key={c.id} className={`whitespace-nowrap px-2 py-2 text-right ${c.fuerte ? '' : 'text-slate-700'}`}>
+                      <Celda monto={fila[c.id]} detalle={c.detalle?.(fila)} fuerte={c.fuerte} />
+                    </td>
                   ))}
                   <td className="px-2 py-2 text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -163,8 +200,10 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
                       )}
                     </div>
                   </td>
-                  <td className="px-2 py-2 text-right font-black text-emerald-800">{usd(fila.neto)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-[11px] font-bold text-emerald-700">{formatBs(bsDe(fila))}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                    <span className="block font-black text-emerald-800">{usd(fila.neto)}</span>
+                    <span className="block font-mono text-[10px] font-bold text-emerald-700">{formatBs(bsDe(fila))}</span>
+                  </td>
                 </tr>
               )
             })}
@@ -172,10 +211,16 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
           <tfoot className="border-t-2 border-slate-300 bg-slate-50 font-black text-slate-900">
             <tr>
               <th scope="row" className="px-3 py-2.5 text-left">Totales ({totales.empleados})</th>
-              {COLUMNAS.map(c => <td key={c.id} className="px-2 py-2.5 text-right">{c.total ? c.formato(totales[c.id]) : ''}</td>)}
+              {columnas.map(c => (
+                <td key={c.id} className="whitespace-nowrap px-2 py-2.5 text-right">
+                  <Celda monto={totales[c.id]} detalle={c.detalleTotal?.(totales)} />
+                </td>
+              ))}
               <td className="px-2 py-2.5 text-right text-red-600">{usd(totales.descuentos)}</td>
-              <td className="px-2 py-2.5 text-right text-emerald-800">{usd(totales.neto)}</td>
-              <td className="px-3 py-2.5 text-right font-mono text-[11px] text-emerald-700">{formatBs(totalBs)}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                <span className="block text-emerald-800">{usd(totales.neto)}</span>
+                <span className="block font-mono text-[10px] text-emerald-700">{formatBs(totalBs)}</span>
+              </td>
             </tr>
           </tfoot>
         </table>
