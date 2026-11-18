@@ -3,19 +3,16 @@ import { useMutation } from '@tanstack/react-query'
 import { useAccountQueryClient as useQueryClient } from '../../compat/lib/accountQueries.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
 import { apiPost, KEY_ASISTENCIA, KEY_MARCAJE } from './nominaApi.js'
+import { makeIdempotencyKey } from './idempotencia.js'
 
-function makeIdempotencyKey(tipo, empleadoId) {
-  const random = typeof crypto !== 'undefined' && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  return `${tipo}-${empleadoId}-${random}`
-}
+// La clave llega desde el clic (M-3): si se reintenta tras un corte de red, el
+// servidor recibe la misma y responde idempotente. Solo se genera aquí si falta.
 
 export function useMarcarEntrada() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ empleadoId, nota }) => apiPost('/api/nomina/marcaje/entrada', {
-      empleadoId, nota, idempotencyKey: makeIdempotencyKey('entrada', empleadoId),
+    mutationFn: ({ empleadoId, nota, idempotencyKey }) => apiPost('/api/nomina/marcaje/entrada', {
+      empleadoId, nota, idempotencyKey: idempotencyKey || makeIdempotencyKey('entrada', empleadoId),
     }),
     onSuccess: () => {
       showToast.success('Entrada marcada')
@@ -29,8 +26,8 @@ export function useMarcarEntrada() {
 export function useMarcarSalida() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ empleadoId, nota }) => apiPost('/api/nomina/marcaje/salida', {
-      empleadoId, nota, idempotencyKey: makeIdempotencyKey('salida', empleadoId),
+    mutationFn: ({ empleadoId, nota, idempotencyKey }) => apiPost('/api/nomina/marcaje/salida', {
+      empleadoId, nota, idempotencyKey: idempotencyKey || makeIdempotencyKey('salida', empleadoId),
     }),
     onSuccess: () => {
       showToast.success('Salida marcada')
@@ -57,9 +54,13 @@ export function useCorregirMarcaje() {
 export function useAnularEntradaComoAusencia() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ registroId, motivo }) => apiPost('/api/nomina/marcaje/anular-entrada-ausencia', { registroId, motivo }),
-    onSuccess: () => {
-      showToast.success('Entrada anulada y ausencia registrada en auditoría')
+    // El servidor decide si la entrada queda como ausencia o se elimina (día libre o
+    // feriado no laborable) y rechaza con 409 si no coincide con `resultadoEsperado`.
+    mutationFn: ({ registroId, motivo, resultadoEsperado = 'ausencia' }) => apiPost('/api/nomina/marcaje/anular-entrada-ausencia', { registroId, motivo, resultadoEsperado }),
+    onSuccess: data => {
+      showToast.success(data?.resultado === 'sin-registro'
+        ? 'Entrada anulada: el día quedó sin registro (auditado)'
+        : 'Entrada anulada y ausencia registrada en auditoría')
       qc.invalidateQueries({ queryKey: KEY_MARCAJE })
       qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
     },

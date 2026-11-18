@@ -194,6 +194,110 @@ describe('ausencia del reloj real', () => {
     expect(mock.calls.some(call => call.method === 'POST')).toBe(false)
   })
 
+  // M-1 (PLAN_MARCAJE_BOTONES_UX): en un día libre o un feriado no laborable no hay
+  // falta que registrar. Anular la entrada errónea debe dejar el día SIN registro,
+  // no fallar. El servidor decide el resultado y rechaza si la interfaz esperaba otro.
+  describe('anular entrada según el calendario (M-1)', () => {
+    const entradaAbierta = {
+      id: IDS.registro, empleado_id: IDS.empleado, fecha: '2026-08-03',
+      hora_entrada: '08:45:00', hora_salida: null, horas_trabajadas: 0, horas_normales: 0, horas_extra: 0,
+      es_ausencia: false, estado_marcaje: 'entrada',
+      entrada_marcada_en: '2026-08-03T12:45:00.000Z', entrada_por: OPERADORES.nomina.id, entrada_idempotency_key: 'entrada-x',
+    }
+    // 2026-08-03 es lunes: con solo el martes en su semana, hoy es su día libre.
+    const soloMartes = [{ empleado_id: IDS.empleado, dia_semana: 2, trabaja: true }]
+    const feriadoNoLaborable = { id: IDS.registro, fecha: '2026-08-03', nombre: 'Feriado patronal', laborable: false }
+    const escrituras = () => mock.calls.filter(call => ['POST', 'PATCH', 'DELETE'].includes(call.method))
+
+    async function anular(body) {
+      return readResponse(await H.handleAnularEntradaComoAusencia(makeRequest({
+        registroId: IDS.registro, motivo: 'Marcada por error, no vino', ...body,
+      }), ENV_HOY))
+    }
+
+    it.each([
+      ['día libre', { horarios: soloMartes }],
+      ['feriado no laborable', { feriado: feriadoNoLaborable }],
+    ])('en %s elimina la entrada con un DELETE condicional y lo audita', async (_caso, calendario) => {
+      mock = installFetchMock([
+        ...rutas({ ...calendario, registro: [entradaAbierta] }),
+        { match: '/registro_asistencia', method: 'DELETE', respond: [{ id: IDS.registro }] },
+      ])
+      const { status, body } = await anular({ resultadoEsperado: 'sin-registro' })
+      expect(status).toBe(200)
+      expect(body).toMatchObject({ ok: true, resultado: 'sin-registro', registro: null })
+      expect(escrituras().map(call => call.method)).toEqual(['DELETE'])
+      const borrado = escrituras()[0]
+      expect(borrado.url).toContain(`id=eq.${IDS.registro}`)
+      expect(borrado.url).toContain('estado_marcaje=eq.entrada')
+      expect(borrado.url).toContain('hora_entrada=eq.08%3A45%3A00')
+      expect(borrado.url).toContain('hora_salida=is.null')
+      expect(borrado.url).toContain('es_ausencia=eq.false')
+      expect(borrado.url).toContain('cuenta_id=eq.')
+      expect(registrarAuditoria).toHaveBeenCalledWith(ENV_HOY, expect.any(Object), expect.objectContaining({
+        accion: 'ANULAR_ENTRADA_SIN_REGISTRO',
+        entidadId: IDS.registro,
+        meta: expect.objectContaining({
+          motivo: 'Marcada por error, no vino',
+          entradaAnulada: expect.objectContaining({ hora: '08:45:00', idempotencyKey: 'entrada-x' }),
+          estadoNuevo: 'sin-registro',
+        }),
+      }))
+    })
+
+    it('si la interfaz esperaba una ausencia en un día libre responde 409 sin escribir', async () => {
+      for (const body of [{}, { resultadoEsperado: 'ausencia' }]) {
+        mock = installFetchMock(rutas({ horarios: soloMartes, registro: [entradaAbierta] }))
+        const { status, body: respuesta } = await anular(body)
+        expect(status).toBe(409)
+        expect(respuesta.resultado_real).toBe('sin-registro')
+        expect(escrituras()).toHaveLength(0)
+        expect(registrarAuditoria).not.toHaveBeenCalled()
+        mock.restore()
+        mock = null
+      }
+    })
+
+    it('si la interfaz esperaba borrar en un día laborable responde 409 sin escribir', async () => {
+      mock = installFetchMock(rutas({ registro: [entradaAbierta] }))
+      const { status, body } = await anular({ resultadoEsperado: 'sin-registro' })
+      expect(status).toBe(409)
+      expect(body.resultado_real).toBe('ausencia')
+      expect(escrituras()).toHaveLength(0)
+    })
+
+    it('rechaza un resultadoEsperado desconocido antes de consultar', async () => {
+      mock = installFetchMock([])
+      const { status } = await anular({ resultadoEsperado: 'borrar-todo' })
+      expect(status).toBe(400)
+      expect(mock.calls).toHaveLength(0)
+    })
+
+    it('si el DELETE no encuentra la fila (otro la cambió) responde 409 y no audita', async () => {
+      mock = installFetchMock([
+        ...rutas({ horarios: soloMartes, registro: [entradaAbierta] }),
+        { match: '/registro_asistencia', method: 'DELETE', respond: [] },
+      ])
+      const { status } = await anular({ resultadoEsperado: 'sin-registro' })
+      expect(status).toBe(409)
+      expect(registrarAuditoria).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['corregido sin salida en día laborable', {}, { estado_marcaje: 'corregido' }],
+      ['feriado laborable', { feriado: { ...feriadoNoLaborable, laborable: true } }, {}],
+    ])('%s: registra la ausencia', async (_caso, calendario, cambios) => {
+      mock = installFetchMock([
+        ...rutas({ ...calendario, registro: [{ ...entradaAbierta, ...cambios }] }),
+        { match: '/registro_asistencia', method: 'PATCH', respond: [{ id: IDS.registro, es_ausencia: true, estado_marcaje: 'manual' }] },
+      ])
+      const { status, body } = await anular({ resultadoEsperado: 'ausencia' })
+      expect(status).toBe(200)
+      expect(body.resultado).toBe('ausencia')
+      expect(escrituras().map(call => call.method)).toEqual(['PATCH'])
+    })
+  })
+
   it('deshacer borra solo la ausencia manual de hoy', async () => {
     mock = installFetchMock([
       ...rutas({ registro: [{ id: IDS.registro, es_ausencia: true, estado_marcaje: 'manual' }] }),

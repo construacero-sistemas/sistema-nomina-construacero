@@ -161,6 +161,71 @@ describe('marcaje operativo de administración', () => {
     expect(patch.body.hora_salida).toBe('08:00')
   })
 
+  // M-2 (PLAN_MARCAJE_BOTONES_UX): la salida se escribe con concurrencia optimista.
+  // Si otro equipo cerró la jornada entre la lectura y el PATCH, no se pisa su hora.
+  describe('salida con concurrencia optimista (M-2)', () => {
+    const abierta = {
+      id: IDS.registro, empleado_id: IDS.empleado, fecha: '2026-08-08',
+      hora_entrada: '07:00:00', hora_salida: null, es_ausencia: false, estado_marcaje: 'entrada', nota: null,
+    }
+
+    it('el PATCH solo aplica si la fila sigue abierta tal como se leyó', async () => {
+      ENV.NOMINA_NOW = NOW
+      mock = installFetchMock(routesFor({ asistencia: [abierta], post: [{ id: IDS.registro, estado_marcaje: 'completo' }] }))
+      const { status } = await readResponse(await H.handleMarcarSalida(makeRequest({
+        empleadoId: IDS.empleado, idempotencyKey: 'salida-m2-1',
+      }), ENV))
+      expect(status).toBe(200)
+      const patch = mock.calls.find(c => c.method === 'PATCH')
+      expect(patch.url).toContain(`id=eq.${IDS.registro}`)
+      expect(patch.url).toContain('hora_salida=is.null')
+      expect(patch.url).toContain('es_ausencia=eq.false')
+      expect(patch.url).toContain('estado_marcaje=eq.entrada')
+      expect(patch.url).toContain('hora_entrada=eq.07%3A00%3A00')
+    })
+
+    it('si otro equipo ya marcó la salida, responde 409 con su hora y no audita', async () => {
+      ENV.NOMINA_NOW = NOW
+      let lecturas = 0
+      mock = installFetchMock([
+        { match: '/nomina_periodos', respond: [] },
+        { match: '/nomina_config_empleado', respond: [{ horas_jornada: 8 }] },
+        { match: '/nomina_feriados', respond: [] },
+        { match: '/registro_asistencia', method: 'GET', respond: () => (++lecturas === 1
+          ? [abierta]
+          : [{ ...abierta, hora_salida: '07:59:00', estado_marcaje: 'completo', salida_idempotency_key: 'salida-de-otro-equipo' }]) },
+        { match: '/registro_asistencia', method: 'PATCH', respond: [] },
+      ])
+      const { status, body } = await readResponse(await H.handleMarcarSalida(makeRequest({
+        empleadoId: IDS.empleado, idempotencyKey: 'salida-m2-2',
+      }), ENV))
+      expect(status).toBe(409)
+      expect(body.error).toMatch(/ya marcó la salida/i)
+      expect(body.error).toMatch(/07:59/)
+      expect(registrarAuditoria).not.toHaveBeenCalled()
+    })
+
+    it('si la salida que ganó es la misma petición (reintento), responde idempotente', async () => {
+      ENV.NOMINA_NOW = NOW
+      let lecturas = 0
+      mock = installFetchMock([
+        { match: '/nomina_periodos', respond: [] },
+        { match: '/nomina_config_empleado', respond: [{ horas_jornada: 8 }] },
+        { match: '/nomina_feriados', respond: [] },
+        { match: '/registro_asistencia', method: 'GET', respond: () => (++lecturas === 1
+          ? [abierta]
+          : [{ ...abierta, hora_salida: '08:00:00', estado_marcaje: 'completo', salida_idempotency_key: 'salida-m2-3' }]) },
+        { match: '/registro_asistencia', method: 'PATCH', respond: [] },
+      ])
+      const { status, body } = await readResponse(await H.handleMarcarSalida(makeRequest({
+        empleadoId: IDS.empleado, idempotencyKey: 'salida-m2-3',
+      }), ENV))
+      expect(status).toBe(200)
+      expect(body.idempotente).toBe(true)
+      expect(registrarAuditoria).not.toHaveBeenCalled()
+    })
+  })
+
   it('repite una entrada de forma idempotente sin hacer POST', async () => {
     ENV.NOMINA_NOW = NOW
     mock = installFetchMock(routesFor({

@@ -25,6 +25,14 @@ export function fechaNominaValida(value) {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
 }
 
+// Filtro PostgREST «campo = valor leído» que también cubre el NULL. Base de la
+// concurrencia optimista del marcaje (G-3 de PLAN_MARCAJE_BOTONES_UX): un PATCH o
+// DELETE con estos filtros solo aplica si la fila sigue como se leyó; si devuelve
+// cero filas, otro equipo la cambió y se responde 409 en lugar de pisarla.
+export function filtroIgual(campo, valor) {
+  return valor === null || valor === undefined ? `&${campo}=is.null` : `&${campo}=eq.${encodeURIComponent(valor)}`
+}
+
 export function horaNominaValida(value) {
   return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value) &&
     Number(value.slice(0, 2)) <= 23 && Number(value.slice(3, 5)) <= 59

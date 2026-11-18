@@ -4248,3 +4248,24 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 **Pendientes.**
 1. Quitar la línea vieja de `DB_PASSWORD` del `.env` (línea 4).
 2. Validación visual en el teléfono de Configuración y del recibo con el descanso pagado.
+
+## 148. Marcaje real: botones que el servidor no rechaza y salidas que no se pisan (PR 1 de PLAN_MARCAJE_BOTONES_UX) (2026-11-17)
+
+**Contexto.** Auditoría de los botones del «Marcaje real de hoy» (`docs/PLAN_MARCAJE_BOTONES_UX.md`). Este PR cubre la Fase 0 y la Fase 1 (M-0 … M-3), en la rama `nomina/marcaje-integridad`.
+
+**Qué se hizo.**
+- **M-0.** `MarcajeLogisticaPanel.jsx` pasó de 565 a 342 líneas, por debajo del límite de 600, repartido en `src/components/nomina/marcaje/` (`TarjetaMarcaje`, `AnularEntradaModal`, `marcajeEstado`). Los 14 tests del panel pasaron sin cambiar aserciones.
+- **M-1.** «Anular entrada y marcar ausente» se mostraba en día libre y en feriado no laborable, pero el servidor siempre respondía 400: una entrada marcada por error ese día no se podía quitar. Ahora el servidor decide el resultado: en día laborable, ausencia; en día no laborable, DELETE condicional con auditoría `ANULAR_ENTRADA_SIN_REGISTRO`. Si la interfaz esperaba otro resultado (`resultadoEsperado`), responde 409 sin escribir. En la UI, esos días el botón dice «Anular entrada (no vino)».
+- **M-2.** La salida se escribía filtrando solo por `id`, así que dos equipos podían pisarse la hora. Ahora el PATCH lleva los filtros del estado leído (`filtroIgual` en `nomina.shared.js`, más `hora_salida=is.null`). Si no afecta filas responde 409 con la hora ganadora, o 200 idempotente si la salida ganadora es la misma petición.
+- **M-3.** La clave de idempotencia se generaba dentro de la mutación, por lo que un reintento llevaba una clave nueva y recibía 409. Ahora se genera al hacer clic (`src/hooks/idempotencia.js`). Tras un corte de red (error sin código HTTP) el panel ofrece «Reintentar» con la misma clave.
+
+**Pruebas en rojo antes del fix.** M-1: 8 casos (el día libre respondía 400). M-2: 3 casos (con el PATCH vacío respondía 200). M-3: 2 casos (el hook ignoraba la clave).
+
+**Verificación.**
+- Línea base, con trabajo ajeno sin commit en el árbol (permisos de feriados, tasas y moneda): 134/136 archivos y 1417 tests. Fallaban 7 tests de `navModulos` y `PeriodoDetalleModal.tasaPago`, que no son de marcaje.
+- Después, paso a paso: `check:project`, `test:qa`, `test:responsive`, `lint`, `test:deterministic`, `test` (**138/138 archivos, 1459 tests**), `test:db` (44 comprobaciones), `build` y `test:bundle-size`, todos OK.
+
+**Pendientes.**
+1. Casos de staging de M-1 (entrada en sábado libre → anular → sin registro) y M-2 (dos salidas simultáneas → una 200 y una 409) en `test-staging-smoke` y `test-staging-concurrency`.
+2. Validación en el teléfono del botón «Anular entrada (no vino)» y del banner «Reintentar».
+3. Fases 2 y 3 del plan; requieren las decisiones D-1 a D-5.
