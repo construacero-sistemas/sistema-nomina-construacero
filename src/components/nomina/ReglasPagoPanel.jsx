@@ -1,12 +1,15 @@
 // src/components/nomina/ReglasPagoPanel.jsx
 // Configuración → «Reglas de pago y de la ley». Todo lo que decide cuánto se paga
 // queda editable aquí por si cambia la ley o la política de la empresa:
-//   - hora extra, sábado y domingo/feriado trabajados: por FACTOR o MONTO FIJO;
+//   - hora extra y sábado/domingo/feriado trabajado: por FACTOR o MONTO FIJO.
+//     Sábado, domingo y feriado son UNA sola regla (audio del dueño, 17/11/2026:
+//     «un día adicional» por cualquiera de ellos), así que un solo bloque escribe
+//     los campos de sábado y de feriado con el mismo valor;
 //   - reglas de la ley (migración 263): divisor del sueldo mensual, días
 //     laborables por defecto, descanso pagado y faltas que lo hacen perder.
 // Solo quien tiene `administrarSistema` (jefe) guarda; el servidor exige lo mismo.
 import { useState } from 'react'
-import { DollarSign, RotateCcw, Scale } from 'lucide-react'
+import { AlertTriangle, DollarSign, Lock, RotateCcw, Scale } from 'lucide-react'
 import { useGuardarConfigNomina } from '../../hooks/useNomina.js'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import { tieneCapacidad } from '../../config/accesoModulos.js'
@@ -17,7 +20,15 @@ import { LIMITES_REGLAS_LEY, REGLAS_LEY_DEFAULT, reglasLeyDeConfig } from '../..
 const inputCls = 'w-full min-h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50'
 
 // Valores mínimos de la LOTTT para el botón «Valores de la ley».
-const LEY_PAGOS = { extra: 1.5, sabado: 1.5, feriado: 1.5 }
+const LEY_PAGOS = { extra: 1.5, descanso: 1.5 }
+
+// ¿El factor escrito queda por debajo del mínimo legal? Se permite guardarlo (es
+// decisión de la empresa), pero la pantalla lo advierte en vez de callarlo.
+function debajoDeLaLey(concepto, pago) {
+  if (pago.modo !== 'factor') return false
+  const factor = Number(String(pago.factor).replace(',', '.'))
+  return Number.isFinite(factor) && factor < LEY_PAGOS[concepto.id]
+}
 
 const CONCEPTOS = [
   {
@@ -27,24 +38,32 @@ const CONCEPTOS = [
     ayudaMonto: 'Monto fijo en dólares por cada hora extra, igual para todos.',
   },
   {
-    id: 'sabado', titulo: 'Sábado trabajado',
-    factor: 'nomina_factor_sabado', monto: 'nomina_monto_sabado_usd',
-    ayudaFactor: 'Se suma al descanso pagado: 1 = un día de sueldo más; 1,5 = día y medio. Ley: 1,5 (art. 120).',
-    ayudaMonto: 'Monto fijo en dólares por cada sábado trabajado.',
-  },
-  {
-    id: 'feriado', titulo: 'Domingo o feriado trabajado',
+    // Lee los campos de feriado (los que el motor usa para domingo y feriado) y al
+    // guardar escribe el mismo valor también en los de sábado.
+    id: 'descanso', titulo: 'Sábado, domingo o feriado trabajado',
     factor: 'nomina_factor_feriado', monto: 'nomina_monto_feriado_usd',
-    ayudaFactor: 'Se suma al descanso pagado: 1 = un día de sueldo más; 1,5 = día y medio. Ley: 1,5 (art. 120).',
-    ayudaMonto: 'Monto fijo en dólares por cada domingo o feriado trabajado.',
+    espejo: { factor: 'nomina_factor_sabado', monto: 'nomina_monto_sabado_usd' },
+    ayudaFactor: 'Se suma al descanso pagado: 1 = un día de sueldo más (mensual ÷ 30); 1,5 = día y medio. Ley: 1,5 (art. 120).',
+    ayudaMonto: 'Monto fijo en dólares por cada sábado, domingo o feriado trabajado.',
   },
 ]
 
 function modoInicial(config, concepto) {
   const monto = config?.[concepto.monto]
   const tieneMonto = monto != null && Number(monto) > 0
-  if (concepto.id === 'feriado') return tieneMonto && config?.nomina_feriado_modo === 'monto_fijo' ? 'monto' : 'factor'
+  if (concepto.id === 'descanso') return tieneMonto && config?.nomina_feriado_modo === 'monto_fijo' ? 'monto' : 'factor'
   return tieneMonto ? 'monto' : 'factor'
+}
+
+// Antes eran dos bloques: si sábado y domingo/feriado quedaron con valores distintos
+// se avisa, porque al guardar el bloque único los iguala.
+function sabadoDistinto(config) {
+  if (!config) return false
+  const montoSabado = Number(config.nomina_monto_sabado_usd) > 0 ? Number(config.nomina_monto_sabado_usd) : null
+  const feriadoFijo = config.nomina_feriado_modo === 'monto_fijo' && Number(config.nomina_monto_feriado_usd) > 0
+  const montoFeriado = feriadoFijo ? Number(config.nomina_monto_feriado_usd) : null
+  if (montoSabado !== montoFeriado) return true
+  return montoSabado === null && Number(config.nomina_factor_sabado ?? 1.5) !== Number(config.nomina_factor_feriado ?? 1.5)
 }
 
 function estadoDesdeConfig(config) {
@@ -72,13 +91,15 @@ function construirPayload(form) {
       if (!Number.isFinite(factor) || factor < 1 || factor > 10) return { error: `${c.titulo}: el factor debe estar entre 1 y 10` }
       payload[c.factor] = factor
       payload[c.monto] = null
+      if (c.espejo) { payload[c.espejo.factor] = factor; payload[c.espejo.monto] = null }
     } else {
       const monto = Number(String(p.monto).replace(',', '.'))
       if (!Number.isFinite(monto) || monto <= 0) return { error: `${c.titulo}: el monto fijo debe ser mayor que 0` }
       payload[c.monto] = monto
+      if (c.espejo) payload[c.espejo.monto] = monto
     }
   }
-  payload.nomina_feriado_modo = form.pagos.feriado.modo === 'monto' ? 'monto_fijo' : 'factor'
+  payload.nomina_feriado_modo = form.pagos.descanso.modo === 'monto' ? 'monto_fijo' : 'factor'
   const divisor = Number(form.divisor)
   const { min: dMin, max: dMax } = LIMITES_REGLAS_LEY.divisorMensual
   if (!Number.isInteger(divisor) || divisor < dMin || divisor > dMax) return { error: `El divisor del sueldo mensual debe ser un entero entre ${dMin} y ${dMax}` }
@@ -155,7 +176,7 @@ export default function ReglasPagoPanel({ config }) {
       </div>
       {!puedeEditar && <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">Solo quien administra la nómina puede cambiar estas reglas.</p>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {CONCEPTOS.map(c => {
           const p = actual.pagos[c.id]
           return (
@@ -164,7 +185,7 @@ export default function ReglasPagoPanel({ config }) {
                 {[['factor', 'Por factor'], ['monto', 'Monto fijo']].map(([modo, etiqueta]) => (
                   <button key={modo} type="button" role="radio" aria-checked={p.modo === modo} disabled={bloqueado}
                     onClick={() => cambiarPago(c.id, { modo })}
-                    className={`min-h-11 rounded-lg text-xs font-bold transition-all ${p.modo === modo ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                    className={`min-h-11 rounded-lg text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${p.modo === modo ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
                     style={{ touchAction: 'manipulation' }}>{etiqueta}</button>
                 ))}
               </div>
@@ -177,6 +198,17 @@ export default function ReglasPagoPanel({ config }) {
                   value={p.modo === 'factor' ? p.factor : p.monto}
                   onChange={e => cambiarPago(c.id, p.modo === 'factor' ? { factor: e.target.value } : { monto: e.target.value })} />
               </label>
+              {c.espejo && !form && sabadoDistinto(cargado) && (
+                <p className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5 text-[11px] font-semibold text-sky-900">
+                  Sábado y domingo/feriado tenían valores distintos. Se muestra el de domingo/feriado; al guardar se aplica a los tres.
+                </p>
+              )}
+              {debajoDeLaLey(c, p) && (
+                <p className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] font-semibold text-amber-900">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  Por debajo del mínimo de la ley ({String(LEY_PAGOS[c.id]).replace('.', ',')}). Se puede guardar, pero no cumple la LOTTT.
+                </p>
+              )}
               <p className="text-[11px] leading-relaxed text-slate-500">{p.modo === 'factor' ? c.ayudaFactor : c.ayudaMonto}</p>
             </Bloque>
           )
@@ -194,25 +226,33 @@ export default function ReglasPagoPanel({ config }) {
         </Bloque>
 
         <Bloque titulo="Días laborables por defecto">
-          <div className="grid grid-cols-6 gap-1" role="group" aria-label="Días laborables por defecto">
-            {[1, 2, 3, 4, 5, 6].map(dia => {
-              const activo = actual.dias.includes(dia)
-              return (
-                <button key={dia} type="button" aria-pressed={activo} disabled={bloqueado} onClick={() => alternarDia(dia)}
-                  className={`min-h-11 rounded-lg border text-xs font-bold ${activo ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-500'}`}
-                  style={{ touchAction: 'manipulation' }}>{NOMBRE_DIA_CORTO[dia]}</button>
-              )
-            })}
+          <div className="grid grid-cols-7 gap-1">
+            <div className="col-span-6 grid grid-cols-6 gap-1" role="group" aria-label="Días laborables por defecto">
+              {[1, 2, 3, 4, 5, 6].map(dia => {
+                const activo = actual.dias.includes(dia)
+                return (
+                  <button key={dia} type="button" aria-pressed={activo} disabled={bloqueado} onClick={() => alternarDia(dia)}
+                    className={`min-h-11 rounded-lg border text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60 ${activo ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-500'}`}
+                    style={{ touchAction: 'manipulation' }}>{NOMBRE_DIA_CORTO[dia]}</button>
+                )
+              })}
+            </div>
+            {/* El domingo es el descanso semanal (arts. 173 y 184): se ve, pero no se elige. */}
+            <div aria-label="Domingo: descanso semanal, no es laborable" title="Domingo: descanso semanal obligatorio (arts. 173 y 184)"
+              className="flex min-h-11 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-400">
+              <span className="flex items-center gap-0.5 text-xs font-bold"><Lock size={10} aria-hidden="true" />{NOMBRE_DIA_CORTO[0]}</span>
+              <span className="text-[9px] font-semibold leading-none">Descanso</span>
+            </div>
           </div>
-          <p className="text-[11px] text-slate-500">Para quien no tiene su semana guardada. El domingo nunca es laborable. Ley: lunes a viernes (art. 173).</p>
+          <p className="text-[11px] text-slate-500">Para quien no tiene su semana guardada. El domingo es el descanso semanal y no se puede marcar (arts. 173 y 184). Ley: lunes a viernes.</p>
         </Bloque>
 
         <Bloque titulo="Descanso pagado">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-xs text-slate-600">Pagar sábado, domingo y feriados aunque no se trabajen</span>
-            <Switch checked={actual.descanso} onChange={() => !bloqueado && cambiar({ descanso: !actual.descanso })} label="Descanso pagado" />
+            <span className="text-xs text-slate-600">Pagar los días de descanso y los feriados aunque no se trabajen</span>
+            <Switch checked={actual.descanso} onChange={() => cambiar({ descanso: !actual.descanso })} label="Descanso pagado" disabled={bloqueado} />
           </div>
-          <p className="text-[11px] text-slate-500">Ley: sí (art. 119).</p>
+          <p className="text-[11px] text-slate-500">Días de descanso: los que no están en la semana laboral de cada persona (siempre el domingo). Ley: sí (art. 119).</p>
         </Bloque>
 
         <Bloque titulo="Faltas que hacen perder el descanso">
@@ -228,11 +268,14 @@ export default function ReglasPagoPanel({ config }) {
       {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700">{error}</p>}
       {puedeEditar && (
         <div className="flex flex-wrap gap-2">
-          <button type="submit" disabled={bloqueado}
-            className="inline-flex items-center min-h-11 rounded-xl bg-primary px-4 text-xs font-black text-white disabled:opacity-50 hover:bg-primary-hover active:scale-95 shadow-xs"
+          <button type="submit" disabled={bloqueado || !form}
+            className="inline-flex items-center min-h-11 rounded-xl bg-primary px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-primary-hover active:scale-95 shadow-xs"
             style={{ touchAction: 'manipulation' }}>
             {guardar.isPending ? 'Guardando...' : 'Guardar reglas'}
           </button>
+          {form && (
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 text-[11px] font-bold text-amber-900">Cambios sin guardar</span>
+          )}
           {form && (
             <button type="button" onClick={() => { setForm(null); setError('') }} disabled={guardar.isPending}
               className="inline-flex items-center min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700"

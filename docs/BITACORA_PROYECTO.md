@@ -4291,3 +4291,23 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 1. Probar en el teléfono, con sesión real, «Deshacer», «Llegó» y «Más acciones». La demo visual se hizo sin sesión.
 2. Staging no tiene la migración 262 (`dias_descanso`); el smoke avisa y sigue.
 
+## 150. Reglas de pago: un solo bloque para sábado, domingo y feriado; interruptor y domingo visibles (2026-11-17)
+
+**Contexto.** Revisión de la pantalla «Reglas de pago y de la ley» a partir de capturas del usuario, de la planilla Excel de la semana 05–11/11 y de un audio del dueño (WhatsApp 17/11 12:45, transcrito en local con `scripts/transcribir_audio.py`).
+
+**Lo que dice el audio.** La hora extra se paga a 2,5; el usuario confirmó que son **$2,50 fijos por hora**, no un factor. Sábado, domingo o feriado trabajado = **un día adicional** (mensual ÷ 30) aparte de los 7 de la semana, para cualquier trabajador. Es una sola regla.
+
+**Qué se hizo.**
+- **Un solo bloque**, «Sábado, domingo o feriado trabajado», que guarda el mismo factor o monto en los campos de sábado y de feriado. Si estaban distintos, la pantalla lo avisa y al guardar los iguala.
+- **Interruptor** (kit UI): pista estándar de 48×28, área táctil de 44, deshabilitado de verdad y foco visible.
+- **Domingo** visible como «Descanso» fijo, no seleccionable (arts. 173 y 184).
+- «Guardar reglas» solo se habilita con cambios, y se muestra «Cambios sin guardar».
+- Aviso cuando un factor queda por debajo de la ley (1,5); se puede guardar igual.
+
+**Pendientes.**
+1. **Hora extra a $2,50 fijos en producción:** hacerlo desde la app (Reglas de pago → Hora extra → Monto fijo → 2.50 → Guardar). La escritura directa en la base fue bloqueada por permisos; el script con respaldo está en `local-backups/config-hora-extra-250-prod.mjs`.
+2. **Excel frente a app:** con la regla del audio, la app paga unos $4 menos por persona a la semana que la planilla (÷ 30 × 7 frente a ÷ 4, y mensual ÷ 30 frente a $10). El dueño debe saberlo antes del cambio.
+3. **Errores de la planilla del 05–11/11:** el total en Bs (543.781,93) no incluye a Julián Guaina (70.653,80 Bs); el neto real es 293,75 $, no 223,75 $.
+4. Josué Marciales cobra en la planilla pero está dado de baja en la app; hay pagos sin equivalente en la app (Gerson Salazar, José Luis González, Armansio Martínez).
+5. El motor aplica el recargo de sábado a todo sábado trabajado (`es_sabado`), incluso a quien tenga el sábado en su semana laboral. Hoy nadie la tiene y con factor 1 el recargo es $0.
+
