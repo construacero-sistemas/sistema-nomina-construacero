@@ -11,7 +11,7 @@ va en el primer recuadro.
 |---|---|
 | D-1 | Semana = mensual ÷ 30 × 7 (audio del dueño, 16/11: 5 laborables + 2 de descanso; «por exclusión»: una falta injustificada descuenta su día) |
 | D-2 | **Bono semanal = $35 fijo**, en una columna del primer recuadro. **Sueldo semanal = semana − bono** (es lo que varía por persona) |
-| D-3 | Qué pasa con el bono si alguien falta: **pendiente**. Provisional: el bono queda en 35 (o en la semana, si es menor) y la falta sale del sueldo semanal; el total no cambia |
+| D-3 | **Decidido (18/11/2026): el sueldo semanal se llena primero**, hasta su tope (semana completa − $35); el bono es lo que sobra, hasta $35. Una falta o una semana a medias baja el **bono**, no el sueldo. El total no cambia |
 | D-4 | Todos cobran el bono; interruptor por ficha «Cobra bono semanal» para excluir a alguien (Fase 2) |
 | D-5 | Los pagos fuera de nómina (Gerson Salazar, José Luis González, Armansio Martínez…) no van en la hoja |
 | D-6 | Josué Marciales no se incluye por ahora |
@@ -25,8 +25,8 @@ va en el primer recuadro.
 | Nombre | Ficha |
 | Sueldo mensual | Sueldo diario congelado en el recibo × divisor (30) |
 | Días trab. | Días laborables trabajados (sin contar descansos ni feriados trabajados) |
-| Sueldo semanal | Semana − bono semanal |
-| Bono semanal | $35 (o la semana entera si es menor) |
+| Sueldo semanal | Lo que se lleva primero de la semana, hasta (sueldo mensual ÷ 30 × 7) − $35 |
+| Bono semanal | El resto de la semana, hasta $35 |
 | Horas extra / Total extras | Horas extra del recibo / su monto |
 | Desc./feriado trab. / Valor | Días de descanso o feriado trabajados / lo que pagan (día adicional + recargos o montos fijos) |
 | Otros pagos | Bonos manuales del recibo |
@@ -66,4 +66,4 @@ columnas lo que el motor ya calculó. Si el motor cambia, la hoja lo refleja sol
 - **Descuento manual (D-8):** «Agregar descuento» en cada ficha y «+» en cada fila de la tabla. Abren el mismo ajuste del recibo, solo con período abierto, permiso de gestión y recibo sin pagar.
 - **Descargar Excel:** CSV con «;», coma decimal y fila de totales.
 
-Pendiente: Fase 2 (D-4: interruptor «Cobra bono semanal» por ficha) y Fase 3 (período automático jueves → miércoles y llenado en vivo). D-3 sigue abierta.
+Pendiente: Fase 2 (D-4: interruptor «Cobra bono semanal» por ficha) y Fase 3 (período automático jueves → miércoles y llenado en vivo). D-3 decidida el 18/11/2026: sueldo primero.

@@ -50,8 +50,11 @@ export function armarHojaSemanal({ lineas = [], asistencias = [], diasPorEmplead
     const diasDescansoPagados = num(linea.dias_descanso)
     // D-1: la semana son los días laborables trabajados más los descansos pagados.
     const semana = r2((diasTrabajados + diasDescansoPagados) * sueldoDia)
-    // D-2/D-3: bono fijo; si la semana no alcanza, el bono es la semana entera.
-    const bono = semana > 0 ? r2(Math.min(num(bonoSemanal), semana)) : 0
+    // D-2/D-3 (usuario, 18/11/2026): el SUELDO semanal se llena primero, hasta su
+    // tope (semana completa − bono); el bono es lo que sobra, hasta $35. Con la
+    // semana completa: sueldo + 35. Con la semana incompleta, lo que falta sale del bono.
+    const topeSueldo = Math.max(0, r2(sueldoDia * 7) - num(bonoSemanal))
+    const bono = semana > 0 ? r2(Math.min(num(bonoSemanal), Math.max(0, semana - topeSueldo))) : 0
     const totalExtras = r2(linea.monto_extra_usd)
     const otrosPagos = r2(num(linea.bonos_usd) + num(linea.comisiones_pos_usd))
     const totalACobrar = r2(linea.total_bruto_usd)

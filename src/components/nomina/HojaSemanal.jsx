@@ -88,7 +88,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
     <section aria-label="Hoja semanal" className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] text-slate-500">
-          Semana = sueldo mensual ÷ 30 × 7. Bono semanal fijo de ${usd(data.bonoSemanal)}; el sueldo semanal es el resto.
+          Semana = sueldo mensual ÷ 30 × 7. Se llena primero el sueldo semanal; el bono (hasta ${usd(data.bonoSemanal)}) es lo que sobra.
         </p>
         <button type="button" onClick={descargar}
           className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"

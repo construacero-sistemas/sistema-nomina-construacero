@@ -135,5 +135,19 @@ describe('PeriodoDetalleModal — Bs congelado al pagar (migración 241)', () =>
     )
     await screen.findAllByText('pedro perez', { exact: false })
     expect(screen.queryByRole('button', { name: /importar comisiones pos/i })).toBeNull()
+    // Sin comisiones en el período, tampoco la columna ni el dato de la ficha.
+    expect(screen.queryByText('Comis. POS')).toBeNull()
+  })
+
+  it('muestra «Comis. POS» si un recibo antiguo del período trae comisiones (para que cuadre)', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    lineasData = [{ ...lineaBase(), comisiones_pos_usd: 12.5 }]
+    render(
+      <QueryClientProvider client={qc}>
+        <PeriodoDetalleModal periodo={{ id: 'p1', estado: 'abierto', fecha_inicio: '2026-09-01', fecha_fin: '2026-09-07' }} esAdmin puedeGestionarNomina onClose={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await screen.findAllByText('pedro perez', { exact: false })
+    expect(screen.getAllByText('Comis. POS').length).toBeGreaterThan(0)
   })
 })
