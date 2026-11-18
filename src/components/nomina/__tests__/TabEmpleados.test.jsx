@@ -7,6 +7,8 @@ import TabEmpleados from '../TabEmpleados.jsx'
 
 let mockAllConfigs = []
 let mockClientes = []
+let mockAsistencia = undefined
+let mockConfigNomina = undefined
 const mockActualizarMutate = vi.fn().mockResolvedValue({ ok: true })
 const mockEliminarMutate = vi.fn().mockResolvedValue({ ok: true })
 
@@ -30,6 +32,8 @@ vi.mock('../../../hooks/useNomina', () => ({
     isPending: false,
   }),
   usePosVendedores: () => ({ data: [] }),
+  useAsistencia: () => ({ data: mockAsistencia }),
+  useConfigNomina: () => ({ data: mockConfigNomina }),
   useCrearConfigEmpleado: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
@@ -64,6 +68,8 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     qc.clear()
+    mockAsistencia = undefined
+    mockConfigNomina = undefined
   })
 
   it('no muestra alerta sin configurar cuando todos los empleados (activos o bajas) tienen config', () => {
@@ -189,7 +195,7 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
     expect(screen.queryByText('Vendedores (Comisión)')).toBeNull()
   })
 
-  it('muestra en la ficha qué días trabaja cada persona y avisa cuando no está fijado', () => {
+  it('muestra en la ficha qué días trabaja cada persona y marca la semana por defecto', () => {
     mockClientes = [
       { id: 'emp-1', nombre: 'Niki Ramirez', tipo_cliente: 'personal', activo: true },
       { id: 'emp-2', nombre: 'Josue Marciales', tipo_cliente: 'personal', activo: true },
@@ -201,9 +207,31 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
 
     renderTab(true, true, true)
 
-    expect(screen.getByText('Trabaja: Lun a Sáb')).toBeTruthy()
-    expect(screen.getByText('Trabaja: Lun a Vie')).toBeTruthy()
-    expect(screen.getByText('(sin fijar)')).toBeTruthy()
+    expect(screen.getByText(/^Lun a Sáb/)).toBeTruthy()
+    expect(screen.getByText(/^Lun a Vie/)).toBeTruthy()
+    expect(screen.getByText('(por defecto)')).toBeTruthy()
+    expect(screen.queryByText('(sin fijar)')).toBeNull()
+  })
+
+  it('la tarjeta muestra sueldo mensual, la semana con su bono, la hora extra y cómo va la semana', () => {
+    mockClientes = [{ id: 'emp-1', nombre: 'Alejandra Hidalgo', tipo_cliente: 'personal', activo: true }]
+    mockAllConfigs = [{ id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Administración', salario_dia_usd: 9.3333, horas_jornada: 8, hora_inicio: '08:00', hora_fin: '17:00', activo: true, empleado: mockClientes[0], dias_laborables: [1, 2, 3, 4, 5], horario_configurado: true }]
+    mockConfigNomina = { nomina_monto_hora_extra_usd: 2.5, nomina_semana_inicio: 4 }
+    mockAsistencia = { registros: [
+      { empleado_id: 'emp-1', fecha: '2026-11-12', hora_entrada: '08:00', hora_salida: '17:00', horas_normales: 8 },
+      { empleado_id: 'emp-1', fecha: '2026-11-13', es_ausencia: true },
+    ] }
+
+    renderTab(true, true, true)
+
+    expect(screen.getByText('$280,00')).toBeTruthy()
+    expect(screen.getByText('$65,33')).toBeTruthy()
+    expect(screen.getByText('Sueldo $30,33 + bono $35,00')).toBeTruthy()
+    expect(screen.getByText('$2,50')).toBeTruthy()
+    expect(screen.queryByText('Tarifa / hora')).toBeNull()
+    expect(screen.queryByText(/Ingreso:/)).toBeNull()
+    expect(screen.getByText('1 de 5 días')).toBeTruthy()
+    expect(screen.getByText('· 1 falta')).toBeTruthy()
   })
 
   it('el interruptor de Asistencia aplica el cambio directo cuando el perfil cobra por comisión', () => {
