@@ -445,7 +445,7 @@ de `role="list"`. Al marcar, ese elemento contiene el anuncio.
 
 ---
 
-## Decisiones pendientes (las define el dueño del producto antes de cada fase)
+## Decisiones (adoptadas el 17/11/2026 con la propuesta por defecto, a pedido del usuario)
 
 | ID | Pregunta | Propuesta por defecto |
 |---|---|---|
@@ -494,6 +494,31 @@ Se escribió cada prueba antes del fix y se vio fallar contra el código anterio
 Desvíos respecto al plan:
 - No se añadió el alias `POST /api/nomina/marcaje/anular-entrada`: la ruta existente basta y se agregó al arnés de `worker.e2e.test.js`, donde faltaba.
 - No se tocó `scripts/test-staging-smoke.mjs` ni `test-staging-concurrency.mjs`. Los casos de staging de M-1 y M-2 quedan pendientes para la aceptación en staging.
+
+### PR 2 (rama `nomina/marcaje-flujo-operativo`, 17/11/2026): staging M-1/M-2 + M-4 … M-14
+
+Fases 2, 3 y 4 en un solo PR, en commits separados. Las decisiones D-1 a D-4 viven en
+`server/lib/marcajeReglas.js`, que comparten el Worker y la interfaz.
+
+| Hallazgo | Implementación | Arnés |
+|---|---|---|
+| Staging M-1/M-2 | `scripts/test-staging-smoke.mjs`: domingo libre y feriado no laborable (409 si se esperaba ausencia; con `sin-registro`, el registro desaparece), sábado laborable (queda como ausencia) y dos salidas simultáneas (una 200 y una 409, queda la hora ganadora). Limpia lo que crea | Corrido contra staging: PASS |
+| M-4 | `src/hooks/marcajeCache.js` aplica la fila confirmada; `useAccionesMarcaje` bloquea por persona; `isFetching` ya no bloquea | Hooks (caché) + panel (bloqueo por tarjeta, recarga de fondo) |
+| M-5 | `useOrdenEstable`: orden congelado por clave (filtro, búsqueda, vista, «Actualizar»); lo recién marcado sigue visible; filtro inicial por D-2 | Panel: abre en Pendientes / En jornada, orden estable, reordena al actualizar |
+| M-6 | `POST /api/nomina/marcaje/deshacer` (`nomina.marcaje-deshacer.js`): clave de la acción, ventana de 120 s según el servidor, escritura condicional, auditoría `DESHACER_*`. UI con cuenta regresiva | 9 casos de servidor + panel (clave, vencimiento) |
+| M-7 | `reemplazarAusencia` en la entrada: PATCH condicional sobre la ausencia manual y auditoría con `ausenciaReemplazada`. Botón «Llegó: marcar entrada» | 4 casos de servidor + hook + panel |
+| M-8 | La UI pide un segundo toque antes de 15 min; el servidor audita `jornadaCorta` y `minutosJornada` | 2 casos de servidor + panel |
+| M-9 | Los hooks de marcaje no emiten toast de error | Hook: ningún `showToast.error` en 5 mutaciones |
+| M-10 | En jornada: «Marcar salida» más el disclosure «Más acciones» (`aria-expanded`/`aria-controls`, en línea) | Panel |
+| M-11 | «En jornada 3 h 50 min», «Entra 08:00 AM» y «Retraso 4 h» (tolerancia de 10 min); reloj de 60 s en el panel | Panel (con y sin retraso, sin hora de inicio) |
+| M-12 | «No vino — marcar ausente / anular entrada», «Corregir hora», toasts con nombre y hora, nombre capitalizado en el modal | Hook y panel |
+| M-13 | Cada nombre accesible empieza por el texto visible; el nombre del empleado va en `sr-only` | **Guardarraíl permanente**: recorre todos los botones del panel en todos los estados |
+| M-14 | Sin `role="status"` por tarjeta; una región `aria-live` anuncia la última acción | Panel |
+
+Desvíos respecto al plan:
+- M-8: no se añadió el bloqueo de 1,5 s tras la entrada. El segundo toque obligatorio antes de 15 min ya cubre el doble toque: dos toques seguidos nunca cierran una jornada.
+- M-6 usa la línea de la tarjeta, no un toast con «Deshacer».
+- Verificación visual: una demo temporal de `TarjetaMarcaje` a 375 px con los estilos reales (sin datos ni sesión). Mostró los 15 botones de al menos 44 px, el disclosure funcionando y ningún desborde horizontal. No se entró a la app de staging porque su contraseña de prueba viaja a Supabase (host remoto).
 
 ## Fuera de alcance
 

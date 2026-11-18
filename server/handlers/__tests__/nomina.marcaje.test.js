@@ -226,6 +226,104 @@ describe('marcaje operativo de administración', () => {
     })
   })
 
+  // M-7: quien llega tarde después de ser marcado ausente queda en jornada con un
+  // solo toque. La ausencia manual se convierte en entrada con la hora del servidor.
+  describe('«Llegó» desde una ausencia (M-7)', () => {
+    const ausencia = {
+      id: IDS.registro, empleado_id: IDS.empleado, fecha: '2026-08-08',
+      hora_entrada: null, hora_salida: null, es_ausencia: true, estado_marcaje: 'manual', nota: null,
+    }
+
+    it('con reemplazarAusencia convierte la ausencia manual en entrada con un PATCH condicional', async () => {
+      ENV.NOMINA_NOW = NOW
+      let cambios = null
+      mock = installFetchMock([
+        ...routesFor({ asistencia: [ausencia] }).filter(route => route.method !== 'PATCH'),
+        { match: '/registro_asistencia', method: 'PATCH', respond: (_url, init) => {
+          cambios = JSON.parse(init.body)
+          return [{ id: IDS.registro, empleado_id: IDS.empleado, hora_entrada: '08:00', estado_marcaje: 'entrada', es_ausencia: false }]
+        } },
+      ])
+      const { status, body } = await readResponse(await H.handleMarcarEntrada(makeRequest({
+        empleadoId: IDS.empleado, idempotencyKey: 'entrada-llego-1', reemplazarAusencia: true,
+      }), ENV))
+      expect(status).toBe(200)
+      expect(body.registro).toMatchObject({ estado_marcaje: 'entrada', es_ausencia: false })
+      expect(cambios).toMatchObject({
+        hora_entrada: '08:00', es_ausencia: false, estado_marcaje: 'entrada',
+        entrada_idempotency_key: 'entrada-llego-1', horas_trabajadas: 0,
+      })
+      const patch = mock.calls.find(c => c.method === 'PATCH')
+      for (const filtro of ['es_ausencia=eq.true', 'estado_marcaje=eq.manual', 'hora_entrada=is.null']) expect(patch.url).toContain(filtro)
+      expect(mock.calls.some(c => c.method === 'POST')).toBe(false)
+      expect(registrarAuditoria).toHaveBeenCalledWith(ENV, expect.any(Object), expect.objectContaining({
+        accion: 'MARCAR_ENTRADA',
+        meta: expect.objectContaining({ ausenciaReemplazada: expect.objectContaining({ registroId: IDS.registro }) }),
+      }))
+    })
+
+    it('sin el flag responde 409 explicando el camino, sin escribir', async () => {
+      ENV.NOMINA_NOW = NOW
+      mock = installFetchMock(routesFor({ asistencia: [ausencia] }))
+      const { status, body } = await readResponse(await H.handleMarcarEntrada(makeRequest({
+        empleadoId: IDS.empleado, idempotencyKey: 'entrada-llego-2',
+      }), ENV))
+      expect(status).toBe(409)
+      expect(body.error).toMatch(/Llegó/)
+      expect(mock.calls.some(c => ['POST', 'PATCH'].includes(c.method))).toBe(false)
+    })
+
+    it('si la ausencia cambió entre la lectura y el PATCH responde 409 y no audita', async () => {
+      ENV.NOMINA_NOW = NOW
+      mock = installFetchMock([
+        ...routesFor({ asistencia: [ausencia] }).filter(route => route.method !== 'PATCH'),
+        { match: '/registro_asistencia', method: 'PATCH', respond: [] },
+      ])
+      const { status } = await readResponse(await H.handleMarcarEntrada(makeRequest({
+        empleadoId: IDS.empleado, idempotencyKey: 'entrada-llego-3', reemplazarAusencia: true,
+      }), ENV))
+      expect(status).toBe(409)
+      expect(registrarAuditoria).not.toHaveBeenCalled()
+    })
+
+    it('rechaza reemplazarAusencia que no sea booleano', async () => {
+      ENV.NOMINA_NOW = NOW
+      mock = installFetchMock([])
+      const { status } = await readResponse(await H.handleMarcarEntrada(makeRequest({
+        empleadoId: IDS.empleado, idempotencyKey: 'entrada-llego-4', reemplazarAusencia: 'si',
+      }), ENV))
+      expect(status).toBe(400)
+      expect(mock.calls).toHaveLength(0)
+    })
+  })
+
+  // M-8: una salida a minutos de la entrada puede ser un doble toque; no se bloquea
+  // (puede ser real), pero queda marcada en la auditoría para revisarla.
+  it('audita como jornada corta la salida antes del umbral (M-8)', async () => {
+    ENV.NOMINA_NOW = NOW
+    mock = installFetchMock(routesFor({
+      asistencia: [{ id: IDS.registro, empleado_id: IDS.empleado, fecha: '2026-08-08', hora_entrada: '07:52:00', hora_salida: null, estado_marcaje: 'entrada', es_ausencia: false }],
+      post: [{ id: IDS.registro, estado_marcaje: 'completo' }],
+    }))
+    const { status } = await readResponse(await H.handleMarcarSalida(makeRequest({ empleadoId: IDS.empleado, idempotencyKey: 'salida-corta-1' }), ENV))
+    expect(status).toBe(200)
+    expect(registrarAuditoria).toHaveBeenCalledWith(ENV, expect.any(Object), expect.objectContaining({
+      accion: 'MARCAR_SALIDA', meta: expect.objectContaining({ jornadaCorta: true, minutosJornada: 8 }),
+    }))
+  })
+
+  it('una jornada normal no se marca como corta (M-8)', async () => {
+    ENV.NOMINA_NOW = NOW
+    mock = installFetchMock(routesFor({
+      asistencia: [{ id: IDS.registro, empleado_id: IDS.empleado, fecha: '2026-08-08', hora_entrada: '07:00:00', hora_salida: null, estado_marcaje: 'entrada', es_ausencia: false }],
+      post: [{ id: IDS.registro, estado_marcaje: 'completo' }],
+    }))
+    await readResponse(await H.handleMarcarSalida(makeRequest({ empleadoId: IDS.empleado, idempotencyKey: 'salida-normal-1' }), ENV))
+    expect(registrarAuditoria).toHaveBeenCalledWith(ENV, expect.any(Object), expect.objectContaining({
+      meta: expect.objectContaining({ jornadaCorta: false }),
+    }))
+  })
+
   it('repite una entrada de forma idempotente sin hacer POST', async () => {
     ENV.NOMINA_NOW = NOW
     mock = installFetchMock(routesFor({

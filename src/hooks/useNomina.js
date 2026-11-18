@@ -8,7 +8,7 @@ import { showToast } from '../../compat/components/ui/toastBus.js'
 import { tieneCapacidad } from '../config/accesoModulos.js'
 import useFinancialOperation from './useFinancialOperation.js'
 import useTasaCambioNomina from './useTasaCambioNomina.js'
-export { useMarcarEntrada, useMarcarSalida, useCorregirMarcaje, useAnularEntradaComoAusencia } from './useNominaMarcaje.js'
+export { useMarcarEntrada, useMarcarSalida, useMarcarAusencia, useCorregirMarcaje, useAnularEntradaComoAusencia, useDeshacerMarcaje } from './useNominaMarcaje.js'
 import {
   KEY_ASISTENCIA,
   KEY_CONFIG,
@@ -421,21 +421,6 @@ export function useGuardarHorarioEmpleado() {
       qc.invalidateQueries({ queryKey: KEY_MARCAJE })
     },
     onError: e => showToast.error(e.message || 'No se pudieron guardar los días laborables'),
-  })
-}
-
-// Ausencia del día con su reversa. Solo escribe sobre días laborables del empleado
-// y nunca borra horas reales del reloj (eso vive en «Corregir marcaje»).
-export function useMarcarAusencia() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ empleadoId, quitar = false }) => apiPost('/api/nomina/marcaje/ausencia', { empleadoId, quitar }),
-    onSuccess: (_, variables) => {
-      showToast.success(variables?.quitar ? 'Ausencia deshecha' : 'Ausencia registrada')
-      qc.invalidateQueries({ queryKey: KEY_MARCAJE })
-      qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
-    },
-    onError: e => showToast.error(e.message || 'No se pudo actualizar la ausencia'),
   })
 }
 

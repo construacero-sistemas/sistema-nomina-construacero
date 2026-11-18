@@ -13,3 +13,12 @@ export function fechaOperativaHoy(ahora = new Date()) {
   const valores = Object.fromEntries(partes.map(({ type, value }) => [type, value]))
   return `${valores.year}-${valores.month}-${valores.day}`
 }
+
+/** Hora `HH:MM` de ahora en la zona operativa (la misma con la que el servidor marca). */
+export function horaOperativaAhora(ahora = new Date()) {
+  const partes = new Intl.DateTimeFormat('en-GB', {
+    timeZone: ZONA_OPERATIVA, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(ahora)
+  const valores = Object.fromEntries(partes.map(({ type, value }) => [type, value]))
+  return `${valores.hour === '24' ? '00' : valores.hour}:${valores.minute}`
+}

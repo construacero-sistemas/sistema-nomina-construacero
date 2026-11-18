@@ -10,7 +10,8 @@ export default function AnularEntradaModal({ objetivo, onConfirmar, onClose, isP
   const [error, setError] = useState('')
   const motivoValido = motivo.trim().length >= 3
   const sinRegistro = objetivo.resultadoEsperado === 'sin-registro'
-  const nombre = objetivo.empleado.empleado?.nombre || objetivo.empleado.nombre
+  // M-12: el nombre llega ya capitalizado desde la tarjeta.
+  const nombre = objetivo.nombre || objetivo.empleado.empleado?.nombre || objetivo.empleado.nombre
 
   async function confirmar() {
     if (!motivoValido || bloqueado || isPending) return

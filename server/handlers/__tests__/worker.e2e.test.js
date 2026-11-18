@@ -83,6 +83,7 @@ describe('Worker E2E determinista', () => {
     'POST /api/nomina/marcaje/corregir',
     'POST /api/nomina/marcaje/ausencia',
     'POST /api/nomina/marcaje/anular-entrada-ausencia',
+    'POST /api/nomina/marcaje/deshacer',
     'POST /api/nomina/calendario/horarios/empleado',
     'POST /api/nomina/periodos/crear',
     'POST /api/nomina/periodos/calcular',

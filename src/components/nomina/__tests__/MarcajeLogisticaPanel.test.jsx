@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 
 const mocks = vi.hoisted(() => ({
   // Fecha operativa del servidor (America/Caracas) para esta prueba: cada caso la
   // ancla a la fecha de su fixture y así no depende del día real de ejecución.
   hoy: '2026-09-25',
+  // Hora operativa (America/Caracas) para la regla de salida corta (M-8).
+  hora: '12:00',
   session: { perfil: { rol: 'nomina', nombre: 'Operadora' } },
   query: { data: null, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() },
   entrada: vi.fn().mockResolvedValue({ ok: true }),
@@ -14,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   ausencia: vi.fn().mockResolvedValue({ ok: true }),
   corregir: vi.fn().mockResolvedValue({ ok: true }),
   anularAusencia: vi.fn().mockResolvedValue({ ok: true }),
+  deshacer: vi.fn().mockResolvedValue({ ok: true }),
   entradaPending: false,
   salidaPending: false,
   ausenciaPending: false,
@@ -26,6 +29,7 @@ vi.mock('../../../../compat/store/useAuthStore.js', () => ({
 // fixture para que la prueba no dependa del día real en que se ejecute.
 vi.mock('../../../utils/fechaOperativa.js', () => ({
   fechaOperativaHoy: () => mocks.hoy,
+  horaOperativaAhora: () => mocks.hora,
 }))
 vi.mock('../../../hooks/useNomina.js', () => ({
   useMarcajeHoy: () => mocks.query,
@@ -35,6 +39,7 @@ vi.mock('../../../hooks/useNomina.js', () => ({
   useMarcarAusencia: () => ({ mutateAsync: mocks.ausencia, isPending: mocks.ausenciaPending }),
   useCorregirMarcaje: () => ({ mutateAsync: mocks.corregir, isPending: false }),
   useAnularEntradaComoAusencia: () => ({ mutateAsync: mocks.anularAusencia, isPending: false }),
+  useDeshacerMarcaje: () => ({ mutateAsync: mocks.deshacer, isPending: false }),
 }))
 
 import MarcajeLogisticaPanel from '../MarcajeLogisticaPanel.jsx'
@@ -47,12 +52,24 @@ const empleados = [
   { id: 'cfg-5', empleado_id: 'emp-5', cargo: 'Almacén', empleado: { nombre: 'José Duarte' } },
 ]
 
-function renderPanel(props = {}) {
-  return render(<MarcajeLogisticaPanel empleados={empleados} {...props} />)
+// El panel abre en «Pendientes» cuando los hay (D-2). La mayoría de los casos
+// revisan varios estados a la vez, así que pasan a «Todos» salvo que se pida lo contrario.
+function abrirMasAcciones(nombre) {
+  fireEvent.click(screen.getByRole('button', { name: `Más acciones de ${nombre}` }))
+}
+
+function renderPanel(props = {}, { verTodos = true } = {}) {
+  const vista = render(<MarcajeLogisticaPanel empleados={empleados} {...props} />)
+  if (verTodos) {
+    const todos = screen.queryByRole('button', { name: /^Todos \d+$/ })
+    if (todos) fireEvent.click(todos)
+  }
+  return vista
 }
 
 beforeEach(() => {
   mocks.hoy = '2026-09-25'
+  mocks.hora = '12:00'
   mocks.session.perfil = { rol: 'nomina', nombre: 'Operadora' }
   mocks.query = {
     data: {
@@ -74,6 +91,7 @@ beforeEach(() => {
   mocks.ausencia = vi.fn().mockResolvedValue({ ok: true })
   mocks.corregir = vi.fn().mockResolvedValue({ ok: true })
   mocks.anularAusencia = vi.fn().mockResolvedValue({ ok: true })
+  mocks.deshacer = vi.fn().mockResolvedValue({ ok: true })
   mocks.entradaPending = false
   mocks.salidaPending = false
   mocks.ausenciaPending = false
@@ -92,7 +110,8 @@ describe('Marcaje real de hoy', () => {
     expect(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' })).toBeEnabled()
     expect(screen.getByText('Sin entrada')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Marcar salida para María Rodríguez' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Corregir marcaje de María Rodríguez' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /Corregir .* de María Rodríguez/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Más acciones de María Rodríguez' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByRole('button', { name: 'Corregir marcaje de Edgar Ramirez' })).toBeEnabled()
     expect(screen.getByText((_, node) => node?.textContent === 'Entrada 08:10 AM')).toBeInTheDocument()
     expect(screen.getByText('Salida pendiente')).toBeInTheDocument()
@@ -110,7 +129,7 @@ describe('Marcaje real de hoy', () => {
     const view = renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' }))
-    expect(mocks.entrada).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-1', idempotencyKey: expect.stringMatching(/^entrada-emp-1-/) })
+    expect(mocks.entrada).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-1', nombre: 'Alejandra Hidalgo', idempotencyKey: expect.stringMatching(/^entrada-emp-1-/) })
 
     mocks.query = {
       ...mocks.query,
@@ -128,7 +147,7 @@ describe('Marcaje real de hoy', () => {
     const view = renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: 'Marcar salida para María Rodríguez' }))
-    expect(mocks.salida).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-2', idempotencyKey: expect.stringMatching(/^salida-emp-2-/) })
+    expect(mocks.salida).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-2', nombre: 'María Rodríguez', idempotencyKey: expect.stringMatching(/^salida-emp-2-/) })
 
     mocks.query = {
       ...mocks.query,
@@ -145,7 +164,8 @@ describe('Marcaje real de hoy', () => {
   it('abre el formulario de corrección y envía solo el ajuste autorizado de entrada', async () => {
     renderPanel()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Corregir marcaje de María Rodríguez' }))
+    abrirMasAcciones('María Rodríguez')
+    fireEvent.click(screen.getByRole('button', { name: 'Corregir hora de María Rodríguez' }))
     expect(screen.getByRole('dialog', { name: 'Corregir marcaje — María Rodríguez' })).toBeInTheDocument()
     expect(screen.getByText(/la salida permanecerá pendiente/i)).toBeInTheDocument()
 
@@ -167,7 +187,8 @@ describe('Marcaje real de hoy', () => {
   it('confirma con motivo la anulación de entrada y registra la ausencia sin salida', async () => {
     renderPanel()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Anular entrada y marcar ausente a María Rodríguez' }))
+    abrirMasAcciones('María Rodríguez')
+    fireEvent.click(screen.getByRole('button', { name: 'No vino — marcar ausente — María Rodríguez' }))
     expect(screen.getByRole('dialog', { name: 'Anular entrada y registrar ausencia' })).toBeInTheDocument()
     expect(screen.getByText(/Se limpiarán la entrada y las horas/)).toBeInTheDocument()
     const confirmar = screen.getByRole('button', { name: 'Confirmar ausencia' })
@@ -200,8 +221,9 @@ describe('Marcaje real de hoy', () => {
       feriadosPorFecha: feriado ? new Map([[fecha, feriado]]) : null,
     })
 
+    abrirMasAcciones('Niki Ramirez')
     expect(screen.queryByRole('button', { name: /marcar ausente/i })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Anular entrada (no vino) de Niki Ramirez' }))
+    fireEvent.click(screen.getByRole('button', { name: 'No vino — anular entrada — Niki Ramirez' }))
     expect(screen.getByRole('dialog', { name: 'Anular entrada' })).toBeInTheDocument()
     expect(screen.getByText(/el día quedará sin registro/)).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText(/Motivo de la anulación/), { target: { value: 'Marcado por error' } })
@@ -215,7 +237,8 @@ describe('Marcaje real de hoy', () => {
   it('si el servidor rechaza la anulación, el modal sigue abierto con el motivo del rechazo', async () => {
     mocks.anularAusencia = vi.fn().mockRejectedValue(new Error('Hoy no es laborable para esta persona'))
     renderPanel()
-    fireEvent.click(screen.getByRole('button', { name: 'Anular entrada y marcar ausente a María Rodríguez' }))
+    abrirMasAcciones('María Rodríguez')
+    fireEvent.click(screen.getByRole('button', { name: 'No vino — marcar ausente — María Rodríguez' }))
     fireEvent.change(screen.getByLabelText(/Motivo de la anulación/), { target: { value: 'Error de dedo' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar ausencia' }))
 
@@ -270,17 +293,13 @@ describe('Marcaje real de hoy', () => {
     expect(screen.queryByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' })).not.toBeInTheDocument()
   })
 
-  it('pausa acciones si falla una consulta o si ya hay un marcaje en proceso', () => {
+  it('pausa todas las acciones si falla una consulta', () => {
     mocks.query = { ...mocks.query, isError: true }
-    const view = renderPanel()
+    renderPanel()
     expect(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Marcar salida para María Rodríguez' })).toBeDisabled()
     expect(screen.getByRole('alert')).toHaveTextContent('las acciones están pausadas')
     expect(mocks.entrada).not.toHaveBeenCalled()
-
-    mocks.query = { ...mocks.query, isError: false }
-    mocks.entradaPending = true
-    view.rerender(<MarcajeLogisticaPanel empleados={empleados} />)
-    expect(screen.getByRole('button', { name: 'Marcar entrada para Alejandra Hidalgo' })).toBeDisabled()
   })
 
   it('expone controles cómodos para iPhone y no muestra acciones al rol sin capacidad', () => {
@@ -300,8 +319,8 @@ describe('Marcaje real de hoy', () => {
   it('marca la ausencia de quien no vino y permite deshacerla sin tocar el reloj real', async () => {
     const view = renderPanel()
 
-    expect(screen.getByRole('button', { name: 'Marcar ausencia de hoy para Alejandra Hidalgo' })).toBeEnabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Marcar ausencia de hoy para Alejandra Hidalgo' }))
+    expect(screen.getByRole('button', { name: 'Marcar ausente a Alejandra Hidalgo' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar ausente a Alejandra Hidalgo' }))
     await waitFor(() => expect(mocks.ausencia).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-1', quitar: false }))
 
     // Tras refrescar, la persona aparece en ausencia y el único camino de vuelta es deshacer.
@@ -314,16 +333,17 @@ describe('Marcaje real de hoy', () => {
     }
     view.rerender(<MarcajeLogisticaPanel empleados={empleados} />)
 
-    const deshacer = screen.getByRole('button', { name: 'Deshacer la ausencia de hoy de Alejandra Hidalgo' })
+    const deshacer = screen.getByRole('button', { name: 'Deshacer ausencia de Alejandra Hidalgo' })
     expect(deshacer).toBeEnabled()
     fireEvent.click(deshacer)
     await waitFor(() => expect(mocks.ausencia).toHaveBeenLastCalledWith({ empleadoId: 'emp-1', quitar: true }))
     expect(mocks.ausencia).toHaveBeenCalledTimes(2)
 
     // Una jornada real no se deshace desde aquí: eso es «Corregir marcaje».
-    expect(screen.getByRole('button', { name: 'Deshacer la ausencia de hoy de Lucía Pérez' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Deshacer.*María Rodríguez/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Corregir marcaje de María Rodríguez' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Deshacer ausencia de Lucía Pérez' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Deshacer ausencia de María Rodríguez/ })).not.toBeInTheDocument()
+    abrirMasAcciones('María Rodríguez')
+    expect(screen.getByRole('button', { name: 'Corregir hora de María Rodríguez' })).toBeEnabled()
   })
 
   it('el sábado de quien no trabaja ese día es Día libre y no pide ausencia', () => {
@@ -338,11 +358,11 @@ describe('Marcaje real de hoy', () => {
 
     expect(screen.getByRole('button', { name: 'Día libre 1' })).toBeInTheDocument()
     expect(screen.getByText((_, node) => node?.textContent === 'Hoy no le toca trabajar (Sáb). Si vino, márcalo igual.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Marcar entrada en día libre para Niki Ramirez' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Marcar ausencia de hoy para Niki Ramirez' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Marcar entrada (vino) para Niki Ramirez' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Marcar ausente a Niki Ramirez' })).not.toBeInTheDocument()
 
     expect(screen.getByRole('button', { name: 'Marcar entrada para Josue Marciales' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Marcar ausencia de hoy para Josue Marciales' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Marcar ausente a Josue Marciales' })).toBeInTheDocument()
     expect(screen.getAllByText((_, node) => node?.textContent === 'Hoy no le toca trabajar (Sáb). Si vino, márcalo igual.')).toHaveLength(1)
   })
 
@@ -354,7 +374,7 @@ describe('Marcaje real de hoy', () => {
     expect(screen.getByRole('button', { name: 'Día libre 5' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Pendientes 0' })).toBeInTheDocument()
     expect(screen.getAllByText((_, node) => node?.textContent === 'Hoy no le toca trabajar (Dom). Si vino, márcalo igual.')).toHaveLength(5)
-    expect(screen.queryByRole('button', { name: /Marcar ausencia de hoy/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Marcar ausente a / })).not.toBeInTheDocument()
   })
 
   // F-6: en un feriado no laborable nadie suma pendientes ni se ofrece ausencia;
@@ -366,8 +386,8 @@ describe('Marcaje real de hoy', () => {
 
     expect(screen.getByText(/Feriado: Feriado patronal/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Pendientes 0' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Marcar ausencia de hoy/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Marcar entrada en día libre para Alejandra Hidalgo' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /Marcar ausente a / })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Marcar entrada (vino) para Alejandra Hidalgo' })).toBeEnabled()
   })
 
   it('un feriado laborable sí se trabaja y admite ausencia', () => {
@@ -377,7 +397,7 @@ describe('Marcaje real de hoy', () => {
 
     expect(screen.getByText(/se espera asistencia/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Pendientes 1' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Marcar ausencia de hoy para Alejandra Hidalgo' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Marcar ausente a Alejandra Hidalgo' })).toBeEnabled()
   })
 
   it('ofrece reintentar marcajes y empleados cuando falla su carga', () => {
