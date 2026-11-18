@@ -6,6 +6,14 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Publicación de la hoja semanal compacta — 18/11/2026
+
+Petición del usuario: «push».
+
+1. Rama `nomina/hoja-compacta` (commit `8763e59`), PR #22 fusionado en `main` (`90b52fa`) con la cuenta `construacero-sistemas`; Vercel lo publicó en unos 50 s. Sin migraciones.
+2. **Humo de solo lectura en producción:** el bloque del detalle del período servido es el mismo del build local y contiene la tabla nueva; `/`, `/nomina`, `/finanzas` y `/api/rates` → 200; `/api/auth/me` sin sesión → 401.
+3. **Pendientes:** revisar la hoja en el iPhone.
+
 ## Hoja semanal más ordenada: 10 columnas y sin palabras partidas — 18/11/2026
 
 Petición del usuario: «¿qué propones para que esto no quede así amontonado?», con una captura donde los encabezados se partían a mitad de palabra («DÍA S TRA B.», «HORA S EXTR A», «VALO R $»).
