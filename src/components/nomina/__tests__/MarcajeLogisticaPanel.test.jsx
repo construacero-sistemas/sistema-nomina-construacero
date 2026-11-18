@@ -103,6 +103,25 @@ afterEach(() => {
 })
 
 describe('Marcaje real de hoy', () => {
+  // Producción, 18/11/2026: tras una actualización la app se recarga y la lista de
+  // empleados llegaba antes que el marcaje del día; el panel leía `data.fecha` sin
+  // datos y caía en «Algo salió mal». Ahora espera con el esqueleto de carga.
+  it('no se cae si los empleados llegan antes que el marcaje del día', () => {
+    for (const query of [
+      { data: undefined, isLoading: true, isFetching: true, isError: false, refetch: vi.fn() },
+      { data: undefined, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() },
+    ]) {
+      mocks.query = query
+      renderPanel({}, { verTodos: false })
+      expect(screen.getByLabelText('Cargando empleados y marcajes')).toBeInTheDocument()
+      expect(screen.queryByRole('list', { name: 'Lista de marcajes de hoy' })).not.toBeInTheDocument()
+      cleanup()
+    }
+    // Con error de red y sin datos tampoco se cae: el panel queda bloqueado.
+    mocks.query = { data: undefined, isLoading: false, isFetching: false, isError: true, refetch: vi.fn() }
+    expect(() => renderPanel({}, { verTodos: false })).not.toThrow()
+  })
+
   it('presenta una sola acción contextual en cada estado y distingue el horario manual', () => {
     renderPanel()
 
