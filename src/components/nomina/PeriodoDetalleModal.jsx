@@ -94,7 +94,7 @@ function ReciboMovilCard({ linea, abierto, puedeGestionarNomina, puedePagarNomin
 }
 
 // Todo lo que este modal puede hacer sobre la base es escritura, así que no existe un
-// gate de lectura propio: cada acción usa la capacidad de su endpoint — `gestionarUsuarios`
+// gate de lectura propio: cada acción usa la capacidad de su endpoint — `administrarNomina`
 // para ajustar bonos/deducciones o importar comisiones, `operarFinanzas` para pagar o
 // revertir un pago. Ver recibos, totales y descargar PDFs no requiere ninguna de las dos.
 export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = false, puedePagarNomina = false, onClose }) {

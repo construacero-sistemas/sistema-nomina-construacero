@@ -74,11 +74,18 @@ describe('ReglasPagoPanel', () => {
     expect(mocks.guardar).not.toHaveBeenCalled()
   })
 
-  it('el rol nómina ve las reglas pero no puede cambiarlas', () => {
+  it('el rol nómina puede cambiar las reglas', () => {
     mocks.rol = 'nomina'
     renderPanel()
-    expect(screen.getByText('Solo el jefe puede cambiar estas reglas.')).toBeInTheDocument()
+    expect(screen.queryByText('Solo quien administra la nómina puede cambiar estas reglas.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Guardar reglas' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Divisor del sueldo mensual' })).not.toBeDisabled()
+  })
+
+  it('un rol sin nómina ve las reglas pero no puede cambiarlas', () => {
+    mocks.rol = 'finanzas'
+    renderPanel()
+    expect(screen.getByText('Solo quien administra la nómina puede cambiar estas reglas.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Guardar reglas' })).toBeNull()
-    expect(screen.getByRole('textbox', { name: 'Divisor del sueldo mensual' })).toBeDisabled()
   })
 })

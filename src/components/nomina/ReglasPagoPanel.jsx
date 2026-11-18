@@ -105,7 +105,7 @@ function Bloque({ titulo, children }) {
 export default function ReglasPagoPanel({ config }) {
   const guardar = useGuardarConfigNomina()
   const perfil = useAuthStore(s => s.perfil)
-  const puedeEditar = tieneCapacidad(perfil, 'administrarSistema')
+  const puedeEditar = tieneCapacidad(perfil, 'administrarNomina')
   const cargado = config.data?.config || config.data
   const [form, setForm] = useState(null)
   const [error, setError] = useState('')
@@ -153,7 +153,7 @@ export default function ReglasPagoPanel({ config }) {
           </button>
         )}
       </div>
-      {!puedeEditar && <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">Solo el jefe puede cambiar estas reglas.</p>}
+      {!puedeEditar && <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">Solo quien administra la nómina puede cambiar estas reglas.</p>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {CONCEPTOS.map(c => {

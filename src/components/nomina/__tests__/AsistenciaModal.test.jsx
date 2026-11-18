@@ -24,7 +24,7 @@ const empleado = {
 }
 
 // `esAdmin` (administrarNomina) permite registrar y corregir; `puedeGestionarNomina`
-// (gestionarUsuarios) es lo que el servidor exige para ELIMINAR el registro.
+// (administrarNomina) es lo que el servidor exige para ELIMINAR el registro.
 const baseProps = {
   empleado, fecha: '2026-09-10', feriado: null, esAdmin: true,
   puedeGestionarNomina: true, onClose: vi.fn(),

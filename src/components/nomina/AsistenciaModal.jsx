@@ -32,8 +32,8 @@ function sumarHoras(hora, horas) {
 const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all font-mono'
 
 // Registrar o corregir un día exige `verNomina` (lo que `esAdmin`/administrarNomina
-// ya implica), pero ELIMINAR el registro exige `gestionarUsuarios` en el servidor:
-// por eso el botón de borrado se gatea con `puedeGestionarNomina`.
+// ya implica); ELIMINAR el registro exige `administrarNomina` en el servidor y el
+// botón de borrado se gatea con `puedeGestionarNomina` (la misma llave).
 export default function AsistenciaModal({ empleado, fecha, registro, feriado, esAdmin, puedeGestionarNomina = false, onClose, soloLectura = false, horasDescansoDefault = 1 }) {
   const registrar = useRegistrarAsistencia()
   const eliminar  = useEliminarAsistencia()

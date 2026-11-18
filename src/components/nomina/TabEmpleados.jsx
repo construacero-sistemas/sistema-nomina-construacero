@@ -37,10 +37,10 @@ function esVendedor(config) {
 }
 
 // `esAdmin` (administrarNomina) es lectura: plantilla, montos y vista de Bajas.
-// `puedeGestionarNomina` (gestionarUsuarios) habilita alta, edición, baja, reactivación,
+// `puedeGestionarNomina` (administrarNomina) habilita alta, edición, baja, reactivación,
 // eliminación y el interruptor de asistencia; `puedePagarComision` refleja `operarFinanzas`,
 // porque pagar una comisión crea un egreso en Finanzas. El servidor exige exactamente esas
-// capacidades, así que el rol de nómina no debe ver ninguno de esos botones.
+// capacidades: el rol de nómina gestiona el personal pero no paga comisiones.
 export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarComisionRol = false, puedeGestionarNomina = false }) {
   // Los vendedores no van en la nómina: sin la bandera no se ofrece pagar comisiones aquí.
   const puedePagarComision = VENDEDORES_EN_NOMINA && puedePagarComisionRol
