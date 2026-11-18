@@ -4348,5 +4348,7 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 - **CI de `main` en verde:** `PeriodosAutoCard.jsx` usaba un `<select>` nativo que el guardarraíl rechaza; ahora usa `CustomSelect`.
 
 **Pendientes.**
-1. Aplicar la migración 265 en producción. Mientras no esté, la ficha funciona pero los puestos nuevos no se guardan en la lista (el Worker omite la columna faltante).
+1. ~~Aplicar la migración 265 en producción.~~ Hecho el 18/11/2026 (ver abajo).
 2. La fecha de ingreso que ya tenían algunas fichas se conserva en la base y la sigue usando el cálculo del descanso de la primera semana; las fichas nuevas quedan sin fecha.
+
+**Migración 265 aplicada en producción (2026-11-18).** Proyecto `wlxcclidnwketrghqaxs`, vía Management API con el `SUPABASE_ACCESS_TOKEN` del `.env` (la segunda línea; la primera da 403), porque el conector de Supabase de la sesión solo veía «nube-pruebas». Guardia de identidad previa (existen `nomina_lineas` y `configuracion_negocio`; última versión registrada 263; sin la columna). Respaldo de `configuracion_negocio` (1 fila) en `local-backups/backup_pre_265_20261118.json`. Una sola transacción: la migración tal cual y el registro en `supabase_migrations.schema_migrations`. **Hallazgo:** la 264 estaba aplicada (columnas y CHECK presentes) pero sin registrar; se registró junto con la 265. Verificación: `nomina_puestos` jsonb con valor por defecto `[]`, CHECK `config_nomina_puestos_lista`, la fila de configuración en `[]` y última versión 265. El procedimiento quedó en `docs/OPERACIONES.md`.

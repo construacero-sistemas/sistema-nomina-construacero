@@ -58,6 +58,18 @@ Antes de `db push`:
 - probar dos cuentas y el único rol `administracion`;
 - confirmar que `nomina_v2_enabled` siga en `false`.
 
+### Aplicar una migración cuando el conector de Supabase no ve producción (decidido 18/11/2026)
+
+El conector de Supabase de las sesiones de Claude puede estar enlazado a otro proyecto (por ejemplo «nube-pruebas», `hfuzyauiefhllohonvim`) y no ver producción. **En ese caso no se pide al usuario que pegue SQL: se usa el token de la Management API del `.env`** (`SUPABASE_ACCESS_TOKEN`).
+
+1. **Elegir el token que funciona.** El `.env` tiene dos líneas `SUPABASE_ACCESS_TOKEN`; hoy la válida es la **segunda** (la primera responde 403). Nunca imprimir el valor: leerlo a una variable y usarlo solo en la cabecera.
+2. **Guardia de identidad (solo lectura).** `POST https://api.supabase.com/v1/projects/wlxcclidnwketrghqaxs/database/query` con `Authorization: Bearer <token>` y `{"query": "..."}`. Comprobar que existen `nomina_lineas` y `configuracion_negocio`, cuál es la última versión en `supabase_migrations.schema_migrations` y que la columna nueva aún no existe.
+3. **Respaldo** de las tablas que toca la migración en `local-backups/` (fuera de git), por ejemplo `backup_pre_265_AAAAMMDD.json`.
+4. **Aplicar en una transacción** el archivo de `supabase/migrations/` tal cual (`BEGIN; … COMMIT;`) y registrar la versión: `INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES ('265', 'nomina_puestos') ON CONFLICT (version) DO NOTHING;`. Armar el JSON con un script (Node) para no escapar el SQL a mano.
+5. **Verificar** columnas, restricciones y la nueva última versión, y anotarlo en la bitácora.
+
+Si la Management API también rechaza el SQL, el respaldo es la conexión directa por el pooler con `DB_PASSWORD` (la segunda línea del `.env`), como en la bitácora 146.
+
 Después de migrar, comprobar también el panel Usage y establecer una línea base de egress antes de habilitar usuarios reales:
 
 Verificar:
