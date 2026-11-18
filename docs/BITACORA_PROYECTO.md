@@ -6,6 +6,59 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Despliegue a producción de las actualizaciones de la app — 18/11/2026
+
+Petición del usuario: desplegar a producción el PR #13.
+
+1. **Cómo se publicó:** `sistema-nomina-construacero.vercel.app` vive en un proyecto de Vercel conectado a GitHub que se despliega solo con cada push a `main`; la fusión del PR #14 (`a1c1dcb`) lo publicó. No se usó `vercel deploy --prod`: la CLI está vinculada al proyecto antiguo `nomina-construacero` (`nomina-construacero-ten.vercel.app`, último deploy hace 13 días), que no es la web oficial.
+2. **Sin migraciones:** el cambio solo toca el frontend; no hubo respaldo ni migración de base de datos.
+3. **Verificación:** el dominio sirve `index-F4skCUEJ.js` (idéntico al build local) con el texto «Hay una versión nueva del sistema», `auto-recovery.js` con el límite de intentos y `sw.js` versión `d82101dac9cf4ce6`.
+4. **Humo de solo lectura:** `/`, `/nomina`, `/finanzas` y `/api/rates` → 200; `/api/auth/me` sin sesión → 401; el bundle se sirve como `application/javascript`.
+5. **Pendientes:** validar en iPhone físico con el siguiente despliegue (caso 1.4 de `docs/ACEPTACION_IPHONE_FISICO.md`). Quien tenía la app abierta con la versión anterior recibe esta con el comportamiento viejo (recarga automática); el nuevo comportamiento rige desde la próxima versión.
+
+## Actualizaciones de la app: aviso, momento seguro y límite de recargas — 18/11/2026
+
+Objetivo: que una versión nueva no recargue la pantalla en medio de un formulario o pago, que llegue antes a quien deja la app abierta y que la recuperación ante archivos viejos no recargue sin fin.
+
+1. **Antes:** la versión nueva se detectaba solo al abrir o recargar; se activaba al instante (`SKIP_WAITING`) y recargaba todas las pestañas sin aviso. El evento `app-update-ready` no lo escuchaba nadie. `auto-recovery.js` no limitaba los intentos.
+2. **Módulo nuevo** `compat/lib/actualizacionApp.js` (reemplaza el bloque de `src/main.jsx`):
+   - la versión nueva queda en espera y se aplica **solo en un momento seguro**: sin diálogo abierto (`role="dialog"`), sin campo enfocado y sin operación enviándose (`queryClient.isMutating()`);
+   - momentos de aplicación: al cambiar de pantalla, al volver a la app tras 2 minutos o más fuera, o con «Actualizar ahora» (este último ignora el diálogo abierto, pero nunca una operación en curso);
+   - revisa si hay versión nueva al volver a la app y cada 30 minutos con la app visible (mínimo 1 minuto entre consultas). Solo pide `/sw.js`; no consume egress de Supabase;
+   - si otra pestaña cambia la versión mientras aquí hay trabajo abierto, espera en vez de recargar;
+   - ya no recarga en la primera visita (cuando aún no había service worker).
+3. **Aviso** `compat/components/ui/AvisoActualizacion.jsx`: «Hay una versión nueva del sistema · Se aplicará sola cuando no tengas nada abierto», botón «Actualizar ahora» (44 px), cierre con X. Desaparece solo a los 15 s (regla de avisos temporales) y vuelve a mostrarse al regresar a la app si sigue pendiente. En móvil queda sobre la barra inferior respetando la zona segura.
+4. **Límite de recargas:** `public/auto-recovery.js` y el manejador `vite:preloadError` de `main.jsx` comparten el registro `recuperacion-version` en `sessionStorage`: como máximo un intento cada 2 minutos (antes `vite:preloadError` solo permitía uno por sesión). Si vuelve a fallar y la app no llegó a mostrarse, aparece la pantalla «No se pudo cargar el sistema» con el botón «Reintentar»; si la app ya estaba en pantalla se muestra un toast. Sin `sessionStorage` disponible no se recarga, para evitar bucles.
+5. **Corrección de paso** (`src/components/nomina/PeriodosAutoCard.jsx`): el selector «La semana empieza el» usaba `<select>` nativo (ya en `main`) y hacía fallar `check:project`; ahora usa `CustomSelect`.
+6. **Pruebas:** `compat/lib/__tests__/actualizacionApp.test.js` (11) y `compat/components/ui/__tests__/AvisoActualizacion.test.jsx` (4) en verde. `npm run verify` en verde: 148 archivos · 1546 pruebas (+1 pendiente), lint, responsive, determinísticas, test:db, build e índice de 279,6 / 400 KiB.
+7. **Git:** commit `9ebee29` en `nomina/actualizaciones-app`, PR #13 fusionado a `main` (merge `83204b9`) con la cuenta `construacero-sistemas`. Sin deploy.
+8. **Pendientes:** desplegar a producción cuando se ordene y validar en iPhone físico (PWA en segundo plano y regreso), caso 1.4 de `docs/ACEPTACION_IPHONE_FISICO.md`.
+
+## Regla: «push» incluye la fusión a main — 18/11/2026
+
+Petición del usuario: cuando pida push, el cambio debe fusionarse de una vez a `main`.
+
+1. **Regla nueva** en `AGENT.md` (Calidad y seguridad): push de la rama + pull request hacia `main` + fusión inmediata con merge commit, usando la cuenta `construacero-sistemas`; la rama se conserva.
+2. Aplicada en el mismo turno: los commits del toast y de la documentación pasan a `main` mediante PR.
+3. Pruebas: no aplica (solo documentación).
+
+## Regla de cuenta GitHub y CLAUDE.md del sistema — 18/11/2026
+
+Petición del usuario: documentar que la cuenta de GitHub del sistema es `construacero-sistemas` y que allí se hace el push; actualizar el CLAUDE.md con lo necesario del sistema.
+
+1. **Regla nueva** en `AGENT.md` (Calidad y seguridad): los push se hacen con `construacero-sistemas`; `luiggiberaldi` recibe 403.
+2. **CLAUDE.md** en la carpeta superior (fuera del repositorio): importa `AGENT.md` y resume arquitectura, entornos (producción y staging), comandos, cuenta GitHub y documentación clave.
+3. Pruebas: no aplica (solo documentación).
+
+## Toast: el botón de cerrar ya no estira la notificación — 18/11/2026
+
+Objetivo: corregir el toast («Entrada deshecha») que se veía demasiado alto y con la X desalineada respecto al título.
+
+1. **Causa:** en modo accesible (`src/modo-accesible.css`) todo botón mide al menos 44×44 px; el botón de cerrar crecía y estiraba la tarjeta.
+2. **Cambio** (`compat/components/ui/Toast.jsx`): el botón de cerrar es absoluto en la esquina superior derecha (caja de 44×44 px con la X centrada) y la tarjeta reserva margen derecho para el texto. Aplica a todos los tipos de toast. X con algo más de contraste.
+3. **Pruebas:** `npx vitest run compat/components/ui`: 3 archivos · 28 pruebas en verde. Sin validación visual en dispositivo.
+4. **Git:** commit `c4023cf` en `nomina/ficha-empleado`, publicado con la cuenta `construacero-sistemas`. Pendiente: validar en iPhone.
+
 ## Purga con rango de fechas, exclusiva del rol jefe, y release a producción — 28/09/2026
 
 Petición del usuario: extender la purga de mantenimiento con rango de fechas, reservarla al rol jefe y ejecutar los 4 pasos de producción del checklist (backup → migración → deploy → smoke).
@@ -4308,3 +4361,31 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 2. Fase 3: período automático jueves → miércoles y llenado en vivo con el marcaje.
 3. D-3: qué pasa con el bono si alguien falta (provisional: el bono queda en 35 y la falta sale del sueldo semanal).
 4. Hora extra a $2,50 fijos en producción (bitácora 150, PR #7).
+
+## 152. Ficha del empleado: auditoría y limpieza (2026-11-18)
+
+**Contexto.** El usuario pidió quitar la fecha de ingreso, poder agregar puestos propios, ordenar la modalidad Mes → Semana → Día y que 280 al mes no bajara a 279,90. Se auditó el modal y el usuario aprobó todas las correcciones y mejoras propuestas.
+
+**Qué se hizo.**
+- **280 → 279,90 (bug):** al pasar por «Por Día» el sueldo diario se redondeaba a 2 decimales (9,33 × 30 = 279,90). Ahora se conserva el diario exacto mientras solo se cambia de modalidad.
+- **Semana ÷ 7 (bug grave):** «Por Semana» y el equivalente semanal dividían entre los días marcados (5). «$65/semana» guardaba $13 diarios y la nómina pagaba $91. Ahora se divide entre 7, como la hoja semanal y el motor (D-1).
+- **Modalidad igual en todos los navegadores:** se quitó la preferencia guardada en `localStorage`; la ficha siempre abre en «Por Mes».
+- **Puestos personalizados persistentes:** migración `265_nomina_puestos.sql` (`configuracion_negocio.nomina_puestos`), validación en `server/lib/nominaPuestos.js` y botón «+ Agregar puesto». Los botones muestran los fijos, los guardados y los cargos en uso; un guardado que nadie usa se puede quitar.
+- **Fuera:** fecha de ingreso (modal, tarjeta del empleado; en el recibo PDF la celda pasa a «Días trabajados»), casilla «Activo en nómina» (duplicaba «Dar de baja») y la sección «Horario laboral y jornada» (duplicaba «Días que trabaja»; el horario general de la ficha es el del primer día marcado).
+- **Mejoras:** aviso si la jornada supera el tiempo entre entrada y salida, botón de horario estándar por día y modal en dos columnas en PC.
+- **CI de `main` en verde:** `PeriodosAutoCard.jsx` usaba un `<select>` nativo que el guardarraíl rechaza; ahora usa `CustomSelect`.
+
+**Pendientes.**
+1. ~~Aplicar la migración 265 en producción.~~ Hecho el 18/11/2026 (ver abajo).
+2. La fecha de ingreso que ya tenían algunas fichas se conserva en la base y la sigue usando el cálculo del descanso de la primera semana; las fichas nuevas quedan sin fecha.
+
+**Migración 265 aplicada en producción (2026-11-18).** Proyecto `wlxcclidnwketrghqaxs`, vía Management API con el `SUPABASE_ACCESS_TOKEN` del `.env` (la segunda línea; la primera da 403), porque el conector de Supabase de la sesión solo veía «nube-pruebas». Guardia de identidad previa (existen `nomina_lineas` y `configuracion_negocio`; última versión registrada 263; sin la columna). Respaldo de `configuracion_negocio` (1 fila) en `local-backups/backup_pre_265_20261118.json`. Una sola transacción: la migración tal cual y el registro en `supabase_migrations.schema_migrations`. **Hallazgo:** la 264 estaba aplicada (columnas y CHECK presentes) pero sin registrar; se registró junto con la 265. Verificación: `nomina_puestos` jsonb con valor por defecto `[]`, CHECK `config_nomina_puestos_lista`, la fila de configuración en `[]` y última versión 265. El procedimiento quedó en `docs/OPERACIONES.md`.
+
+**Tarjeta del empleado (pestaña Empleados), mismo PR (2026-11-18).** A pedido del usuario se aplicaron todas las mejoras propuestas, con los cálculos en `src/utils/resumenFichaEmpleado.js` (mismas reglas que la hoja semanal; 5 pruebas):
+- Dato principal: **sueldo mensual**. Debajo, la **semana** (diario × 7) repartida en sueldo + bono, con su equivalente en Bs, y el salario por día como dato pequeño.
+- «Tarifa / hora» se reemplaza por **«Hora extra»**: el monto fijo de Configuración si existe; si no, tarifa por hora × factor. Sin configuración no se muestra.
+- Días y horario en una línea («Lun a Vie · 08:00 AM – 05:00 PM (8 h)»); «(sin fijar)» pasa a «(por defecto)», con explicación al pasar el cursor.
+- **«Esta semana: X de N días · N faltas»**, tomado del marcaje de la semana en curso (según el día de inicio de Configuración), sin esperar a que se recalcule el período.
+- **Sábado y domingo trabajados en la tarjeta:** se cuentan aparte («5 de 5 días · +1 de descanso») con la misma regla que la hoja (domingo, feriado o día fuera de su semana), en vez de mostrar «6 de 5 días». Quien tiene el sábado en su semana lo cuenta como día laborable.
+
+**Hora extra a $2,50 fijos en producción (2026-11-18).** A pedido del usuario (D-7), en `configuracion_negocio` de `wlxcclidnwketrghqaxs`: `nomina_monto_hora_extra_usd` de `null` a `2.50` (el factor 2,50 queda guardado pero ya no manda). Vía Management API con el token del `.env`, según `docs/OPERACIONES.md`. Respaldo previo en `local-backups/backup_pre_hora_extra_20261118.json`. El único período abierto (12–18 nov.) no tiene horas extra, así que ningún recibo cambia. Cambio hecho por SQL, no desde la pantalla: no queda registro en la auditoría de la app. Cierra el pendiente «hora extra a $2,50 fijos en producción» (bitácora 150 y 151).

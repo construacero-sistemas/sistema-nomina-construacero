@@ -218,6 +218,22 @@ describe('reglas de pago y de la ley (migración 263)', () => {
     expect((await readResponse(res)).status).toBe(403)
   })
 
+  it('guarda los puestos personalizados normalizados y sin repetir', async () => {
+    operadorActual = OPERADORES.nomina
+    mock = patchQueDevuelve()
+    const res = await handleUpdateConfig(makeRequest({ nomina_puestos: ['  electricista ', 'Electricista', 'pintor   de estructuras'] }), ENV)
+    expect((await readResponse(res)).status).toBe(200)
+    const enviado = mock.calls.find(c => c.method === 'PATCH').body
+    expect(enviado.nomina_puestos).toEqual(['Electricista', 'Pintor de estructuras'])
+  })
+
+  it('rechaza puestos que no son una lista de textos o son demasiado largos', async () => {
+    for (const nomina_puestos of ['Chofer', [3], ['x'.repeat(61)]]) {
+      const res = await handleUpdateConfig(makeRequest({ nomina_puestos }), ENV)
+      expect((await readResponse(res)).status).toBe(400)
+    }
+  })
+
   it('el rol nómina sí puede ajustar el horario general', async () => {
     operadorActual = OPERADORES.nomina
     mock = patchQueDevuelve()

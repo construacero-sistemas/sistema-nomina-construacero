@@ -5,7 +5,11 @@ import {
   Users, Plus, Pencil, DollarSign, Clock, Briefcase, Search, RotateCcw,
   AlertTriangle, CalendarDays, Sparkles, Filter, Trash2
 } from 'lucide-react'
-import { useNominaEmpleados, useConfigEmpleados, useActualizarConfigEmpleado, useEliminarConfigEmpleado } from '../../hooks/useNomina'
+import { useNominaEmpleados, useConfigEmpleados, useActualizarConfigEmpleado, useEliminarConfigEmpleado, useAsistencia, useConfigNomina } from '../../hooks/useNomina'
+import useReglasLey from '../../hooks/useReglasLey.js'
+import { semanaDeConfig, rangoSemana } from '../../../server/lib/nominaSemana.js'
+import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
+import { resumenSalario, avanceSemanaPorEmpleado } from '../../utils/resumenFichaEmpleado.js'
 import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
@@ -58,6 +62,18 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
   const [verBajas, setVerBajas] = useState(false)
 
   const configs = useMemo(() => (allConfigs || []).filter(c => c.activo !== false), [allConfigs])
+
+  // Reglas de pago (hora extra, divisor) y la semana en curso según Configuración,
+  // para que la tarjeta muestre lo mismo que la hoja semanal.
+  const configNominaQuery = useConfigNomina()
+  const configNomina = configNominaQuery.data?.config || configNominaQuery.data || null
+  const { divisorMensual } = useReglasLey()
+  const semanaActual = useMemo(() => rangoSemana(fechaOperativaHoy(), semanaDeConfig(configNomina || {}).inicio), [configNomina])
+  const { data: asistenciaSemana } = useAsistencia({ desde: semanaActual.desde, hasta: semanaActual.hasta })
+  const avancePorEmpleado = useMemo(() => avanceSemanaPorEmpleado(
+    asistenciaSemana?.registros,
+    new Map(configs.map(c => [c.empleado_id, Array.isArray(c.dias_laborables) && c.dias_laborables.length ? c.dias_laborables : [1, 2, 3, 4, 5]])),
+  ), [asistenciaSemana, configs])
   const bajas   = useMemo(() => (allConfigs || []).filter(c => c.activo === false), [allConfigs])
 
   const empleadosYaConfigurados = useMemo(() => {
@@ -276,6 +292,8 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
               key={c.id}
               config={c}
               esAdmin={esAdmin}
+              resumen={resumenSalario({ salarioDia: c.salario_dia_usd, horasJornada: c.horas_jornada, divisorMensual, configNomina })}
+              avance={asistenciaSemana ? (avancePorEmpleado.get(c.empleado_id) || { trabajados: 0, descansoTrabajados: 0, faltas: 0 }) : null}
               puedeGestionar={puedeGestionarNomina}
               puedePagarComision={puedePagarComision}
               mostrarMontos={esAdmin}
@@ -392,12 +410,11 @@ function EmpleadoBajaCard({ config, puedeGestionar, cargando, onReactivar, onEli
   )
 }
 
-function EmpleadoNominaCard({ config, esAdmin, puedeGestionar = false, puedePagarComision = false, mostrarMontos = true, cargando = false, onEditar, onPagarComision, onDarDeBaja, onCambiarAsistencia }) {
+function EmpleadoNominaCard({ config, esAdmin, resumen, avance = null, puedeGestionar = false, puedePagarComision = false, mostrarMontos = true, cargando = false, onEditar, onPagarComision, onDarDeBaja, onCambiarAsistencia }) {
   const { fmtBs } = useMonedaNomina()
   const nombre = capitalizarPalabras(config.empleado?.nombre) || 'Sin nombre'
-  const salarioDia = Number(config.salario_dia_usd) || 0
   const esVendedorRol = esVendedor(config)
-  const tarifaHora = salarioDia / (Number(config.horas_jornada) || 8)
+  const diasPorSemana = Array.isArray(config.dias_laborables) && config.dias_laborables.length ? config.dias_laborables.length : 5
   const color = esVendedorRol ? '#0d2238' : '#1B365D'
 
   return (
@@ -429,20 +446,30 @@ function EmpleadoNominaCard({ config, esAdmin, puedeGestionar = false, puedePaga
       </div>
 
       <div className="px-3 pt-2 pb-1.5 space-y-1.5 text-xs text-slate-500">
-        <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-          <CalendarDays size={11} />Ingreso: {config.fecha_ingreso || 'Sin fecha'}
+        <div className="flex items-start gap-1.5 text-[11px] text-slate-500">
+          <CalendarDays size={11} className="mt-0.5 shrink-0" />
+          <span>
+            {diasLaborablesTexto(config.dias_laborables)}
+            {!esVendedorRol && <> · {formatRangoHoras12(config.hora_inicio || '08:00', config.hora_fin || '17:00')} ({Number(config.horas_jornada) || 0} h)</>}
+            {config.horario_configurado === false && (
+              <span className="ml-1 text-[10px] font-semibold text-slate-400" title="Nunca se guardó su semana: se asume la de la empresa. Al guardar la ficha queda fijada.">(por defecto)</span>
+            )}
+          </span>
         </div>
-        {!esVendedorRol && (
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-            <Clock size={11} />Jornada: {Number(config.horas_jornada) || 0}h ({formatRangoHoras12(config.hora_inicio || '08:00', config.hora_fin || '17:00')})
+        {avance && !esVendedorRol && (
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-600">
+            <Clock size={11} />
+            <span>
+              Esta semana: <strong className="text-slate-800">{avance.trabajados} de {diasPorSemana} días</strong>
+              {avance.descansoTrabajados > 0 && (
+                <span className="ml-1 font-bold text-emerald-700" title="Sábado, domingo o feriado trabajado: se paga como un día adicional">
+                  · +{avance.descansoTrabajados} de descanso
+                </span>
+              )}
+              {avance.faltas > 0 && <span className="ml-1 font-bold text-rose-700">· {avance.faltas} falta{avance.faltas === 1 ? '' : 's'}</span>}
+            </span>
           </div>
         )}
-        <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-          <CalendarDays size={11} />Trabaja: {diasLaborablesTexto(config.dias_laborables)}
-          {config.horario_configurado === false && (
-            <span className="text-[10px] font-bold text-amber-700">(sin fijar)</span>
-          )}
-        </div>
         {puedeGestionar && (
           <ControlAsistenciaToggle
             config={config}
@@ -471,16 +498,26 @@ function EmpleadoNominaCard({ config, esAdmin, puedeGestionar = false, puedePaga
         ) : (
           <div className="mx-3 mb-2 rounded-xl bg-slate-50 border border-slate-100 p-2.5 space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] text-slate-400 font-bold uppercase">Salario / día</span>
+              <span className="text-[11px] text-slate-400 font-bold uppercase">Sueldo mensual</span>
+              <span className="text-sm font-black text-amber-600">${fmt(resumen.mensual)}</span>
+            </div>
+            <div className="flex items-start justify-between gap-2 pt-1 border-t border-slate-200/60">
+              <span className="text-[11px] text-slate-500">
+                Semana
+                <span className="block text-[10px] text-slate-400">Sueldo ${fmt(resumen.sueldoSemanal)} + bono ${fmt(resumen.bonoSemanal)}</span>
+              </span>
               <div className="text-right">
-                <span className="text-sm font-black text-amber-600 block">${fmt(salarioDia)}</span>
-                <span className="text-[10px] text-slate-400 font-mono block">{fmtBs(salarioDia)}</span>
+                <span className="text-xs font-black text-slate-800 block">${fmt(resumen.semana)}</span>
+                <span className="text-[10px] text-slate-400 font-mono block">{fmtBs(resumen.semana)}</span>
               </div>
             </div>
-
-            <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
-              <span className="text-[10px] text-slate-400">Tarifa / hora</span>
-              <span className="text-xs font-bold text-slate-600 font-mono">${fmt(tarifaHora)}</span>
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/60 text-[10px] text-slate-500">
+              <span>Por día <strong className="font-mono text-slate-700">${fmt(resumen.dia)}</strong></span>
+              {resumen.horaExtra && (
+                <span title={resumen.horaExtra.fijo ? 'Monto fijo por hora extra (Configuración)' : `Tarifa por hora × ${resumen.horaExtra.factor}`}>
+                  Hora extra <strong className="font-mono text-slate-700">${fmt(resumen.horaExtra.monto)}</strong>
+                </span>
+              )}
             </div>
           </div>
         )
