@@ -4389,3 +4389,13 @@ Se conservan el código de los modales, el handler `nomina.comisiones.js` y la c
 - **Sábado y domingo trabajados en la tarjeta:** se cuentan aparte («5 de 5 días · +1 de descanso») con la misma regla que la hoja (domingo, feriado o día fuera de su semana), en vez de mostrar «6 de 5 días». Quien tiene el sábado en su semana lo cuenta como día laborable.
 
 **Hora extra a $2,50 fijos en producción (2026-11-18).** A pedido del usuario (D-7), en `configuracion_negocio` de `wlxcclidnwketrghqaxs`: `nomina_monto_hora_extra_usd` de `null` a `2.50` (el factor 2,50 queda guardado pero ya no manda). Vía Management API con el token del `.env`, según `docs/OPERACIONES.md`. Respaldo previo en `local-backups/backup_pre_hora_extra_20261118.json`. El único período abierto (12–18 nov.) no tiene horas extra, así que ningún recibo cambia. Cambio hecho por SQL, no desde la pantalla: no queda registro en la auditoría de la app. Cierra el pendiente «hora extra a $2,50 fijos en producción» (bitácora 150 y 151).
+
+## «Algo salió mal» después de cada actualización — 18/11/2026
+
+**Síntoma.** Tras una actualización de la app, la pantalla de Nómina caía en «Algo salió mal» y había que recargar.
+
+**Diagnóstico.** Los errores de pantalla quedan en `auditoria` (`entidad_tipo = 'log_cliente'`). En producción, dos registros (01:59 de hoy y uno anterior, en dos versiones distintas del bundle) con `Cannot read properties of undefined (reading 'fecha')` en el panel «Marcaje real de hoy» (`MarcajeLogisticaPanel`). Al recargar tras una actualización, la lista de empleados puede llegar antes que el marcaje del día: había filas pero aún no `data`, y la lista leía `data.fecha`. Lo mismo pasaba con un error de red sin datos.
+
+**Arreglo.** Mientras no llega el marcaje del día (sin fecha y sin error) se muestra el esqueleto de carga; la tarjeta recibe `fechaMarcaje` (null seguro) en vez de `data.fecha`. Prueba que reproduce el fallo (en rojo antes del arreglo) con las dos carreras y el error de red.
+
+**Pendiente aparte.** En `auditoria` también hay un `history.replaceState() más de 100 veces en 10 s` en Finanzas (17/11), otra causa posible de la misma pantalla; sin investigar todavía.

@@ -290,7 +290,9 @@ export default function MarcajeLogisticaPanel({
         </div>
       )}
 
-      {consultaEnCurso && !filas.length ? (
+      {/* Sin el marcaje del día aún no hay fecha ni registros: tras una actualización
+          la lista de empleados puede llegar primero y leer `data.fecha` tumbaba la app. */}
+      {(consultaEnCurso && !filas.length) || (!fechaMarcaje && !consultaConError) ? (
         <div className="mt-3 grid grid-cols-1 gap-2.5 lg:grid-cols-2" aria-label="Cargando empleados y marcajes" aria-busy="true">
           {[0, 1].map(item => <div key={item} className="h-24 animate-pulse rounded-xl bg-slate-100" />)}
         </div>
@@ -308,7 +310,7 @@ export default function MarcajeLogisticaPanel({
             <TarjetaMarcaje
               key={fila.empleado.empleado_id}
               fila={fila}
-              fecha={data.fecha}
+              fecha={fechaMarcaje}
               horaActual={horaActual}
               {...acciones.estadoTarjeta(fila.empleado.empleado_id)}
               onMarcar={acciones.marcar}
