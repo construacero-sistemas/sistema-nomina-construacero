@@ -43,7 +43,7 @@ describe('HojaSemanal', () => {
     renderHoja()
     const tabla = screen.getByRole('table', { name: 'Hoja semanal del período' })
     const encabezados = within(tabla).getAllByRole('columnheader').map(th => th.textContent)
-    expect(encabezados).toEqual(['Nombre', 'Sueldo mensual', 'Días trab.', 'Sueldo semanal', 'Bono semanal', 'Horas extra', 'Total extras $',
+    expect(encabezados).toEqual(['Nombre', 'Sueldo mensual', 'Días trab.', 'Valor días trab. $', 'Días descanso', 'Valor descanso $', 'Sueldo semanal', 'Bono semanal', 'Horas extra', 'Total extras $',
       'Desc. o feriado trab.', 'Valor $', 'Otros pagos', 'Total a cobrar', 'Descuentos', 'Neto $', 'Neto Bs'])
     expect(screen.queryByText(/sueldo legal/i)).toBeNull()
     const fralin = within(tabla).getByRole('rowheader', { name: 'Fralin Lozano' }).closest('tr')
@@ -76,7 +76,7 @@ describe('HojaSemanal', () => {
     expect(lista).toHaveClass('lg:hidden')
     expect(screen.getByRole('table', { name: 'Hoja semanal del período' }).closest('.hidden')).toHaveClass('lg:block')
     const fralin = within(lista).getByRole('heading', { name: 'Fralin Lozano' }).closest('li')
-    for (const etiqueta of ['Sueldo mensual', 'Días trab.', 'Sueldo semanal', 'Bono semanal', 'Horas extra', 'Total extras $',
+    for (const etiqueta of ['Sueldo mensual', 'Días trab.', 'Valor días trab. $', 'Días descanso', 'Valor descanso $', 'Sueldo semanal', 'Bono semanal', 'Horas extra', 'Total extras $',
       'Desc. o feriado trab.', 'Valor $', 'Otros pagos', 'Total a cobrar', 'Descuentos']) {
       expect(within(fralin).getByText(etiqueta)).toBeInTheDocument()
     }
@@ -125,7 +125,7 @@ describe('hojaACsv', () => {
     expect(csv.startsWith('﻿')).toBe(true)
     const lineas = csv.slice(1).split('\r\n')
     expect(lineas[0]).toContain('Semana 05–11/11 (2026-11-05 a 2026-11-11)')
-    expect(lineas[1].split(';')[4]).toBe('"Bono semanal"')
+    expect(lineas[1].split(';')[7]).toBe('"Bono semanal"')
     expect(lineas[2]).toContain('"Fralin Lozano"')
     expect(lineas[2]).toContain('"82,17"')
     expect(lineas.at(-1)).toMatch(/^"TOTALES";/)

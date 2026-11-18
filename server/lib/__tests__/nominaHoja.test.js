@@ -67,6 +67,23 @@ describe('armarHojaSemanal', () => {
     cuadra(fila)
   })
 
+  it('desglosa la semana en días trabajados y días de descanso ($240, 5 días: $40 + $16)', () => {
+    const caso = recibo({ id: 'e-9', nombre: 'David Garcia', mensual: 240, asistencias: DIAS.map(f => dia(f)) })
+    const [fila] = hoja([caso]).filas
+    expect(fila.diasTrabajados).toBe(5)
+    expect(fila.valorDiasTrabajados).toBeCloseTo(40, 2)
+    expect(fila.diasDescansoPagados).toBe(2)
+    expect(fila.valorDescansoPagado).toBeCloseTo(16, 2)
+    expect(fila.valorDiasTrabajados + fila.valorDescansoPagado).toBeCloseTo(fila.semana, 2)
+    cuadra(fila)
+  })
+
+  it('el desglose suma exacto la semana aunque el sueldo diario tenga decimales ($160)', () => {
+    const caso = recibo({ id: 'e-10', nombre: 'Wuendy Lozano', mensual: 160, asistencias: DIAS.map(f => dia(f)) })
+    const [fila] = hoja([caso]).filas
+    expect(Math.round((fila.valorDiasTrabajados + fila.valorDescansoPagado) * 100)).toBe(Math.round(fila.semana * 100))
+  })
+
   it('una falta deja el sueldo semanal completo y baja el bono (D-3: sueldo primero)', () => {
     const caso = recibo({ id: 'e-2', nombre: 'Juan Orozco', mensual: 240, asistencias: [
       ...DIAS.slice(0, 4).map(f => dia(f)), dia(DIAS[4], { ausencia: true }),

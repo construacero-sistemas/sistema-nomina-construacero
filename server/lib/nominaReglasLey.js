@@ -8,14 +8,18 @@
 //   divisorMensual        30            art. 113 (salario diario = mensual ÷ 30)
 //   diasLaborablesDefault lunes–viernes art. 173 (5 días, 2 de descanso)
 //   descansoRemunerado    sí            art. 119 (descanso y feriados se pagan)
-//   faltasPierdeDescanso  2             art. 119 (faltar UN día no quita el descanso; 0 = nunca)
+//   faltasPierdeDescanso  1             regla del usuario (18/11/2026): cada falta descuenta un día de
+//                                       descanso desde la 1.ª (la ley, art. 119, lo quita desde la 2.ª); 0 = nunca
 
 export const REGLAS_LEY_DEFAULT = Object.freeze({
   divisorMensual: 30,
   diasLaborablesDefault: Object.freeze([1, 2, 3, 4, 5]),
   descansoRemunerado: true,
-  faltasPierdeDescanso: 2,
+  faltasPierdeDescanso: 1,
 })
+
+/** Lo que manda la ley (art. 119): el descanso se pierde desde la 2.ª falta. */
+export const FALTAS_PIERDE_DESCANSO_LEY = 2
 
 export const LIMITES_REGLAS_LEY = Object.freeze({
   divisorMensual: Object.freeze({ min: 1, max: 31 }),

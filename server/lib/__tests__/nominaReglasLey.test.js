@@ -7,7 +7,7 @@ import { calcularLineaNomina } from '../nominaUtils.js'
 describe('reglasLeyDeConfig', () => {
   it('sin configuración usa la ley vigente (LOTTT 2012)', () => {
     expect(reglasLeyDeConfig(undefined)).toEqual({
-      divisorMensual: 30, diasLaborablesDefault: [1, 2, 3, 4, 5], descansoRemunerado: true, faltasPierdeDescanso: 2,
+      divisorMensual: 30, diasLaborablesDefault: [1, 2, 3, 4, 5], descansoRemunerado: true, faltasPierdeDescanso: 1,
     })
     expect(REGLAS_LEY_DEFAULT.divisorMensual).toBe(30)
   })
@@ -24,7 +24,7 @@ describe('reglasLeyDeConfig', () => {
     const r = reglasLeyDeConfig({ nomina_divisor_mensual: 0, nomina_dias_laborables_default: [0, 7], nomina_faltas_pierde_descanso: 9 })
     expect(r.divisorMensual).toBe(30)
     expect(r.diasLaborablesDefault).toEqual([1, 2, 3, 4, 5])
-    expect(r.faltasPierdeDescanso).toBe(2)
+    expect(r.faltasPierdeDescanso).toBe(1)
   })
 })
 

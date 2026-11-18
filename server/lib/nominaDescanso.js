@@ -11,9 +11,12 @@
 //     («Días que trabaja»; el domingo nunca es laborable) y los feriados no
 //     laborables registrados en el calendario.
 //   - Cada uno se paga con el salario diario aunque no se haya trabajado.
-//   - Se pierden solo los descansos del bloque en que la persona faltó DOS o más
-//     días hábiles (un día de falta no le quita el derecho). El umbral es
-//     configurable (`faltasPierde`, migración 263); 0 = nunca se pierde.
+//   - Regla del usuario (18/11/2026), más estricta que el art. 119: cada día
+//     hábil que la persona falta en el bloque le DESCUENTA un día de descanso
+//     pagado de ese bloque (1 falta → pierde 1 descanso; 2 faltas → pierde 2;
+//     nunca más descansos de los que tiene la semana). `faltasPierde`
+//     (migración 263, por defecto 1) es desde cuántas faltas empieza a
+//     descontarse; 0 = nunca se descuenta.
 //   - Un día hábil cuenta como falta si ya pasó y no tiene asistencia pagada
 //     (sin registro o marcado como ausencia). Los días antes del ingreso o
 //     posteriores a hoy no cuentan como falta ni como descanso pagado… salvo los
@@ -54,13 +57,13 @@ function asistenciaPagada(fila) {
  * @param {object[]} [p.asistencias]    filas de registro_asistencia de la persona
  * @param {string|null} [p.hoy]         fecha operativa; los días hábiles futuros no son falta
  * @param {string|null} [p.fechaIngreso]
- * @param {number} [p.faltasPierde]    faltas en la semana que hacen perder el descanso (0 = nunca)
+ * @param {number} [p.faltasPierde]    faltas en la semana desde las que se descuenta un descanso por falta (0 = nunca)
  * @returns {{ diasDescanso:number, diasDescansoPerdidos:number, semanasConPerdida:number, fechasDescanso:string[] }}
  */
 export function calcularDescansoRemunerado({
-  desde, hasta, diasLaborables, feriados = [], asistencias = [], hoy = null, fechaIngreso = null, faltasPierde = 2,
+  desde, hasta, diasLaborables, feriados = [], asistencias = [], hoy = null, fechaIngreso = null, faltasPierde = 1,
 }) {
-  const umbral = Number.isInteger(Number(faltasPierde)) && Number(faltasPierde) >= 0 ? Number(faltasPierde) : 2
+  const umbral = Number.isInteger(Number(faltasPierde)) && Number(faltasPierde) >= 0 ? Number(faltasPierde) : 1
   const feriadosNoLaborables = new Set((feriados || [])
     .filter(f => f && f.laborable !== true && FECHA_RE.test(String(f.fecha).slice(0, 10)))
     .map(f => String(f.fecha).slice(0, 10)))
@@ -91,13 +94,15 @@ export function calcularDescansoRemunerado({
   let semanasConPerdida = 0
   const fechasDescanso = []
   for (const semana of semanas.values()) {
-    if (umbral > 0 && semana.faltas >= umbral) {
-      diasDescansoPerdidos += semana.descansos.length
-      if (semana.descansos.length) semanasConPerdida += 1
-      continue
+    const perdidos = umbral > 0 && semana.faltas >= umbral ? Math.min(semana.faltas, semana.descansos.length) : 0
+    if (perdidos > 0) {
+      diasDescansoPerdidos += perdidos
+      semanasConPerdida += 1
     }
-    diasDescanso += semana.descansos.length
-    fechasDescanso.push(...semana.descansos)
+    // Se descuentan los últimos descansos del bloque (el domingo antes que el sábado).
+    const pagados = semana.descansos.slice(0, semana.descansos.length - perdidos)
+    diasDescanso += pagados.length
+    fechasDescanso.push(...pagados)
   }
   return { diasDescanso, diasDescansoPerdidos, semanasConPerdida, fechasDescanso }
 }

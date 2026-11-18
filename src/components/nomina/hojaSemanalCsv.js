@@ -9,6 +9,9 @@ export const cantidad = n => Number(n || 0).toLocaleString('es-VE', { maximumFra
 export const COLUMNAS = [
   { id: 'sueldoMensual', titulo: 'Sueldo mensual', formato: usd },
   { id: 'diasTrabajados', titulo: 'Días trab.', formato: cantidad },
+  { id: 'valorDiasTrabajados', titulo: 'Valor días trab. $', formato: usd, total: true },
+  { id: 'diasDescansoPagados', titulo: 'Días descanso', formato: cantidad },
+  { id: 'valorDescansoPagado', titulo: 'Valor descanso $', formato: usd, total: true },
   { id: 'sueldoSemanal', titulo: 'Sueldo semanal', formato: usd, total: true },
   { id: 'bonoSemanal', titulo: 'Bono semanal', formato: usd, total: true },
   { id: 'horasExtra', titulo: 'Horas extra', formato: cantidad, total: true },

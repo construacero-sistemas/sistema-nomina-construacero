@@ -50,6 +50,11 @@ export function armarHojaSemanal({ lineas = [], asistencias = [], diasPorEmplead
     const diasDescansoPagados = num(linea.dias_descanso)
     // D-1: la semana son los días laborables trabajados más los descansos pagados.
     const semana = r2((diasTrabajados + diasDescansoPagados) * sueldoDia)
+    // Desglose informativo de la semana (usuario, 18/11/2026): con $240 al mes y
+    // 5 días trabajados, «5 días = $40» y «2 días de descanso = $16». El descanso
+    // se saca por diferencia para que ambos sumen exactamente la semana.
+    const valorDiasTrabajados = r2(diasTrabajados * sueldoDia)
+    const valorDescansoPagado = r2(semana - valorDiasTrabajados)
     // D-2/D-3 (usuario, 18/11/2026): el SUELDO semanal se llena primero, hasta su
     // tope (semana completa − bono); el bono es lo que sobra, hasta $35. Con la
     // semana completa: sueldo + 35. Con la semana incompleta, lo que falta sale del bono.
@@ -67,7 +72,9 @@ export function armarHojaSemanal({ lineas = [], asistencias = [], diasPorEmplead
       nombre: linea.empleado?.nombre || 'Sin nombre',
       sueldoMensual: r2(sueldoDia * divisor),
       diasTrabajados,
+      valorDiasTrabajados,
       diasDescansoPagados,
+      valorDescansoPagado,
       semana,
       sueldoSemanal: r2(semana - bono),
       bonoSemanal: bono,
@@ -90,7 +97,7 @@ export function armarHojaSemanal({ lineas = [], asistencias = [], diasPorEmplead
     empleados: filas.length,
     horasExtra: sumar('horasExtra'),
     diasDescansoTrabajados: sumar('diasDescansoTrabajados'),
-    ...Object.fromEntries(['sueldoSemanal', 'bonoSemanal', 'totalExtras', 'valorDescansoTrabajado', 'otrosPagos', 'totalACobrar', 'descuentos', 'neto']
+    ...Object.fromEntries(['valorDiasTrabajados', 'valorDescansoPagado', 'sueldoSemanal', 'bonoSemanal', 'totalExtras', 'valorDescansoTrabajado', 'otrosPagos', 'totalACobrar', 'descuentos', 'neto']
       .map(campo => [campo, sumar(campo)])),
   }
   return { filas, totales }

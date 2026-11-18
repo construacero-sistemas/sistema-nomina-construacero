@@ -6,6 +6,24 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Regla: cada falta descuenta un día de descanso pagado — 18/11/2026
+
+Petición del usuario (regla): «si falta 1 día se descuenta del día de descanso». Además, sobre la hoja a mano que envió (sueldo semanal 5 días × $8 = $40, descanso semanal 2 × $8 = $16, descanso o feriado trabajado 1 × $8 = $8, horas extra, total $64, descuento, neto): «por ahora mantén el bono», así que el bono semanal de $35 sigue en la hoja.
+
+1. **Archivos:** `server/lib/nominaDescanso.js`, `server/lib/nominaReglasLey.js`, `src/components/nomina/ReglasPagoPanel.jsx`, `supabase/migrations/266_nomina_falta_descuenta_descanso.sql` (nueva), `AGENT.md`, pruebas `nominaDescanso.test.js`, `nominaReglasLey.test.js`, `ReglasPagoPanel.test.jsx`.
+2. **Comportamiento:** antes, el descanso de la semana se perdía entero solo con 2 o más faltas. Ahora, a partir del umbral (`nomina_faltas_pierde_descanso`, por defecto **1**), cada falta descuenta **un** día de descanso de esa semana (el último del bloque primero), sin pasar de los descansos que tiene. Ejemplo con $240 al mes y 1 falta: 4 días ($32) + 1 descanso ($8) = $40 de semana. En Configuración el campo se llama «Desde cuántas faltas en la semana (0 = nunca se descuenta)» y explica empresa 1 / ley 2; «Valores de la ley» propone 2 (`FALTAS_PIERDE_DESCANSO_LEY`, sin número fijo en la interfaz). La migración 266 cambia el valor por defecto a 1 y pasa a 1 las cuentas que tenían el anterior (2).
+3. **Pruebas:** `npx vitest run server src/components/nomina`: 92 archivos, 1101 pruebas en verde (nuevas: 1 falta → 1 descanso, umbral de ley 2 → no se pierde, 3 faltas → pierde 2; recibo con 1 falta = 5 × 9,33). `npm run verify`: completo y en verde (lint, pruebas, responsivo, determinísticas, migraciones en PGlite, build y presupuesto de bundle).
+4. **Pendientes:** sin commit, push ni deploy. Al publicar hay que **aplicar la migración 266 en producción** (respaldo antes); hasta entonces producción conserva el umbral 2. Los recibos ya calculados no cambian hasta que se recalcule el período.
+
+## Hoja semanal: columnas de días trabajados y días de descanso — 18/11/2026
+
+Petición del usuario: «añade una columna de los días de descanso; por ejemplo, si se cobra $240 y se trabajaron 5 días debe aparecer así: 5 días $40 y días de descanso $16».
+
+1. **Archivos:** `server/lib/nominaHoja.js`, `src/components/nomina/hojaSemanalCsv.js`, `server/lib/__tests__/nominaHoja.test.js`, `src/components/nomina/__tests__/HojaSemanal.test.jsx`.
+2. **Comportamiento:** cada fila de la hoja trae `valorDiasTrabajados` (días trabajados × sueldo diario) y `valorDescansoPagado` (días de descanso y feriados pagados; se calcula como semana − valor de los días trabajados, para que los dos sumen exactamente la semana aunque el sueldo diario tenga decimales). La hoja (tabla de escritorio, fichas de teléfono y Excel) muestra tres columnas nuevas después de «Días trab.»: «Valor días trab. $», «Días descanso» y «Valor descanso $»; los dos valores se suman en la fila de totales. Es un desglose informativo: el sueldo semanal, el bono, el total a cobrar y el neto no cambian. Ejemplo: $240 al mes, 5 días → $40 + 2 días de descanso $16 = semana $56 (sueldo $21 + bono $35).
+3. **Pruebas:** `nominaHoja.test.js` (casos $240 → $40 + $16 y $160 con decimales que suma exacto), `HojaSemanal.test.jsx` (encabezados, fichas y posición en el Excel), `nomina.hoja.test.js` y `PeriodoDetalleModal.hoja.test.jsx`: 26/26 en verde. `npm run verify`: completo y en verde (lint, pruebas, responsivo, determinísticas, migraciones en PGlite, build y presupuesto de bundle).
+4. **Pendientes:** sin commit, push ni deploy (a la espera de la orden del usuario). Revisar en iPhone que las fichas sigan sin desplazamiento lateral con los tres campos nuevos.
+
 ## Publicación de la optimización de carga — 18/11/2026
 
 Petición del usuario: «push».
