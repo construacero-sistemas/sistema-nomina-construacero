@@ -21,7 +21,8 @@ Objetivo: que una versión nueva no recargue la pantalla en medio de un formular
 4. **Límite de recargas:** `public/auto-recovery.js` y el manejador `vite:preloadError` de `main.jsx` comparten el registro `recuperacion-version` en `sessionStorage`: como máximo un intento cada 2 minutos (antes `vite:preloadError` solo permitía uno por sesión). Si vuelve a fallar y la app no llegó a mostrarse, aparece la pantalla «No se pudo cargar el sistema» con el botón «Reintentar»; si la app ya estaba en pantalla se muestra un toast. Sin `sessionStorage` disponible no se recarga, para evitar bucles.
 5. **Corrección de paso** (`src/components/nomina/PeriodosAutoCard.jsx`): el selector «La semana empieza el» usaba `<select>` nativo (ya en `main`) y hacía fallar `check:project`; ahora usa `CustomSelect`.
 6. **Pruebas:** `compat/lib/__tests__/actualizacionApp.test.js` (11) y `compat/components/ui/__tests__/AvisoActualizacion.test.jsx` (4) en verde. `npm run verify` en verde: 148 archivos · 1546 pruebas (+1 pendiente), lint, responsive, determinísticas, test:db, build e índice de 279,6 / 400 KiB.
-7. **Pendientes:** validar en iPhone físico (PWA en segundo plano y regreso) tras el próximo despliegue, caso 1.4 de `docs/ACEPTACION_IPHONE_FISICO.md`. Sin commit, push ni deploy.
+7. **Git:** commit `9ebee29` en `nomina/actualizaciones-app`, PR #13 fusionado a `main` (merge `83204b9`) con la cuenta `construacero-sistemas`. Sin deploy.
+8. **Pendientes:** desplegar a producción cuando se ordene y validar en iPhone físico (PWA en segundo plano y regreso), caso 1.4 de `docs/ACEPTACION_IPHONE_FISICO.md`.
 
 ## Regla: «push» incluye la fusión a main — 18/11/2026
 
