@@ -108,6 +108,31 @@ export async function handleAsegurarSemanaActual(request, env) {
   return json({ ok: true, modo, creado: true, periodo: period }, 201, request)
 }
 
+// Campos que produce el cálculo: si ninguno cambió, recalcular no aporta nada.
+const CAMPOS_CALCULADOS = [
+  'cargo_snap', 'salario_dia_usd_snap', 'horas_jornada_snap', 'dias_trabajados', 'horas_normales', 'horas_extra',
+  'dias_sabado', 'dias_feriado', 'dias_ausencia', 'dias_descanso', 'monto_normal_usd', 'monto_extra_usd',
+  'monto_sabado_usd', 'monto_feriado_usd', 'total_bruto_usd', 'total_neto_usd', 'bono_semanal_usd', 'sueldo_semanal_usd',
+]
+
+function mismoValor(a, b) {
+  if (a == null || b == null) return (a ?? null) === (b ?? null)
+  const na = Number(a)
+  const nb = Number(b)
+  if (Number.isFinite(na) && Number.isFinite(nb) && typeof a !== 'boolean') return Math.abs(na - nb) < 0.0001
+  return String(a) === String(b)
+}
+
+/** ¿El recálculo deja todos los recibos sin pagar exactamente como están guardados? */
+export function recibosSinCambios(nuevas, guardadas, obsoletas = 0) {
+  if (obsoletas > 0) return false
+  const porEmpleado = new Map(guardadas.map(fila => [fila.empleado_id, fila]))
+  return nuevas.every(nueva => {
+    const guardada = porEmpleado.get(nueva.empleado_id)
+    return Boolean(guardada) && CAMPOS_CALCULADOS.every(campo => !(campo in nueva) || mismoValor(nueva[campo], guardada[campo]))
+  })
+}
+
 export async function handleCalcularPeriodo(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
@@ -120,6 +145,17 @@ export async function handleCalcularPeriodo(request, env) {
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
   const { periodoId } = body || {}
   if (!periodoId || !isValidUuid(periodoId)) return jsonError('periodoId inválido', 400, request)
+  return calcularPeriodo({
+    env, headers, operador, ip, request, periodoId,
+    // Cálculo automático al abrir el período (mejora del 19/11/2026): recalcula en
+    // memoria y solo guarda (y audita) si algún recibo sin pagar cambió.
+    soloSiCambio: body?.soloSiCambio === true,
+    confirmarJornadasAbiertas: body?.confirmarJornadasAbiertas === true,
+  })
+}
+
+// Cálculo del período, compartido por «Calcular», el cálculo automático y el cierre.
+async function calcularPeriodo({ env, headers, operador, ip, request, periodoId, soloSiCambio = false, confirmarJornadasAbiertas = false }) {
   const account = nominaTenantFilter(operador.cuenta_id)
   const periodResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_periodos?id=eq.${periodoId}${account}&select=id,nombre,desde,hasta,estado&limit=1`, { headers })
   const [period] = periodResponse.ok ? await periodResponse.json() : []
@@ -133,7 +169,7 @@ export async function handleCalcularPeriodo(request, env) {
     // ya no decide el pago, pero `estado_marcaje`/`hora_entrada`/`hora_salida` sí
     // identifican las jornadas abiertas que bloquean el cálculo (409 más abajo).
     fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?fecha=gte.${period.desde}&fecha=lte.${period.hasta}${account}&select=empleado_id,fecha,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,ausencia_justificada,horas_trabajadas,estado_marcaje,hora_entrada,hora_salida`, { headers }),
-    fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&select=empleado_id,bonos_usd,deducciones_usd,nota_bonos,nota_deducciones,comisiones_pos_usd,comisiones_despachos_ids,pagado`, { headers }),
+    fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&select=empleado_id,bonos_usd,deducciones_usd,nota_bonos,nota_deducciones,comisiones_pos_usd,comisiones_despachos_ids,pagado${soloSiCambio ? `,${CAMPOS_CALCULADOS.join(',')}` : ''}`, { headers }),
     // Art. 119: para pagar el descanso hay que saber qué días trabaja cada quien
     // (vigentes al cierre del período) y cuáles son feriados no laborables.
     fetchDiasLaborablesPorEmpleado(env, headers, operador.cuenta_id, { fecha: period.hasta }),
@@ -157,7 +193,7 @@ export async function handleCalcularPeriodo(request, env) {
   // Jornadas abiertas: nadie cobra ni queda como ausente hasta que el operador
   // corrija el marcaje o confirme explícitamente que se liquidan sin pago.
   const jornadasAbiertas = attendance.filter(esJornadaAbierta)
-  if (jornadasAbiertas.length && body?.confirmarJornadasAbiertas !== true) {
+  if (jornadasAbiertas.length && confirmarJornadasAbiertas !== true) {
     const ids = [...new Set(jornadasAbiertas.map(jornada => jornada.empleado_id))]
     const nombres = new Map()
     const nombresResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/clientes?tipo_cliente=eq.personal&id=in.(${ids.join(',')})${account}&select=id,nombre`, { headers })
@@ -235,6 +271,9 @@ export async function handleCalcularPeriodo(request, env) {
   const activeIds = new Set(employees.map(employee => employee.empleado_id))
   const obsoleteIds = previous.filter(row => !row.pagado && !activeIds.has(row.empleado_id)).map(row => row.empleado_id)
   const toInsert = lines.filter(line => !paidIds.has(line.empleado_id))
+  if (soloSiCambio && recibosSinCambios(toInsert, previous, obsoleteIds.length)) {
+    return json({ ok: true, sin_cambios: true, lineas_generadas: 0, lineas_preservadas: paidIds.size }, 200, request)
+  }
   if (toInsert.length) {
     const upsert = filas => fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?on_conflict=periodo_id,empleado_id`, { method: 'POST', headers: svcHeaders(env, 'resolution=merge-duplicates,return=minimal'), body: JSON.stringify(filas) })
     let insertResponse = await upsert(toInsert)
@@ -258,7 +297,7 @@ export async function handleCalcularPeriodo(request, env) {
     const deleteResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&empleado_id=in.(${obsoleteIds.join(',')})`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') })
     if (!deleteResponse.ok) return jsonError('No se pudieron retirar líneas obsoletas', 500, request)
   }
-  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CALCULAR_PERIODO', entidadTipo: 'nomina_periodo', entidadId: periodoId,    meta: { periodo: period.nombre, lineas: toInsert.length, preservadas: paidIds.size, obsoletas: obsoleteIds.length, jornadas_abiertas: jornadasAbiertas.length }, ip }).catch(() => {})
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CALCULAR_PERIODO', entidadTipo: 'nomina_periodo', entidadId: periodoId,    meta: { periodo: period.nombre, automatico: soloSiCambio, lineas: toInsert.length, preservadas: paidIds.size, obsoletas: obsoleteIds.length, jornadas_abiertas: jornadasAbiertas.length }, ip }).catch(() => {})
   return json({ ok: true, lineas_generadas: toInsert.length, lineas_preservadas: paidIds.size }, 200, request)
 }
 
@@ -278,9 +317,22 @@ export async function handleCerrarPeriodo(request, env) {
   const periodResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_periodos?id=eq.${periodoId}${account}&select=id,nombre,estado&limit=1`, { headers })
   const [period] = periodResponse.ok ? await periodResponse.json() : []
   if (!period) return jsonError('Período no encontrado', 404, request)
-  if (period.estado !== 'abierto') return jsonError(`El período ya está ${period.estado}`, 400, request)
-  const linesResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&select=id&limit=1`, { headers })
-  if (!(linesResponse.ok ? await linesResponse.json() : []).length) return jsonError('Calcula la nómina antes de cerrar el período', 400, request)
+  // Regla del usuario (19/11/2026): al cerrar se marca TODO como pagado, sin pago
+  // aparte ni forma de pago. Un período «cerrado» de antes de esta regla también
+  // puede terminarse así (ya no se puede recalcular: solo se marca pagado).
+  if (period.estado === 'pagado') return jsonError('El período ya está cerrado y pagado', 400, request)
+  if (body.idempotencyKey !== undefined && !/^[A-Za-z0-9._:-]{16,128}$/.test(String(body.idempotencyKey))) {
+    return jsonError('idempotencyKey inválida', 400, request)
+  }
+  // Cierre seguro: antes de cerrar, los recibos se ponen al día con la asistencia.
+  // Si hay jornadas sin salida (409) o falla el cálculo, no se cierra.
+  if (period.estado === 'abierto') {
+    const calculo = await calcularPeriodo({
+      env, headers, operador, ip, request, periodoId, soloSiCambio: true,
+      confirmarJornadasAbiertas: body.confirmarJornadasAbiertas === true,
+    })
+    if (!calculo.ok) return calculo
+  }
   // Congelar la tasa del cierre: si el llamador envía `tasas` (la observación del
   // mercado en este momento), se guarda como snapshot del período ANTES de cerrar.
   // Si el snapshot no se puede escribir, el período NO se cierra (fail-closed):
@@ -312,10 +364,42 @@ export async function handleCerrarPeriodo(request, env) {
       if (!freeze.ok) return jsonError('No se pudo congelar la tasa del período; no se cerró', 500, request)
     }
   }
-  const update = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_periodos?id=eq.${periodoId}${account}`, { method: 'PATCH', headers: svcHeaders(env, 'return=minimal'), body: JSON.stringify({ estado: 'cerrado', cerrado_en: new Date().toISOString(), cerrado_por: operador.id }) })
-  if (!update.ok) return jsonError('Error al cerrar período', 500, request)
-  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CERRAR_PERIODO', entidadTipo: 'nomina_periodo', entidadId: periodoId, meta: { periodo: period.nombre, tasas_congeladas: tasasCierre.length }, ip }).catch(() => {})
-  return json({ ok: true, tasa_congelada: tasasCierre.length > 0 }, 200, request)
+  // Cerrar y marcar pagado en una sola operación de la base (migración 269): mismo
+  // candado y auditoría que un pago, pero sin egreso en Finanzas ni forma de pago.
+  const tasaUsd = tasasCierre.find(t => t.moneda_origen === 'USD')?.valor ?? null
+  const resultado = await operarCierre(env, operador, periodoId, 'cerrar', body.idempotencyKey, tasaUsd, ip)
+  if (resultado.error) return jsonError(resultado.error, resultado.status, request)
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CERRAR_PERIODO_MARCAR_PAGADO', entidadTipo: 'nomina_periodo', entidadId: periodoId, meta: { periodo: period.nombre, tasas_congeladas: tasasCierre.length, recibos_marcados: resultado.data?.recibos_marcados ?? null }, ip }).catch(() => {})
+  return json({ ok: true, pagado: true, recibos_marcados: Number(resultado.data?.recibos_marcados) || 0, tasa_congelada: tasasCierre.length > 0 }, 200, request)
+}
+
+const MENSAJES_CIERRE = [
+  [/no receipts/i, 409, 'El período no tiene recibos: calcula la nómina antes de cerrarlo.'],
+  [/already paid/i, 409, 'El período ya está cerrado y pagado.'],
+  [/not closed and paid/i, 409, 'El período no está cerrado y pagado.'],
+  [/payments recorded in Finanzas/i, 409, 'Este período tiene pagos registrados en Finanzas: revierte esos pagos antes de reabrirlo.'],
+  [/Unauthorized operator/i, 403, 'Tu usuario no puede cerrar la nómina.'],
+  [/Period not found/i, 404, 'Período no encontrado.'],
+  [/Idempotency payload conflict/i, 409, 'La operación cambió mientras se enviaba. Actualiza e inténtalo de nuevo.'],
+]
+
+// Llama a `nomina_cerrar_marcar_pagado` (migración 269) y traduce sus errores.
+async function operarCierre(env, operador, periodoId, accion, clave, tasaUsd, ip) {
+  const idempotencia = clave || `${accion}:${periodoId}:${Date.now()}`
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/nomina_cerrar_marcar_pagado`, {
+    method: 'POST',
+    headers: svcHeaders(env),
+    body: JSON.stringify({
+      p_cuenta_id: operador.cuenta_id, p_operador_id: operador.id, p_periodo_id: periodoId,
+      p_accion: accion, p_clave: idempotencia, p_tasa_usd_ves: tasaUsd, p_ip: ip || null,
+    }),
+  })
+  if (response.ok) return { data: await response.json().catch(() => null) }
+  const detalle = await response.text().catch(() => '')
+  const conocido = MENSAJES_CIERRE.find(([patron]) => patron.test(detalle))
+  if (conocido) return { error: conocido[2], status: conocido[1] }
+  console.error('[nomina] cierre/reapertura falló:', response.status, detalle.slice(0, 300))
+  return { error: accion === 'cerrar' ? 'No se pudo cerrar el período' : 'No se pudo reabrir el período', status: 500 }
 }
 
 export async function handleReabrirPeriodo(request, env) {
@@ -335,7 +419,14 @@ export async function handleReabrirPeriodo(request, env) {
   const [period] = response.ok ? await response.json() : []
   if (!period) return jsonError('Período no encontrado', 404, request)
   if (period.estado === 'abierto') return jsonError('El período ya está abierto', 400, request)
-  if (period.estado === 'pagado') return jsonError('No se puede reabrir un período ya pagado', 400, request)
+  // Un período cerrado con «marcar pagado» (migración 269) se reabre deshaciendo
+  // esa marca, siempre que ningún recibo se haya pagado desde Finanzas.
+  if (period.estado === 'pagado') {
+    const resultado = await operarCierre(env, operador, periodoId, 'reabrir', null, null, ip)
+    if (resultado.error) return jsonError(resultado.error, resultado.status, request)
+    registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'REABRIR_PERIODO_PAGADO', entidadTipo: 'nomina_periodo', entidadId: periodoId, meta: { periodo: period.nombre, recibos_desmarcados: resultado.data?.recibos_desmarcados ?? null }, ip }).catch(() => {})
+    return json({ ok: true, recibos_desmarcados: Number(resultado.data?.recibos_desmarcados) || 0 }, 200, request)
+  }
   const paidResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&pagado=eq.true&select=id&limit=1`, { headers })
   if ((paidResponse.ok ? await paidResponse.json() : []).length) return jsonError('Hay recibos ya pagados en este período. Revierte los pagos antes de reabrir.', 400, request)
   const update = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_periodos?id=eq.${periodoId}${account}`, { method: 'PATCH', headers: svcHeaders(env, 'return=minimal'), body: JSON.stringify({ estado: 'abierto', cerrado_en: null, cerrado_por: null }) })

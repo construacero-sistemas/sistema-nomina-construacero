@@ -266,8 +266,11 @@ export function useCerrarPeriodo() {
   return useMutation({
     // El cierre congela la tasa del mercado en este momento (quién y cuándo):
     // el servidor guarda el snapshot ANTES de cerrar y, si no puede, no cierra.
-    mutationFn: (periodoId) => apiPost('/api/nomina/periodos/cerrar', {
-      periodoId,
+    // Regla del usuario (19/11/2026): cerrar = poner los recibos al día y marcarlos
+    // TODOS como pagados, sin pago aparte. Acepta el id o `{ periodoId,
+    // confirmarJornadasAbiertas }` cuando se decide cerrar con jornadas sin salida.
+    mutationFn: (vars) => apiPost('/api/nomina/periodos/cerrar', {
+      ...(typeof vars === 'string' ? { periodoId: vars } : vars),
       tasas: {
         usd: Number(rates.usd) || 0,
         eur: Number(rates.eur) || 0,
@@ -275,12 +278,17 @@ export function useCerrarPeriodo() {
       },
     }),
     onSuccess: (data) => {
-      showToast.success(data?.tasa_congelada ? 'Período cerrado · tasa del cierre congelada' : 'Período cerrado')
+      const recibos = Number(data?.recibos_marcados) || 0
+      showToast.success(`Período cerrado: ${recibos} recibo(s) marcados como pagados`)
       qc.invalidateQueries({ queryKey: KEY_PERIODOS })
       qc.invalidateQueries({ queryKey: KEY_LINEAS })
       qc.invalidateQueries({ queryKey: ['nomina', 'tasas'] })
     },
-    onError: (e) => showToast.error(e.message || 'Error al cerrar período'),
+    onError: (e) => {
+      // Las jornadas sin salida las muestra la tarjeta del período en su diálogo.
+      if (Array.isArray(e?.payload?.jornadas_abiertas)) return
+      showToast.error(e.message || 'Error al cerrar período')
+    },
   })
 }
 

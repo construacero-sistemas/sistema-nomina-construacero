@@ -16,6 +16,7 @@ vi.mock('../../../hooks/useNomina', () => ({
   useConfigNomina: () => ({ data: undefined, isLoading: false }),
   useNominaLineas: () => ({ data: lineasData, isLoading: false, isError: false, refetch: vi.fn() }),
   useRevertirPagoLinea: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useReabrirPeriodo: () => ({ mutate: vi.fn(), isPending: false }),
   useTasasPeriodo: () => ({ data: [], isLoading: false }),
 }))
 vi.mock('../../../hooks/useMonedaNomina.js', () => ({

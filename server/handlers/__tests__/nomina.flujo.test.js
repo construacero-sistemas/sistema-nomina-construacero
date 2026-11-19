@@ -321,50 +321,7 @@ describe('cálculo de período', () => {
 // (el contrato completo está en server/lib/nominaUtils.js#esJornadaAbierta).
 // ─── Cierre y reapertura ─────────────────────────────────────────────────────
 describe('cierre y reapertura de período', () => {
-  it('no cierra un período sin líneas calculadas', async () => {
-    mock = installFetchMock([
-      { match: '/nomina_periodos', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'abierto' }] },
-      { match: '/nomina_lineas',   respond: [] },
-    ])
-    const res = await H.handleCerrarPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
-    const { status, body } = await readResponse(res)
-    expect(status).toBe(400)
-    expect(String(body.error)).toMatch(/calcula la nómina/i)
-  })
-  it('no cierra un período que ya está cerrado', async () => {
-    mock = installFetchMock([
-      { match: '/nomina_periodos', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'cerrado' }] },
-    ])
-    const res = await H.handleCerrarPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
-    const { status, body } = await readResponse(res)
-    expect(status).toBe(400)
-    expect(String(body.error)).toMatch(/ya está cerrado/i)
-  })
-  it('cierra correctamente y sella quién y cuándo', async () => {
-    let enviado = null
-    mock = installFetchMock([
-      { match: '/nomina_periodos', method: 'GET',   respond: [{ id: IDS.periodo, nombre: 'P', estado: 'abierto' }] },
-      { match: '/nomina_lineas',   respond: [{ id: IDS.linea }] },
-      { match: '/nomina_periodos', method: 'PATCH', respond: (url, init) => {
-        enviado = JSON.parse(init.body); return []
-      }},
-    ])
-    const res = await H.handleCerrarPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
-    const { status } = await readResponse(res)
-    expect(status).toBe(200)
-    expect(enviado.estado).toBe('cerrado')
-    expect(enviado.cerrado_por).toBe(OPERADORES.administracion.id)
-    expect(enviado.cerrado_en).toBeTruthy()
-  })
-  it('no reabre un período pagado', async () => {
-    mock = installFetchMock([
-      { match: '/nomina_periodos', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'pagado' }] },
-    ])
-    const res = await H.handleReabrirPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
-    const { status, body } = await readResponse(res)
-    expect(status).toBe(400)
-    expect(String(body.error)).toMatch(/pagado/i)
-  })
+  // El cierre (cerrar = marcar pagado, regla del 19/11/2026) vive en nomina.cierre.test.js.
   it('no reabre si hay recibos ya pagados', async () => {
     mock = installFetchMock([
       { match: '/nomina_periodos', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'cerrado' }] },
@@ -564,4 +521,5 @@ describe('totales del listado de períodos', () => {
     expect(mock.calls).toHaveLength(1)
   })
 })
+
 

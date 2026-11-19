@@ -6,6 +6,56 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Publicación: contraste del aviso de versión nueva en producción — 19/11/2026
+
+Petición del usuario: «push al main» y luego «deploy a produccion».
+
+1. **Git:** rama `nomina/contraste-aviso-actualizacion` creada desde `main` con solo `compat/components/ui/AvisoActualizacion.jsx` y su entrada de bitácora (commit `c41de66`). PR #26 fusionado a `main` (merge `75c605f`) con la cuenta `construacero-sistemas`; rama conservada. Los demás cambios de `nomina/hoja-autocalculo` (migración 269 incluida) **no** se subieron.
+2. **Deploy:** la web oficial se publica sola con cada push a `main` (proyecto de Vercel conectado a GitHub), así que no hizo falta `vercel deploy --prod`. Sin migraciones: el cambio es solo de estilos.
+3. **Prueba de humo (solo lectura):** `/` 200, `/api/ping` 200, `/api/rates` 200, `/api/auth/me` sin sesión 401 (permisos vivos). El bundle publicado (`index-C7FlB3Hd.js`) ya trae el botón blanco con `text-primary` (#1B365D).
+4. **Pendientes:** ver el aviso en un equipo real con la próxima versión. Esta entrada vive en la copia local de `nomina/hoja-autocalculo` y llega a `main` con el próximo push.
+
+## Corrección: contraste del aviso «Hay una versión nueva del sistema» — 19/11/2026
+
+Petición del usuario: «corrige el contraste acá» (captura del aviso con el botón «Actualizar ahora» casi invisible).
+
+- **Causa:** en `tailwind.config.js` la paleta `sky` está remapeada al azul marino de la marca, así que `bg-sky-500` salía marino oscuro sobre el fondo `slate-900` del aviso, con texto `slate-950`: el botón no se leía.
+- **Archivo:** `compat/components/ui/AvisoActualizacion.jsx`.
+- **Cambio:** botón «Actualizar ahora» en blanco con texto marino (`text-primary`), hover `sky-50` y anillo de foco visible; icono en `sky-200`; subtítulo en `white/80` y la X de cierre en `white/70` para que también se lean bien.
+- **Pruebas:** `npx vitest run compat/components/ui/__tests__/AvisoActualizacion.test.jsx` → 4/4; `npm run test:responsive` → todas las reglas cumplen.
+- **Pendiente:** verlo en la app cuando salga la próxima versión (el aviso solo aparece con una actualización real).
+
+## Regla: cerrar el período es marcarlo pagado + aviso de semana terminada + historial de recibos — 19/11/2026
+
+Peticiones del usuario: «las tres mejoras» (aviso de semana terminada, cierre seguro, historial completo) y, como regla, «al cerrar se paga todo, no se paga aparte»; «solo marcar pagado y ya, por ahora no debe pedir forma de pago ni nada extra».
+
+1. **Archivos:** `supabase/migrations/269_nomina_cerrar_marca_pagado.sql` (nueva), `server/handlers/nomina.periodos.js` (cálculo compartido `calcularPeriodo`, cierre y reapertura con la operación nueva), `server/handlers/nomina.lineas.js` (`handleGetRecibosEmpleado`), `server/handlers/nomina.js`, `worker.js` (ruta `GET /api/nomina/empleados/recibos`), `src/hooks/useNomina.js`, `src/hooks/useRecibosEmpleado.js` (nuevo), `src/components/nomina/TabPeriodos.jsx`, `PeriodoDetalleModal.jsx`, `TabEmpleados.jsx`, `RecibosEmpleadoModal.jsx` (nuevo), `src/services/pdf/nominaReciboPDF.impl.js` y `nominaReciboPDF.js`, `AGENT.md` y pruebas.
+2. **Comportamiento:**
+   - **Cerrar = marcar pagado:** «Cerrar y marcar pagado» pone los recibos al día (mismo cálculo que «Calcular», solo guarda si cambió), no cierra con jornadas sin salida (salvo «Cerrar sin pagarlas»), congela la tasa y llama a `nomina_cerrar_marcar_pagado` (migración 269): todos los recibos sin pagar quedan pagados con la tasa del cierre y el período pasa a «pagado». Sin forma de pago, sin cuenta y **sin egreso en Finanzas**. La protección de la 238 sigue intacta: la marca solo se hace dentro de esa operación registrada (tipo `cerrar_nomina`). Se quitó «Cerrar para pago» y «Pagar recibos» de la tarjeta; un período «cerrado» antiguo muestra «Marcar pagado».
+   - **Reabrir:** en el detalle de un período pagado, «Reabrir período» (con confirmación) deshace la marca (`reabrir_nomina`) si ningún recibo tiene pago en Finanzas. Los recibos marcados al cerrar ya no muestran «Revertir pago» (no tienen pago que revertir).
+   - **Aviso de semana terminada:** Períodos muestra un aviso con las semanas que ya terminaron y siguen abiertas; la tarjeta dice «La semana terminó · ciérrala para marcarla pagada» y resalta el botón.
+   - **Historial:** «Todos los recibos PDF» en el detalle del período (un recibo por página, generado en el navegador). En Empleados, botón «Recibos» en cada ficha: lista de sus recibos (10 por página, Anterior/Siguiente) con estado, neto en $ y Bs pagados, y descarga del PDF de cada semana.
+3. **Pruebas:** nuevas `nomina.cierre.test.js` (cierra tras poner al día, 409 con jornadas, mensajes claros, no recierra pagado, reabrir y su bloqueo por pagos en Finanzas), `nomina.recibos-empleado.test.js`, `RecibosEmpleadoModal.test.jsx`, PDF de todos los recibos; ajustadas `nomina.tasas.test.js`, `nomina.flujo.test.js`, `TabPeriodos.test.jsx`. `npm run verify`: ver abajo.
+4. **Pendientes:** aplicar la migración 269 en producción antes de publicar. Los pagos de nómina ya no llegan a Finanzas como egreso: si más adelante se quiere, se agrega la forma de pago al cierre. `compat/components/ui/AvisoActualizacion.jsx` aparece modificado y no es de este cambio. Sin commit, push ni deploy.
+
+## Mejora: los recibos y la hoja semanal se ponen al día solos al abrir el período — 19/11/2026
+
+Petición del usuario: «hazlo en una mejora aparte» (propuesta: que la hoja se llene sin pulsar «Calcular», solo con el período abierto y sin recalcular a cada rato).
+
+1. **Archivos:** `server/handlers/nomina.periodos.js` (`soloSiCambio`, `recibosSinCambios`), `src/hooks/useAutoCalculoPeriodo.js` (nuevo), `src/components/nomina/PeriodoDetalleModal.jsx` (aviso `EstadoAutoCalculo`), pruebas `nomina.flujo.test.js` y `nomina.autocalculo.test.js` y `useAutoCalculoPeriodo.test.jsx` (nuevas). Sin migración.
+2. **Comportamiento:** al abrir el detalle de un período **abierto** (quien tiene `administrarNomina`), se pide una vez el cálculo con `soloSiCambio`. El servidor recalcula en memoria y compara con los recibos guardados: si nada cambió responde `sin_cambios` **sin escribir ni auditar**; si cambió algo (asistencia, faltas, feriados, reglas, bono) o el período no tenía recibos, guarda y audita con `automatico: true`. Los recibos pagados nunca se tocan y los períodos cerrados no se recalculan. Si hay jornadas con entrada y sin salida no calcula y avisa para corregir el marcaje. Aviso en pantalla: «Poniendo los recibos al día…», «Recibos y hoja al día con la asistencia», «…actualizados con la asistencia más reciente», o el aviso de jornadas o error. Sin sondeos: una comprobación por apertura.
+3. **Pruebas:** sin cambios → no escribe; con cambios → guarda; sin recibos → calcula; hook: una sola llamada, aviso de jornadas, nada con período cerrado o sin permiso. `npm run verify`: en verde.
+4. **Pendientes:** sin commit, push ni deploy (rama `nomina/hoja-autocalculo`).
+
+## Publicación: bono semanal editable — 19/11/2026
+
+Petición del usuario: «push y aplica la migración».
+
+1. **Migración 268 en producción** (Management API, procedimiento de `OPERACIONES.md`): guardia (última 267, sin columnas nuevas, 20 recibos, períodos abiertos 12–18/11 y 19–25/11), respaldo en `local-backups/backup_pre_268_20261119.json`, aplicación en `BEGIN/COMMIT` y versión 268 registrada. Verificado: `nomina_bono_semanal_usd` = 35, columnas `bono_semanal_usd` y `sueldo_semanal_usd` y sus dos restricciones.
+2. **Código:** commit `edae87b` en `nomina/bono-configurable` (incluye la entrada de publicación anterior de la bitácora), PR #25 fusionado en `main` (`0eb021a`) con `construacero-sistemas`.
+3. **Humo de solo lectura:** Vercel «success»; el bloque de Configuración servido trae el campo «Bono semanal»; `/`, `/nomina`, `/finanzas`, `/api/rates` → 200; `/api/auth/me` y `/api/nomina/periodos/hoja` sin sesión → 401.
+4. **Pendientes:** recalcular los períodos abiertos (12–18/11 y 19–25/11) para que sus recibos guarden el bono y tomen la regla nueva de faltas. Staging sigue sin migrar (atrasado).
+
 ## Regla: bono semanal editable, guardado en cada recibo y por semana — 19/11/2026
 
 Petición del usuario: «hazlo así, ya que es correcto que el bono sale del sueldo y no se suma» (confirmación de la propuesta: bono editable, guardado por recibo, por semana y separado en el recibo).

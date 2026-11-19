@@ -209,8 +209,10 @@ if (!permissionsGuardSource.includes('gestionarUsuarios') || !permissionsGuardSo
 // Cada acción de escritura de Nómina debe gatearse con la capacidad de su endpoint, o
 // el rol `nomina` vuelve a ver botones que el servidor rechaza con 403.
 const paridadGates = [
+  // Regla del usuario (19/11/2026): el período ya no tiene «Pagar» aparte; cerrar es
+  // marcar pagado y lo gatea `puedeGestionarNomina` (administrarNomina, igual que el endpoint).
   ['src/components/nomina/TabPeriodos.jsx',
-    ['puedeGestionarNomina &&', 'puedePagarNomina &&'],
+    ['puedeGestionarNomina &&'],
     ['esAdmin && abierto', 'esAdmin && tieneLineas', 'esAdmin && periodo.estado']],
   ['src/components/nomina/PeriodoDetalleModal.jsx',
     ['puedeGestionarNomina &&', 'puedePagarNomina &&'],

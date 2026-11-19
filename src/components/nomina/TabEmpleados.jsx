@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import {
   Users, Plus, Pencil, DollarSign, Clock, Briefcase, Search, RotateCcw,
-  AlertTriangle, CalendarDays, Sparkles, Filter, Trash2
+  AlertTriangle, CalendarDays, Sparkles, Filter, Trash2, FileText
 } from 'lucide-react'
 import { useNominaEmpleados, useConfigEmpleados, useActualizarConfigEmpleado, useEliminarConfigEmpleado, useAsistencia, useConfigNomina } from '../../hooks/useNomina'
 import useReglasLey from '../../hooks/useReglasLey.js'
@@ -20,6 +20,7 @@ import EmpleadoConfigModal from './EmpleadoConfigModal'
 import ComisionPagoModal from './ComisionPagoModal.jsx'
 import { VENDEDORES_EN_NOMINA } from '../../config/comisionesVendedores.js'
 import EmpleadoBajaModal from './EmpleadoBajaModal.jsx'
+import RecibosEmpleadoModal from './RecibosEmpleadoModal.jsx'
 import EmpleadoEliminarModal from './EmpleadoEliminarModal.jsx'
 import ControlAsistenciaToggle from './ControlAsistenciaToggle.jsx'
 import { logClientError } from '../../../compat/utils/errorLogger.js'
@@ -56,6 +57,8 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
   const [modal, setModal] = useState(null)
   const [modalComision, setModalComision] = useState(null)
   const [empleadoParaBaja, setEmpleadoParaBaja] = useState(null)
+  // Mejora del 19/11/2026: historial de recibos del trabajador.
+  const [recibosDe, setRecibosDe] = useState(null)
   const [empleadoParaEliminar, setEmpleadoParaEliminar] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [filtroTipo, setFiltroTipo] = useState('todos') // 'todos' | 'fijos' | 'vendedores'
@@ -302,6 +305,7 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
               onPagarComision={() => setModalComision(c)}
               onDarDeBaja={() => setEmpleadoParaBaja(c)}
               onCambiarAsistencia={valor => cambiarAsistencia(c, valor)}
+              onVerRecibos={() => setRecibosDe(c)}
             />
           ))}
         </div>
@@ -324,6 +328,7 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
         />
       )}
 
+      {recibosDe && <RecibosEmpleadoModal config={recibosDe} onClose={() => setRecibosDe(null)} />}
       {empleadoParaBaja && (
         <EmpleadoBajaModal
           isOpen
@@ -410,7 +415,21 @@ function EmpleadoBajaCard({ config, puedeGestionar, cargando, onReactivar, onEli
   )
 }
 
-function EmpleadoNominaCard({ config, esAdmin, resumen, avance = null, puedeGestionar = false, puedePagarComision = false, mostrarMontos = true, cargando = false, onEditar, onPagarComision, onDarDeBaja, onCambiarAsistencia }) {
+function BotonRecibos({ onClick, nombre }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Ver recibos de ${capitalizarPalabras(nombre) || 'este trabajador'}`}
+      className="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-slate-500 hover:text-sky-700 hover:bg-sky-50 transition-colors"
+    >
+      <FileText size={12} />
+      <span>Recibos</span>
+    </button>
+  )
+}
+
+function EmpleadoNominaCard({ config, esAdmin, resumen, avance = null, puedeGestionar = false, puedePagarComision = false, mostrarMontos = true, cargando = false, onEditar, onPagarComision, onDarDeBaja, onCambiarAsistencia, onVerRecibos }) {
   const { fmtBs } = useMonedaNomina()
   const nombre = capitalizarPalabras(config.empleado?.nombre) || 'Sin nombre'
   const esVendedorRol = esVendedor(config)
@@ -523,6 +542,11 @@ function EmpleadoNominaCard({ config, esAdmin, resumen, avance = null, puedeGest
         )
       )}
 
+      {onVerRecibos && !puedeGestionar && !(esVendedorRol && puedePagarComision) && (
+        <div className="mt-auto border-t border-slate-100 px-3 py-2 bg-white flex items-center justify-end">
+          <BotonRecibos onClick={onVerRecibos} nombre={config.empleado?.nombre} />
+        </div>
+      )}
       {(puedeGestionar || (esVendedorRol && puedePagarComision)) && (
         <div className={`mt-auto border-t border-slate-100 px-3 py-2 bg-white flex items-center ${esVendedorRol ? 'justify-between' : 'justify-end'} gap-1.5`}>
           {esVendedorRol && puedePagarComision && (
@@ -539,6 +563,7 @@ function EmpleadoNominaCard({ config, esAdmin, resumen, avance = null, puedeGest
 
           {puedeGestionar && (
           <div className="flex items-center gap-1.5">
+            {onVerRecibos && <BotonRecibos onClick={onVerRecibos} nombre={config.empleado?.nombre} />}
             <button
               type="button"
               onClick={onDarDeBaja}

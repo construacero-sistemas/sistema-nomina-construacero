@@ -18,6 +18,15 @@ import {
   textoNominaValido,
 } from './nomina.shared.js'
 
+// Campos de un recibo (pantalla y PDF). Compartidos por el listado del período y
+// por los recibos de un trabajador.
+const SELECT_RECIBO = 'id,empleado_id,cargo_snap,salario_dia_usd_snap,horas_jornada_snap,' +
+    'dias_trabajados,horas_normales,horas_extra,dias_sabado,dias_feriado,dias_ausencia,dias_descanso,' +
+    'monto_normal_usd,monto_extra_usd,monto_sabado_usd,monto_feriado_usd,bonos_usd,bono_semanal_usd,sueldo_semanal_usd,' +
+    'deducciones_usd,comisiones_pos_usd,comisiones_despachos_ids,total_bruto_usd,total_neto_usd,nota_bonos,nota_deducciones,pagado,' +
+    'pagado_en,pagado_por_nombre,referencia_pago,tasa_pago_usd_ves,total_pagado_bs,' +
+    'empleado:clientes!empleado_id(id,nombre,rif)'
+
 export async function handleGetLineas(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
@@ -30,12 +39,7 @@ export async function handleGetLineas(request, env) {
   const periodoId = new URL(request.url).searchParams.get('periodoId')
   if (!periodoId || !isValidUuid(periodoId)) return jsonError('periodoId inválido', 400, request)
 
-  const selectBase = 'id,empleado_id,cargo_snap,salario_dia_usd_snap,horas_jornada_snap,' +
-    'dias_trabajados,horas_normales,horas_extra,dias_sabado,dias_feriado,dias_ausencia,dias_descanso,' +
-    'monto_normal_usd,monto_extra_usd,monto_sabado_usd,monto_feriado_usd,bonos_usd,bono_semanal_usd,sueldo_semanal_usd,' +
-    'deducciones_usd,comisiones_pos_usd,comisiones_despachos_ids,total_bruto_usd,total_neto_usd,nota_bonos,nota_deducciones,pagado,' +
-    'pagado_en,pagado_por_nombre,referencia_pago,tasa_pago_usd_ves,total_pagado_bs,' +
-    'empleado:clientes!empleado_id(id,nombre,rif)'
+  const selectBase = SELECT_RECIBO
   // El desglose de descuentos (migración 257) viaja embebido por recibo. Si esa
   // tabla aún no existe, la lectura sigue válida sin desglose y el recibo usa
   // su resumen histórico (nota_deducciones), en vez de tumbar el listado.
@@ -179,4 +183,29 @@ export function handlePagarLineas(request, env) {
 
 export function handleRevertirPagoLinea(request, env) {
   return handleFinancialMutation(request, env, 'revertir_nomina')
+}
+
+// Mejora del 19/11/2026: recibos de UN trabajador, del más reciente al más antiguo,
+// con su período, para verlos y descargarlos desde su ficha. Paginado (10 por
+// página) para cuidar el plan de Supabase. GET /api/nomina/empleados/recibos
+export async function handleGetRecibosEmpleado(request, env) {
+  const v = await validateOperator(request, env)
+  if (v.error) return v.error
+  const { operador, headers } = v
+  const denegadoVer = requireCapacidad(operador, 'verNomina', request)
+  if (denegadoVer) return denegadoVer
+  const tenantError = tenantGuard(operador, request)
+  if (tenantError) return tenantError
+  const params = new URL(request.url).searchParams
+  const empleadoId = params.get('empleadoId')
+  if (!empleadoId || !isValidUuid(empleadoId)) return jsonError('empleadoId inválido', 400, request)
+  const pagina = Math.max(1, Math.min(500, Number.parseInt(params.get('pagina') || '1', 10) || 1))
+  const porPagina = 10
+  const select = `${SELECT_RECIBO},periodo:nomina_periodos!periodo_id(id,nombre,desde,hasta,estado)`
+  const url = `${env.SUPABASE_URL}/rest/v1/nomina_lineas?empleado_id=eq.${empleadoId}${nominaTenantFilter(operador.cuenta_id)}` +
+    `&select=${select}&order=periodo(desde).desc&limit=${porPagina + 1}&offset=${(pagina - 1) * porPagina}`
+  const response = await fetch(url, { headers })
+  if (!response.ok) return jsonError('No se pudieron leer los recibos del trabajador', 500, request)
+  const filas = await response.json() ?? []
+  return json({ recibos: filas.slice(0, porPagina), pagina, hayMas: filas.length > porPagina }, 200, request)
 }
