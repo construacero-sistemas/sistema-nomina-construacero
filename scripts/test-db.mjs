@@ -127,6 +127,34 @@ try {
     assert.equal(Number((await one('SELECT comisiones_pos_usd FROM nomina_lineas WHERE id=$1', [lineA])).comisiones_pos_usd), 85.5)
     assert.equal((await one("SELECT count(*)::int AS n FROM auditoria WHERE cuenta_id=$1 AND accion='APLICAR_COMISIONES_POS' AND entidad_id=$2", [tenant, commissionPeriod])).n, 1)
   })
+  // Migraciones 269/270 (19/11/2026): cerrar el período marca todo pagado dentro de una
+  // operación registrada. Cada llamada se confirma de verdad (autocommit), así que la
+  // comprobación diferida de la 238 (operación «confirmada» + auditoría) también corre.
+  await check('Cerrar período marca todo pagado y se confirma; reabrir lo deshace (269/270)', async () => {
+    const closePeriod = randomUUID(), employeeA = randomUUID(), employeeB = randomUUID()
+    const lineA = randomUUID(), lineB = randomUUID()
+    await db.query("INSERT INTO nomina_periodos(id,cuenta_id,nombre,desde,hasta,estado) VALUES($1,$2,'Cierre QA','2099-10-01','2099-10-07','abierto')", [closePeriod, tenant])
+    await db.query('INSERT INTO clientes(id,cuenta_id,nombre) VALUES($1,$2,$3),($4,$2,$5)', [employeeA, tenant, 'Cierre A', employeeB, 'Cierre B'])
+    await db.query('INSERT INTO nomina_lineas(id,cuenta_id,periodo_id,empleado_id,total_bruto_usd,total_neto_usd) VALUES($1,$2,$3,$4,48,48),($5,$2,$3,$6,40,40)', [lineA, tenant, closePeriod, employeeA, lineB, employeeB])
+    const cierre = async (action, key = randomUUID(), user = actor, rate = null) => (await one(
+      'SELECT public.nomina_cerrar_marcar_pagado($1,$2,$3,$4,$5,$6,NULL) AS value', [tenant, user, closePeriod, action, key, rate],
+    )).value
+    await rejects('PT403', () => cierre('cerrar', randomUUID(), otherActor, 900))
+    const key = randomUUID()
+    const closed = await cierre('cerrar', key, actor, 900)
+    assert.equal(closed.estado, 'confirmada'); assert.equal(closed.recibos_marcados, 2)
+    const paid = await db.query('SELECT pagado,referencia_pago,tasa_pago_usd_ves,total_pagado_bs FROM nomina_lineas WHERE id=ANY($1::uuid[]) ORDER BY total_neto_usd', [[lineA, lineB]])
+    assert.ok(paid.rows.every(row => row.pagado && row.referencia_pago === 'Marcado pagado al cerrar el período'))
+    assert.deepEqual(paid.rows.map(row => Number(row.total_pagado_bs)), [36000, 43200])
+    assert.equal((await one('SELECT estado FROM nomina_periodos WHERE id=$1', [closePeriod])).estado, 'pagado')
+    assert.equal((await one("SELECT count(*)::int AS n FROM auditoria WHERE cuenta_id=$1 AND entidad_tipo='finanzas_operacion' AND accion='CERRAR_NOMINA'", [tenant])).n, 1)
+    assert.equal((await cierre('cerrar', key, actor, 900)).operationId, closed.operationId) // idempotente
+    await rejects('PT409', () => cierre('cerrar', randomUUID(), actor, 900))
+    const reopened = await cierre('reabrir')
+    assert.equal(reopened.estado, 'confirmada'); assert.equal(reopened.recibos_desmarcados, 2)
+    assert.equal((await one('SELECT estado FROM nomina_periodos WHERE id=$1', [closePeriod])).estado, 'abierto')
+    assert.equal((await one('SELECT count(*)::int AS n FROM nomina_lineas WHERE periodo_id=$1 AND pagado', [closePeriod])).n, 0)
+  })
   await check('RPCs privados: anon y authenticated sin EXECUTE; service autorizado', async () => {
     for (const signature of ['finanzas_resumen(uuid,date,date,text,text,text)', 'finanzas_operar(uuid,uuid,text,text,jsonb,text)', 'finanzas_saldos(uuid)', 'finanzas_operacion_estado(uuid,text,text)', 'finanzas_asignar_custodia(uuid,uuid,uuid[],uuid,text)', 'finanzas_movimientos_pagina(uuid,date,date,text,text,text,text,boolean,integer,integer,text)', 'finanzas_resumen_consistente(uuid,date,date,text,text,text,text)', 'finanzas_periodo_mensual_estado(uuid,date)', 'finanzas_periodo_mensual_operar(uuid,uuid,text,date,text,jsonb,text)']) {
       const privileges = await one('SELECT has_function_privilege(\'anon\',$1,\'EXECUTE\') AS anon, has_function_privilege(\'authenticated\',$1,\'EXECUTE\') AS authenticated, has_function_privilege(\'service_role\',$1,\'EXECUTE\') AS service', [signature])
