@@ -17,6 +17,9 @@ export const REGLAS_LEY_DEFAULT = Object.freeze({
   diasLaborablesDefault: Object.freeze([1, 2, 3, 4, 5]),
   descansoRemunerado: true,
   faltasPierdeDescanso: 0,
+  // Regla del usuario (19/11/2026): el bono semanal sale de la semana (no se suma
+  // al sueldo). Por defecto $35, editable en Configuración (migración 268).
+  bonoSemanalUsd: 35,
 })
 
 /** Lo que manda la ley (art. 119): el descanso se pierde desde la 2.ª falta. */
@@ -25,6 +28,7 @@ export const FALTAS_PIERDE_DESCANSO_LEY = 2
 export const LIMITES_REGLAS_LEY = Object.freeze({
   divisorMensual: Object.freeze({ min: 1, max: 31 }),
   faltasPierdeDescanso: Object.freeze({ min: 0, max: 7 }),
+  bonoSemanalUsd: Object.freeze({ min: 0, max: 10000 }),
   // 1 = lunes … 6 = sábado. El domingo nunca es laborable (art. 184: es feriado).
   diaLaborable: Object.freeze({ min: 1, max: 6 }),
 })
@@ -35,6 +39,7 @@ export const COLUMNAS_REGLAS_LEY = Object.freeze([
   'nomina_dias_laborables_default',
   'nomina_descanso_remunerado',
   'nomina_faltas_pierde_descanso',
+  'nomina_bono_semanal_usd',
 ])
 
 function diasValidos(dias) {
@@ -44,6 +49,12 @@ function diasValidos(dias) {
   const { min, max } = LIMITES_REGLAS_LEY.diaLaborable
   if (!lista.every(dia => Number.isInteger(dia) && dia >= min && dia <= max)) return null
   return lista.sort((a, b) => a - b)
+}
+
+function montoEnRango(valor, { min, max }) {
+  if (valor === null || valor === undefined || valor === '') return null
+  const n = Number(String(valor).replace(',', '.'))
+  return Number.isFinite(n) && n >= min && n <= max ? Math.round(n * 100) / 100 : null
 }
 
 function enteroEnRango(valor, { min, max }) {
@@ -59,6 +70,7 @@ export function reglasLeyDeConfig(config = {}) {
     diasLaborablesDefault: diasValidos(cfg.nomina_dias_laborables_default) ?? [...REGLAS_LEY_DEFAULT.diasLaborablesDefault],
     descansoRemunerado: typeof cfg.nomina_descanso_remunerado === 'boolean' ? cfg.nomina_descanso_remunerado : REGLAS_LEY_DEFAULT.descansoRemunerado,
     faltasPierdeDescanso: enteroEnRango(cfg.nomina_faltas_pierde_descanso, LIMITES_REGLAS_LEY.faltasPierdeDescanso) ?? REGLAS_LEY_DEFAULT.faltasPierdeDescanso,
+    bonoSemanalUsd: montoEnRango(cfg.nomina_bono_semanal_usd, LIMITES_REGLAS_LEY.bonoSemanalUsd) ?? REGLAS_LEY_DEFAULT.bonoSemanalUsd,
   }
 }
 
@@ -86,6 +98,11 @@ export function validarReglasLey(body = {}) {
     const valor = enteroEnRango(body.nomina_faltas_pierde_descanso, LIMITES_REGLAS_LEY.faltasPierdeDescanso)
     if (valor === null) return { fields: {}, error: 'Las faltas para perder el descanso deben ser un número entero entre 0 y 7' }
     fields.nomina_faltas_pierde_descanso = valor
+  }
+  if (body.nomina_bono_semanal_usd !== undefined) {
+    const valor = montoEnRango(body.nomina_bono_semanal_usd, LIMITES_REGLAS_LEY.bonoSemanalUsd)
+    if (valor === null) return { fields: {}, error: 'El bono semanal debe ser un monto entre $0 y $10.000' }
+    fields.nomina_bono_semanal_usd = valor
   }
   return { fields, error: null }
 }

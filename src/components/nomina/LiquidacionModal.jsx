@@ -4,7 +4,7 @@
 // Falta, Multa u Otro) y el neto nunca queda en negativo.
 import { useMemo, useState } from 'react'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
-import { desgloseDescanso } from '../../utils/descansoRecibo.js'
+import { desgloseDescanso, desgloseSemana } from '../../utils/descansoRecibo.js'
 import useReglasLey from '../../hooks/useReglasLey.js'
 import { useAjustarLinea } from '../../hooks/useNomina'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
@@ -27,6 +27,7 @@ export default function LiquidacionModal({ linea, onClose }) {
 
   const cargando = ajustar.isPending
   const descanso = desgloseDescanso(linea)
+  const semana = desgloseSemana(linea)
   const { divisorMensual } = useReglasLey()
 
   // Base = todo lo calculado desde asistencia (sin ajustes manuales)
@@ -85,8 +86,14 @@ Calculado con la asistencia
           </div>
           {[
             { label: 'Sueldo mensual (referencia)', value: Number(linea.salario_dia_usd_snap || 0) * divisorMensual },
-            { label: `Días trabajados (${Number(linea.dias_trabajados)})`, value: descanso.montoTrabajado },
-            { label: `Descanso, feriados y faltas justificadas pagados (${descanso.diasDescanso})`, value: descanso.montoDescanso },
+            ...(semana ? [
+              { label: 'Sueldo semanal', value: semana.sueldo },
+              { label: 'Bono semanal', value: semana.bono },
+              { label: 'Descanso o feriado trabajado (días)', value: semana.resto },
+            ] : [
+              { label: `Días trabajados (${Number(linea.dias_trabajados)})`, value: descanso.montoTrabajado },
+              { label: `Descanso, feriados y faltas justificadas pagados (${descanso.diasDescanso})`, value: descanso.montoDescanso },
+            ]),
             { label: `Horas extra (${Number(linea.horas_extra).toFixed(1)}h)`, value: linea.monto_extra_usd },
             { label: `Recargo sábados (${linea.dias_sabado})`, value: linea.monto_sabado_usd },
             { label: `Recargo feriados (${linea.dias_feriado})`, value: linea.monto_feriado_usd },

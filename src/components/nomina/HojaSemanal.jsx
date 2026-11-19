@@ -120,7 +120,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <p className="text-[11px] text-slate-500">
-            Semana = días trabajados + descansos pagados. El bono semanal es siempre ${usd(data.bonoSemanal)} y sale de la semana; el sueldo semanal es lo que queda.
+            Semana = días trabajados + días pagados sin trabajar. El bono semanal (${usd(data.bonoSemanal)}{Number(data.semanas) > 1 ? ` por semana × ${data.semanas} semanas` : ''}) sale de la semana y no se suma; el sueldo semanal es lo que queda. Cada recibo guarda el bono que le tocó al calcular.
           </p>
           {Number(tasa) > 0 && (
             <p className="inline-flex flex-wrap items-baseline gap-x-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-800">

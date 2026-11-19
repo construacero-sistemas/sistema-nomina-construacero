@@ -182,6 +182,9 @@ describe('cálculo de período', () => {
     const l = insertadas[0]
     expect(l.dias_trabajados).toBe(2)
     expect(l.monto_normal_usd).toBe(60)          // 2 × 30
+    // Bono semanal guardado en el recibo (migración 268): sale de la semana, no se suma.
+    expect(l.bono_semanal_usd).toBe(35)
+    expect(l.sueldo_semanal_usd).toBe(25)        // 60 − 35
     expect(l.horas_extra).toBe(2)
     expect(l.monto_extra_usd).toBe(11.25)        // 2 × 3.75 × 1.5
     expect(l.total_neto_usd).toBe(71.25)

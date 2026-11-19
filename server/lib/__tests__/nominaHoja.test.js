@@ -4,7 +4,7 @@
 // pagos = total a cobrar del recibo; los totales suman TODAS las filas.
 import { describe, expect, it } from 'vitest'
 import { calcularLineaNomina } from '../nominaUtils.js'
-import { BONO_SEMANAL_USD, armarHojaSemanal, esDescansoTrabajado } from '../nominaHoja.js'
+import { BONO_SEMANAL_USD, armarHojaSemanal, esDescansoTrabajado, repartoSemana, semanasDelPeriodo } from '../nominaHoja.js'
 
 // Semana jueves 05/11 → miércoles 11/11/2026. Sábado 07 y domingo 08 son descanso.
 const DESDE = '2026-11-05'
@@ -166,5 +166,43 @@ describe('esDescansoTrabajado', () => {
     expect(esDescansoTrabajado(dia('2026-11-07'), [1, 2, 3, 4, 5, 6])).toBe(false) // sábado laborable
     expect(esDescansoTrabajado(dia('2026-11-07', { ausencia: true }), LAB)).toBe(false)
     expect(esDescansoTrabajado({ ...dia('2026-11-07'), hora_salida: null, estado_marcaje: 'entrada', horas_normales: 0, horas_trabajadas: 0 }, LAB)).toBe(false)
+  })
+})
+
+// Regla del usuario (19/11/2026): bono editable, guardado en cada recibo y por semana.
+describe('bono semanal guardado y por semana', () => {
+  it('semanasDelPeriodo: 7 días = 1, quincena = 2 (o 3 si pasa de 14 días), mínimo 1', () => {
+    expect(semanasDelPeriodo('2026-11-05', '2026-11-11')).toBe(1)
+    expect(semanasDelPeriodo('2026-11-01', '2026-11-14')).toBe(2)
+    expect(semanasDelPeriodo('2026-11-01', '2026-11-15')).toBe(3)
+    expect(semanasDelPeriodo('2026-11-05', '2026-11-05')).toBe(1)
+    expect(semanasDelPeriodo('x', 'y')).toBe(1)
+  })
+
+  it('repartoSemana: una quincena completa lleva dos bonos y el sueldo es lo que queda', () => {
+    const linea = { salario_dia_usd_snap: 8, dias_trabajados: 10, dias_descanso: 4 }
+    expect(repartoSemana({ linea, bonoSemanal: 35, semanas: 2 })).toMatchObject({ semana: 112, bono: 70, sueldo: 42 })
+  })
+
+  it('el bono nunca supera la semana y no se suma (descanso trabajado fuera de la semana)', () => {
+    const linea = { salario_dia_usd_snap: 8, dias_trabajados: 3, dias_descanso: 0 }
+    expect(repartoSemana({ linea, diasDescansoTrabajados: 1, bonoSemanal: 35 })).toMatchObject({ semana: 16, bono: 16, sueldo: 0 })
+  })
+
+  it('la hoja usa el bono guardado en el recibo aunque el bono vigente haya cambiado', () => {
+    const caso = recibo({ id: 'e-9', nombre: 'Guardado', mensual: 240, asistencias: DIAS.map(f => dia(f)) })
+    caso.linea.bono_semanal_usd = 35
+    const [fila] = hoja([caso], { bonoSemanal: 50 }).filas
+    expect(fila.bonoSemanal).toBe(35)
+    expect(fila.sueldoSemanal).toBeCloseTo(21, 2)
+    cuadra(fila)
+  })
+
+  it('un recibo sin bono guardado usa el vigente por las semanas del período', () => {
+    const caso = recibo({ id: 'e-10', nombre: 'Sin guardar', mensual: 600, asistencias: DIAS.map(f => dia(f)) })
+    const [fila] = hoja([caso], { bonoSemanal: 40, semanas: 2 }).filas
+    expect(fila.semana).toBeCloseTo(140, 2) // 7 × 20
+    expect(fila.bonoSemanal).toBe(80)
+    expect(fila.sueldoSemanal).toBeCloseTo(60, 2)
   })
 })

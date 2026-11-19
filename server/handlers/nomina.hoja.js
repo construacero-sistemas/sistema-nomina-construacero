@@ -9,10 +9,10 @@ import { requireCapacidad } from '../lib/permissions.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
 import { diasLaborablesResueltos, fetchDiasLaborablesPorEmpleado } from '../lib/nominaHorarios.js'
 import { reglasLeyDeConfig } from '../lib/nominaReglasLey.js'
-import { BONO_SEMANAL_USD, armarHojaSemanal } from '../lib/nominaHoja.js'
+import { armarHojaSemanal, semanasDelPeriodo } from '../lib/nominaHoja.js'
 import { fetchConfigNomina, tenantGuard } from './nomina.shared.js'
 
-const CAMPOS_LINEA = 'id,empleado_id,salario_dia_usd_snap,dias_trabajados,dias_descanso,horas_extra,' +
+const CAMPOS_LINEA = 'id,empleado_id,salario_dia_usd_snap,dias_trabajados,dias_descanso,bono_semanal_usd,horas_extra,' +
   'monto_normal_usd,monto_extra_usd,monto_sabado_usd,monto_feriado_usd,bonos_usd,comisiones_pos_usd,' +
   'deducciones_usd,total_bruto_usd,total_neto_usd,pagado,tasa_pago_usd_ves,total_pagado_bs,' +
   'empleado:clientes!empleado_id(id,nombre)'
@@ -46,9 +46,14 @@ export async function handleGetHojaSemanal(request, env) {
   ])
   // Igual que el listado de recibos: si a la base le falta la migración 262
   // (dias_descanso), se lee sin esa columna y la hoja sigue funcionando.
+  // Lo mismo con la 268 (bono guardado por recibo): sin ella se usa el bono vigente.
   let lineasResponse = primeraLectura
-  if (lineasResponse.status === 400 && (await lineasResponse.text().catch(() => '')).includes('dias_descanso')) {
-    lineasResponse = await fetch(urlLineas(CAMPOS_LINEA.replace(',dias_descanso', '')), { headers })
+  if (lineasResponse.status === 400) {
+    const detalle = await lineasResponse.text().catch(() => '')
+    let campos = CAMPOS_LINEA
+    if (detalle.includes('bono_semanal_usd')) campos = campos.replace(',bono_semanal_usd', '')
+    if (detalle.includes('dias_descanso')) campos = campos.replace(',dias_descanso', '')
+    if (campos !== CAMPOS_LINEA) lineasResponse = await fetch(urlLineas(campos), { headers })
   }
   if (!lineasResponse.ok) return jsonError('No se pudieron leer los recibos del período', 500, request)
   if (!asistenciaResponse.ok) return jsonError('No se pudo leer la asistencia del período', 500, request)
@@ -63,8 +68,9 @@ export async function handleGetHojaSemanal(request, env) {
     return [linea.empleado_id, resuelto.dias]
   }))
 
+  const semanas = semanasDelPeriodo(periodo.desde, periodo.hasta)
   const { filas, totales } = armarHojaSemanal({
-    lineas, asistencias, diasPorEmpleado, divisor: reglas.divisorMensual, bonoSemanal: BONO_SEMANAL_USD,
+    lineas, asistencias, diasPorEmpleado, divisor: reglas.divisorMensual, bonoSemanal: reglas.bonoSemanalUsd, semanas,
   })
-  return json({ periodo, bonoSemanal: BONO_SEMANAL_USD, filas, totales }, 200, request)
+  return json({ periodo, bonoSemanal: reglas.bonoSemanalUsd, semanas, filas, totales }, 200, request)
 }

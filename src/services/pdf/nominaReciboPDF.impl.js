@@ -9,7 +9,7 @@ import {
   fmtUsd, fmtBs, fmtFecha, drawWatermark, drawPremiumHeader,
 } from '../../../compat/services/pdf/pdfShared.js'
 import { formatHora12 } from '../../utils/timeUtils.js'
-import { desgloseDescanso } from '../../utils/descansoRecibo.js'
+import { desgloseDescanso, desgloseSemana } from '../../utils/descansoRecibo.js'
 import { etiquetaMotivoDescuento } from '../../../server/lib/nominaDescuentos.js'
 
 function fmtFechaVE(f) {
@@ -196,7 +196,28 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
     : 0
 
   const descanso = desgloseDescanso(linea)
-  const conceptos = [
+  // Regla del usuario (19/11/2026): el recibo separa sueldo semanal y bono semanal
+  // (el bono sale de la semana, no se suma). Recibos anteriores a la migración 268
+  // conservan los conceptos de días laborados y descanso.
+  const semana = desgloseSemana(linea)
+  // Días de la semana: trabajados en días laborables + pagados sin trabajar.
+  const diasSemana = semana && salarioDia > 0 ? Math.round(((semana.sueldo + semana.bono) / salarioDia) * 10) / 10 : 0
+  const conceptos = semana ? [
+    {
+      label: 'Sueldo Semanal (semana menos el bono)',
+      cant: `${diasSemana} día(s)`,
+      tarifa: `${fmtUsd(salarioDia)} / día`,
+      monto: semana.sueldo,
+      tipo: 'ingreso',
+    },
+    {
+      label: 'Bono Semanal',
+      cant: '—',
+      tarifa: '—',
+      monto: semana.bono,
+      tipo: 'ingreso',
+    },
+  ] : [
     {
       label: 'Salario Base por Días Laborados',
       cant: `${diasTrab} días`,
@@ -206,7 +227,17 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
     },
   ]
 
-  if (descanso.diasDescanso > 0) {
+  if (semana && semana.resto > 0) {
+    conceptos.push({
+      label: 'Descanso o Feriado Trabajado',
+      cant: '—',
+      tarifa: `${fmtUsd(salarioDia)} / día`,
+      monto: semana.resto,
+      tipo: 'ingreso',
+    })
+  }
+
+  if (!semana && descanso.diasDescanso > 0) {
     conceptos.push({
       label: 'Descanso, feriados y faltas justificadas pagados',
       cant: `${descanso.diasDescanso} día(s)`,

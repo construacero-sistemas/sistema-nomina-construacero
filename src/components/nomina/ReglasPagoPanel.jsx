@@ -60,6 +60,7 @@ function estadoDesdeConfig(config) {
     dias: reglas.diasLaborablesDefault,
     descanso: reglas.descansoRemunerado,
     faltas: String(reglas.faltasPierdeDescanso),
+    bono: String(reglas.bonoSemanalUsd),
   }
 }
 
@@ -90,6 +91,10 @@ function construirPayload(form) {
   payload.nomina_dias_laborables_default = [...form.dias].sort((a, b) => a - b)
   payload.nomina_descanso_remunerado = form.descanso
   payload.nomina_faltas_pierde_descanso = faltas
+  const bono = Number(String(form.bono ?? '').replace(',', '.'))
+  const { min: bMin, max: bMax } = LIMITES_REGLAS_LEY.bonoSemanalUsd
+  if (String(form.bono ?? '').trim() === '' || !Number.isFinite(bono) || bono < bMin || bono > bMax) return { error: `El bono semanal debe ser un monto entre $${bMin} y $${bMax}` }
+  payload.nomina_bono_semanal_usd = Math.round(bono * 100) / 100
   return { payload }
 }
 
@@ -124,6 +129,8 @@ export default function ReglasPagoPanel({ config }) {
       dias: [...REGLAS_LEY_DEFAULT.diasLaborablesDefault],
       descanso: REGLAS_LEY_DEFAULT.descansoRemunerado,
       faltas: String(FALTAS_PIERDE_DESCANSO_LEY),
+      // El bono no es de la ley: se conserva el que esté escrito.
+      bono: actual.bono,
     })
   }
 
@@ -222,6 +229,15 @@ export default function ReglasPagoPanel({ config }) {
               value={actual.faltas} onChange={e => cambiar({ faltas: e.target.value })} />
           </label>
           <p className="text-[11px] text-slate-500">Con 0, una falta sin justificativo descuenta solo el día faltado y el descanso se paga completo. Con otro número, desde esa falta cada una descuenta además un día de descanso. Empresa: {REGLAS_LEY_DEFAULT.faltasPierdeDescanso}. Ley: {FALTAS_PIERDE_DESCANSO_LEY} (art. 119). Las faltas justificadas nunca cuentan.</p>
+        </Bloque>
+
+        <Bloque titulo="Bono semanal">
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-bold text-slate-500">Monto por semana (USD)</span>
+            <input type="text" inputMode="decimal" className={inputCls} disabled={bloqueado} aria-label="Bono semanal en dólares"
+              value={actual.bono} onChange={e => cambiar({ bono: e.target.value })} />
+          </label>
+          <p className="text-[11px] text-slate-500">Sale de la semana (días trabajados + días pagados sin trabajar); no se suma al sueldo: el sueldo semanal es lo que queda. Se aplica una vez por semana del período y cada recibo guarda el bono que le tocó al calcular, así que cambiarlo no altera recibos ya calculados o pagados. Por defecto: ${REGLAS_LEY_DEFAULT.bonoSemanalUsd}.</p>
         </Bloque>
       </div>
 
