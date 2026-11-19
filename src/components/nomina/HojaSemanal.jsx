@@ -92,9 +92,14 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
   const columnas = columnasVisibles(filas)
   const tasaDe = fila => (fila.pagado && Number(fila.tasaPago) > 0 ? Number(fila.tasaPago) : Number(tasa) || 0)
   // El total a cobrar lleva debajo su cambio en bolívares; el resto, su cantidad.
-  const detalleDe = (c, fila) => (c.id === 'totalACobrar'
-    ? (tasaDe(fila) > 0 ? formatBs(Number(fila.totalACobrar) * tasaDe(fila)) : null)
-    : c.detalle?.(fila) || null)
+  // El bono sale de la semana: si la semana no llega al bono, se paga solo lo que
+  // alcanza. Debajo del monto se aclara «de $35,00 · semana incompleta».
+  const topeBono = Number(data.bonoSemanal || 0) * Math.max(1, Number(data.semanas) || 1)
+  const detalleDe = (c, fila) => {
+    if (c.id === 'totalACobrar') return tasaDe(fila) > 0 ? formatBs(Number(fila.totalACobrar) * tasaDe(fila)) : null
+    if (c.id === 'bonoSemanal') return topeBono > 0 && Number(fila.bonoSemanal) < topeBono - 0.005 ? `de $${usd(topeBono)} · semana incompleta` : null
+    return c.detalle?.(fila) || null
+  }
   const totalACobrarBs = filas.reduce((s, fila) => s + Number(fila.totalACobrar) * tasaDe(fila), 0)
   const detalleTotalDe = c => (c.id === 'totalACobrar' ? (totalACobrarBs > 0 ? formatBs(totalACobrarBs) : null) : c.detalleTotal?.(totales) || null)
   // Franja de grupos sobre los encabezados: un tramo por grupo consecutivo.
@@ -120,7 +125,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <p className="text-[11px] text-slate-500">
-            Semana = días trabajados + días pagados sin trabajar. El bono semanal (${usd(data.bonoSemanal)}{Number(data.semanas) > 1 ? ` por semana × ${data.semanas} semanas` : ''}) sale de la semana y no se suma; el sueldo semanal es lo que queda. Cada recibo guarda el bono que le tocó al calcular.
+            Semana = días trabajados + días pagados sin trabajar. El bono semanal (${usd(data.bonoSemanal)}{Number(data.semanas) > 1 ? ` por semana × ${data.semanas} semanas` : ''}) sale de la semana y no se suma; el sueldo semanal es lo que queda. Si la semana vale menos que el bono (por ejemplo, solo hay un día contado), el bono es lo que alcanza y se indica «semana incompleta». Cada recibo guarda el bono que le tocó al calcular.
           </p>
           {Number(tasa) > 0 && (
             <p className="inline-flex flex-wrap items-baseline gap-x-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-800">

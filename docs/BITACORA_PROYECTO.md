@@ -6,6 +6,15 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Mejora: «Bono semanal» aclara cuando la semana no llega al bono — 19/11/2026
+
+Petición del usuario: la columna mostraba 8,00 / 9,33 / 18,67 en vez de $35 y preguntó si era buena idea mostrar siempre $35. Decisión: **no** (los números dejarían de cuadrar con el recibo); se muestra el monto real con una aclaración.
+
+- **Archivo:** `src/components/nomina/HojaSemanal.jsx` (y prueba en `__tests__/HojaSemanal.test.jsx`).
+- **Comportamiento:** si el bono de la fila es menor al configurado (× semanas del período), debajo del monto se lee «de $35,00 · semana incompleta» (en tabla y en fichas). Con el bono completo no se muestra nada. La nota de la hoja explica la regla. El cálculo no cambia: el bono sigue saliendo de la semana.
+- **Pruebas:** ver resultado en el cierre del turno (`npx vitest run src/components/nomina/__tests__/HojaSemanal.test.jsx`).
+- **Pendiente:** verlo en la app con datos reales; sin commit ni deploy.
+
 ## Publicación: contraste del aviso de versión nueva en producción — 19/11/2026
 
 Petición del usuario: «push al main» y luego «deploy a produccion».
