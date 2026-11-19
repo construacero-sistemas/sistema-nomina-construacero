@@ -62,6 +62,7 @@ export {
 
 export {
   handleGetLineas,
+  handleGetRecibosEmpleado,
   handleAjustarLinea,
   handlePagarLineas,
   handleRevertirPagoLinea,

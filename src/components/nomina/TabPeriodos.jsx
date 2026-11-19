@@ -7,6 +7,7 @@ import { useNominaPeriodos, useCalcularPeriodo, useCerrarPeriodo, useEliminarPer
 import { semanaDeConfig, DIAS_SEMANA } from '../../../server/lib/nominaSemana.js'
 import useMonedaNomina, { formatBs, formatUsd } from '../../hooks/useMonedaNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
+import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
 import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
 import RateSelector from './RateSelector.jsx'
@@ -24,7 +25,7 @@ function fmtFecha(f) {
 
 const ESTADO_STYLE = {
   abierto: { label: 'Abierto', detail: 'Pendiente de cálculo', cls: 'bg-slate-100 text-slate-700 border-slate-200', dot: 'bg-slate-400' },
-  cerrado: { label: 'Calculado · Por pagar', detail: 'Listo para pago', cls: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
+  cerrado: { label: 'Cerrado · Sin marcar pagado', detail: 'Ciérralo para marcarlo pagado', cls: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
   pagado:  { label: 'Completado', detail: 'Pagado', cls: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
 }
 
@@ -52,6 +53,9 @@ export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNo
   }, [puedeGestionarNomina, configNomina.isSuccess, automatico, asegurarSemana])
 
   const activos = useMemo(() => periodos.filter(p => p.estado !== 'pagado'), [periodos])
+  // Mejora del 19/11/2026: aviso de semanas que ya terminaron y siguen abiertas.
+  const hoy = fechaOperativaHoy()
+  const terminadas = useMemo(() => activos.filter(p => p.estado !== 'pagado' && String(p.hasta) < hoy), [activos, hoy])
   const kpis = useMemo(() => ({
     abiertos: activos.filter(p => p.estado === 'abierto').length,
     cerrados: activos.filter(p => p.estado === 'cerrado').length,
@@ -84,6 +88,17 @@ export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNo
           </button>
         )}
       </div>
+
+      {terminadas.length > 0 && (
+        <div role="status" className="flex min-w-0 items-start gap-2.5 rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-amber-950">
+          <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <p className="min-w-0 break-words text-xs font-semibold leading-relaxed">
+            {terminadas.length === 1
+              ? <>La semana <strong>{terminadas[0].nombre}</strong> ya terminó y sigue abierta. Revísala y pulsa <strong>«Cerrar y marcar pagado»</strong>.</>
+              : <>{terminadas.length} semanas ya terminaron y siguen abiertas ({terminadas.map(t => t.nombre).join(', ')}). Revísalas y pulsa <strong>«Cerrar y marcar pagado»</strong> en cada una.</>}
+          </p>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-48 rounded-2xl" />)}</div>
@@ -138,28 +153,39 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, puedePagarNomina =
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [jornadasAbiertas, setJornadasAbiertas] = useState(null)
 
+  // `origen`: si las jornadas sin salida aparecieron al calcular o al cerrar.
+  const mostrarJornadas = origen => error => {
+    const detalle = error?.payload?.jornadas_abiertas
+    if (!Array.isArray(detalle)) return
+    setJornadasAbiertas({ origen, total: Number(error.payload.total_jornadas_abiertas) || detalle.length, detalle })
+  }
+
   function calcularPeriodo() {
-    calcular.mutate(periodo.id, {
-      onError: error => {
-        const detalle = error?.payload?.jornadas_abiertas
-        if (!Array.isArray(detalle)) return
-        setJornadasAbiertas({ total: Number(error.payload.total_jornadas_abiertas) || detalle.length, detalle })
-      },
+    calcular.mutate(periodo.id, { onError: mostrarJornadas('calcular') })
+  }
+
+  // Regla del usuario (19/11/2026): cerrar = poner al día y marcar TODO pagado.
+  function cerrarPeriodo(confirmarJornadasAbiertas = false) {
+    cerrar.mutate(confirmarJornadasAbiertas ? { periodoId: periodo.id, confirmarJornadasAbiertas: true } : periodo.id, {
+      onSuccess: () => setConfirmandoCierre(false),
+      onError: mostrarJornadas('cerrar'),
     })
   }
 
   const estBase = ESTADO_STYLE[periodo.estado] ?? ESTADO_STYLE.abierto
   const abierto = periodo.estado === 'abierto'
   const tieneLineas = (periodo.total_empleados ?? 0) > 0
+  const terminada = periodo.estado !== 'pagado' && String(periodo.hasta) < fechaOperativaHoy()
   const est = abierto
-    ? { ...estBase, detail: tieneLineas ? 'Calculado · revisar antes de cerrar' : 'Pendiente de cálculo' }
+    ? { ...estBase, detail: terminada ? 'La semana terminó · ciérrala para marcarla pagada' : tieneLineas ? 'Calculado · se cierra al terminar la semana' : 'Pendiente de cálculo' }
     : estBase
+  const puedeCerrar = puedeGestionarNomina && (abierto || periodo.estado === 'cerrado')
   const ocupado = calcular.isPending || cerrar.isPending
   const bruto = Number(periodo.total_bruto_usd) || 0
   const deducciones = Number(periodo.total_deducciones_usd) || 0
   const neto = Number(periodo.total_neto_usd) || 0
   const accionesCierre = confirmandoCierre
-  const tieneAccionesPrincipales = (puedeGestionarNomina && abierto) || (puedePagarNomina && periodo.estado === 'cerrado')
+  const tieneAccionesPrincipales = puedeCerrar
 
   return (
     <article className="flex min-w-0 flex-col overflow-visible rounded-2xl border border-slate-200/90 bg-white shadow-sm transition-shadow hover:shadow-md">
@@ -219,26 +245,24 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, puedePagarNomina =
           </button>
         )}
 
-        {puedeGestionarNomina && abierto && tieneLineas && (
+        {puedeCerrar && (
           accionesCierre ? (
             <div role="group" aria-label={`Confirmar cierre de ${periodo.nombre}`} className="col-span-2 grid w-full grid-cols-1 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <span className="text-xs font-bold text-amber-950">¿Confirmas cerrar este período para habilitar el pago?</span>
+              <span className="text-xs font-bold text-amber-950">
+                {abierto
+                  ? 'Se pondrán los recibos al día con la asistencia y se marcarán TODOS como pagados. ¿Confirmas?'
+                  : 'Se marcarán TODOS los recibos como pagados. ¿Confirmas?'}
+              </span>
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => cerrar.mutate(periodo.id, { onSuccess: () => setConfirmandoCierre(false) })} disabled={ocupado} className="min-h-11 rounded-lg bg-amber-700 px-3 py-2 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-50">Confirmar cierre</button>
+                <button type="button" onClick={() => cerrarPeriodo()} disabled={ocupado} className="min-h-11 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50">{cerrar.isPending ? 'Cerrando…' : 'Sí, cerrar'}</button>
                 <button type="button" onClick={() => setConfirmandoCierre(false)} disabled={ocupado} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancelar</button>
               </div>
             </div>
           ) : (
-            <button type="button" onClick={() => setConfirmandoCierre(true)} disabled={ocupado} className="col-span-2 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-900 transition-colors hover:bg-amber-100 disabled:opacity-50 active:scale-95">
-              <Lock size={13} /><span>Cerrar para pago</span>
+            <button type="button" onClick={() => setConfirmandoCierre(true)} disabled={ocupado} className={`col-span-2 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors disabled:opacity-50 active:scale-95 ${terminada ? 'bg-emerald-700 text-white shadow-sm hover:bg-emerald-800' : 'border border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'}`}>
+              <Lock size={13} /><span>{abierto ? 'Cerrar y marcar pagado' : 'Marcar pagado'}</span>
             </button>
           )
-        )}
-
-        {puedePagarNomina && periodo.estado === 'cerrado' && (
-          <button type="button" onClick={onVerDetalle} className="col-span-2 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-emerald-800 active:scale-95">
-            <span>Pagar recibos</span><ArrowRight size={14} />
-          </button>
         )}
       </div>
 
@@ -259,8 +283,12 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, puedePagarNomina =
             </ul>
             {jornadasAbiertas.total > jornadasAbiertas.detalle.length && <p className="text-[11px] font-medium text-slate-500">…y {jornadasAbiertas.total - jornadasAbiertas.detalle.length} más.</p>}
             <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setJornadasAbiertas(null)} disabled={calcular.isPending} className="min-h-11 rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Corregir marcajes</button>
-              <button type="button" onClick={() => { calcular.mutate({ periodoId: periodo.id, confirmarJornadasAbiertas: true }); setJornadasAbiertas(null) }} disabled={calcular.isPending} className="min-h-11 rounded-xl bg-amber-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-50">Calcular sin pagarlas</button>
+              <button type="button" onClick={() => setJornadasAbiertas(null)} disabled={ocupado} className="min-h-11 rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Corregir marcajes</button>
+              {jornadasAbiertas.origen === 'cerrar' ? (
+                <button type="button" onClick={() => { cerrarPeriodo(true); setJornadasAbiertas(null) }} disabled={ocupado} className="min-h-11 rounded-xl bg-amber-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-50">Cerrar sin pagarlas</button>
+              ) : (
+                <button type="button" onClick={() => { calcular.mutate({ periodoId: periodo.id, confirmarJornadasAbiertas: true }); setJornadasAbiertas(null) }} disabled={ocupado} className="min-h-11 rounded-xl bg-amber-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-50">Calcular sin pagarlas</button>
+              )}
             </div>
           </div>
         </Modal>

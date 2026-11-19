@@ -51,11 +51,10 @@ function tasaDelRecibo(linea, tasa, tasaOrigen) {
   return null
 }
 
-async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {}, action = 'download', tasa = null, tasaOrigen = 'activa' }) {
+// Dibuja un recibo completo en la página actual del documento (una página por recibo).
+function dibujarRecibo(doc, { periodo = {}, linea = {}, config = {}, tasa = null, tasaOrigen = 'activa', logoData = null }) {
   const tasaBs = tasaDelRecibo(linea, tasa, tasaOrigen)
   const aBs = usd => fmtBs((Number(usd) || 0) * (tasaBs?.valor || 0))
-  const doc = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' })
-  const logoData = await cargarLogo(config.logo_url)
 
   // ═══ 1. CABECERA PREMIUM CORPORATIVA (ESTILO CONSTRUACERO) ═════════════════
   let y = drawPremiumHeader({
@@ -483,6 +482,12 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
 
   // Pie de página corporativo
   drawFooter(doc, config)
+}
+
+async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {}, action = 'download', tasa = null, tasaOrigen = 'activa' }) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' })
+  const logoData = await cargarLogo(config.logo_url)
+  dibujarRecibo(doc, { periodo, linea, config, tasa, tasaOrigen, logoData })
 
   const slug = String(linea.empleado?.nombre || 'empleado').replace(/[^\w]+/g, '-').toLowerCase()
   const nombreArch = `recibo-${slug}-${(periodo.nombre || '').replace(/[^\w-]+/g, '-').toLowerCase()}.pdf`
@@ -494,4 +499,23 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
   }
 }
 
-export { generarNominaReciboPDFImpl };
+// Mejora del 19/11/2026: todos los recibos de un período en un solo PDF, uno por
+// página, generado en el navegador (no gasta consultas de Supabase).
+async function generarNominaRecibosPeriodoPDFImpl({ periodo = {}, lineas = [], config = {}, tasa = null, tasaOrigen = 'activa', action = 'download' }) {
+  if (!lineas.length) throw new Error('El período no tiene recibos')
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' })
+  const logoData = await cargarLogo(config.logo_url)
+  lineas.forEach((linea, i) => {
+    if (i > 0) doc.addPage()
+    dibujarRecibo(doc, { periodo, linea, config, tasa, tasaOrigen, logoData })
+  })
+  const nombreArch = `recibos-${(periodo.nombre || 'periodo').replace(/[^\w-]+/g, '-').toLowerCase()}.pdf`
+  if (action === 'print') {
+    doc.autoPrint()
+    window.open(doc.output('bloburl'), '_blank')
+  } else {
+    doc.save(nombreArch)
+  }
+}
+
+export { generarNominaReciboPDFImpl, generarNominaRecibosPeriodoPDFImpl };

@@ -118,6 +118,34 @@ class InMemoryDatabase {
     if (pathname === '/rest/v1/rpc/finanzas_operar' && method === 'POST') {
       return jsonResponse(payrollRpcFixture(this, body, IDS))
     }
+    // Migración 269: cerrar = marcar todos los recibos pagados (sin Finanzas), y su reapertura.
+    if (pathname === '/rest/v1/rpc/nomina_cerrar_marcar_pagado' && method === 'POST') {
+      const MARCA = 'Marcado pagado al cerrar el período'
+      const periodo = this.nomina_periodos.find(p => p.id === body.p_periodo_id && p.cuenta_id === body.p_cuenta_id)
+      if (!periodo) return jsonResponse({ message: 'Period not found' }, 404)
+      const lineas = this.nomina_lineas.filter(l => l.periodo_id === periodo.id)
+      if (body.p_accion === 'cerrar') {
+        if (periodo.estado === 'pagado') return jsonResponse({ message: 'Period already paid' }, 409)
+        if (!lineas.length) return jsonResponse({ message: 'Period has no receipts' }, 409)
+        const pendientes = lineas.filter(l => !l.pagado)
+        for (const linea of pendientes) {
+          Object.assign(linea, {
+            pagado: true, pagado_en: new Date().toISOString(), pagado_por: body.p_operador_id, referencia_pago: MARCA,
+            tasa_pago_usd_ves: body.p_tasa_usd_ves ?? null,
+            total_pagado_bs: body.p_tasa_usd_ves ? Math.round(Number(linea.total_neto_usd) * body.p_tasa_usd_ves * 100) / 100 : null,
+          })
+        }
+        periodo.estado = 'pagado'
+        return jsonResponse({ recibos_marcados: pendientes.length })
+      }
+      if (periodo.estado !== 'pagado') return jsonResponse({ message: 'Period is not closed and paid' }, 409)
+      if (lineas.some(l => l.pagado && l.referencia_pago !== MARCA)) {
+        return jsonResponse({ message: 'Period has payments recorded in Finanzas; revert them first' }, 409)
+      }
+      for (const linea of lineas) Object.assign(linea, { pagado: false, pagado_en: null, pagado_por: null, referencia_pago: null, tasa_pago_usd_ves: null, total_pagado_bs: null })
+      periodo.estado = 'abierto'
+      return jsonResponse({ recibos_desmarcados: lineas.length })
+    }
     if (pathname === '/rest/v1/rpc/finanzas_saldos' && method === 'POST') {
       const cuentas = this.cuentas_custodia.filter(cuenta => cuenta.cuenta_id === body.p_cuenta_id).map(cuenta => ({
         cuentaCustodiaId: cuenta.id,
@@ -698,12 +726,26 @@ async function runAllTests() {
     assertEqual(db.nomina_descuentos.length, antes, 'Ningún rechazo escribe descuentos')
   })
 
-  await test('Cerrar período de nómina para autorizar pago', async () => {
+  // Regla del usuario (19/11/2026): cerrar = marcar TODOS los recibos pagados.
+  await test('Cerrar período marca todos los recibos como pagados', async () => {
     const req = makeRequest({ periodoId: IDS.periodo })
     const res = await H.handleCerrarPeriodo(req, ENV)
     assertEqual(res.status, 200, 'Status de cierre')
     const periodo = db.nomina_periodos.find(p => p.id === IDS.periodo)
-    assertEqual(periodo.estado, 'cerrado', 'Estado cerrado')
+    assertEqual(periodo.estado, 'pagado', 'Estado pagado al cerrar')
+    const lineas = db.nomina_lineas.filter(l => l.periodo_id === IDS.periodo)
+    assertEqual(lineas.length > 0 && lineas.every(l => l.pagado), true, 'Todos los recibos marcados pagados')
+  })
+
+  await test('Reabrir un período cerrado por error deshace la marca de pagado', async () => {
+    const res = await H.handleReabrirPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
+    assertEqual(res.status, 200, 'Status de reapertura')
+    const periodo = db.nomina_periodos.find(p => p.id === IDS.periodo)
+    assertEqual(periodo.estado, 'abierto', 'Período abierto otra vez')
+    assertEqual(db.nomina_lineas.filter(l => l.periodo_id === IDS.periodo).some(l => l.pagado), false, 'Recibos sin marca de pagado')
+    // Lo que sigue prueba el pago desde Finanzas, que se conserva para los períodos
+    // que quedaron «cerrados» antes de la regla: se simula uno de ellos.
+    periodo.estado = 'cerrado'
   })
 
   // ── SECCIÓN 5: PROCESAMIENTO DE PAGOS Y PROTECCIONES ────────────────────────
@@ -818,7 +860,10 @@ async function runAllTests() {
       descuentos: [],
     }), ENV)
 
-    await H.handleCerrarPeriodo(makeRequest({ periodoId }), ENV)
+    // Desde el 19/11/2026 «Cerrar» marca todo pagado sin Finanzas. El pago con
+    // asiento contable se conserva para períodos que quedaron «cerrados» antes de
+    // esa regla: se simula uno de ellos.
+    db.nomina_periodos.find(p => p.id === periodoId).estado = 'cerrado'
 
     const lineas = db.nomina_lineas.filter(l => l.periodo_id === periodoId)
 

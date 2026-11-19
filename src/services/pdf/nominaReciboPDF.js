@@ -5,3 +5,8 @@ export async function generarNominaReciboPDF(args) {
   const { generarNominaReciboPDFImpl } = await import('./nominaReciboPDF.impl.js')
   return generarNominaReciboPDFImpl(args)
 }
+
+export async function generarNominaRecibosPeriodoPDF(args) {
+  const { generarNominaRecibosPeriodoPDFImpl } = await import('./nominaReciboPDF.impl.js')
+  return generarNominaRecibosPeriodoPDFImpl(args)
+}

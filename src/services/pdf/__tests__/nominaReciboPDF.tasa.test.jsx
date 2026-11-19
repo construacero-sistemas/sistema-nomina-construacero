@@ -56,3 +56,25 @@ describe('recibo de nómina con tasa', () => {
     expect(t.some(x => /Tasa de nómina/.test(x))).toBe(false)
   })
 })
+
+// Mejora del 19/11/2026: todos los recibos del período en un solo PDF.
+describe('todos los recibos del período en un PDF', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('dibuja un recibo por página y descarga un solo archivo', async () => {
+    const { generarNominaRecibosPeriodoPDFImpl } = await import('../nominaReciboPDF.impl.js')
+    const lineas = ['Ana Perez', 'Luis Mora', 'Juan Diaz'].map(nombre => ({ ...LINEA, empleado: { nombre } }))
+    await generarNominaRecibosPeriodoPDFImpl({ periodo: { nombre: 'Semana 46' }, lineas, config: {} })
+    expect(docStub.addPage).toHaveBeenCalledTimes(2)
+    expect(docStub.save).toHaveBeenCalledTimes(1)
+    expect(docStub.save).toHaveBeenCalledWith('recibos-semana-46.pdf')
+    const t = textos()
+    for (const nombre of ['ANA PEREZ', 'LUIS MORA', 'JUAN DIAZ']) expect(t.some(x => x.toUpperCase().includes(nombre))).toBe(true)
+  })
+
+  it('sin recibos avisa en vez de descargar un PDF vacío', async () => {
+    const { generarNominaRecibosPeriodoPDFImpl } = await import('../nominaReciboPDF.impl.js')
+    await expect(generarNominaRecibosPeriodoPDFImpl({ periodo: {}, lineas: [] })).rejects.toThrow(/no tiene recibos/)
+    expect(docStub.save).not.toHaveBeenCalled()
+  })
+})

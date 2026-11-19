@@ -42,6 +42,18 @@ Regla del usuario (19/11/2026): en el encabezado y en los selectores de tasa de 
 
 **Guardrail:** `RateSelector.test.jsx`, `RateHeader.test.jsx`, `useMonedaNomina.test.jsx` y `server/handlers/__tests__/nomina.tasas.test.js`.
 
+## Regla obligatoria: cerrar el período es marcarlo pagado (sin pago aparte)
+
+Regla del usuario (19/11/2026): «al cerrar se paga todo, no se paga aparte»; «solo marcar pagado y ya; por ahora no debe pedir forma de pago ni nada extra».
+
+- El botón del período es **«Cerrar y marcar pagado»** (quien tiene `administrarNomina`). Antes de cerrar, los recibos se ponen al día con la asistencia; si hay jornadas con entrada y sin salida no se cierra (se puede confirmar «Cerrar sin pagarlas», igual que al calcular).
+- Al confirmar, **todos los recibos sin pagar quedan pagados** y el período pasa a «pagado» (Historial), en una sola operación de la base (`nomina_cerrar_marcar_pagado`, migración 269) con candado, idempotencia y autor. Se guarda la tasa del cierre en cada recibo (`tasa_pago_usd_ves`, `total_pagado_bs`). **No pide forma de pago ni cuenta y no registra egreso en Finanzas.**
+- Ya no existe el paso «Cerrar para pago» → «Pagar». Un período «cerrado» de antes de la regla muestra «Marcar pagado».
+- Si se cerró por error, **«Reabrir período»** (detalle del período) quita la marca de pagado y lo deja abierto, siempre que ningún recibo se haya pagado desde Finanzas.
+- Aviso en Períodos de las semanas que ya terminaron y siguen abiertas.
+
+**Guardrail:** `server/handlers/__tests__/nomina.cierre.test.js`, `nomina.tasas.test.js` y `src/components/nomina/__tests__/TabPeriodos.test.jsx`.
+
 ## Regla obligatoria de iconos profesionales
 
 Todos los iconos visibles en la interfaz deben ser **iconos vectoriales limpios y profesionales** de la librería `lucide-react`. Está **estrictamente prohibido usar emojis de texto o caracteres Unicode gráficos** (como 🏢, 🇻🇪, 📍, 🏦, 📱, 💵, 🌐, 📋, 💳, ✨, 🎭, 👷, ⚔️, etc.) en botones, badges, filtros, presets, opciones de selector, tablas o modales. Todo icono debe ser un componente SVG de Lucide con tamaño adecuado, color temático y renderizado nítido.

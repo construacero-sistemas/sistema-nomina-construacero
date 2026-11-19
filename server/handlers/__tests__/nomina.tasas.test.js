@@ -122,12 +122,14 @@ describe('tasa manual trazable (quién y cuándo; motivo opcional)', () => {
 })
 
 describe('congelado de tasa al cerrar el período', () => {
+  // Período «cerrado» de antes de la regla del 19/11/2026: el cierre no recalcula y
+  // va directo a congelar la tasa y marcar pagado (migración 269).
   const rutasCierre = extra => [
-    { match: '/nomina_periodos', method: 'GET', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'abierto' }] },
-    { match: '/nomina_lineas', respond: [{ id: IDS.linea }] },
+    { match: '/nomina_periodos', method: 'GET', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'cerrado' }] },
     ...extra,
-    { match: '/nomina_periodos', method: 'PATCH', respond: [] },
+    { match: '/rpc/nomina_cerrar_marcar_pagado', method: 'POST', respond: { recibos_marcados: 1 } },
   ]
+  const esCierre = call => call.url.includes('/rpc/nomina_cerrar_marcar_pagado')
 
   it('congela las tasas del mercado ANTES de cerrar y lo declara en la respuesta', async () => {
     mock = installFetchMock(rutasCierre([
@@ -138,7 +140,8 @@ describe('congelado de tasa al cerrar el período', () => {
     expect(status).toBe(200)
     expect(body.tasa_congelada).toBe(true)
     const indicePost = mock.calls.findIndex(call => call.method === 'POST' && call.url.includes('/nomina_tasas_snapshot'))
-    const indicePatch = mock.calls.findIndex(call => call.method === 'PATCH' && call.url.includes('/nomina_periodos'))
+    const indicePatch = mock.calls.findIndex(esCierre)
+    expect(mock.calls[indicePatch].body.p_tasa_usd_ves).toBe(857.01)
     expect(indicePost).toBeGreaterThanOrEqual(0)
     expect(indicePost).toBeLessThan(indicePatch) // el snapshot va antes que el cierre
     const post = mock.calls[indicePost]
@@ -159,7 +162,7 @@ describe('congelado de tasa al cerrar el período', () => {
     const res = await H.handleCerrarPeriodo(makeRequest({ periodoId: IDS.periodo, tasas: { usd: 857.01 } }), ENV)
     const { status } = await readResponse(res)
     expect(status).toBe(500)
-    expect(mock.calls.some(call => call.method === 'PATCH')).toBe(false)
+    expect(mock.calls.some(esCierre)).toBe(false)
   })
 
   it('rechaza tasas inválidas sin cerrar', async () => {
@@ -167,7 +170,7 @@ describe('congelado de tasa al cerrar el período', () => {
     const res = await H.handleCerrarPeriodo(makeRequest({ periodoId: IDS.periodo, tasas: { usd: -5 } }), ENV)
     const { status } = await readResponse(res)
     expect(status).toBe(400)
-    expect(mock.calls.some(call => call.method === 'PATCH')).toBe(false)
+    expect(mock.calls.some(esCierre)).toBe(false)
   })
 
   it('sin tasas cierra como antes y declara que no se congeló nada', async () => {

@@ -8,7 +8,7 @@ import {
   handleGetReglasLegales, handleCrearReglaLegal,
   handleGetTasasSnapshots, handleCrearTasaSnapshot, handleGetTasaManual, handleFijarTasaManual,
   handleGetPeriodos, handleCrearPeriodo, handleAsegurarSemanaActual, handleCalcularPeriodo, handleCerrarPeriodo, handleReabrirPeriodo, handleEliminarPeriodo,
-  handleGetLineas, handleAjustarLinea, handlePagarLineas, handleRevertirPagoLinea,
+  handleGetLineas, handleGetRecibosEmpleado, handleAjustarLinea, handlePagarLineas, handleRevertirPagoLinea,
   handleListarPosVendedores, handlePreviewComisionesPos, handleAplicarComisionesPos,
 } from './server/handlers/nomina.js'
 import {
@@ -164,6 +164,7 @@ const routes = new Map([
   ['POST /api/nomina/periodos/reabrir', handleReabrirPeriodo],
   ['POST /api/nomina/periodos/eliminar', handleEliminarPeriodo],
   ['GET /api/nomina/lineas', handleGetLineas],
+  ['GET /api/nomina/empleados/recibos', handleGetRecibosEmpleado],
   ['POST /api/nomina/lineas/ajustar', handleAjustarLinea],
   ['POST /api/nomina/lineas/pagar', handlePagarLineas],
   ['POST /api/nomina/lineas/revertir-pago', handleRevertirPagoLinea],

@@ -41,45 +41,53 @@ function renderTab(props = {}) {
 }
 
 describe('TabPeriodos — tarjetas de período y permisos', () => {
-  it('muestra importe neto, deducciones y pasos; la acción principal cambia según el estado', () => {
+  // Regla del usuario (19/11/2026): cerrar = marcar todo pagado (sin «Pagar» aparte).
+  it('muestra importe neto, deducciones y el cierre que marca todo pagado', () => {
     renderTab({ puedeGestionarNomina: true, puedePagarNomina: true })
 
     expect(screen.getAllByText('Neto a pagar · USD')).toHaveLength(3)
     expect(screen.getAllByText('Deducciones')).toHaveLength(3)
-    expect(screen.getByText('Pendiente de cálculo')).toBeInTheDocument()
-    expect(screen.getByText('Calculado · revisar antes de cerrar')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Calcular nómina' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Recalcular' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Cerrar para pago' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Pagar recibos' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Cerrar y marcar pagado' })).toHaveLength(2)
+    // Un período «cerrado» de antes de la regla solo se marca pagado.
+    expect(screen.getByRole('button', { name: 'Marcar pagado' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pagar recibos' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cerrar para pago' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cerrar para pago' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Cerrar y marcar pagado' })[1])
     const confirmacion = screen.getByRole('group', { name: 'Confirmar cierre de Semana 36' })
     expect(confirmacion).toHaveClass('col-span-2')
-    expect(within(confirmacion).getByRole('button', { name: 'Confirmar cierre' })).toBeInTheDocument()
+    expect(within(confirmacion).getByText(/se marcarán TODOS como pagados/)).toBeInTheDocument()
+    expect(within(confirmacion).getByRole('button', { name: 'Sí, cerrar' })).toBeInTheDocument()
     expect(within(confirmacion).getByRole('button', { name: 'Cancelar' })).toBeInTheDocument()
     expect(screen.getByText('≈ Bs 175')).toBeInTheDocument()
+  })
+
+  it('avisa las semanas que ya terminaron y siguen abiertas', () => {
+    renderTab({ puedeGestionarNomina: true })
+    expect(screen.getByText(/semanas ya terminaron y siguen abiertas/)).toBeInTheDocument()
+    expect(screen.getAllByText('La semana terminó · ciérrala para marcarla pagada')).toHaveLength(2)
   })
 
   it('oculta las acciones de escritura sin su capacidad correspondiente', () => {
     renderTab()
     expect(screen.queryByRole('button', { name: /Crear Nuevo Período/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Calcular nómina/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Cerrar para pago/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Cerrar y marcar pagado|Marcar pagado/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Pagar recibos/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Más acciones para/i })).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /Ver recibos/i })).toHaveLength(3)
   })
 
-  it('gestionar y pagar siguen siendo capacidades separadas', () => {
+  it('cerrar (y marcar pagado) requiere gestionar la nómina; pagar por sí solo no basta', () => {
     const view = renderTab({ puedeGestionarNomina: true })
     expect(screen.getByRole('button', { name: 'Calcular nómina' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Recalcular' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Pagar recibos' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Cerrar y marcar pagado' }).length).toBeGreaterThan(0)
     view.unmount()
 
     renderTab({ puedePagarNomina: true })
-    expect(screen.getByRole('button', { name: 'Pagar recibos' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Cerrar y marcar pagado|Marcar pagado|Pagar recibos/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Recalcular' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Más acciones para/i })).not.toBeInTheDocument()
   })

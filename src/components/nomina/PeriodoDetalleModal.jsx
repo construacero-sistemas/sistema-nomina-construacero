@@ -3,7 +3,7 @@
 // Regla: Moneda principal es SIEMPRE USD ($) y secundaria es Bs (calculada según la tasa activa).
 import { useState, useMemo } from 'react'
 import { FileText, Pencil, RotateCcw, Wallet, CheckCircle2, DollarSign, Users, Sparkles, ShoppingBag } from 'lucide-react'
-import { useNominaLineas, useRevertirPagoLinea, useTasasPeriodo } from '../../hooks/useNomina'
+import { useNominaLineas, useReabrirPeriodo, useRevertirPagoLinea, useTasasPeriodo } from '../../hooks/useNomina'
 import useMonedaNomina, { formatBs, formatUsd } from '../../hooks/useMonedaNomina.js'
 import { useConfigNegocio } from '../../../compat/hooks/useConfigNegocio.js'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
@@ -19,87 +19,16 @@ import ImportarComisionesPosModal from './ImportarComisionesPosModal.jsx'
 import { VENDEDORES_EN_NOMINA } from '../../config/comisionesVendedores.js'
 import { logClientError } from '../../../compat/utils/errorLogger.js'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
-import { desgloseDescanso } from '../../utils/descansoRecibo.js'
 import useReglasLey from '../../hooks/useReglasLey.js'
+import useAutoCalculoPeriodo from '../../hooks/useAutoCalculoPeriodo.js'
 
-function fmt(n) {
-  return (Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-// Días trabajados y, si los hay, los de descanso pagados (art. 119): «5 + 2 desc.».
-function textoDias(linea) {
-  const trabajados = Number(linea.dias_trabajados) || 0
-  const { diasDescanso } = desgloseDescanso(linea)
-  return diasDescanso > 0 ? `${trabajados} + ${diasDescanso} desc.` : String(trabajados)
-}
-
-function ResumenDato({ label, value, emphasis = false }) {
-  return (
-    <div className="min-w-0 rounded-lg border border-slate-100 bg-white px-2.5 py-2">
-      <span className="block text-[10px] font-semibold text-slate-500">{label}</span>
-      <span className={`block truncate tabular-nums ${emphasis ? 'text-sm font-black text-primary' : 'text-xs font-bold text-slate-800'}`}>{value}</span>
-    </div>
-  )
-}
-
-function ReciboMovilCard({ linea, abierto, puedeGestionarNomina, puedePagarNomina, fmtBs, onDescargar, onAjustar, onPagar, onRevertir }) {
-  const nombre = capitalizarPalabras(linea.empleado?.nombre) || '—'
-  const recargos = Number(linea.monto_extra_usd || 0) + Number(linea.monto_sabado_usd || 0) + Number(linea.monto_feriado_usd || 0)
-  const neto = Number(linea.total_neto_usd || 0)
-  const mostrarBsCongelados = linea.pagado && Number(linea.tasa_pago_usd_ves) > 0
-  const { divisorMensual } = useReglasLey()
-
-  return (
-    <article aria-label={`Recibo de ${nombre}`} className={`rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ${linea.pagado ? 'border-l-4 border-l-emerald-500' : ''}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="break-words text-sm font-black text-slate-800">{nombre}</h3>
-          {linea.cargo_snap && <p className="text-[11px] font-medium text-slate-500">{linea.cargo_snap}</p>}
-          <p className="text-[10px] text-slate-500">Sueldo mensual: ${fmt(Number(linea.salario_dia_usd_snap || 0) * divisorMensual)}</p>
-        </div>
-        {linea.pagado && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-800">Pagado</span>}
-      </div>
-
-      <div className="mt-3 grid min-w-0 grid-cols-2 gap-2">
-        <ResumenDato label="Días" value={textoDias(linea)} />
-        <ResumenDato label="Horas normales" value={`${Number(linea.horas_normales || 0).toFixed(1)}h`} />
-        <ResumenDato label="Base" value={`$${fmt(linea.monto_normal_usd)}`} />
-        <div className="min-w-0 rounded-lg border border-primary/20 bg-primary/[0.04] px-2.5 py-2">
-          <span className="block text-[10px] font-semibold text-primary/75">Neto · USD</span>
-          <span className="block truncate text-sm font-black tabular-nums text-primary">${fmt(neto)}</span>
-          <span className="block truncate text-[10px] font-semibold tabular-nums text-slate-600" title={mostrarBsCongelados ? `Tasa congelada al pagar: ${Number(linea.tasa_pago_usd_ves)} Bs/$` : 'Calculado con la tasa activa'}>
-            {mostrarBsCongelados
-              ? `${Number(linea.total_pagado_bs || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs`
-              : fmtBs(neto)}
-          </span>
-        </div>
-      </div>
-
-      <dl className="mt-3 grid min-w-0 grid-cols-2 gap-x-3 gap-y-1.5 border-t border-slate-100 pt-2 text-xs">
-        <div className="flex justify-between gap-2"><dt className="text-slate-500">H. extra</dt><dd className="font-semibold text-slate-800">{Number(linea.horas_extra) > 0 ? `${Number(linea.horas_extra).toFixed(1)}h` : '—'}</dd></div>
-        <div className="flex justify-between gap-2"><dt className="text-slate-500">Recargos</dt><dd className="font-semibold text-slate-800">{recargos > 0 ? `$${fmt(recargos)}` : '—'}</dd></div>
-        <div className="flex justify-between gap-2"><dt className="text-slate-500">Bonos</dt><dd className="font-semibold text-emerald-700">{Number(linea.bonos_usd) > 0 ? `+$${fmt(linea.bonos_usd)}` : '—'}</dd></div>
-        {(VENDEDORES_EN_NOMINA || Number(linea.comisiones_pos_usd) > 0) && <div className="flex justify-between gap-2"><dt className="text-slate-500">Comis. POS</dt><dd className="font-semibold text-amber-800">{Number(linea.comisiones_pos_usd) > 0 ? `+$${fmt(linea.comisiones_pos_usd)}` : '—'}</dd></div>}
-        <div className="flex justify-between gap-2"><dt className="text-slate-500">Deducciones</dt><dd className="font-semibold text-rose-700">{Number(linea.deducciones_usd) > 0 ? `-$${fmt(linea.deducciones_usd)}` : '—'}</dd></div>
-        {Number(linea.dias_ausencia) > 0 && <div className="flex justify-between gap-2"><dt className="text-slate-500">Ausencias</dt><dd className="font-bold text-rose-700">{linea.dias_ausencia}</dd></div>}
-      </dl>
-
-      <div className="mt-3 flex flex-wrap justify-end gap-1.5 border-t border-slate-100 pt-2">
-        <button type="button" onClick={() => onDescargar(linea)} aria-label={`Descargar recibo PDF de ${nombre}`} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100">
-          <FileText size={15} /> Recibo PDF
-        </button>
-        {puedeGestionarNomina && abierto && !linea.pagado && <button type="button" onClick={() => onAjustar(linea)} className="min-h-11 rounded-lg px-2.5 text-xs font-bold text-sky-800 hover:bg-sky-50">Ajustar</button>}
-        {puedePagarNomina && !abierto && !linea.pagado && <button type="button" onClick={() => onPagar(linea)} className="min-h-11 rounded-lg bg-primary px-3 text-xs font-bold text-white">Pagar</button>}
-        {puedePagarNomina && linea.pagado && <button type="button" onClick={() => onRevertir(linea.id)} aria-label={`Revertir pago de ${nombre}`} className="min-h-11 min-w-11 rounded-lg p-2 text-rose-700 hover:bg-rose-50"><RotateCcw size={18} aria-hidden="true" /></button>}
-      </div>
-    </article>
-  )
-}
+import { ResumenDato, ReciboMovilCard, EstadoAutoCalculo } from './PeriodoDetallePartes.jsx'
+import { fmt, textoDias, revertible } from './periodoDetalleUtils.js'
 
 // Todo lo que este modal puede hacer sobre la base es escritura, así que no existe un
 // gate de lectura propio: cada acción usa la capacidad de su endpoint — `administrarNomina`
-// para ajustar bonos/deducciones o importar comisiones, `operarFinanzas` para pagar o
-// revertir un pago. Ver recibos, totales y descargar PDFs no requiere ninguna de las dos.
+// para ajustar bonos/deducciones, importar comisiones, cerrar o reabrir; `operarFinanzas`
+// para pagar o revertir un pago. Ver recibos, totales y descargar PDFs no requiere ninguna.
 export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = false, puedePagarNomina = false, onClose }) {
   const { divisorMensual } = useReglasLey()
   const { data: lineas = [], isLoading, isError, refetch } = useNominaLineas(periodo.id)
@@ -111,6 +40,9 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
   const tasaPersonal = !tieneCapacidad(perfil, 'administrarSistema')
   const { aBs, fmtBs, tasaActiva, shortLabelTasa, tipoTasa } = useMonedaNomina({ ambito: tasaPersonal ? 'personal' : 'nomina' })
   const revertir = useRevertirPagoLinea()
+  const reabrir = useReabrirPeriodo()
+  const [confirmandoReabrir, setConfirmandoReabrir] = useState(false)
+  const [exportandoTodos, setExportandoTodos] = useState(false)
 
   const [liquidando, setLiquidando]   = useState(null)
   const [pagando, setPagando]         = useState(null)
@@ -126,6 +58,9 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
   const [vista, setVista] = useState('recibos')
 
   const abierto = periodo.estado === 'abierto'
+  // Mejora del 19/11/2026: al abrir un período abierto, recibos y hoja se ponen al
+  // día solos con la asistencia (solo guarda si algo cambió).
+  const autoCalculo = useAutoCalculoPeriodo(periodo, puedeGestionarNomina)
 
   // Tasa congelada al cierre del período: los montos en Bs históricos se muestran
   // tal como quedaron al cerrar, sin que el mercado actual los reescriba.
@@ -180,6 +115,22 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
       logClientError({ mensaje: `Error exportando planilla: ${e?.message || e}`, stack: e?.stack, categoria: 'NOMINA_PDF' })
     } finally {
       setExportando(false)
+    }
+  }
+
+  // Mejora del 19/11/2026: todos los recibos del período en un solo PDF.
+  async function exportarTodos() {
+    setExportandoTodos(true)
+    try {
+      const { generarNominaRecibosPeriodoPDF } = await import('../../services/pdf/nominaReciboPDF')
+      await generarNominaRecibosPeriodoPDF({
+        periodo, lineas, config: configNegocio ?? {}, action: 'download',
+        tasa: tasaPeriodo, tasaOrigen: origenTasaPeriodo,
+      })
+    } catch (e) {
+      logClientError({ mensaje: `Error exportando todos los recibos: ${e?.message || e}`, stack: e?.stack, categoria: 'NOMINA_PDF' })
+    } finally {
+      setExportandoTodos(false)
     }
   }
 
@@ -283,6 +234,27 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                 <span>{exportando ? 'Generando...' : 'Descargar Planilla PDF'}</span>
               </button>
 
+              <button
+                type="button"
+                onClick={exportarTodos}
+                disabled={exportandoTodos || lineas.length === 0}
+                className="flex items-center gap-1.5 px-3.5 py-2 min-h-11 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold shadow-sm transition-all disabled:opacity-50"
+              >
+                <FileText size={14} className="text-sky-700" />
+                <span>{exportandoTodos ? 'Generando...' : 'Todos los recibos PDF'}</span>
+              </button>
+
+              {puedeGestionarNomina && periodo.estado === 'pagado' && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmandoReabrir(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 min-h-11 rounded-xl bg-white hover:bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold shadow-sm transition-all"
+                >
+                  <RotateCcw size={14} />
+                  <span>Reabrir período</span>
+                </button>
+              )}
+
               {puedePagarNomina && !abierto && totales.pendientes.length > 0 && (
                 <button
                   onClick={() => setPagando({ lineas: totales.pendientes })}
@@ -305,6 +277,8 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
               Los montos en Bs de este período usan la tasa congelada al cierre ({Number(tasaCongelada.valor).toLocaleString('es-VE')} Bs/$ · {tasaCongelada.fuente} · {tasaCongelada.fecha}); no cambian con el mercado actual.
             </div>
           )}
+
+          <EstadoAutoCalculo resultado={autoCalculo} />
 
           <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 sm:inline-grid sm:w-auto" role="tablist" aria-label="Vista del período">
             {[['recibos', 'Recibos'], ['hoja', 'Hoja semanal']].map(([id, etiqueta]) => (
@@ -475,7 +449,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                               </button>
                             )}
 
-                            {puedePagarNomina && l.pagado && <button type="button"
+                            {puedePagarNomina && revertible(l) && <button type="button"
                               onClick={() => { setConfirmandoRev(l.id); setMotivoReversion(''); setErrorReversion('') }}
                               title="Revertir Pago" aria-label="Revertir pago del recibo"
                               className="min-h-11 min-w-11 p-2 rounded-xl text-rose-700 hover:bg-rose-50">
@@ -535,6 +509,17 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
         </div>
       </Modal>
 
+      {confirmandoReabrir && (
+        <Modal isOpen title="Reabrir período" onClose={() => setConfirmandoReabrir(false)} busy={reabrir.isPending} className="max-w-md"
+          footer={<div className="flex w-full flex-col-reverse gap-2 pb-3 sm:flex-row sm:justify-end sm:pb-4">
+            <button type="button" disabled={reabrir.isPending} onClick={() => setConfirmandoReabrir(false)} className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700">Cancelar</button>
+            <button type="button" disabled={reabrir.isPending} onClick={() => reabrir.mutate(periodo.id, { onSuccess: () => { setConfirmandoReabrir(false); onClose() } })} className="min-h-11 rounded-xl bg-amber-700 px-4 text-sm font-black text-white hover:bg-amber-800 disabled:opacity-50">{reabrir.isPending ? 'Reabriendo…' : 'Sí, reabrir'}</button>
+          </div>}>
+          <p className="text-sm leading-relaxed text-slate-700">
+            Se quitará la marca de pagado de todos los recibos de <strong>{periodo.nombre}</strong> y el período volverá a quedar abierto para corregirlo. Úsalo solo si se cerró por error.
+          </p>
+        </Modal>
+      )}
       {confirmandoRev && <Modal isOpen title="Revertir pago del recibo" onClose={() => setConfirmandoRev(null)} busy={revertir.isPending}
         footer={<><button type="button" disabled={revertir.isPending} onClick={() => setConfirmandoRev(null)} className="min-h-11 px-4 py-2 border rounded-xl">Cancelar</button>
           <button type="button" disabled={revertir.isPending || motivoReversion.trim().length < 3} className="min-h-11 px-4 py-2 rounded-xl bg-rose-700 text-white font-bold disabled:opacity-50"
