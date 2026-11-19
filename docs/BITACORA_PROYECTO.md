@@ -25,6 +25,18 @@ Petición del usuario: «corrige el contraste acá» (captura del aviso con el b
 - **Pruebas:** `npx vitest run compat/components/ui/__tests__/AvisoActualizacion.test.jsx` → 4/4; `npm run test:responsive` → todas las reglas cumplen.
 - **Pendiente:** verlo en la app cuando salga la próxima versión (el aviso solo aparece con una actualización real).
 
+## Prueba de punta a punta en staging: corrige el cierre (migración 270) — 19/11/2026
+
+Petición del usuario: «prueba todo el flujo de punta a punta».
+
+1. **Staging al día:** le faltaban 11 migraciones (255, 257, 258 y 262–269). Respaldo de su nómina y configuración en `local-backups/backup_staging_pre_255_269_20261119.json`; aplicadas en orden, cada una en su transacción y registrada. Sin errores.
+2. **Prueba nueva `scripts/test-staging-flujo-nomina.mjs`:** corre la API real (`worker.js`) contra staging con una semana sintética (01–07/10/2026) y la deja limpia. Recorre: inicio de sesión con PIN, ficha y horario del empleado, reglas, asistencia (4 días trabajados con 1 h extra y sábado, 1 falta sin justificativo, 1 falta justificada, falta en domingo rechazada), cálculo automático al abrir y «sin cambios» al reabrir, recibo (días, descanso, hora extra, bono y sueldo semanal, bruto), hoja semanal, recibos del trabajador, «Cerrar y marcar pagado» (tasa en cada recibo, período «pagado», no recierra, no recalcula), «Reabrir período» y limpieza. Las credenciales se leen de la configuración de staging y no se imprimen. Resultado final: **25/25 pasos aprobados** y staging limpio.
+3. **Error real encontrado y corregido — el cierre fallaba al confirmarse:** la operación de la 269 no quedaba «confirmada» ni tenía su fila en auditoría, y la comprobación diferida de la 238 (`finanzas_check_operacion`) la rechazaba al confirmar con «Incomplete financial operation cannot commit» (500 en la pantalla; la base rechaza todo, sin datos dañados). La prueba en producción del cierre anterior no lo detectó porque se revertía antes de confirmar. **Migración 270** (`270_nomina_cerrar_marca_pagado_confirmada.sql`): mismo comportamiento, ahora con `estado = 'confirmada'` y auditoría (`CERRAR_NOMINA` / `REABRIR_NOMINA`). Aplicada en staging y verificada con confirmación real.
+4. **Guardrail nuevo en `npm run test:db`:** «Cerrar período marca todo pagado y se confirma; reabrir lo deshace (269/270)» ejecuta la función con confirmación real en PGlite (permiso, tasa y Bs por recibo, auditoría, idempotencia, no recierra, reabrir). Sin la 270 falla con el mismo error; con la 270 pasa.
+5. **Correcciones de la propia prueba (no eran errores del sistema):** el empleado sintético trabaja de lunes a sábado (su único descanso es el domingo; un sábado sin registro no se paga), y el bruto incluye el recargo de sábado trabajado.
+6. **Observaciones para el usuario:** (a) quien trabaja de lunes a sábado cobra igual el recargo de sábado aunque sea su día normal; (b) un día laborable pasado sin ningún registro no se paga pero no aparece como «falta» en el recibo; (c) un período cerrado y reabierto no se puede eliminar porque conserva la tasa del cierre (protege el historial; el aviso es genérico).
+7. **Pendientes:** aplicar la 270 en **producción** (hoy «Cerrar y marcar pagado» falla allí) y publicar; prueba visual en el navegador con sesión del usuario. `npm run verify`: en verde (1616 pruebas, PGlite 45 comprobaciones con 65 migraciones, responsive, build y presupuesto).
+
 ## Publicación: cerrar marca todo pagado, recibos al día solos, aviso e historial — 19/11/2026
 
 Petición del usuario: «al finalizar commit y push al main» y «deploy a produccion».
