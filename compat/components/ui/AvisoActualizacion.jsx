@@ -52,22 +52,22 @@ export default function AvisoActualizacion() {
       className="fixed left-1/2 -translate-x-1/2 z-[9998] w-[calc(100vw-1.5rem)] max-w-md box-border bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-6"
     >
       <div className="relative flex flex-wrap items-center gap-3 rounded-2xl border border-sky-700/40 bg-slate-900/95 py-3 pl-4 pr-12 text-white shadow-2xl shadow-black/40 backdrop-blur-xl">
-        <RefreshCw size={20} className="shrink-0 text-sky-400" aria-hidden="true" />
+        <RefreshCw size={20} className="shrink-0 text-sky-200" aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold leading-snug">Hay una versión nueva del sistema</p>
-          <p className="text-xs leading-snug text-white/70">Se aplicará sola cuando no tengas nada abierto.</p>
+          <p className="text-xs leading-snug text-white/80">Se aplicará sola cuando no tengas nada abierto.</p>
         </div>
         <button
           type="button"
           onClick={actualizarAhora}
-          className="h-11 shrink-0 rounded-xl bg-sky-500 px-4 text-sm font-bold text-slate-950 hover:bg-sky-400"
+          className="h-11 shrink-0 rounded-xl bg-white px-4 text-sm font-bold text-primary hover:bg-sky-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
         >
           Actualizar ahora
         </button>
         <button
           type="button"
           onClick={() => setVisible(false)}
-          className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-xl text-white/50 hover:text-white"
+          className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-xl text-white/70 hover:text-white"
           aria-label="Cerrar aviso"
         >
           <X size={16} aria-hidden="true" />
