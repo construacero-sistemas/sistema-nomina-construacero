@@ -6,6 +6,17 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Corrección: contraste del aviso «Hay una versión nueva del sistema» — 19/11/2026
+
+Petición del usuario: «corrige el contraste acá» (captura del aviso con el botón «Actualizar ahora» casi invisible).
+
+- **Causa:** en `tailwind.config.js` la paleta `sky` está remapeada al azul marino de la marca, así que `bg-sky-500` salía marino oscuro sobre el fondo `slate-900` del aviso, con texto `slate-950`: el botón no se leía.
+- **Archivo:** `compat/components/ui/AvisoActualizacion.jsx`.
+- **Cambio:** botón «Actualizar ahora» en blanco con texto marino (`text-primary`), hover `sky-50` y anillo de foco visible; icono en `sky-200`; subtítulo en `white/80` y la X de cierre en `white/70` para que también se lean bien.
+- **Pruebas:** `npx vitest run compat/components/ui/__tests__/AvisoActualizacion.test.jsx` → 4/4; `npm run test:responsive` → todas las reglas cumplen.
+- **Pendiente:** verlo en la app cuando salga la próxima versión (el aviso solo aparece con una actualización real).
+
+
 ## Regla: bono semanal editable, guardado en cada recibo y por semana — 19/11/2026
 
 Petición del usuario: «hazlo así, ya que es correcto que el bono sale del sueldo y no se suma» (confirmación de la propuesta: bono editable, guardado por recibo, por semana y separado en el recibo).
