@@ -25,6 +25,15 @@ Petición del usuario: «corrige el contraste acá» (captura del aviso con el b
 - **Pruebas:** `npx vitest run compat/components/ui/__tests__/AvisoActualizacion.test.jsx` → 4/4; `npm run test:responsive` → todas las reglas cumplen.
 - **Pendiente:** verlo en la app cuando salga la próxima versión (el aviso solo aparece con una actualización real).
 
+## Publicación: corrección del cierre (migración 270) — 19/11/2026
+
+Petición del usuario: «Sí, aplica y publica».
+
+1. **Migración 270 en producción** (Management API): guardia (última 269, dos períodos abiertos, 0 recibos pagados), respaldo de la definición anterior de la función en `local-backups/backup_pre_270_funcion_20261119.json`, aplicación en `BEGIN/COMMIT` con versión 270. Verificado: la función deja la operación «confirmada» y escribe su auditoría; `service_role` con permiso y `anon` sin él.
+2. **Código:** commit `803d8a7` en `nomina/cierre-confirmado` (migración 270, guardrail de `test:db`, `scripts/test-staging-flujo-nomina.mjs` y bitácora). PR #29 fusionado en `main` (`59fc3aa`) con `construacero-sistemas`; `verify` de GitHub Actions en verde (2 min 5 s).
+3. **Deploy y humo de solo lectura:** Vercel producción «success»; `/`, `/nomina`, `/finanzas`, `/api/rates` → 200; `/api/auth/me` y `/api/nomina/empleados/recibos` sin sesión → 401.
+4. **Pendientes:** cerrar la semana 12–18/11 desde Períodos (primer cierre real con la 270); prueba visual en el navegador con la sesión del usuario; decidir las tres observaciones de la prueba (recargo de sábado para quien trabaja lunes a sábado, días sin registro que no figuran como falta, aviso al eliminar un período reabierto).
+
 ## Prueba de punta a punta en staging: corrige el cierre (migración 270) — 19/11/2026
 
 Petición del usuario: «prueba todo el flujo de punta a punta».
@@ -35,7 +44,7 @@ Petición del usuario: «prueba todo el flujo de punta a punta».
 4. **Guardrail nuevo en `npm run test:db`:** «Cerrar período marca todo pagado y se confirma; reabrir lo deshace (269/270)» ejecuta la función con confirmación real en PGlite (permiso, tasa y Bs por recibo, auditoría, idempotencia, no recierra, reabrir). Sin la 270 falla con el mismo error; con la 270 pasa.
 5. **Correcciones de la propia prueba (no eran errores del sistema):** el empleado sintético trabaja de lunes a sábado (su único descanso es el domingo; un sábado sin registro no se paga), y el bruto incluye el recargo de sábado trabajado.
 6. **Observaciones para el usuario:** (a) quien trabaja de lunes a sábado cobra igual el recargo de sábado aunque sea su día normal; (b) un día laborable pasado sin ningún registro no se paga pero no aparece como «falta» en el recibo; (c) un período cerrado y reabierto no se puede eliminar porque conserva la tasa del cierre (protege el historial; el aviso es genérico).
-7. **Pendientes:** aplicar la 270 en **producción** (hoy «Cerrar y marcar pagado» falla allí) y publicar; prueba visual en el navegador con sesión del usuario. `npm run verify`: en verde (1616 pruebas, PGlite 45 comprobaciones con 65 migraciones, responsive, build y presupuesto).
+7. **Pendientes:** ~~aplicar la 270 en producción~~ (hecho, ver la entrada de publicación de arriba); prueba visual en el navegador con sesión del usuario. `npm run verify`: en verde (1616 pruebas, PGlite 45 comprobaciones con 65 migraciones, responsive, build y presupuesto).
 
 ## Publicación: cerrar marca todo pagado, recibos al día solos, aviso e historial — 19/11/2026
 
