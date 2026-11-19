@@ -6,6 +6,56 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Regla: la tasa general solo la cambia el jefe; el rol nómina tiene su propia tasa para recibos y hoja — 19/11/2026
+
+Petición del usuario (regla): «quítale de acá el cambio de tasa a nómina; allí en el header debe aparecer solo la tasa como info, pero no para cambiarla en el rol de nómina; el rol de nómina debe poder cambiar la tasa solo para él mismo, solo para calcular los recibos y la hoja semanal».
+
+1. **Archivos:** `src/components/nomina/RateSelector.jsx`, `src/hooks/useMonedaNomina.js`, `src/store/useTasaNominaStore.js`, `src/components/nomina/PeriodoDetalleModal.jsx`, `server/handlers/nomina.catalogos.js`, `AGENT.md` y pruebas (`RateSelector.test.jsx`, `RateHeader.test.jsx`, `useMonedaNomina.test.jsx`, `nomina.tasas.test.js`).
+2. **Comportamiento:**
+   - el selector de tasa (encabezado, Empleados, Períodos y Configuración) solo se puede abrir con `administrarSistema` (jefe). Para los demás roles muestra la tasa como texto informativo, sin menú;
+   - en el detalle del período, quien no es jefe ve «Mi tasa (solo para mí)»: elige BCV dólar, euro, USDT o un valor manual que se guarda solo en su equipo (`nomina_tasa_personal_v1`), no se envía al servidor y se usa para los bolívares de los recibos (pantalla y PDF) y de la hoja semanal. El jefe sigue usando la tasa general;
+   - servidor: fijar la tasa manual de la cuenta ahora exige `administrarSistema` (antes `administrarNomina`): el rol nómina recibe 403;
+   - sin cambios: período cerrado → tasa congelada al cierre; recibo pagado → tasa guardada al pagar; «Pagar» confirma su tasa en su propia ventana.
+3. **Pruebas:** nuevas: encabezado informativo para el rol nómina, selector informativo para nómina y finanzas, tasa personal fijada sin servidor y sin tocar la general, 403 del rol nómina al fijar la tasa de la cuenta. `npm run verify`: en verde (1591 pruebas, PGlite, responsive, build y presupuesto).
+4. **Pendientes:** revisar en el iPhone con un usuario de rol nómina. Sin commit, push ni deploy.
+
+## Regla: la falta sin justificativo descuenta solo el día; al marcar la falta se elige si trae justificativo — 19/11/2026
+
+Petición del usuario (regla): «a los empleados al faltar un día sin justificativo se les descuenta solo el día que falten, no dos, y agrega al pulsar que no vino un trabajador si hay justificativo o no». Pregunta aclarada con el usuario: la falta **con** justificativo **se paga**.
+
+1. **Archivos:** `supabase/migrations/267_nomina_falta_justificada.sql` (nueva), `server/lib/nominaDescanso.js`, `server/lib/nominaUtils.js`, `server/lib/nominaReglasLey.js`, `server/handlers/nomina.shared.js`, `nomina.horarios.js`, `nomina.registro.js`, `nomina.asistencia.js`, `nomina.periodos.js`, `src/hooks/useNominaMarcaje.js`, `src/components/nomina/marcaje/TarjetaMarcaje.jsx`, `useAccionesMarcaje.js`, `AnularEntradaModal.jsx`, `MarcajeLogisticaPanel.jsx`, `AsistenciaModal.jsx`, `TabAsistencia.jsx`, `AsistenciaDiariaMovil.jsx`, `LiquidacionModal.jsx`, `ReglasPagoPanel.jsx`, `src/services/pdf/nominaReciboPDF.impl.js`, `AGENT.md` y pruebas.
+2. **Comportamiento:**
+   - reemplaza la regla del 18/11/2026: una falta sin justificativo ya **no** quita el sábado/domingo pagado; solo se descuenta el día faltado. Ejemplo ($240 al mes, 1 falta): 4 días $32 + 2 descansos $16 = $48 (antes $40); en la hoja, bono $35 + sueldo $13. El umbral «faltas que hacen perder el descanso» pasa a 0 por defecto (la migración cambia a 0 las cuentas que tenían 1) y sigue editable en Configuración;
+   - columna nueva `registro_asistencia.ausencia_justificada` (migración 267) con trigger que la limpia si el día deja de ser ausencia;
+   - **marcaje de hoy:** «Marcar ausente» ahora pregunta «¿Trae justificativo?» con «Sí, con justificativo (el día se paga)», «No, sin justificativo (se descuenta solo ese día)» y «Cancelar». La tarjeta en ausencia muestra la etiqueta correspondiente;
+   - **«No vino — marcar ausente»** (anular entrada): el modal exige elegir el justificativo antes de confirmar (en día libre no aplica);
+   - **registro manual:** al marcar ausencia aparece la misma elección; la planilla semanal muestra «Justificada» en azul y la vista móvil «Falta con justificativo (se paga)»;
+   - **cálculo:** la falta justificada se paga con el salario diario (sin horas extra), no cuenta en `dias_ausencia` ni como falta para el descanso, y va dentro de `dias_descanso`/`monto_normal_usd`; recibo y PDF la muestran como «Descanso, feriados y faltas justificadas pagados». Auditoría guarda `justificada`.
+3. **Pruebas:** nuevas o ajustadas en `nominaDescanso.test.js` (falta sin justificativo conserva el descanso, ejemplo $48, justificada se paga, justificada nunca cuenta como falta), `nominaReglasLey.test.js`, `nomina.ausencia.test.js` (guarda y audita el justificativo; valor inválido → 400), `MarcajeLogisticaPanel.test.jsx` (pregunta del justificativo), `useNominaMarcaje.test.jsx`, `ReglasPagoPanel.test.jsx`; las de flujo de período y jornadas abiertas aíslan el descanso. `npm run verify`: en verde (1588 pruebas, PGlite con la migración 267, responsive, build y presupuesto).
+4. **Pendientes:** aplicar la migración 267 en staging y producción antes de desplegar (las consultas leen `ausencia_justificada`). Recalcular los períodos abiertos para que tomen la regla nueva. Sin commit, push ni deploy.
+
+## Regla: el bono semanal siempre es $35 — 18/11/2026
+
+Petición del usuario (regla): «el bono semanal siempre es 35$», al ver el ejemplo de una falta donde el bono bajaba a $19.
+
+1. **Archivos:** `server/lib/nominaHoja.js`, `src/components/nomina/HojaSemanal.jsx` (texto de ayuda), `src/utils/resumenFichaEmpleado.js` (comentario), `server/lib/__tests__/nominaHoja.test.js`, `AGENT.md`.
+2. **Comportamiento:** reemplaza a la decisión D-3 («sueldo primero, el bono es lo que sobra»). Ahora el bono es $35 fijo y sale de la semana (días trabajados + descansos pagados); el sueldo semanal es la semana − $35. Con una falta baja el sueldo, no el bono. Ejemplo ($240 al mes, 1 falta): semana $40 = bono $35 + sueldo $5 (antes sueldo $21 + bono $19). Si la semana no llega a $35, el bono es la semana y el sueldo queda en $0 (no hay sueldo negativo). El total a cobrar no cambia: solo cambia cómo se reparte la semana entre sueldo y bono. La semana completa queda igual (sueldo $21 + bono $35 con $240). El texto de ayuda de la hoja ahora dice: «El bono semanal es siempre $35 y sale de la semana; el sueldo semanal es lo que queda».
+3. **Pruebas:** `npx vitest run server/lib src/utils src/components/nomina`: 466/466 en verde (una falta → bono $35 y sueldo $13 con 4 días + 2 descansos; semana menor que $35 → todo es bono). `npm run verify`: ver resultado abajo.
+4. **Pendientes:** sin commit, push ni deploy (va junto con el cambio de la tasa en la hoja y el recibo, rama `nomina/tasa-bolivares`). Confirmar con el usuario el caso borde de la semana menor que $35.
+
+## Tasa de nómina y bolívares en la hoja semanal y en el recibo — 18/11/2026
+
+Petición del usuario: «añade acá la tasa y el cambio en Bs» (sobre el ejemplo de la hoja) y «sí, hazlo» para llevarlo al sistema.
+
+1. **Archivos:** `src/components/nomina/HojaSemanal.jsx`, `src/components/nomina/PeriodoDetalleModal.jsx`, `src/services/pdf/nominaReciboPDF.impl.js`, pruebas `src/components/nomina/__tests__/HojaSemanal.test.jsx` y `src/services/pdf/__tests__/nominaReciboPDF.tasa.test.jsx` (nueva).
+2. **Comportamiento:**
+   - el detalle del período calcula la tasa con las mismas reglas que ya usaba para el neto en Bs (la congelada al cierre o, con el período abierto, la activa) y la pasa a la hoja y al recibo;
+   - **hoja semanal:** aviso «Tasa de nómina Bs X por $1 (activa / cierre del período)» y el total a cobrar en Bs debajo del monto, en cada fila, en el pie y en las fichas del teléfono. Los recibos ya pagados usan la tasa guardada al pagar, y el aviso lo indica;
+   - **recibo PDF:** línea «Tasa de nómina: X Bs por $1 (activa / del cierre del período / guardada al pagar)», columna «MONTO (Bs)» en cada concepto, total bruto y deducciones en Bs, y el neto en Bs junto al neto en dólares (si está pagado, el monto en Bs que quedó guardado). Sin tasa, el recibo queda igual que antes, solo en dólares.
+3. **Pruebas:** `npx vitest run src/components/nomina src/services/pdf`: 166/166 en verde (nuevas: aviso de tasa y total en Bs por fila y en el pie, con tasa guardada en los pagados; recibo con tasa activa, pagado con tasa guardada y sin tasa). `npm run verify`: ver resultado abajo.
+4. **Ejemplos enviados al usuario** (carpeta superior, fuera del repositorio): `ejemplo-hoja-semanal-david-garcia.png`, `ejemplo-hoja-semanal-una-falta.png` y `ejemplo-recibo-una-falta.png`. En el de la falta ($240, 4 días, 1 descanso) la semana es $40 = sueldo $21 + bono $19: el bono baja porque el sueldo semanal se llena primero (D-3).
+5. **Pendientes:** sin commit, push ni deploy. El recibo todavía junta el sábado trabajado con los días laborados y muestra la tarifa de hora extra como «salario/hora × 1,5» aunque se pague con monto fijo ($2,50); el usuario no pidió cambiarlo.
+
 ## Publicación de la hoja semanal compacta — 18/11/2026
 
 Petición del usuario: «push».

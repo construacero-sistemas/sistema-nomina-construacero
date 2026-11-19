@@ -58,7 +58,7 @@ describe('anular entrada (M-1)', () => {
     mocks.fetch.mockImplementation(async () => Response.json({ ok: true, resultado: 'sin-registro', registro: null }))
     const { result } = mount(useAnularEntradaComoAusencia)
     await act(async () => { await result.current.mutateAsync({ registroId: 'r-1', motivo: 'Error', resultadoEsperado: 'sin-registro' }) })
-    expect(cuerpo(0)).toEqual({ registroId: 'r-1', motivo: 'Error', resultadoEsperado: 'sin-registro' })
+    expect(cuerpo(0)).toEqual({ registroId: 'r-1', motivo: 'Error', resultadoEsperado: 'sin-registro', justificada: false })
     expect(mocks.success).toHaveBeenCalledWith(expect.stringMatching(/sin registro/))
   })
 

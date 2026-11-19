@@ -48,7 +48,36 @@ describe('ausencia del reloj real', () => {
     expect(inserted).toMatchObject({
       empleado_id: IDS.empleado, fecha: '2026-08-03', es_ausencia: true,
       estado_marcaje: 'manual', horas_trabajadas: 0, hora_entrada: null, hora_salida: null,
+      ausencia_justificada: false,
     })
+  })
+
+  // Regla del usuario (19/11/2026): al marcar que no vino se elige si trae justificativo.
+  it('guarda la falta con justificativo cuando se indica y la deja en auditoría', async () => {
+    let inserted = null
+    mock = installFetchMock([
+      ...rutas(),
+      { match: '/registro_asistencia', method: 'POST', respond: (url, init) => {
+        inserted = JSON.parse(init.body)
+        return [{ id: IDS.registro, estado_marcaje: 'manual', es_ausencia: true, ausencia_justificada: true }]
+      } },
+    ])
+    const { status } = await readResponse(await H.handleMarcarAusencia(
+      makeRequest({ empleadoId: IDS.empleado, justificada: true }), ENV_HOY
+    ))
+    expect(status).toBe(201)
+    expect(inserted).toMatchObject({ es_ausencia: true, ausencia_justificada: true })
+    expect(registrarAuditoria).toHaveBeenCalledWith(ENV_HOY, expect.anything(), expect.objectContaining({
+      accion: 'MARCAR_AUSENCIA', meta: expect.objectContaining({ justificada: true }),
+    }))
+  })
+
+  it('rechaza un valor de justificativo que no sea sí o no', async () => {
+    mock = installFetchMock(rutas())
+    const { status } = await readResponse(await H.handleMarcarAusencia(
+      makeRequest({ empleadoId: IDS.empleado, justificada: 'si' }), ENV_HOY
+    ))
+    expect(status).toBe(400)
   })
 
   it('permite al rol Nómina anular una entrada real abierta y audita la ausencia resultante', async () => {

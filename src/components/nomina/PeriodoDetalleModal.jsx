@@ -10,6 +10,8 @@ import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import HorizontalScroll from '../../../compat/components/ui/HorizontalScroll.jsx'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import RateSelector from './RateSelector.jsx'
+import useAuthStore from '../../../compat/store/useAuthStore.js'
+import { tieneCapacidad } from '../../config/accesoModulos.js'
 import LiquidacionModal from './LiquidacionModal'
 import HojaSemanal from './HojaSemanal.jsx'
 import PagarNominaModal from './PagarNominaModal'
@@ -102,7 +104,12 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
   const { divisorMensual } = useReglasLey()
   const { data: lineas = [], isLoading, isError, refetch } = useNominaLineas(periodo.id)
   const { data: configNegocio } = useConfigNegocio()
-  const { aBs, fmtBs, tasaActiva, shortLabelTasa, tipoTasa } = useMonedaNomina()
+  // Regla del usuario (19/11/2026): quien no es jefe (rol nómina) no cambia la tasa
+  // general; aquí elige una tasa SOLO PARA SÍ con la que se calculan los recibos y la
+  // hoja semanal. El jefe sigue usando la tasa general de Nómina.
+  const perfil = useAuthStore(state => state.perfil)
+  const tasaPersonal = !tieneCapacidad(perfil, 'administrarSistema')
+  const { aBs, fmtBs, tasaActiva, shortLabelTasa, tipoTasa } = useMonedaNomina({ ambito: tasaPersonal ? 'personal' : 'nomina' })
   const revertir = useRevertirPagoLinea()
 
   const [liquidando, setLiquidando]   = useState(null)
@@ -143,6 +150,10 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
     const linea = lineas.find(l => l.id === fila.lineaId)
     return Number(linea ? linea.total_neto_usd : fila.neto) || 0
   }
+  // Tasa del período para mostrar bolívares en la hoja y en el recibo: la congelada
+  // al cerrar o, con el período abierto, la activa.
+  const tasaPeriodo = tasaCongelada ? Number(tasaCongelada.valor) || 0 : (aBs(1) || 0)
+  const origenTasaPeriodo = tasaCongelada ? 'cierre' : 'activa'
   const bsDeFilaHoja = fila => (fila.pagado && Number(fila.tasaPago) > 0 && fila.totalPagadoBs != null
     ? Number(fila.totalPagadoBs)
     : netoReciboUsd(fila) * (tasaCongelada ? Number(tasaCongelada.valor) || 0 : (aBs(1) || 0)))
@@ -177,6 +188,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
       const { generarNominaReciboPDF } = await import('../../services/pdf/nominaReciboPDF')
       await generarNominaReciboPDF({
         periodo, linea, config: configNegocio ?? {}, action: 'download',
+        tasa: tasaPeriodo, tasaOrigen: origenTasaPeriodo,
       })
     } catch (e) {
       logClientError({ mensaje: `Error exportando recibo: ${e?.message || e}`, stack: e?.stack, categoria: 'NOMINA_PDF' })
@@ -243,7 +255,7 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
                     {Number(tasaCongelada.valor).toLocaleString('es-VE')} Bs/$ · cierre
                   </span>
                 ) : (
-                  <RateSelector light />
+                  <RateSelector light personal={tasaPersonal} />
                 )}
               </div>
             </div>
@@ -310,6 +322,8 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
               abierto={abierto}
               puedeGestionarNomina={puedeGestionarNomina}
               bsDe={bsDeFilaHoja}
+              tasa={tasaPeriodo}
+              tasaOrigen={origenTasaPeriodo}
               onAgregarDescuento={setLiquidando}
             />
           ) : isLoading ? (

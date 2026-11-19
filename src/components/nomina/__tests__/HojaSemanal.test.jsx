@@ -66,6 +66,23 @@ describe('HojaSemanal', () => {
     expect(grupos).toHaveTextContent(/Semana.*Pago.*Adicionales/)
   })
 
+  it('muestra la tasa de nómina y el total a cobrar en bolívares (los pagados con su tasa guardada)', () => {
+    renderHoja({ tasa: 950, tasaOrigen: 'activa' })
+    expect(screen.getAllByText(/Tasa de nómina/)[0].closest('p')).toHaveTextContent(/Bs 950,00 por \$1.*activa.*tasa guardada al pagar/)
+    const tabla = screen.getByRole('table', { name: 'Hoja semanal del período' })
+    // Fralin: total $82,17 × 950 = Bs 78.061,50
+    expect(within(tabla).getByRole('rowheader', { name: /^Fralin Lozano/ }).closest('tr')).toHaveTextContent('78.061,50')
+    // Julián ya pagado: $61 × 1.000 (tasa guardada) = Bs 61.000
+    expect(within(tabla).getByRole('rowheader', { name: /^Julian Guaina/ }).closest('tr')).toHaveTextContent('61.000,00')
+    // Pie: 78.061,50 + 61.000,00 = 139.061,50
+    expect(screen.getByRole('rowheader', { name: 'Totales (2)' }).closest('tr')).toHaveTextContent('139.061,50')
+  })
+
+  it('sin tasa no muestra el aviso de tasa', () => {
+    renderHoja()
+    expect(screen.queryByText(/Tasa de nómina/)).toBeNull()
+  })
+
   it('«Otros pagos» solo aparece si alguien tiene un monto', () => {
     expect(screen.queryByRole('columnheader', { name: 'Otros pagos' })).toBeNull()
     cleanup()

@@ -84,25 +84,25 @@ describe('armarHojaSemanal', () => {
     expect(Math.round((fila.valorDiasTrabajados + fila.valorDescansoPagado) * 100)).toBe(Math.round(fila.semana * 100))
   })
 
-  it('una falta deja el sueldo semanal completo y baja el bono (D-3: sueldo primero)', () => {
+  it('una falta baja el sueldo semanal y el bono sigue en $35', () => {
     const caso = recibo({ id: 'e-2', nombre: 'Juan Orozco', mensual: 240, asistencias: [
       ...DIAS.slice(0, 4).map(f => dia(f)), dia(DIAS[4], { ausencia: true }),
     ] })
     const [fila] = hoja([caso]).filas
     expect(fila.diasTrabajados).toBe(4)
     expect(fila.semana).toBeCloseTo(48, 2) // (4 + 2 descansos) × 8
-    expect(fila.sueldoSemanal).toBeCloseTo(21, 2) // tope: 56 − 35
-    expect(fila.bonoSemanal).toBeCloseTo(27, 2) // lo que sobra
+    expect(fila.bonoSemanal).toBe(35) // siempre $35
+    expect(fila.sueldoSemanal).toBeCloseTo(13, 2) // 48 − 35
     cuadra(fila)
   })
 
-  it('con un solo día trabajado todo va al sueldo semanal y el bono queda en 0 (Alejandra)', () => {
+  it('si la semana no llega a $35, el bono es la semana y el sueldo queda en 0 (Alejandra, 1 día)', () => {
     const caso = recibo({ id: 'e-6', nombre: 'Alejandra Hidalgo', mensual: 280, asistencias: [dia(DIAS[0])] })
     const [fila] = hoja([caso]).filas
     expect(fila.semana).toBeGreaterThan(0)
     expect(fila.semana).toBeLessThanOrEqual(30.33)
-    expect(fila.sueldoSemanal).toBeCloseTo(fila.semana, 2)
-    expect(fila.bonoSemanal).toBe(0)
+    expect(fila.bonoSemanal).toBeCloseTo(fila.semana, 2)
+    expect(fila.sueldoSemanal).toBe(0)
     cuadra(fila)
   })
 

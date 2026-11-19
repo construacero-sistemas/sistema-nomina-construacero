@@ -86,7 +86,7 @@ Calculado con la asistencia
           {[
             { label: 'Sueldo mensual (referencia)', value: Number(linea.salario_dia_usd_snap || 0) * divisorMensual },
             { label: `Días trabajados (${Number(linea.dias_trabajados)})`, value: descanso.montoTrabajado },
-            { label: `Descanso y feriados pagados (${descanso.diasDescanso}) · Art. 119`, value: descanso.montoDescanso },
+            { label: `Descanso, feriados y faltas justificadas pagados (${descanso.diasDescanso})`, value: descanso.montoDescanso },
             { label: `Horas extra (${Number(linea.horas_extra).toFixed(1)}h)`, value: linea.monto_extra_usd },
             { label: `Recargo sábados (${linea.dias_sabado})`, value: linea.monto_sabado_usd },
             { label: `Recargo feriados (${linea.dias_feriado})`, value: linea.monto_feriado_usd },

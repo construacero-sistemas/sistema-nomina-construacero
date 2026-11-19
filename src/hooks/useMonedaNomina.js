@@ -40,7 +40,10 @@ const KEY_TASA_MANUAL = ['nomina', 'tasa-manual']
 // tasa; cambiarla en Nómina no afecta a Finanzas y viceversa.
 // `ignorarManual`: Finanzas no usa la tasa manual (es solo de Nómina); si quedó
 // elegida «Manual», Finanzas trabaja con el BCV dólar.
+// `ambito: 'personal'`: tasa propia de quien usa el equipo (rol nómina) para los
+// recibos y la hoja semanal; su tasa manual es local y no toca la de la cuenta.
 export default function useMonedaNomina({ ambito = 'nomina', ignorarManual = ambito === 'finanzas' } = {}) {
+  const personal = ambito === 'personal'
   const marketRates = useTasaCambioNomina()
   const useStoreTasa = storeTasaPorAmbito(ambito)
   const { tipoTasa: tipoElegido, tasaManual: tasaManualLocal, setTipoTasa, setTasaManual, hidratarTasaManual } = useStoreTasa()
@@ -55,15 +58,16 @@ export default function useMonedaNomina({ ambito = 'nomina', ignorarManual = amb
     staleTime: 60_000,
     refetchOnWindowFocus: true,
     retry: false,
+    enabled: !personal,
   })
-  const tasaManualInfo = tasaManualQuery.data?.tasa || null
+  const tasaManualInfo = personal ? null : tasaManualQuery.data?.tasa || null
   const tasaManualServidor = Number(tasaManualInfo?.valor) || 0
 
   useEffect(() => {
-    if (tasaManualServidor > 0) hidratarTasaManual(tasaManualServidor)
-  }, [tasaManualServidor, hidratarTasaManual])
+    if (!personal && tasaManualServidor > 0) hidratarTasaManual(tasaManualServidor)
+  }, [personal, tasaManualServidor, hidratarTasaManual])
 
-  const tasaManual = tasaManualServidor > 0 ? tasaManualServidor : Number(tasaManualLocal) || 0
+  const tasaManual = !personal && tasaManualServidor > 0 ? tasaManualServidor : Number(tasaManualLocal) || 0
 
   const guardarTasaManual = useMutation({
     mutationFn: ({ valor, motivo }) => apiPost('/api/nomina/tasa-manual', { valor, motivo }),
@@ -75,8 +79,12 @@ export default function useMonedaNomina({ ambito = 'nomina', ignorarManual = amb
   })
 
   const fijarTasaManual = useCallback(
-    (valor, motivo) => guardarTasaManual.mutateAsync({ valor, motivo }),
-    [guardarTasaManual],
+    async (valor, motivo) => {
+      // La tasa personal se queda en este equipo: no se envía al servidor.
+      if (personal) { setTasaManual(valor); return { tasa: { valor } } }
+      return guardarTasaManual.mutateAsync({ valor, motivo })
+    },
+    [personal, setTasaManual, guardarTasaManual],
   )
 
   // Determinar el valor numérico exacto de la tasa efectiva

@@ -95,11 +95,16 @@ export default function useAccionesMarcaje({ filas, bloqueoGlobal, entrada, sali
     }
   }
 
-  async function marcarAusencia(empleadoId, quitar) {
+  // `justificada`: la persona que marca elige si la falta trae justificativo (se
+  // paga el día) o no (se descuenta solo ese día). Regla del usuario, 19/11/2026.
+  async function marcarAusencia(empleadoId, quitar, justificada = false) {
     if (bloqueada(empleadoId)) return
     try {
-      await ejecutar(empleadoId, quitar ? 'quitar-ausencia' : 'ausencia', () => ausencia.mutateAsync({ empleadoId, quitar }))
-      setAnuncio(`${quitar ? 'Ausencia deshecha' : 'Ausencia registrada'} de ${filaDe(empleadoId)?.nombre || 'la persona'}`)
+      await ejecutar(empleadoId, quitar ? 'quitar-ausencia' : 'ausencia', () => ausencia.mutateAsync(quitar
+        ? { empleadoId, quitar }
+        : { empleadoId, quitar, justificada: justificada === true }))
+      const texto = quitar ? 'Ausencia deshecha' : justificada ? 'Falta justificada registrada' : 'Falta sin justificativo registrada'
+      setAnuncio(`${texto} de ${filaDe(empleadoId)?.nombre || 'la persona'}`)
     } catch (err) {
       setError(err?.message || 'No se pudo actualizar la ausencia. Actualiza y vuelve a intentarlo.')
     }

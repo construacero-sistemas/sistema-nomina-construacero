@@ -118,12 +118,13 @@ export default function MarcajeLogisticaPanel({
 
   const modalBloqueado = bloqueoGlobal || corregirMarcaje.isPending || anularEntrada.isPending
 
-  async function confirmarAnulacion(motivo) {
+  async function confirmarAnulacion(motivo, justificada = false) {
     if (!registroParaAnular || bloqueoGlobal) return
     await anularEntrada.mutateAsync({
       registroId: registroParaAnular.registro.id,
       motivo,
       resultadoEsperado: registroParaAnular.resultadoEsperado,
+      justificada,
     })
     marcarReciente(registroParaAnular.empleado.empleado_id)
     acciones.anunciar(registroParaAnular.resultadoEsperado === 'sin-registro'

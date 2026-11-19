@@ -6,7 +6,10 @@ import useMonedaNomina, { formatBs } from '../../hooks/useMonedaNomina.js'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import { tieneCapacidad } from '../../config/accesoModulos.js'
 
-export function RateSelector({ className = '', compact = false, light = false, ambito = 'nomina' }) {
+// Regla del usuario (19/11/2026): solo el jefe (`administrarSistema`) cambia la tasa
+// general. Para los demás roles el selector es solo informativo. Con `personal`, el
+// rol nómina elige una tasa SOLO PARA SÍ (en su equipo) para los recibos y la hoja semanal.
+export function RateSelector({ className = '', compact = false, light = false, ambito = 'nomina', personal = false }) {
   const {
     tipoTasa,
     setTipoTasa,
@@ -23,14 +26,15 @@ export function RateSelector({ className = '', compact = false, light = false, a
     errorTasaManual = '',
     tasaFallback = null,
     stale = false,
-  } = useMonedaNomina({ ambito })
+  } = useMonedaNomina({ ambito: personal ? 'personal' : ambito })
 
   const [open, setOpen] = useState(false)
   const [editingManual, setEditingManual] = useState(false)
   const [customVal, setCustomVal] = useState(tasaManual > 0 ? String(tasaManual) : '')
   // La tasa manual solo rige en Nómina: la ve y la fija quien administra nómina.
   const perfil = useAuthStore(state => state.perfil)
-  const puedeTasaManual = ambito === 'nomina' && tieneCapacidad(perfil, 'administrarNomina')
+  const puedeCambiar = personal || tieneCapacidad(perfil, 'administrarSistema')
+  const puedeTasaManual = personal || (ambito === 'nomina' && tieneCapacidad(perfil, 'administrarSistema'))
   const opcionesVisibles = (opcionesTasa || []).filter(o => puedeTasaManual || o.id !== 'manual')
   const [errorManual, setErrorManual] = useState('')
   const triggerRef = useRef(null)
@@ -100,6 +104,22 @@ export function RateSelector({ className = '', compact = false, light = false, a
     }
   }
 
+  if (!puedeCambiar) {
+    // Solo informativa: muestra la tasa sin permitir cambiarla.
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 sm:py-1 text-xs font-bold ${light ? 'border border-slate-200 bg-slate-50 text-slate-800' : 'border border-white/10 bg-white/5 text-white'} ${compact ? 'text-[11px] px-2' : ''} ${className}`}
+        title="Tasa informativa: solo el jefe puede cambiarla"
+        aria-label={`Tasa de cambio ${shortLabelTasa} ${formatBs(tasaActiva)} (solo informativa)`}
+      >
+        <span className={`${light ? 'text-slate-600' : 'text-white/60'} font-semibold`}>{shortLabelTasa}:</span>
+        <span className={`font-black ${light ? 'text-amber-700' : 'text-amber-300'}`}>
+          {loading ? '...' : formatBs(tasaActiva).replace('Bs ', '')}
+        </span>
+      </span>
+    )
+  }
+
   return (
     <div className={`relative inline-block ${className}`}>
       {/* Botón trigger */}
@@ -109,8 +129,8 @@ export function RateSelector({ className = '', compact = false, light = false, a
         onClick={() => setOpen(o => !o)}
         className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:py-1 rounded-xl ${light ? 'bg-white hover:bg-slate-50 border border-slate-300 text-slate-800' : 'bg-white/10 hover:bg-white/15 border border-white/15 text-white'} transition-all text-xs font-bold active:scale-95 min-h-11 sm:min-h-0 ${compact ? 'text-[11px] px-2' : ''}`} 
         style={{ touchAction: 'manipulation' }}
-        title="Cambiar tasa de conversión a Bolívares"
-        aria-label={`Cambiar tasa de conversión: ${shortLabelTasa} ${formatBs(tasaActiva)}`}
+        title={personal ? 'Tu tasa para los recibos y la hoja semanal' : 'Cambiar tasa de conversión a Bolívares'}
+        aria-label={`${personal ? 'Cambiar mi tasa para recibos y hoja' : 'Cambiar tasa de conversión'}: ${shortLabelTasa} ${formatBs(tasaActiva)}`}
         aria-expanded={open}
       >
         <span className={`${light ? 'text-slate-600' : 'text-white/60'} font-semibold`}>{shortLabelTasa}:</span>
@@ -143,7 +163,7 @@ export function RateSelector({ className = '', compact = false, light = false, a
             )}
             <div className="flex items-center justify-between px-2 py-1.5 border-b border-slate-100 mb-1.5">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                Tasa secundaria (Bs)
+                {personal ? 'Mi tasa (solo para mí)' : 'Tasa secundaria (Bs)'}
               </span>
               <button
                 type="button"
@@ -215,7 +235,7 @@ export function RateSelector({ className = '', compact = false, light = false, a
                     {guardandoTasaManual ? 'Guardando…' : 'Fijar'}
                   </button>
                 </div>
-                <p className="text-[10px] font-semibold text-slate-500">Solo cambia la tasa de Nómina; Finanzas tiene su propia tasa.</p>
+                <p className="text-[10px] font-semibold text-slate-500">{personal ? 'Solo para ti: se usa en los recibos y la hoja semanal; no cambia la tasa de nadie más.' : 'Solo cambia la tasa de Nómina; Finanzas tiene su propia tasa.'}</p>
                 {(errorManual || errorTasaManual) && (
                   <p role="alert" className="text-[10px] font-bold text-rose-700">{errorManual || errorTasaManual}</p>
                 )}
@@ -224,6 +244,7 @@ export function RateSelector({ className = '', compact = false, light = false, a
 
             <div className="mt-2 pt-1.5 border-t border-slate-100 px-1 text-[10px] text-slate-400 text-center space-y-0.5">
               <p>Moneda principal: <strong>USD ($)</strong> · Secundaria: <strong>Bs</strong></p>
+              {personal && <p>Esta tasa es solo tuya: sirve para calcular los recibos y la hoja semanal.</p>}
               {tasaManualInfo?.fijada_por_nombre && (
                 <p>
                   Tasa manual fijada por <strong>{tasaManualInfo.fijada_por_nombre}</strong>

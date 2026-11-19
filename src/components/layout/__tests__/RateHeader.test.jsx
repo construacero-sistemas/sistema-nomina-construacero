@@ -6,6 +6,16 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import RateHeader from '../RateHeader.jsx'
 
+const auth = vi.hoisted(() => ({ rol: 'jefe' }))
+vi.mock('../../../../compat/store/useAuthStore.js', () => {
+  const useAuthStore = vi.fn(selector => {
+    const state = { perfil: { rol: auth.rol } }
+    return selector ? selector(state) : state
+  })
+  useAuthStore.getState = () => ({ perfil: { rol: auth.rol } })
+  return { default: useAuthStore }
+})
+
 const mockSetTipoTasa = vi.fn()
 const mockSetTasaManual = vi.fn()
 const mockRefresh = vi.fn()
@@ -47,6 +57,16 @@ vi.mock('../../../hooks/useMonedaNomina.js', () => ({
 describe('RateHeader Component', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    auth.rol = 'jefe'
+  })
+
+  // Regla del usuario (19/11/2026): en el encabezado el rol nómina solo VE las tasas.
+  it('para el rol nómina el encabezado muestra la tasa solo como información', () => {
+    auth.rol = 'nomina'
+    render(<RateHeader />)
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByLabelText(/solo informativa/i)).toHaveTextContent('BCV $')
+    expect(screen.getByLabelText(/solo informativa/i)).toHaveTextContent('73.50')
   })
 
   afterEach(() => {

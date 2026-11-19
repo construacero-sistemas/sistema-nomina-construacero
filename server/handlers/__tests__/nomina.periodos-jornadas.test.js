@@ -31,7 +31,8 @@ const rutasLectura = [
   ]},
   { match: '/nomina_horarios', respond: [] },
   { match: '/nomina_feriados', respond: [] },
-  { match: '/configuracion_negocio',  respond: [{}] },
+  // Solo se mira la jornada abierta: sin descanso pagado para aislarla.
+  { match: '/configuracion_negocio',  respond: [{ nomina_descanso_remunerado: false }] },
   { match: '/registro_asistencia',    respond: [jornadaAbierta] },
   { match: '/nomina_lineas', method: 'GET', respond: [] },
 ]

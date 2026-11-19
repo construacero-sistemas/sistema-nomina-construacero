@@ -131,7 +131,7 @@ export async function handleCalcularPeriodo(request, env) {
     // resultado de una línea cambiaría según qué pidió el llamador. `horas_trabajadas`
     // ya no decide el pago, pero `estado_marcaje`/`hora_entrada`/`hora_salida` sí
     // identifican las jornadas abiertas que bloquean el cálculo (409 más abajo).
-    fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?fecha=gte.${period.desde}&fecha=lte.${period.hasta}${account}&select=empleado_id,fecha,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,horas_trabajadas,estado_marcaje,hora_entrada,hora_salida`, { headers }),
+    fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?fecha=gte.${period.desde}&fecha=lte.${period.hasta}${account}&select=empleado_id,fecha,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,ausencia_justificada,horas_trabajadas,estado_marcaje,hora_entrada,hora_salida`, { headers }),
     fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}&select=empleado_id,bonos_usd,deducciones_usd,nota_bonos,nota_deducciones,comisiones_pos_usd,comisiones_despachos_ids,pagado`, { headers }),
     // Art. 119: para pagar el descanso hay que saber qué días trabaja cada quien
     // (vigentes al cierre del período) y cuáles son feriados no laborables.

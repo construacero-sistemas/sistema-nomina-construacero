@@ -38,9 +38,10 @@ export async function handleRegistrarAsistencia(request, env) {
   if (tenantError) return tenantError
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
-  const { empleadoId, fecha, horaEntrada, horaSalida, esFeriado, esAusencia, nota, horasDescanso, registroIdEsperado, estadoMarcajeEsperado } = body || {}
+  const { empleadoId, fecha, horaEntrada, horaSalida, esFeriado, esAusencia, ausenciaJustificada, nota, horasDescanso, registroIdEsperado, estadoMarcajeEsperado } = body || {}
   if (!empleadoId || !isValidUuid(empleadoId)) return jsonError('empleadoId inválido', 400, request)
   if (!booleanNominaValido(esFeriado) || !booleanNominaValido(esAusencia)) return jsonError('esFeriado y esAusencia deben ser booleanos', 400, request)
+  if (!booleanNominaValido(ausenciaJustificada)) return jsonError('ausenciaJustificada debe ser booleano', 400, request)
   if (!fechaNominaValida(fecha)) return jsonError('fecha inválida (YYYY-MM-DD)', 400, request)
   // Un registro manual de horas exige entrada Y salida: sin salida la fila se pagaba
   // como día completo con 0 h (contrato en server/lib/nominaUtils.js). La ausencia es
@@ -119,7 +120,7 @@ export async function handleRegistrarAsistencia(request, env) {
   } catch (error) { return jsonError(error.message || 'Horas inválidas', 400, request) }
 
   const payload = construirPayloadAsistenciaManual({
-    empleadoId, fecha, horaEntrada, horaSalida, esAusencia, esFeriado: holiday.row || esFeriado,
+    empleadoId, fecha, horaEntrada, horaSalida, esAusencia, ausenciaJustificada: ausenciaJustificada === true, esFeriado: holiday.row || esFeriado,
     nota, descanso, operador, calculation,
   })
   const existingResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?empleado_id=eq.${empleadoId}&fecha=eq.${fecha}${nominaTenantFilter(operador.cuenta_id)}&select=id,estado_marcaje,hora_entrada,hora_salida,es_ausencia&limit=1`, { headers })
@@ -136,13 +137,13 @@ export async function handleRegistrarAsistencia(request, env) {
     const entradaEsperada = existing.hora_entrada === null ? '&hora_entrada=is.null' : `&hora_entrada=eq.${encodeURIComponent(existing.hora_entrada)}`
     const salidaEsperada = existing.hora_salida === null ? '&hora_salida=is.null' : `&hora_salida=eq.${encodeURIComponent(existing.hora_salida)}`
     const ausenciaEsperada = `&es_ausencia=eq.${existing.es_ausencia}`
-    response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?id=eq.${existing.id}&estado_marcaje=eq.manual${entradaEsperada}${salidaEsperada}${ausenciaEsperada}${nominaTenantFilter(operador.cuenta_id)}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,horas_descanso,estado_marcaje,nota`, {
+    response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?id=eq.${existing.id}&estado_marcaje=eq.manual${entradaEsperada}${salidaEsperada}${ausenciaEsperada}${nominaTenantFilter(operador.cuenta_id)}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,ausencia_justificada,horas_descanso,estado_marcaje,nota`, {
       method: 'PATCH',
       headers: { ...svcHeaders(env), Prefer: 'return=representation' },
       body: JSON.stringify(payload),
     })
   } else {
-    response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,horas_descanso,estado_marcaje,nota`, {
+    response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,ausencia_justificada,horas_descanso,estado_marcaje,nota`, {
       method: 'POST',
       headers: { ...svcHeaders(env), Prefer: 'return=representation' },
       body: JSON.stringify(payload),

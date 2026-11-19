@@ -9,6 +9,10 @@ import { create } from 'zustand'
 const STORAGE_KEYS = {
   nomina: 'nomina_tasa_seleccionada_v1',
   finanzas: 'finanzas_tasa_seleccionada_v1',
+  // Regla del usuario (19/11/2026): el rol nómina elige una tasa SOLO PARA SÍ, que
+  // solo se usa para calcular los recibos y la hoja semanal. Vive en su equipo y
+  // nunca se guarda en el servidor ni cambia la tasa de los demás.
+  personal: 'nomina_tasa_personal_v1',
 }
 
 function getInitialState(storageKey) {
@@ -66,7 +70,10 @@ function crearStoreTasa(storageKey) {
 
 export const useTasaNominaStore = crearStoreTasa(STORAGE_KEYS.nomina)
 export const useTasaFinanzasStore = crearStoreTasa(STORAGE_KEYS.finanzas)
+export const useTasaPersonalStore = crearStoreTasa(STORAGE_KEYS.personal)
 
 export function storeTasaPorAmbito(ambito) {
-  return ambito === 'finanzas' ? useTasaFinanzasStore : useTasaNominaStore
+  if (ambito === 'finanzas') return useTasaFinanzasStore
+  if (ambito === 'personal') return useTasaPersonalStore
+  return useTasaNominaStore
 }

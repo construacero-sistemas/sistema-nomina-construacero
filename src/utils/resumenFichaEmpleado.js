@@ -3,7 +3,7 @@
 // reglas que la hoja semanal y el cálculo de la nómina:
 //   · mensual = diario × divisor (30)
 //   · semana  = diario × 7 (laborables + descanso, D-1)
-//   · sueldo semanal primero hasta (semana − bono); el bono es el resto, hasta $35 (D-3)
+//   · bono semanal fijo de $35 que sale de la semana; el sueldo semanal es el resto (nunca negativo)
 //   · hora extra: el monto fijo de Configuración si existe; si no, tarifa × factor
 import { esDescansoSinTrabajo } from '../../server/lib/nominaDescanso.js'
 import { BONO_SEMANAL_USD } from '../../server/lib/nominaHoja.js'

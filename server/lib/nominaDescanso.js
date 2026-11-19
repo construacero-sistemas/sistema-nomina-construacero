@@ -11,14 +11,14 @@
 //     («Días que trabaja»; el domingo nunca es laborable) y los feriados no
 //     laborables registrados en el calendario.
 //   - Cada uno se paga con el salario diario aunque no se haya trabajado.
-//   - Regla del usuario (18/11/2026), más estricta que el art. 119: cada día
-//     hábil que la persona falta en el bloque le DESCUENTA un día de descanso
-//     pagado de ese bloque (1 falta → pierde 1 descanso; 2 faltas → pierde 2;
-//     nunca más descansos de los que tiene la semana). `faltasPierde`
-//     (migración 263, por defecto 1) es desde cuántas faltas empieza a
-//     descontarse; 0 = nunca se descuenta.
+//   - Regla del usuario (19/11/2026): una falta sin justificativo descuenta SOLO
+//     el día faltado; el descanso de la semana se paga completo. Por eso
+//     `faltasPierde` (migración 263) vale 0 por defecto (migración 267). Si se
+//     configura otro número, desde esa falta cada día hábil faltado descuenta
+//     además un día de descanso pagado del bloque (nunca más de los que tiene).
 //   - Un día hábil cuenta como falta si ya pasó y no tiene asistencia pagada
-//     (sin registro o marcado como ausencia). Los días antes del ingreso o
+//     (sin registro o marcado como ausencia SIN justificativo). Una falta
+//     justificada (`ausencia_justificada`) se paga y nunca cuenta como falta. Los días antes del ingreso o
 //     posteriores a hoy no cuentan como falta ni como descanso pagado… salvo los
 //     descansos futuros del período, que se pagan: el período se liquida completo.
 // Pagar el TRABAJO hecho en un día de descanso o feriado (art. 120) lo sigue
@@ -42,9 +42,15 @@ function fechasDelRango(desde, hasta) {
   return fechas
 }
 
-/** ¿La fila de asistencia paga el día? (no es ausencia y tiene algo trabajado o registrado). */
+/** ¿La falta tiene justificativo? (se paga el día y no cuenta como falta). */
+export function esFaltaJustificada(fila) {
+  return Boolean(fila && fila.es_ausencia && fila.ausencia_justificada === true)
+}
+
+/** ¿La fila de asistencia paga el día? (no es ausencia, o es una falta justificada). */
 function asistenciaPagada(fila) {
-  if (!fila || fila.es_ausencia) return false
+  if (!fila) return false
+  if (fila.es_ausencia) return esFaltaJustificada(fila)
   return true
 }
 
@@ -61,9 +67,9 @@ function asistenciaPagada(fila) {
  * @returns {{ diasDescanso:number, diasDescansoPerdidos:number, semanasConPerdida:number, fechasDescanso:string[] }}
  */
 export function calcularDescansoRemunerado({
-  desde, hasta, diasLaborables, feriados = [], asistencias = [], hoy = null, fechaIngreso = null, faltasPierde = 1,
+  desde, hasta, diasLaborables, feriados = [], asistencias = [], hoy = null, fechaIngreso = null, faltasPierde = 0,
 }) {
-  const umbral = Number.isInteger(Number(faltasPierde)) && Number(faltasPierde) >= 0 ? Number(faltasPierde) : 1
+  const umbral = Number.isInteger(Number(faltasPierde)) && Number(faltasPierde) >= 0 ? Number(faltasPierde) : 0
   const feriadosNoLaborables = new Set((feriados || [])
     .filter(f => f && f.laborable !== true && FECHA_RE.test(String(f.fecha).slice(0, 10)))
     .map(f => String(f.fecha).slice(0, 10)))

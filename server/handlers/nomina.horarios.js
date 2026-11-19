@@ -156,9 +156,10 @@ export async function handleMarcarAusencia(request, env) {
   if (tenantError) return tenantError
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
-  const { empleadoId, quitar } = body || {}
+  const { empleadoId, quitar, justificada } = body || {}
   if (!empleadoId || !isValidUuid(empleadoId)) return jsonError('empleadoId inválido', 400, request)
   if (!booleanNominaValido(quitar)) return jsonError('quitar inválido', 400, request)
+  if (!booleanNominaValido(justificada)) return jsonError('justificada inválido', 400, request)
 
   const mark = nowInNominaZone(env)
   const period = await periodoBloqueadoParaFecha(env, headers, operador, mark.fecha)
@@ -213,14 +214,14 @@ export async function handleMarcarAusencia(request, env) {
   } catch (error) { return jsonError(error.message || 'Horas inválidas', 400, request) }
   const payload = construirPayloadAsistenciaManual({
     empleadoId, fecha: mark.fecha, horaEntrada: null, horaSalida: null,
-    esAusencia: true, esFeriado: !!holiday.row, nota: null, descanso: 0, operador, calculation,
+    esAusencia: true, ausenciaJustificada: justificada === true, esFeriado: !!holiday.row, nota: null, descanso: 0, operador, calculation,
   })
-  const creado = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?select=id,empleado_id,fecha,horas_trabajadas,es_ausencia,estado_marcaje,nota`, {
+  const creado = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?select=id,empleado_id,fecha,horas_trabajadas,es_ausencia,ausencia_justificada,estado_marcaje,nota`, {
     method: 'POST', headers: { ...svcHeaders(env), Prefer: 'return=representation' }, body: JSON.stringify(payload),
   })
   if (!creado.ok) return jsonError('No se pudo registrar la ausencia. Actualiza los marcajes del día e inténtalo de nuevo.', creado.status === 409 ? 409 : 500, request)
   const [registro] = await creado.json()
-  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'MARCAR_AUSENCIA', entidadTipo: 'registro_asistencia', entidadId: registro?.id || null, meta: { empleadoId, fecha: mark.fecha }, ip }).catch(() => {})
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'MARCAR_AUSENCIA', entidadTipo: 'registro_asistencia', entidadId: registro?.id || null, meta: { empleadoId, fecha: mark.fecha, justificada: justificada === true }, ip }).catch(() => {})
   return json({ ok: true, registro }, 201, request)
 }
 
@@ -245,8 +246,9 @@ export async function handleAnularEntradaComoAusencia(request, env) {
 
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
-  const { registroId, motivo, resultadoEsperado = 'ausencia' } = body || {}
+  const { registroId, motivo, resultadoEsperado = 'ausencia', justificada } = body || {}
   if (!registroId || !isValidUuid(registroId)) return jsonError('registroId inválido', 400, request)
+  if (!booleanNominaValido(justificada)) return jsonError('justificada inválido', 400, request)
   if (typeof motivo !== 'string' || !textoNominaValido(motivo, 500) || motivo.trim().length < 3) {
     return jsonError('Indica el motivo de la anulación (mínimo 3 caracteres)', 400, request)
   }
@@ -354,6 +356,7 @@ export async function handleAnularEntradaComoAusencia(request, env) {
     es_domingo: calculoAusencia.es_domingo,
     es_feriado: calculoAusencia.es_feriado,
     es_ausencia: true,
+    ausencia_justificada: justificada === true,
     entrada_marcada_en: null,
     entrada_por: null,
     entrada_idempotency_key: null,
@@ -363,7 +366,7 @@ export async function handleAnularEntradaComoAusencia(request, env) {
     nota: motivo.trim(),
     registrado_por: operador.id,
   }
-  const patch = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?${filtroLeido}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,estado_marcaje,es_ausencia,nota`, {
+  const patch = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?${filtroLeido}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,estado_marcaje,es_ausencia,ausencia_justificada,nota`, {
     method: 'PATCH',
     headers: { ...svcHeaders(env), Prefer: 'return=representation' },
     body: JSON.stringify(cambios),
@@ -388,6 +391,7 @@ export async function handleAnularEntradaComoAusencia(request, env) {
       entradaAnulada,
       horasAnuladas,
       estadoNuevo: 'ausencia',
+      justificada: justificada === true,
     },
     ip,
   }).catch(() => {})

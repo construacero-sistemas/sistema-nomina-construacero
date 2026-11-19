@@ -128,3 +128,21 @@ describe('useMonedaNomina — Finanzas ignora la tasa manual', () => {
     await waitFor(() => expect(finanzas.result.current.tasaActiva).toBe(966.54))
   })
 })
+
+// Regla del usuario (19/11/2026): el rol nómina usa una tasa SOLO PARA SÍ en los
+// recibos y la hoja semanal; nunca se envía al servidor ni cambia la general.
+describe('useMonedaNomina — tasa personal', () => {
+  it('fija la tasa manual personal en el equipo, sin llamar al servidor ni tocar la general', async () => {
+    const { useTasaPersonalStore } = await import('../../store/useTasaNominaStore.js')
+    useTasaPersonalStore.setState({ tipoTasa: 'bcv_usd', tasaManual: 0 })
+    apiMock.get.mockResolvedValue({ tasa: { valor: 900 } })
+    marketMock.usd = 857.01
+    const { result } = renderHook(() => useMonedaNomina({ ambito: 'personal' }), { wrapper })
+    await act(async () => { await result.current.fijarTasaManual(950) })
+    await waitFor(() => expect(result.current.tasaActiva).toBe(950))
+    expect(apiMock.post).not.toHaveBeenCalled()
+    expect(apiMock.get).not.toHaveBeenCalled()
+    expect(useTasaNominaStore.getState().tasaManual).toBe(0)
+    expect(useTasaNominaStore.getState().tipoTasa).toBe('bcv_usd')
+  })
+})

@@ -213,6 +213,9 @@ describe('Marcaje real de hoy', () => {
     const confirmar = screen.getByRole('button', { name: 'Confirmar ausencia' })
     expect(confirmar).toBeDisabled()
     fireEvent.change(screen.getByLabelText(/Motivo de la anulación/), { target: { value: 'Entrada marcada por error; empleado ausente' } })
+    // Regla del usuario (19/11/2026): sin elegir si trae justificativo no se confirma.
+    expect(confirmar).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /Sí, con justificativo/ }))
     expect(confirmar).toBeEnabled()
     fireEvent.click(confirmar)
 
@@ -220,6 +223,7 @@ describe('Marcaje real de hoy', () => {
       registroId: 'attendance-2',
       motivo: 'Entrada marcada por error; empleado ausente',
       resultadoEsperado: 'ausencia',
+      justificada: true,
     }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Anular entrada y registrar ausencia' })).not.toBeInTheDocument())
   })
@@ -245,11 +249,12 @@ describe('Marcaje real de hoy', () => {
     fireEvent.click(screen.getByRole('button', { name: 'No vino — anular entrada — Niki Ramirez' }))
     expect(screen.getByRole('dialog', { name: 'Anular entrada' })).toBeInTheDocument()
     expect(screen.getByText(/el día quedará sin registro/)).toBeInTheDocument()
+    expect(screen.queryByText(/¿Trae justificativo\?/)).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText(/Motivo de la anulación/), { target: { value: 'Marcado por error' } })
     fireEvent.click(screen.getByRole('button', { name: 'Anular entrada' }))
 
     await waitFor(() => expect(mocks.anularAusencia).toHaveBeenCalledExactlyOnceWith({
-      registroId: 'attendance-9', motivo: 'Marcado por error', resultadoEsperado: 'sin-registro',
+      registroId: 'attendance-9', motivo: 'Marcado por error', resultadoEsperado: 'sin-registro', justificada: false,
     }))
   })
 
@@ -259,6 +264,7 @@ describe('Marcaje real de hoy', () => {
     abrirMasAcciones('María Rodríguez')
     fireEvent.click(screen.getByRole('button', { name: 'No vino — marcar ausente — María Rodríguez' }))
     fireEvent.change(screen.getByLabelText(/Motivo de la anulación/), { target: { value: 'Error de dedo' } })
+    fireEvent.click(screen.getByRole('button', { name: /No, sin justificativo/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar ausencia' }))
 
     expect(await screen.findByText('Hoy no es laborable para esta persona')).toBeInTheDocument()
@@ -340,7 +346,11 @@ describe('Marcaje real de hoy', () => {
 
     expect(screen.getByRole('button', { name: 'Marcar ausente a Alejandra Hidalgo' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Marcar ausente a Alejandra Hidalgo' }))
-    await waitFor(() => expect(mocks.ausencia).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-1', quitar: false }))
+    // Regla del usuario (19/11/2026): antes de registrar la falta se pregunta por el justificativo.
+    expect(mocks.ausencia).not.toHaveBeenCalled()
+    expect(screen.getByRole('group', { name: '¿Alejandra Hidalgo trae justificativo?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /No, sin justificativo.*para Alejandra Hidalgo/ }))
+    await waitFor(() => expect(mocks.ausencia).toHaveBeenCalledExactlyOnceWith({ empleadoId: 'emp-1', quitar: false, justificada: false }))
 
     // Tras refrescar, la persona aparece en ausencia y el único camino de vuelta es deshacer.
     mocks.query = {
