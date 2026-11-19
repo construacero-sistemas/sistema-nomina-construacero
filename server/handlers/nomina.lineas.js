@@ -32,7 +32,7 @@ export async function handleGetLineas(request, env) {
 
   const selectBase = 'id,empleado_id,cargo_snap,salario_dia_usd_snap,horas_jornada_snap,' +
     'dias_trabajados,horas_normales,horas_extra,dias_sabado,dias_feriado,dias_ausencia,dias_descanso,' +
-    'monto_normal_usd,monto_extra_usd,monto_sabado_usd,monto_feriado_usd,bonos_usd,' +
+    'monto_normal_usd,monto_extra_usd,monto_sabado_usd,monto_feriado_usd,bonos_usd,bono_semanal_usd,sueldo_semanal_usd,' +
     'deducciones_usd,comisiones_pos_usd,comisiones_despachos_ids,total_bruto_usd,total_neto_usd,nota_bonos,nota_deducciones,pagado,' +
     'pagado_en,pagado_por_nombre,referencia_pago,tasa_pago_usd_ves,total_pagado_bs,' +
     'empleado:clientes!empleado_id(id,nombre,rif)'
@@ -42,14 +42,15 @@ export async function handleGetLineas(request, env) {
   const selectConDescuentos = `${selectBase},descuentos:nomina_descuentos(id,motivo,detalle,monto_usd,creado_en)`
   const urlLineas = select => `${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}` +
     `${nominaTenantFilter(operador.cuenta_id)}&select=${select}&order=empleado(nombre).asc&limit=500`
-  // Si a la base le falta una migración (257: descuentos, 262: dias_descanso),
-  // se retira solo lo que falta y el listado sigue funcionando.
+  // Si a la base le falta una migración (257: descuentos, 262: dias_descanso,
+  // 268: bono y sueldo semanal), se retira solo lo que falta y el listado sigue.
   let select = selectConDescuentos
   let response = await fetch(urlLineas(select), { headers })
-  for (let intento = 0; intento < 2 && response.status === 400; intento += 1) {
+  for (let intento = 0; intento < 3 && response.status === 400; intento += 1) {
     const detalle = await response.text().catch(() => '')
     if (detalle.includes('nomina_descuentos')) select = select.replace(/,descuentos:nomina_descuentos\([^)]*\)/, '')
     else if (detalle.includes('dias_descanso')) select = select.replace(',dias_descanso', '')
+    else if (detalle.includes('bono_semanal_usd') || detalle.includes('sueldo_semanal_usd')) select = select.replace(',bono_semanal_usd,sueldo_semanal_usd', '')
     else break
     response = await fetch(urlLineas(select), { headers })
   }

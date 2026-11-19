@@ -7,7 +7,7 @@ import { calcularLineaNomina } from '../nominaUtils.js'
 describe('reglasLeyDeConfig', () => {
   it('sin configuración usa la ley vigente (LOTTT 2012)', () => {
     expect(reglasLeyDeConfig(undefined)).toEqual({
-      divisorMensual: 30, diasLaborablesDefault: [1, 2, 3, 4, 5], descansoRemunerado: true, faltasPierdeDescanso: 0,
+      divisorMensual: 30, diasLaborablesDefault: [1, 2, 3, 4, 5], descansoRemunerado: true, faltasPierdeDescanso: 0, bonoSemanalUsd: 35,
     })
     expect(REGLAS_LEY_DEFAULT.divisorMensual).toBe(30)
   })
@@ -15,9 +15,9 @@ describe('reglasLeyDeConfig', () => {
   it('toma los valores guardados por la empresa', () => {
     const r = reglasLeyDeConfig({
       nomina_divisor_mensual: 31, nomina_dias_laborables_default: [1, 2, 3, 4, 5, 6],
-      nomina_descanso_remunerado: false, nomina_faltas_pierde_descanso: 0,
+      nomina_descanso_remunerado: false, nomina_faltas_pierde_descanso: 0, nomina_bono_semanal_usd: '40.5',
     })
-    expect(r).toEqual({ divisorMensual: 31, diasLaborablesDefault: [1, 2, 3, 4, 5, 6], descansoRemunerado: false, faltasPierdeDescanso: 0 })
+    expect(r).toEqual({ divisorMensual: 31, diasLaborablesDefault: [1, 2, 3, 4, 5, 6], descansoRemunerado: false, faltasPierdeDescanso: 0, bonoSemanalUsd: 40.5 })
   })
 
   it('un valor guardado inválido vuelve al de la ley en vez de romper el cálculo', () => {
@@ -87,5 +87,18 @@ describe('reglas aplicadas al cálculo', () => {
     expect(r.monto_normal_usd).toBe(64)   // (6 trabajados + 2 descanso) × 8
     expect(r.monto_sabado_usd).toBe(0)    // factor 1: sin recargo, el día ya va en el normal
     expect(r.monto_extra_usd).toBe(10)    // 4 h × 1 × 2,5
+  })
+})
+
+// Regla del usuario (19/11/2026): bono semanal editable (migración 268).
+describe('bono semanal editable', () => {
+  it('valida el monto: acepta decimales con coma y rechaza negativos o vacíos', () => {
+    expect(validarReglasLey({ nomina_bono_semanal_usd: '37,5' }).fields.nomina_bono_semanal_usd).toBe(37.5)
+    expect(validarReglasLey({ nomina_bono_semanal_usd: 0 }).fields.nomina_bono_semanal_usd).toBe(0)
+    expect(validarReglasLey({ nomina_bono_semanal_usd: -1 }).error).toMatch(/bono semanal/i)
+    expect(validarReglasLey({ nomina_bono_semanal_usd: '' }).error).toMatch(/bono semanal/i)
+  })
+  it('un bono guardado inválido vuelve a $35', () => {
+    expect(reglasLeyDeConfig({ nomina_bono_semanal_usd: 'abc' }).bonoSemanalUsd).toBe(35)
   })
 })

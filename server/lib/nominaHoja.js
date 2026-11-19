@@ -9,11 +9,49 @@ import { esJornadaAbierta } from './nominaUtils.js'
 import { esDescansoSinTrabajo } from './nominaDescanso.js'
 import { trabajaEnFecha } from './nominaHorarios.js'
 
-/** D-2: bono semanal fijo (la antigua tabla «sueldo legal»: 25 + 10). */
-export const BONO_SEMANAL_USD = 35
+import { REGLAS_LEY_DEFAULT } from './nominaReglasLey.js'
+
+/** Bono semanal por defecto ($35). El vigente se edita en Configuración (migración 268). */
+export const BONO_SEMANAL_USD = REGLAS_LEY_DEFAULT.bonoSemanalUsd
 
 const r2 = n => Math.round(Number(n || 0) * 100) / 100
 const num = n => (Number.isFinite(Number(n)) ? Number(n) : 0)
+const MS_DIA = 24 * 60 * 60 * 1000
+
+/** Semanas del período (bloques de 7 días, mínimo 1): una quincena lleva dos bonos. */
+export function semanasDelPeriodo(desde, hasta) {
+  const inicio = Date.parse(`${String(desde).slice(0, 10)}T00:00:00Z`)
+  const fin = Date.parse(`${String(hasta).slice(0, 10)}T00:00:00Z`)
+  if (!Number.isFinite(inicio) || !Number.isFinite(fin) || fin < inicio) return 1
+  return Math.max(1, Math.ceil((Math.round((fin - inicio) / MS_DIA) + 1) / 7))
+}
+
+/**
+ * Reparto de la semana de un recibo entre sueldo y bono (regla del usuario,
+ * 19/11/2026): la semana son los días laborables trabajados más los días pagados
+ * sin trabajar (descansos, feriados y faltas justificadas). El bono sale de ahí,
+ * nunca de las horas extra ni del descanso trabajado, y no se suma: el sueldo es
+ * lo que queda. Si la semana no alcanza, el bono es la semana y el sueldo 0.
+ */
+export function repartoSemana({ linea, diasDescansoTrabajados = 0, bonoSemanal = BONO_SEMANAL_USD, semanas = 1 }) {
+  const sueldoDia = num(linea?.salario_dia_usd_snap)
+  const diasTrabajados = Math.max(0, num(linea?.dias_trabajados) - diasDescansoTrabajados)
+  const semana = r2((diasTrabajados + num(linea?.dias_descanso)) * sueldoDia)
+  const bonoTope = r2(Math.max(0, num(bonoSemanal)) * Math.max(1, semanas))
+  const bono = semana > 0 ? r2(Math.min(bonoTope, semana)) : 0
+  return { diasTrabajados, semana, bono, sueldo: r2(semana - bono) }
+}
+
+/** Cuántos días de descanso o feriado trabajó cada persona (mapa empleado → días). */
+export function contarDescansosTrabajados(asistencias = [], diasPorEmpleado = new Map()) {
+  const conteo = new Map()
+  for (const fila of asistencias) {
+    if (esDescansoTrabajado(fila, diasPorEmpleado.get(fila.empleado_id))) {
+      conteo.set(fila.empleado_id, (conteo.get(fila.empleado_id) || 0) + 1)
+    }
+  }
+  return conteo
+}
 
 /**
  * ¿Es un día de descanso o feriado que la persona SÍ trabajó? Misma regla que el
@@ -32,35 +70,29 @@ export function esDescansoTrabajado(fila, diasLaborables) {
  * @param {object[]} p.asistencias     filas de `registro_asistencia` del período
  * @param {Map<string, number[]>} p.diasPorEmpleado  semana laboral de cada persona
  * @param {number} [p.divisor=30]      divisor del sueldo mensual (art. 113)
- * @param {number} [p.bonoSemanal]     monto del bono semanal fijo
+ * @param {number} [p.bonoSemanal]     bono semanal vigente (para recibos sin bono guardado)
+ * @param {number} [p.semanas=1]       semanas del período (el bono se aplica por semana)
  */
-export function armarHojaSemanal({ lineas = [], asistencias = [], diasPorEmpleado = new Map(), divisor = 30, bonoSemanal = BONO_SEMANAL_USD }) {
-  const descansosTrabajados = new Map()
-  for (const fila of asistencias) {
-    const dias = diasPorEmpleado.get(fila.empleado_id)
-    if (esDescansoTrabajado(fila, dias)) {
-      descansosTrabajados.set(fila.empleado_id, (descansosTrabajados.get(fila.empleado_id) || 0) + 1)
-    }
-  }
+export function armarHojaSemanal({ lineas = [], asistencias = [], diasPorEmpleado = new Map(), divisor = 30, bonoSemanal = BONO_SEMANAL_USD, semanas = 1 }) {
+  const descansosTrabajados = contarDescansosTrabajados(asistencias, diasPorEmpleado)
 
   const filas = lineas.map(linea => {
     const sueldoDia = num(linea.salario_dia_usd_snap)
     const diasDescansoTrabajados = descansosTrabajados.get(linea.empleado_id) || 0
-    const diasTrabajados = Math.max(0, num(linea.dias_trabajados) - diasDescansoTrabajados)
     const diasDescansoPagados = num(linea.dias_descanso)
-    // D-1: la semana son los días laborables trabajados más los descansos pagados.
-    const semana = r2((diasTrabajados + diasDescansoPagados) * sueldoDia)
+    // D-1: la semana son los días laborables trabajados más los días pagados sin trabajar.
+    const reparto = repartoSemana({ linea, diasDescansoTrabajados, bonoSemanal, semanas })
+    const { diasTrabajados, semana } = reparto
     // Desglose informativo de la semana (usuario, 18/11/2026): con $240 al mes y
     // 5 días trabajados, «5 días = $40» y «2 días de descanso = $16». El descanso
     // se saca por diferencia para que ambos sumen exactamente la semana.
     const valorDiasTrabajados = r2(diasTrabajados * sueldoDia)
     const valorDescansoPagado = r2(semana - valorDiasTrabajados)
-    // Regla del usuario (18/11/2026, reemplaza a D-3): el bono semanal SIEMPRE es
-    // $35 y sale de la semana (días trabajados + descansos pagados), nunca de las
-    // horas extra ni del descanso trabajado. El sueldo semanal es lo que queda: con
-    // una falta baja el sueldo, no el bono. Solo si la semana no llega a $35 el bono
-    // es la semana entera y el sueldo queda en 0 (no hay sueldo negativo).
-    const bono = semana > 0 ? r2(Math.min(num(bonoSemanal), semana)) : 0
+    // Bono semanal (regla del usuario, 19/11/2026): sale de la semana y no se suma.
+    // El recibo guarda el bono que le tocó al calcular el período (migración 268);
+    // los recibos anteriores lo calculan con el bono vigente × semanas del período.
+    const bonoGuardado = linea.bono_semanal_usd != null && Number.isFinite(Number(linea.bono_semanal_usd))
+    const bono = bonoGuardado ? r2(Math.min(num(linea.bono_semanal_usd), semana)) : reparto.bono
     const totalExtras = r2(linea.monto_extra_usd)
     const otrosPagos = r2(num(linea.bonos_usd) + num(linea.comisiones_pos_usd))
     const totalACobrar = r2(linea.total_bruto_usd)

@@ -6,6 +6,30 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Regla: bono semanal editable, guardado en cada recibo y por semana — 19/11/2026
+
+Petición del usuario: «hazlo así, ya que es correcto que el bono sale del sueldo y no se suma» (confirmación de la propuesta: bono editable, guardado por recibo, por semana y separado en el recibo).
+
+1. **Archivos:** `supabase/migrations/268_nomina_bono_semanal_configurable.sql` (nueva), `server/lib/nominaReglasLey.js`, `server/lib/nominaHoja.js`, `server/handlers/nomina.periodos.js`, `nomina.hoja.js`, `nomina.lineas.js`, `src/components/nomina/ReglasPagoPanel.jsx`, `HojaSemanal.jsx`, `LiquidacionModal.jsx`, `src/utils/descansoRecibo.js`, `src/services/pdf/nominaReciboPDF.impl.js`, `AGENT.md` y pruebas.
+2. **Comportamiento:**
+   - el bono ya no está fijo en el código: Configuración → «Reglas de pago y de la ley» → «Bono semanal» (por defecto $35; entre $0 y $10.000; «Valores de la ley» no lo toca porque no es de la ley). Solo lo guarda quien puede guardar las reglas;
+   - se aplica por cada semana del período (bloques de 7 días): una quincena lleva dos bonos;
+   - al calcular el período, cada recibo guarda `bono_semanal_usd` y `sueldo_semanal_usd`. Los pagados no se recalculan, así que conservan el suyo. Los recibos calculados antes de la 268 siguen mostrándose con el bono vigente;
+   - la hoja semanal usa el bono guardado del recibo; el texto de ayuda indica el bono por semana y cuántas semanas;
+   - recibo en pantalla y PDF: «Sueldo semanal», «Bono semanal» y, si los hay, «Descanso o feriado trabajado», en vez de «Días laborados» + «Descanso…». Los recibos anteriores conservan los conceptos de siempre. Los totales no cambian: el bono no se suma.
+3. **Pruebas:** nuevas en `nominaHoja.test.js` (semanas del período, quincena con dos bonos, tope en la semana, bono guardado manda sobre el vigente, recibos sin bono guardado), `nominaReglasLey.test.js` (validación y respaldo a $35), `descansoRecibo.test.js` (nuevo: reparto del recibo), `nomina.flujo.test.js` (el cálculo guarda bono $35 y sueldo $25) y `ReglasPagoPanel.test.jsx`. `npm run verify`: en verde (1601 pruebas, PGlite con 63 migraciones, responsive, build y presupuesto).
+4. **Pendientes:** aplicar la migración 268 en producción antes de publicar y recalcular los períodos abiertos para que sus recibos guarden el bono. Sin commit, push ni deploy.
+
+## Publicación: faltas con o sin justificativo, bono $35, tasa en Bs y tasa propia del rol nómina — 19/11/2026
+
+Petición del usuario: «Sí, push y migración».
+
+1. **Migración 267 en producción** (`wlxcclidnwketrghqaxs`) con el token de la Management API del `.env` (procedimiento de `OPERACIONES.md`): guardia de solo lectura (última versión 266, sin la columna, umbral 1, 1 ausencia), respaldo en `local-backups/backup_pre_267_20261119.json` (umbral por cuenta, ausencias y triggers), aplicación en `BEGIN/COMMIT` con registro de la versión 267. Verificado: `ausencia_justificada boolean not null default false`, trigger `trg_registro_asistencia_limpiar_justificada`, umbral 0 y su valor por defecto 0.
+2. **Staging no se migró:** `wishglzpmcshyvlgpjxj` va atrasado (versiones con fecha hasta el 04/11/2026, sin las 257–266; no tiene `nomina_faltas_pierde_descanso`), así que la 267 sola no aplica. Ponerlo al día queda pendiente.
+3. **Código:** commit `f2ae5c8` en `nomina/tasa-bolivares`, PR #24 fusionado en `main` (`1d66b1b`) con la cuenta `construacero-sistemas`. Los PDF de reportes de octubre en `docs/` quedaron fuera (sin seguimiento).
+4. **Humo de solo lectura:** Vercel publicó en ~45 s; el bundle servido contiene la tasa personal; `/`, `/nomina`, `/finanzas` y `/api/rates` → 200; `/api/auth/me` sin sesión → 401.
+5. **Pendientes:** recalcular los períodos abiertos para aplicar la regla nueva de faltas; revisar en el iPhone con un usuario de rol nómina; poner staging al día.
+
 ## Regla: la tasa general solo la cambia el jefe; el rol nómina tiene su propia tasa para recibos y hoja — 19/11/2026
 
 Petición del usuario (regla): «quítale de acá el cambio de tasa a nómina; allí en el header debe aparecer solo la tasa como info, pero no para cambiarla en el rol de nómina; el rol de nómina debe poder cambiar la tasa solo para él mismo, solo para calcular los recibos y la hoja semanal».

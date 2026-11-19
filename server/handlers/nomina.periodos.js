@@ -6,6 +6,7 @@ import { calcularLineaNomina, esJornadaAbierta } from '../lib/nominaUtils.js'
 import { nominaTenantFilter } from '../lib/nominaTenant.js'
 import { diasLaborablesResueltos, fetchDiasLaborablesPorEmpleado } from '../lib/nominaHorarios.js'
 import { reglasLeyDeConfig } from '../lib/nominaReglasLey.js'
+import { contarDescansosTrabajados, repartoSemana, semanasDelPeriodo } from '../lib/nominaHoja.js'
 import { requireCapacidad } from '../lib/permissions.js'
 import { COLUMNAS_SEMANA, nombreSemana, rangoSemana, semanaDeConfig } from '../lib/nominaSemana.js'
 import { fechaNominaValida, fechaOperativaNomina, fetchConfigNomina, r4, svcHeaders, tenantGuard, textoNominaValido } from './nomina.shared.js'
@@ -184,6 +185,12 @@ export async function handleCalcularPeriodo(request, env) {
     byEmployee.get(row.empleado_id).push(row)
   }
   const previousByEmployee = new Map(previous.map(row => [row.empleado_id, row]))
+  // Bono semanal (regla del usuario, 19/11/2026): sale de la semana y no se suma.
+  // Cada recibo guarda el bono y el sueldo semanal que le tocaron (migración 268).
+  const diasPorEmpleado = new Map(employees.map(config => [config.empleado_id,
+    (horarios.porEmpleado.get(config.empleado_id) || diasLaborablesResueltos([], null, reglas.diasLaborablesDefault)).dias]))
+  const descansosTrabajados = contarDescansosTrabajados(attendance, diasPorEmpleado)
+  const semanas = semanasDelPeriodo(period.desde, period.hasta)
   const lines = employees.map(config => {
     const old = previousByEmployee.get(config.empleado_id) || {}
     const calculation = calcularLineaNomina(
@@ -206,10 +213,18 @@ export async function handleCalcularPeriodo(request, env) {
         faltasPierde: reglas.faltasPierdeDescanso,
       },
     )
+    const reparto = repartoSemana({
+      linea: calculation,
+      diasDescansoTrabajados: descansosTrabajados.get(config.empleado_id) || 0,
+      bonoSemanal: reglas.bonoSemanalUsd,
+      semanas,
+    })
     return {
       periodo_id: periodoId,
       empleado_id: config.empleado_id,
       ...calculation,
+      bono_semanal_usd: reparto.bono,
+      sueldo_semanal_usd: reparto.sueldo,
       nota_bonos: old.nota_bonos || null,
       nota_deducciones: old.nota_deducciones || null,
       comisiones_despachos_ids: old.comisiones_despachos_ids || [],
@@ -223,11 +238,19 @@ export async function handleCalcularPeriodo(request, env) {
   if (toInsert.length) {
     const upsert = filas => fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?on_conflict=periodo_id,empleado_id`, { method: 'POST', headers: svcHeaders(env, 'resolution=merge-duplicates,return=minimal'), body: JSON.stringify(filas) })
     let insertResponse = await upsert(toInsert)
-    // Si la base aún no tiene la columna `dias_descanso` (migración 262), el
-    // dinero ya va en `monto_normal_usd`: se guarda sin el conteo informativo.
-    if (!insertResponse.ok && (await insertResponse.text().catch(() => '')).includes('dias_descanso')) {
-      console.warn('[nomina] Falta la migración 262 (dias_descanso); se guarda sin el conteo de descanso')
-      insertResponse = await upsert(toInsert.map(({ dias_descanso: _omitido, ...resto }) => resto))
+    // Columnas informativas que una base atrasada puede no tener: 262 (dias_descanso)
+    // y 268 (bono y sueldo semanal). El dinero ya va en los montos: se guarda sin ellas.
+    let filas = toInsert
+    for (let intento = 0; intento < 2 && !insertResponse.ok; intento += 1) {
+      const detalle = await insertResponse.text().catch(() => '')
+      if (detalle.includes('bono_semanal_usd') || detalle.includes('sueldo_semanal_usd')) {
+        console.warn('[nomina] Falta la migración 268 (bono semanal); se guarda sin el reparto sueldo/bono')
+        filas = filas.map(({ bono_semanal_usd: _b, sueldo_semanal_usd: _s, ...resto }) => resto)
+      } else if (detalle.includes('dias_descanso')) {
+        console.warn('[nomina] Falta la migración 262 (dias_descanso); se guarda sin el conteo de descanso')
+        filas = filas.map(({ dias_descanso: _omitido, ...resto }) => resto)
+      } else break
+      insertResponse = await upsert(filas)
     }
     if (!insertResponse.ok) return jsonError('No se pudieron generar las líneas de nómina', 500, request)
   }

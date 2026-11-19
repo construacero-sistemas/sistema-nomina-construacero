@@ -54,7 +54,7 @@ describe('ReglasPagoPanel', () => {
       nomina_factor_sabado: 1, nomina_monto_sabado_usd: null,
       nomina_factor_feriado: 1, nomina_monto_feriado_usd: null, nomina_feriado_modo: 'factor',
       nomina_divisor_mensual: 30, nomina_dias_laborables_default: [1, 2, 3, 4, 5],
-      nomina_descanso_remunerado: true, nomina_faltas_pierde_descanso: 0,
+      nomina_descanso_remunerado: true, nomina_faltas_pierde_descanso: 0, nomina_bono_semanal_usd: 35,
     })
   })
 
