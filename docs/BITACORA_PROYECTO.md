@@ -25,6 +25,16 @@ Petición del usuario: «corrige el contraste acá» (captura del aviso con el b
 - **Pruebas:** `npx vitest run compat/components/ui/__tests__/AvisoActualizacion.test.jsx` → 4/4; `npm run test:responsive` → todas las reglas cumplen.
 - **Pendiente:** verlo en la app cuando salga la próxima versión (el aviso solo aparece con una actualización real).
 
+## Publicación: cerrar marca todo pagado, recibos al día solos, aviso e historial — 19/11/2026
+
+Petición del usuario: «al finalizar commit y push al main» y «deploy a produccion».
+
+1. **Migración 269 en producción** (Management API, procedimiento de `OPERACIONES.md`): guardia (última 268, sin la función, períodos 12–18/11 y 19–25/11 abiertos), respaldo en `local-backups/backup_pre_269_20261119.json` (períodos y recibos), aplicación en `BEGIN/COMMIT` con versión 269. Verificado: función `nomina_cerrar_marcar_pagado` (solo `service_role`, `anon` sin permiso) y tipos `cerrar_nomina`/`reabrir_nomina` en `finanzas_operaciones`.
+2. **Prueba real sin cambios:** en un bloque que termina con excepción (se revierte todo) se cerró el período 12–18/11: marcó 10 recibos pagados y la reapertura los desmarcó y lo dejó abierto. Después: ambos períodos siguen abiertos, 0 recibos pagados y ninguna operación de prueba guardada.
+3. **Código:** commit `531e31e` en `nomina/hoja-autocalculo`, unido con `main` (conflicto solo en la bitácora con el PR #26 del contraste del aviso; se conservaron todas las entradas; el `AvisoActualizacion.jsx` local era idéntico al de `main`). PR #27 fusionado en `main` (`91d2584`) con `construacero-sistemas` tras pasar `verify` de GitHub Actions.
+4. **Deploy:** Vercel publicó producción desde `main` («success»). **Humo de solo lectura:** `/`, `/nomina`, `/finanzas`, `/api/rates` → 200; `/api/auth/me` y `/api/nomina/empleados/recibos` sin sesión → 401. Los bloques servidos traen «Cerrar y marcar pagado» (Períodos), «Todos los recibos PDF» (detalle del período) y la consulta de recibos del trabajador (Empleados).
+5. **Pendientes:** la semana 12–18/11 ya terminó: al abrir Períodos aparece el aviso; revisarla y pulsar «Cerrar y marcar pagado». Revisar en el iPhone. Staging sigue atrasado en migraciones.
+
 ## Regla: cerrar el período es marcarlo pagado + aviso de semana terminada + historial de recibos — 19/11/2026
 
 Peticiones del usuario: «las tres mejoras» (aviso de semana terminada, cierre seguro, historial completo) y, como regla, «al cerrar se paga todo, no se paga aparte»; «solo marcar pagado y ya, por ahora no debe pedir forma de pago ni nada extra».
@@ -35,8 +45,8 @@ Peticiones del usuario: «las tres mejoras» (aviso de semana terminada, cierre 
    - **Reabrir:** en el detalle de un período pagado, «Reabrir período» (con confirmación) deshace la marca (`reabrir_nomina`) si ningún recibo tiene pago en Finanzas. Los recibos marcados al cerrar ya no muestran «Revertir pago» (no tienen pago que revertir).
    - **Aviso de semana terminada:** Períodos muestra un aviso con las semanas que ya terminaron y siguen abiertas; la tarjeta dice «La semana terminó · ciérrala para marcarla pagada» y resalta el botón.
    - **Historial:** «Todos los recibos PDF» en el detalle del período (un recibo por página, generado en el navegador). En Empleados, botón «Recibos» en cada ficha: lista de sus recibos (10 por página, Anterior/Siguiente) con estado, neto en $ y Bs pagados, y descarga del PDF de cada semana.
-3. **Pruebas:** nuevas `nomina.cierre.test.js` (cierra tras poner al día, 409 con jornadas, mensajes claros, no recierra pagado, reabrir y su bloqueo por pagos en Finanzas), `nomina.recibos-empleado.test.js`, `RecibosEmpleadoModal.test.jsx`, PDF de todos los recibos; ajustadas `nomina.tasas.test.js`, `nomina.flujo.test.js`, `TabPeriodos.test.jsx`. `npm run verify`: ver abajo.
-4. **Pendientes:** aplicar la migración 269 en producción antes de publicar. Los pagos de nómina ya no llegan a Finanzas como egreso: si más adelante se quiere, se agrega la forma de pago al cierre. `compat/components/ui/AvisoActualizacion.jsx` aparece modificado y no es de este cambio. Sin commit, push ni deploy.
+3. **Pruebas:** nuevas `nomina.cierre.test.js` (cierra tras poner al día, 409 con jornadas, mensajes claros, no recierra pagado, reabrir y su bloqueo por pagos en Finanzas), `nomina.recibos-empleado.test.js`, `RecibosEmpleadoModal.test.jsx`, PDF de todos los recibos; ajustadas `nomina.tasas.test.js`, `nomina.flujo.test.js`, `TabPeriodos.test.jsx`, `PeriodoDetalleModal.*.test.jsx` y el flujo determinista (`scripts/test-nomina-deterministic.mjs`: cierre que marca pagado, reapertura, y el pago desde Finanzas sobre un período «cerrado» antiguo). `scripts/check-project.mjs`: Períodos ya no exige un gate de pago. `npm run verify`: en verde (1616 pruebas, determinista 30/30, PGlite con 64 migraciones).
+4. **Pendientes:** los pagos de nómina ya no llegan a Finanzas como egreso; si más adelante se quiere, se agrega la forma de pago al cierre. Publicación en la entrada siguiente (arriba).
 
 ## Mejora: los recibos y la hoja semanal se ponen al día solos al abrir el período — 19/11/2026
 
