@@ -2,7 +2,7 @@
 // Motor de cálculo de nómina: campos de asistencia + línea de liquidación.
 // Se usa desde api/handlers/nomina.js para calcular antes de insertar.
 
-import { calcularDescansoRemunerado, esDescansoSinTrabajo } from './nominaDescanso.js'
+import { calcularDescansoRemunerado, esDescansoSinTrabajo, esFaltaJustificada } from './nominaDescanso.js'
 import { trabajaEnFecha } from './nominaHorarios.js'
 
 /**
@@ -137,6 +137,7 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
   let diasSabadoSinFeriado = 0
   let diasFeriado    = 0
   let diasAusencia   = 0
+  let diasJustificados = 0
 
   // Art. 119: los descansos y feriados se pagan aunque no se trabajen. Una fila
   // de esos días registrada sin trabajo no suma como día trabajado: ya la cubre
@@ -160,7 +161,14 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
   // trabajado, que es el comportamiento histórico.
   for (const a of asistencias) {
     if (a.es_ausencia) {
-      diasAusencia += 1
+      // Regla del usuario (19/11/2026): la falta CON justificativo se paga con el
+      // salario diario (sin horas extra); la que no lo tiene descuenta solo ese día.
+      // Si cayera en un día de descanso, ya la cubre el descanso pagado.
+      if (esFaltaJustificada(a)) {
+        if (!esDiaDeDescanso(a)) diasJustificados += 1
+      } else {
+        diasAusencia += 1
+      }
       continue
     }
     if (esJornadaAbierta(a)) continue
@@ -189,9 +197,11 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
   const diasNormales = diasTrabajados
     - (usaSabadoFijo ? diasSabadoSinFeriado : 0)
     - (usaFeriadoFijo ? diasFeriado : 0)
-  const diasDescanso = descanso ? descanso.diasDescanso : 0
-  // El descanso pagado va dentro del monto normal (salario diario × días): así
-  // cualquier recálculo del total que sume los conceptos sigue cuadrando.
+  // Días pagados sin trabajar: descansos y feriados (art. 119) más las faltas
+  // justificadas. Van dentro del monto normal (salario diario × días): así
+  // cualquier recálculo del total que sume los conceptos sigue cuadrando, y la
+  // hoja semanal los cuenta en la semana (no en el bono ni en las extras).
+  const diasDescanso = (descanso ? descanso.diasDescanso : 0) + diasJustificados
   const montoNormal  = round4((Math.max(0, diasNormales) + diasDescanso) * salarioDia)
   const montoSabado  = usaSabadoFijo
     ? round4(diasSabadoSinFeriado * montoSabadoFijoNumero)

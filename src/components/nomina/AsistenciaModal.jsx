@@ -1,7 +1,7 @@
 // src/components/nomina/AsistenciaModal.jsx
 // Registro y edición rápida e intuitiva de la asistencia diaria de un empleado.
 import { useState } from 'react'
-import { Clock, Trash2, Calendar, AlertCircle, Sparkles, UserX, Coffee } from 'lucide-react'
+import { Clock, Trash2, Calendar, AlertCircle, Sparkles, UserX, Coffee, FileCheck2, FileX2 } from 'lucide-react'
 import { useRegistrarAsistencia, useEliminarAsistencia, useHorarios } from '../../hooks/useNomina'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
@@ -79,6 +79,9 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
   const [horasDescanso, setHorasDescanso] = useState(descansoInicial)
   const [esFeriado, setEsFeriado]   = useState(feriadoInicial)
   const [esAusencia, setEsAusencia] = useState(ausenciaInicial)
+  // Regla del usuario (19/11/2026): la falta con justificativo se paga; sin él se descuenta solo ese día.
+  const justificadaInicial = registro?.es_ausencia ? registro?.ausencia_justificada === true : false
+  const [justificada, setJustificada] = useState(justificadaInicial)
   const [nota, setNota]             = useState(registro?.nota ?? '')
   const [confirmandoBorrar, setConfirmandoBorrar] = useState(false)
   const [error, setError] = useState('')
@@ -137,6 +140,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
         horaEntrada: esAusencia ? null : horaEntrada,
         horaSalida:  esAusencia ? null : horaSalida,
         esFeriado, esAusencia,
+        ausenciaJustificada: esAusencia && justificada,
         horasDescanso: Number(horasDescanso) || 0,
         nota: nota || undefined,
       })
@@ -159,7 +163,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
     <Modal
       isOpen onClose={onClose}
       busy={cargando}
-      dirty={puedeEditar && (horaEntrada !== entradaInicial || horaSalida !== salidaInicial || horasDescanso !== descansoInicial || esFeriado !== feriadoInicial || esAusencia !== ausenciaInicial || nota !== (registro?.nota ?? ''))}
+      dirty={puedeEditar && (horaEntrada !== entradaInicial || horaSalida !== salidaInicial || horasDescanso !== descansoInicial || esFeriado !== feriadoInicial || esAusencia !== ausenciaInicial || justificada !== justificadaInicial || nota !== (registro?.nota ?? ''))}
       title={capitalizarPalabras(empleado?.empleado?.nombre) || 'Registro de Asistencia'}
       className="max-w-md">
       <div className="space-y-4">
@@ -243,7 +247,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
                 style={{ touchAction: 'manipulation' }}
               >
                 Falta / Ausencia
-                <span className="block text-[9px] font-normal text-red-500">Injustificada</span>
+                <span className="block text-[9px] font-normal text-red-500">Elige si trae justificativo</span>
               </button>
             </div>
           </div>
@@ -271,6 +275,25 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
               Día feriado
             </label>
           </div>
+          {esAusencia && (
+            <fieldset className="min-w-0 space-y-1.5" disabled={cargando || !puedeEditar}>
+              <legend className="mb-1 text-xs font-bold text-slate-700">¿Trae justificativo?</legend>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button type="button" aria-pressed={justificada === true} onClick={() => setJustificada(true)}
+                  className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold ${justificada ? 'border-sky-500 bg-sky-50 text-sky-900 ring-2 ring-sky-200' : 'border-slate-300 bg-white text-slate-700'}`}
+                  style={{ touchAction: 'manipulation' }}>
+                  <span className="inline-flex items-center gap-1.5"><FileCheck2 size={14} aria-hidden="true" />Sí, con justificativo</span>
+                  <span className="text-[10px] font-semibold opacity-80">El día se paga</span>
+                </button>
+                <button type="button" aria-pressed={justificada === false} onClick={() => setJustificada(false)}
+                  className={`flex min-h-11 flex-col items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold ${!justificada ? 'border-rose-500 bg-rose-50 text-rose-900 ring-2 ring-rose-200' : 'border-slate-300 bg-white text-slate-700'}`}
+                  style={{ touchAction: 'manipulation' }}>
+                  <span className="inline-flex items-center gap-1.5"><FileX2 size={14} aria-hidden="true" />No, sin justificativo</span>
+                  <span className="text-[10px] font-semibold opacity-80">Se descuenta solo ese día</span>
+                </button>
+              </div>
+            </fieldset>
+          )}
 
           {/* Horas y Descanso */}
           {!esAusencia && (

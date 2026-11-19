@@ -119,9 +119,10 @@ export async function handleFijarTasaManual(request, env) {
   const v = await validateOperator(request, env)
   if (v.error) return v.error
   const { operador, ip } = v
-  // La tasa manual solo se usa en Nómina (Finanzas la ignora y toma el BCV): la
-  // fija quien administra nómina (jefe, desarrollador y el rol nómina).
-  const denegado = requireCapacidad(operador, 'administrarNomina', request)
+  // La tasa manual de la cuenta solo se usa en Nómina (Finanzas la ignora y toma el
+  // BCV). Regla del usuario (19/11/2026): solo la fija el jefe (administrarSistema);
+  // el rol nómina usa una tasa personal en su equipo para recibos y hoja semanal.
+  const denegado = requireCapacidad(operador, 'administrarSistema', request)
   if (denegado) return denegado
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError

@@ -119,7 +119,7 @@ export async function fetchConfigsConControl(env, headers, { filtros = '', selec
 // Cuerpo de un registro de asistencia manual (horario previsto o ausencia).
 // Vive aquí porque lo escriben tanto el registro individual como el marcaje de
 // ausencia del panel de reloj real, y ambos deben guardar la misma forma.
-export function construirPayloadAsistenciaManual({ empleadoId, fecha, horaEntrada, horaSalida, esAusencia, esFeriado, nota, descanso, operador, calculation }) {
+export function construirPayloadAsistenciaManual({ empleadoId, fecha, horaEntrada, horaSalida, esAusencia, ausenciaJustificada = false, esFeriado, nota, descanso, operador, calculation }) {
   const { horas_descanso: _horasDescanso, ...camposCalculados } = calculation
   return {
     empleado_id: empleadoId,
@@ -131,6 +131,8 @@ export function construirPayloadAsistenciaManual({ empleadoId, fecha, horaEntrad
     estado_marcaje: 'manual',
     es_feriado: !!esFeriado,
     es_ausencia: !!esAusencia,
+    // Falta con justificativo (migración 267): se paga el día. Solo existe en una ausencia.
+    ausencia_justificada: !!esAusencia && ausenciaJustificada === true,
     nota: nota || null,
     registrado_por: operador.id,
     cuenta_id: operador.cuenta_id,

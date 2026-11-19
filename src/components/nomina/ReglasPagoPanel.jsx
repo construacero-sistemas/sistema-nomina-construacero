@@ -221,7 +221,7 @@ export default function ReglasPagoPanel({ config }) {
             <input type="text" inputMode="numeric" className={inputCls} disabled={bloqueado || !actual.descanso} aria-label="Faltas que hacen perder el descanso"
               value={actual.faltas} onChange={e => cambiar({ faltas: e.target.value })} />
           </label>
-          <p className="text-[11px] text-slate-500">Cada falta descuenta un día de descanso pagado de esa semana. Empresa: {REGLAS_LEY_DEFAULT.faltasPierdeDescanso} (desde la primera falta). Ley: {FALTAS_PIERDE_DESCANSO_LEY} (art. 119).</p>
+          <p className="text-[11px] text-slate-500">Con 0, una falta sin justificativo descuenta solo el día faltado y el descanso se paga completo. Con otro número, desde esa falta cada una descuenta además un día de descanso. Empresa: {REGLAS_LEY_DEFAULT.faltasPierdeDescanso}. Ley: {FALTAS_PIERDE_DESCANSO_LEY} (art. 119). Las faltas justificadas nunca cuentan.</p>
         </Bloque>
       </div>
 

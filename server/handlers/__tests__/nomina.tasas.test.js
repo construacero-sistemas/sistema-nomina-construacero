@@ -72,16 +72,14 @@ describe('tasa manual trazable (quién y cuándo; motivo opcional)', () => {
     expect(post.body.periodo_id).toBeNull()
   })
 
-  it('el rol nómina la fija sin motivo', async () => {
+  // Regla del usuario (19/11/2026): la tasa manual de la cuenta solo la fija el jefe;
+  // el rol nómina usa una tasa personal en su equipo (no llega al servidor).
+  it('el rol nómina ya no fija la tasa de toda la cuenta', async () => {
     operadorActual = OPERADORES.nomina
-    mock = installFetchMock([
-      { match: '/nomina_tasas_snapshot', method: 'POST', respond: [{ id: IDS.registro, valor: 950 }] },
-    ])
+    mock = installFetchMock([])
     const { status } = await readResponse(await H.handleFijarTasaManual(makeRequest({ valor: '950' }), ENV))
-    expect(status).toBe(201)
-    const post = mock.calls.find(call => call.method === 'POST' && call.url.includes('/nomina_tasas_snapshot'))
-    expect(post.body.motivo).toBeNull()
-    expect(post.body.fijada_por_nombre).toBe('Nomina Test')
+    expect(status).toBe(403)
+    expectSinRed(mock)
   })
 
   it('el rol finanzas no la fija: es solo de Nómina', async () => {

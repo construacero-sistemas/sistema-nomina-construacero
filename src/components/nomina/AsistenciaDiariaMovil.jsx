@@ -205,7 +205,7 @@ export default function AsistenciaDiariaMovil({
           {visibles.map(({ empleado, registro, real, falta, libre, feriado, pendiente, nombre }) => {
             const estadoTexto = real
               ? 'Marcaje real del reloj'
-              : falta ? 'Falta registrada'
+              : falta ? (registro?.ausencia_justificada ? 'Falta con justificativo (se paga)' : 'Falta sin justificativo')
                 : libre ? (feriado ? 'Feriado no laborable' : 'Día libre')
                   : pendiente ? 'Pendiente' : 'Horario manual registrado'
             return (

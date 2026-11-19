@@ -57,9 +57,13 @@ export function useMarcarSalida() {
 export function useMarcarAusencia() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ empleadoId, quitar = false }) => apiPost('/api/nomina/marcaje/ausencia', { empleadoId, quitar }),
+    mutationFn: ({ empleadoId, quitar = false, justificada = false }) => apiPost('/api/nomina/marcaje/ausencia', quitar
+      ? { empleadoId, quitar }
+      : { empleadoId, quitar, justificada: justificada === true }),
     onSuccess: (data, variables) => {
-      showToast.success(variables?.quitar ? 'Ausencia deshecha' : 'Ausencia registrada')
+      showToast.success(variables?.quitar
+        ? 'Ausencia deshecha'
+        : variables?.justificada ? 'Falta justificada registrada: el día se paga' : 'Falta sin justificativo registrada: se descuenta ese día')
       if (variables?.quitar) aplicarMarcajeEnCache(qc, { quitarEmpleadoId: variables.empleadoId })
       else if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
       refrescar(qc)
@@ -83,7 +87,7 @@ export function useAnularEntradaComoAusencia() {
   return useMutation({
     // El servidor decide si la entrada queda como ausencia o se elimina (día libre o
     // feriado no laborable) y rechaza con 409 si no coincide con `resultadoEsperado`.
-    mutationFn: ({ registroId, motivo, resultadoEsperado = 'ausencia' }) => apiPost('/api/nomina/marcaje/anular-entrada-ausencia', { registroId, motivo, resultadoEsperado }),
+    mutationFn: ({ registroId, motivo, resultadoEsperado = 'ausencia', justificada = false }) => apiPost('/api/nomina/marcaje/anular-entrada-ausencia', { registroId, motivo, resultadoEsperado, justificada: justificada === true }),
     onSuccess: (data, variables) => {
       showToast.success(data?.resultado === 'sin-registro'
         ? 'Entrada anulada: el día quedó sin registro (auditado)'

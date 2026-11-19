@@ -24,7 +24,7 @@ function Celda({ monto, detalle, fuerte = false }) {
   )
 }
 
-function FichaPersona({ fila, columnas, bs, puedeDescontar, onAgregarDescuento }) {
+function FichaPersona({ fila, columnas, detalleDe, bs, puedeDescontar, onAgregarDescuento }) {
   const nombre = capitalizarPalabras(fila.nombre)
   return (
     <li className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -42,7 +42,7 @@ function FichaPersona({ fila, columnas, bs, puedeDescontar, onAgregarDescuento }
       <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 border-t border-slate-100 pt-2 text-xs min-[360px]:grid-cols-2">
         {columnas.map(c => (
           <div key={c.id} className="flex items-baseline justify-between gap-2">
-            <dt className="min-w-0 text-slate-500">{c.titulo}{c.detalle && <span className="text-slate-400"> · {c.detalle(fila)}</span>}</dt>
+            <dt className="min-w-0 text-slate-500">{c.titulo}{detalleDe(c, fila) && <span className="text-slate-400"> · {detalleDe(c, fila)}</span>}</dt>
             <dd className={`shrink-0 tabular-nums ${c.fuerte ? 'font-black text-slate-900' : 'font-semibold text-slate-800'}`}>{usd(fila[c.id])}</dd>
           </div>
         ))}
@@ -64,7 +64,9 @@ function FichaPersona({ fila, columnas, bs, puedeDescontar, onAgregarDescuento }
 
 // `bsDe(fila)`: neto de la fila YA en bolívares (lo decide el detalle del período:
 // tasa congelada al pagar, al cerrar o la activa).
-export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestionarNomina, bsDe, onAgregarDescuento }) {
+// `tasa`: Bs por dólar del período (la del cierre o la activa); los recibos ya
+// pagados usan la tasa que quedó guardada al pagar.
+export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestionarNomina, bsDe, tasa = 0, tasaOrigen = 'activa', onAgregarDescuento }) {
   const { data, isLoading, isError, refetch } = useHojaSemanal(periodo.id)
   const lineaPorId = new Map(lineas.map(linea => [linea.id, linea]))
 
@@ -88,6 +90,13 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
   }
   const totalBs = filas.reduce((s, fila) => s + bsDe(fila), 0)
   const columnas = columnasVisibles(filas)
+  const tasaDe = fila => (fila.pagado && Number(fila.tasaPago) > 0 ? Number(fila.tasaPago) : Number(tasa) || 0)
+  // El total a cobrar lleva debajo su cambio en bolívares; el resto, su cantidad.
+  const detalleDe = (c, fila) => (c.id === 'totalACobrar'
+    ? (tasaDe(fila) > 0 ? formatBs(Number(fila.totalACobrar) * tasaDe(fila)) : null)
+    : c.detalle?.(fila) || null)
+  const totalACobrarBs = filas.reduce((s, fila) => s + Number(fila.totalACobrar) * tasaDe(fila), 0)
+  const detalleTotalDe = c => (c.id === 'totalACobrar' ? (totalACobrarBs > 0 ? formatBs(totalACobrarBs) : null) : c.detalleTotal?.(totales) || null)
   // Franja de grupos sobre los encabezados: un tramo por grupo consecutivo.
   const tramos = []
   for (const c of columnas) {
@@ -109,9 +118,17 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
   return (
     <section aria-label="Hoja semanal" className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[11px] text-slate-500">
-          Semana = sueldo mensual ÷ 30 × 7. Se llena primero el sueldo semanal; el bono (hasta ${usd(data.bonoSemanal)}) es lo que sobra.
-        </p>
+        <div className="min-w-0 space-y-1">
+          <p className="text-[11px] text-slate-500">
+            Semana = días trabajados + descansos pagados. El bono semanal es siempre ${usd(data.bonoSemanal)} y sale de la semana; el sueldo semanal es lo que queda.
+          </p>
+          {Number(tasa) > 0 && (
+            <p className="inline-flex flex-wrap items-baseline gap-x-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-800">
+              Tasa de nómina <strong className="text-sm font-black tabular-nums">Bs {usd(tasa)}</strong> por $1
+              <span className="text-emerald-700">({tasaOrigen === 'cierre' ? 'cierre del período' : 'activa'}{filas.some(f => f.pagado && Number(f.tasaPago) > 0) ? '; los pagados usan la tasa guardada al pagar' : ''})</span>
+            </p>
+          )}
+        </div>
         <button type="button" onClick={descargar}
           className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
           style={{ touchAction: 'manipulation' }}>
@@ -122,7 +139,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
         {filas.map(fila => {
           const linea = lineaPorId.get(fila.lineaId)
           return (
-            <FichaPersona key={fila.lineaId} fila={fila} columnas={columnas} bs={bsDe(fila)}
+            <FichaPersona key={fila.lineaId} fila={fila} columnas={columnas} detalleDe={detalleDe} bs={bsDe(fila)}
               puedeDescontar={Boolean(abierto && puedeGestionarNomina && !fila.pagado && linea)}
               onAgregarDescuento={() => onAgregarDescuento(linea)} />
           )
@@ -138,7 +155,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
           <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 border-t border-slate-200 pt-2 text-xs min-[360px]:grid-cols-2">
             {columnas.map(c => (
               <div key={c.id} className="flex items-baseline justify-between gap-2">
-                <dt className="min-w-0 text-slate-500">{c.titulo}{c.detalleTotal && <span className="text-slate-400"> · {c.detalleTotal(totales)}</span>}</dt>
+                <dt className="min-w-0 text-slate-500">{c.titulo}{detalleTotalDe(c) && <span className="text-slate-400"> · {detalleTotalDe(c)}</span>}</dt>
                 <dd className="shrink-0 font-black tabular-nums text-slate-900">{usd(totales[c.id])}</dd>
               </div>
             ))}
@@ -184,7 +201,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
                   </th>
                   {columnas.map(c => (
                     <td key={c.id} className={`whitespace-nowrap px-2 py-2 text-right ${c.fuerte ? '' : 'text-slate-700'}`}>
-                      <Celda monto={fila[c.id]} detalle={c.detalle?.(fila)} fuerte={c.fuerte} />
+                      <Celda monto={fila[c.id]} detalle={detalleDe(c, fila)} fuerte={c.fuerte} />
                     </td>
                   ))}
                   <td className="px-2 py-2 text-right">
@@ -213,7 +230,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
               <th scope="row" className="px-3 py-2.5 text-left">Totales ({totales.empleados})</th>
               {columnas.map(c => (
                 <td key={c.id} className="whitespace-nowrap px-2 py-2.5 text-right">
-                  <Celda monto={totales[c.id]} detalle={c.detalleTotal?.(totales)} />
+                  <Celda monto={totales[c.id]} detalle={detalleTotalDe(c)} />
                 </td>
               ))}
               <td className="px-2 py-2.5 text-right text-red-600">{usd(totales.descuentos)}</td>

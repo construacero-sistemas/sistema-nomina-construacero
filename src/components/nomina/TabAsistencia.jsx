@@ -525,9 +525,13 @@ function CeldaAsistencia({ registro, feriado, esFinde = false, esSabado = false,
   let cls = 'bg-emerald-50 border-emerald-300 text-emerald-800'
   let texto = `${horas.toFixed(1)}h`
 
-  if (registro.es_ausencia) {
+  if (registro.es_ausencia && registro.ausencia_justificada) {
+    // Falta con justificativo: se paga el día (regla del usuario, 19/11/2026).
+    cls = 'bg-sky-50 border-sky-300 text-sky-800'
+    texto = isMobile ? 'F. just.' : 'Justificada'
+  } else if (registro.es_ausencia) {
     cls = 'bg-red-50 border-red-300 text-red-700'
-    texto = isMobile ? 'Falta' : 'Falta'
+    texto = 'Falta'
   } else if (registro.es_feriado) {
     cls = 'bg-purple-50 border-purple-300 text-purple-800'
     texto = isMobile ? 'Fer' : 'Feriado'

@@ -51,9 +51,9 @@ vi.mock('../../../hooks/useMonedaNomina.js', () => ({
 
 const { RateSelector } = await import('../RateSelector.jsx')
 
-function abrirMenu() {
-  render(<RateSelector />)
-  fireEvent.click(screen.getByRole('button', { name: /Cambiar tasa de conversión/i }))
+function abrirMenu(props = {}) {
+  render(<RateSelector {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: /Cambiar (mi )?tasa/i }))
 }
 
 beforeEach(() => {
@@ -122,20 +122,24 @@ describe('RateSelector — tasa manual de Nómina', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('el rol nómina puede fijarla', async () => {
+  // Regla del usuario (19/11/2026): solo el jefe cambia la tasa general; para los
+  // demás es informativa. El rol nómina tiene su tasa personal para recibos y hoja.
+  it.each(['nomina', 'finanzas'])('para el rol %s la tasa general es solo informativa', rol => {
+    auth.rol = rol
+    render(<RateSelector />)
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByLabelText(/solo informativa/i)).toHaveTextContent('857.01')
+  })
+
+  it('el rol nómina fija su tasa personal (solo para sí) en recibos y hoja', async () => {
     auth.rol = 'nomina'
-    abrirMenu()
+    abrirMenu({ personal: true })
+    expect(screen.getByText(/Mi tasa \(solo para mí\)/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Tasa Manual/i }))
+    expect(screen.getByText(/no cambia la tasa de nadie más/i)).toBeInTheDocument()
     fireEvent.change(screen.getByPlaceholderText(/Ej\. 42\.50/i), { target: { value: '950' } })
     fireEvent.click(screen.getByRole('button', { name: /Fijar/i }))
     await vi.waitFor(() => expect(fijarMock).toHaveBeenCalledWith(950))
-  })
-
-  it('el rol finanzas no ve la opción manual (no afecta a Finanzas)', () => {
-    auth.rol = 'finanzas'
-    abrirMenu()
-    expect(screen.queryByRole('button', { name: /Tasa Manual/i })).toBeNull()
-    expect(screen.getByRole('button', { name: /BCV Dólar/i })).toBeInTheDocument()
   })
 
   it('muestra quién fijó la tasa manual', () => {

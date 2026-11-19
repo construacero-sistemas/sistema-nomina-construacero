@@ -158,8 +158,11 @@ describe('cálculo de período', () => {
       ]},
       { match: '/nomina_horarios', respond: [] },
       { match: '/nomina_feriados', respond: [] },
+      // Esta prueba mira solo el pago del trabajo; el descanso pagado tiene las suyas
+      // (nominaDescanso.test.js). Desde el 19/11/2026 las faltas ya no lo quitan.
       { match: '/configuracion_negocio',  respond: [{
         nomina_factor_hora_extra: 1.5, nomina_factor_sabado: 1.25, nomina_factor_feriado: 2,
+        nomina_descanso_remunerado: false,
       }]},
       { match: '/registro_asistencia', respond: [
         { empleado_id: IDS.empleado, fecha: '2026-08-03', horas_normales: 8, horas_extra: 2, es_sabado: false, es_feriado: false, es_ausencia: false },
@@ -227,7 +230,7 @@ describe('cálculo de período', () => {
       ]},
       { match: '/nomina_horarios', respond: [] },
       { match: '/nomina_feriados', respond: [] },
-      { match: '/configuracion_negocio', respond: [{}] },
+      { match: '/configuracion_negocio', respond: [{ nomina_descanso_remunerado: false }] },
       { match: '/registro_asistencia',   respond: [
         { empleado_id: IDS.empleado, horas_normales: 8, horas_extra: 0, es_sabado: false, es_feriado: false, es_ausencia: false },
       ]},

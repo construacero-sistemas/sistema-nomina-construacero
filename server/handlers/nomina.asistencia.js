@@ -47,7 +47,7 @@ export async function handleGetAsistencia(request, env) {
   // silencio los últimos días de una semana desde ~71 empleados. El orden incluye
   // `empleado_id` para que el offset sea estable ((empleado_id, fecha) es único,
   // migración 209) y el techo delata datos anómalos en vez de tumbar la vista.
-  const base = `${env.SUPABASE_URL}/rest/v1/registro_asistencia?order=fecha.asc,empleado_id.asc${filters}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,estado_marcaje,nota&limit=${ASISTENCIA_POR_PAGINA}`
+  const base = `${env.SUPABASE_URL}/rest/v1/registro_asistencia?order=fecha.asc,empleado_id.asc${filters}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,es_sabado,es_domingo,es_feriado,es_ausencia,ausencia_justificada,estado_marcaje,nota&limit=${ASISTENCIA_POR_PAGINA}`
   const registros = []
   let truncado = false
   for (let pagina = 0; pagina < ASISTENCIA_MAX_PAGINAS; pagina += 1) {
@@ -146,7 +146,7 @@ export async function handleGetMarcajeHoy(request, env) {
   const tenantError = tenantGuard(operador, request)
   if (tenantError) return tenantError
   const { fecha } = nowInNominaZone(env)
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?fecha=eq.${fecha}${nominaTenantFilter(operador.cuenta_id)}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,horas_descanso,estado_marcaje,es_ausencia,es_sabado,es_feriado,entrada_marcada_en,salida_marcada_en,nota`, { headers })
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?fecha=eq.${fecha}${nominaTenantFilter(operador.cuenta_id)}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,horas_descanso,estado_marcaje,es_ausencia,ausencia_justificada,es_sabado,es_feriado,entrada_marcada_en,salida_marcada_en,nota`, { headers })
   if (!response.ok) return jsonError('Error al leer marcaje del día', 500, request)
   return json({ fecha, registros: await response.json() ?? [] }, 200, request)
 }
@@ -202,7 +202,7 @@ async function reemplazarAusenciaPorEntrada({ env, request, operador, ip, emplea
   const tenantFilter = nominaTenantFilter(operador.cuenta_id)
   const cambios = {
     hora_entrada: mark.hora, hora_salida: null, horas_trabajadas: 0, horas_normales: 0, horas_extra: 0,
-    es_feriado: !!holiday.row, es_ausencia: false, estado_marcaje: 'entrada',
+    es_feriado: !!holiday.row, es_ausencia: false, ausencia_justificada: false, estado_marcaje: 'entrada',
     entrada_marcada_en: mark.marcadoEn, entrada_por: operador.id, entrada_idempotency_key: idempotencyKey.trim(),
     nota: nota || null, registrado_por: operador.id,
   }

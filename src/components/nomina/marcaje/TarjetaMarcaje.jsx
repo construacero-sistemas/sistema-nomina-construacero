@@ -10,7 +10,7 @@
 //   del empleado se añade con texto solo para lectores (`sr-only`).
 // - M-14: la tarjeta no es una región viva; el panel anuncia la última acción.
 import { useId, useState } from 'react'
-import { CalendarDays, CheckCircle2, ChevronDown, LogIn, LogOut, PencilLine, RotateCcw, Undo2, UserX } from 'lucide-react'
+import { CalendarDays, CheckCircle2, ChevronDown, FileCheck2, FileX2, LogIn, LogOut, PencilLine, RotateCcw, Undo2, UserX, X } from 'lucide-react'
 import { NOMBRE_DIA_CORTO, diaSemanaDeFecha } from '../../../utils/diasLaborables.js'
 import { TOLERANCIA_RETRASO_MINUTOS, minutosEntre } from '../../../../server/lib/marcajeReglas.js'
 import { claseEstado, esMarcajeReal, etiquetaEstado, formatoHora } from './marcajeEstado.js'
@@ -58,6 +58,9 @@ export default function TarjetaMarcaje({
 }) {
   const { empleado, registro, estado, feriado, nombre, libre } = fila
   const [masAbierto, setMasAbierto] = useState(false)
+  // Regla del usuario (19/11/2026): al marcar que no vino se elige si trae
+  // justificativo (se paga el día) o no (se descuenta solo ese día).
+  const [eligiendoFalta, setEligiendoFalta] = useState(false)
   const idMas = useId()
   const id = empleado.empleado_id
   const enCurso = tipo => pendiente === tipo
@@ -93,6 +96,11 @@ export default function TarjetaMarcaje({
             ? <CheckCircle2 size={14} aria-hidden="true" />
             : <span className="h-2 w-2 shrink-0 rounded-full bg-current" aria-hidden="true" />}
           <span>{etiquetaEstado(estado)}</span>
+          {registro?.es_ausencia && (
+            registro.ausencia_justificada
+              ? <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-800">Con justificativo · se paga</span>
+              : <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-800">Sin justificativo · se descuenta el día</span>
+          )}
           {registro?.estado_marcaje === 'corregido' && (
             <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-800">Marcaje corregido</span>
           )}
@@ -151,10 +159,10 @@ export default function TarjetaMarcaje({
             {enCurso('entrada') ? 'Marcando entrada…' : estado === 'libre' ? 'Marcar entrada (vino)' : 'Marcar entrada'}
             <ParaLector> para {nombre}</ParaLector>
           </button>
-          {estado === 'pendiente' && (
+          {estado === 'pendiente' && !eligiendoFalta && (
             <button
               type="button"
-              onClick={() => onAusencia(id, false)}
+              onClick={() => setEligiendoFalta(true)}
               disabled={bloqueada}
               aria-busy={enCurso('ausencia')}
               className={`${BOTON_SECUNDARIO} border-rose-200 text-rose-700 hover:bg-rose-50`}
@@ -164,6 +172,43 @@ export default function TarjetaMarcaje({
               {enCurso('ausencia') ? 'Registrando ausencia…' : 'Marcar ausente'}
               <ParaLector> a {nombre}</ParaLector>
             </button>
+          )}
+          {estado === 'pendiente' && eligiendoFalta && (
+            <div role="group" aria-label={`¿${nombre} trae justificativo?`} className="min-w-0 space-y-2 rounded-xl border border-rose-200 bg-rose-50/60 p-2.5">
+              <p className="text-xs font-bold text-slate-800">¿Trae justificativo?</p>
+              <button
+                type="button"
+                onClick={() => { setEligiendoFalta(false); onAusencia(id, false, true) }}
+                disabled={bloqueada}
+                className={`${BOTON_SECUNDARIO} h-auto flex-col gap-0 border-sky-300 py-1.5 text-sky-800 hover:bg-sky-50`}
+                style={TACTIL}
+              >
+                <span className="inline-flex items-center gap-1.5"><FileCheck2 size={15} aria-hidden="true" />Sí, con justificativo</span>
+                <span className="text-[11px] font-semibold text-sky-700">El día se paga</span>
+                <ParaLector> para {nombre}</ParaLector>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setEligiendoFalta(false); onAusencia(id, false, false) }}
+                disabled={bloqueada}
+                className={`${BOTON_SECUNDARIO} h-auto flex-col gap-0 border-rose-300 py-1.5 text-rose-800 hover:bg-rose-50`}
+                style={TACTIL}
+              >
+                <span className="inline-flex items-center gap-1.5"><FileX2 size={15} aria-hidden="true" />No, sin justificativo</span>
+                <span className="text-[11px] font-semibold text-rose-700">Se descuenta solo ese día</span>
+                <ParaLector> para {nombre}</ParaLector>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEligiendoFalta(false)}
+                disabled={bloqueada}
+                className={`${BOTON_SECUNDARIO} border-slate-300 text-slate-700 hover:bg-slate-50`}
+                style={TACTIL}
+              >
+                <X size={15} aria-hidden="true" />
+                Cancelar
+              </button>
+            </div>
           )}
         </div>
       )}

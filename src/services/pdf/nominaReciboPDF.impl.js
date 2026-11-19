@@ -41,7 +41,19 @@ function drawFooter(doc, config) {
   doc.text('Documento no negociable · Copia para el trabajador', pw - MARGIN, ph - 6, { align: 'right' })
 }
 
-async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {}, action = 'download' }) {
+// Tasa con la que se muestran los bolívares del recibo: la guardada al pagar manda;
+// si no está pagado, la que manda el detalle del período (cierre o activa).
+function tasaDelRecibo(linea, tasa, tasaOrigen) {
+  const pago = Number(linea.tasa_pago_usd_ves)
+  if (linea.pagado && pago > 0) return { valor: pago, origen: 'guardada al pagar' }
+  const valor = Number(tasa)
+  if (valor > 0) return { valor, origen: tasaOrigen === 'cierre' ? 'del cierre del período' : 'activa' }
+  return null
+}
+
+async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {}, action = 'download', tasa = null, tasaOrigen = 'activa' }) {
+  const tasaBs = tasaDelRecibo(linea, tasa, tasaOrigen)
+  const aBs = usd => fmtBs((Number(usd) || 0) * (tasaBs?.valor || 0))
   const doc = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' })
   const logoData = await cargarLogo(config.logo_url)
 
@@ -152,7 +164,17 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
   doc.setFontSize(9)
   doc.setTextColor(...C_DARK)
   doc.text('Detalle de Asignaciones y Deducciones', MARGIN, y + 2)
+  if (tasaBs) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...C_EMERALD)
+    doc.text(`Tasa de nómina: ${Number(tasaBs.valor).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs por $1 (${tasaBs.origen})`, MARGIN + CONTENT_W, y + 2, { align: 'right' })
+  }
   y += 5
+  // Con tasa, el monto en dólares se corre a la izquierda y se agrega la columna en Bs.
+  const xUsd = tasaBs ? MARGIN + CONTENT_W - 40 : MARGIN + CONTENT_W - 3
+  const xCant = tasaBs ? MARGIN + 78 : MARGIN + 95
+  const xTarifa = tasaBs ? MARGIN + 100 : MARGIN + 135
 
   // Header de la tabla (Gris corporate)
   doc.setFillColor(240, 242, 245)
@@ -161,9 +183,10 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
   doc.setFontSize(7.5)
   doc.setTextColor(80, 90, 110)
   doc.text('CONCEPTO LABORAL', MARGIN + 3, y + 4.5)
-  doc.text('CANTIDAD', MARGIN + 95, y + 4.5)
-  doc.text('TARIFA BASE', MARGIN + 135, y + 4.5)
-  doc.text('MONTO (USD)', MARGIN + CONTENT_W - 3, y + 4.5, { align: 'right' })
+  doc.text('CANTIDAD', xCant, y + 4.5)
+  doc.text('TARIFA BASE', xTarifa, y + 4.5)
+  doc.text('MONTO (USD)', xUsd, y + 4.5, { align: 'right' })
+  if (tasaBs) doc.text('MONTO (Bs)', MARGIN + CONTENT_W - 3, y + 4.5, { align: 'right' })
   y += 8.5
 
   const diasTrab = Number(linea.dias_trabajados || 0)
@@ -185,7 +208,7 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
 
   if (descanso.diasDescanso > 0) {
     conceptos.push({
-      label: 'Descanso y Feriados Pagados (LOTTT art. 119)',
+      label: 'Descanso, feriados y faltas justificadas pagados',
       cant: `${descanso.diasDescanso} día(s)`,
       tarifa: `${fmtUsd(salarioDia)} / día`,
       monto: descanso.montoDescanso,
@@ -285,13 +308,17 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
 
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(100, 116, 139)
-    doc.text(c.cant, MARGIN + 95, y + 3.5)
-    doc.text(c.tarifa, MARGIN + 135, y + 3.5)
+    doc.text(c.cant, xCant, y + 3.5)
+    doc.text(c.tarifa, xTarifa, y + 3.5)
 
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...(c.tipo === 'deduccion' ? C_RED : c.tipo === 'bono' ? C_EMERALD : C_DARK))
     const montoText = c.tipo === 'deduccion' ? `- ${fmtUsd(c.monto)}` : fmtUsd(c.monto)
-    doc.text(montoText, MARGIN + CONTENT_W - 3, y + 3.5, { align: 'right' })
+    doc.text(montoText, xUsd, y + 3.5, { align: 'right' })
+    if (tasaBs) {
+      doc.setFont('helvetica', 'normal')
+      doc.text(c.tipo === 'deduccion' ? `- ${aBs(c.monto)}` : aBs(c.monto), MARGIN + CONTENT_W - 3, y + 3.5, { align: 'right' })
+    }
 
     y += 7.5
   })
@@ -313,7 +340,8 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
   doc.text('TOTAL ASIGNACIONES BRUTAS (USD):', MARGIN + 85, y + 3)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...C_DARK)
-  doc.text(fmtUsd(totalBruto), MARGIN + CONTENT_W - 3, y + 3, { align: 'right' })
+  doc.text(fmtUsd(totalBruto), xUsd, y + 3, { align: 'right' })
+  if (tasaBs) doc.text(aBs(totalBruto), MARGIN + CONTENT_W - 3, y + 3, { align: 'right' })
   y += 5.5
 
   if (totalDeduc > 0) {
@@ -323,7 +351,8 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
     doc.text('TOTAL RETENCIONES / DEDUCCIONES (USD):', MARGIN + 85, y + 3)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...C_RED)
-    doc.text(`- ${fmtUsd(totalDeduc)}`, MARGIN + CONTENT_W - 3, y + 3, { align: 'right' })
+    doc.text(`- ${fmtUsd(totalDeduc)}`, xUsd, y + 3, { align: 'right' })
+    if (tasaBs) doc.text(`- ${aBs(totalDeduc)}`, MARGIN + CONTENT_W - 3, y + 3, { align: 'right' })
     y += 5.5
   }
 
@@ -341,7 +370,15 @@ async function generarNominaReciboPDFImpl({ periodo = {}, linea = {}, config = {
 
   doc.setFontSize(13)
   doc.setTextColor(...C_EMERALD)
-  doc.text(fmtUsd(totalNeto), MARGIN + CONTENT_W - 5, y + 9.5, { align: 'right' })
+  if (tasaBs) {
+    // Neto en dólares y, al lado, su cambio en bolívares (el congelado al pagar si existe).
+    const netoBs = linea.pagado && Number(linea.total_pagado_bs) > 0 ? fmtBs(linea.total_pagado_bs) : aBs(totalNeto)
+    doc.text(fmtUsd(totalNeto), xUsd, y + 9.5, { align: 'right' })
+    doc.setFontSize(11)
+    doc.text(netoBs, MARGIN + CONTENT_W - 3, y + 9.5, { align: 'right' })
+  } else {
+    doc.text(fmtUsd(totalNeto), MARGIN + CONTENT_W - 5, y + 9.5, { align: 'right' })
+  }
 
   y += 19
 
