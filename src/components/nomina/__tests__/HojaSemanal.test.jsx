@@ -58,6 +58,14 @@ describe('HojaSemanal', () => {
     expect(fralin).toHaveTextContent('9,341 día')
   })
 
+  it('aclara «de $35,00 · semana incompleta» solo cuando el bono pagado es menor al configurado', () => {
+    mocks.hoja = { data: { periodo: PERIODO, bonoSemanal: 35, filas: [FILAS[0], fila({ lineaId: 'l-3', empleadoId: 'e-3', nombre: 'ana perez', bonoSemanal: 8, sueldoSemanal: 0 })], totales: TOTALES }, isLoading: false, isError: false, refetch: vi.fn() }
+    renderHoja()
+    const tabla = screen.getByRole('table', { name: 'Hoja semanal del período' })
+    expect(within(tabla).getByRole('rowheader', { name: /^Ana Perez/ }).closest('tr')).toHaveTextContent('de $35,00 · semana incompleta')
+    expect(within(tabla).getByRole('rowheader', { name: /^Fralin Lozano/ }).closest('tr')).not.toHaveTextContent('semana incompleta')
+  })
+
   it('agrupa las columnas (Semana · Pago · Adicionales) y no corta palabras a la mitad', () => {
     renderHoja()
     const tabla = screen.getByRole('table', { name: 'Hoja semanal del período' })
