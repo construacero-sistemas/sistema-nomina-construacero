@@ -6,6 +6,14 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Móvil: la app ya no se desplaza entera dejando el fondo en blanco — 20/11/2026
+
+- **Reporte del usuario:** tras el cambio anterior (`overflow-x: clip`) seguía saliendo en blanco la zona de asistencia en el teléfono.
+- **Causa encontrada:** el blanco tiene el color del documento (`#f8fafc`), no el de la app (`#f1f5f9`), y ocupa todo el ancho: no era un fallo de pintado, **el documento quedaba desplazado** y con él la app entera, mientras el header y la barra inferior (fijos) seguían en su sitio. El bloqueo de scroll de los modales (`compat/components/ui/useOverlay.js`) guarda y restaura el desplazamiento del documento; con el teclado de Android (`interactive-widget=resizes-content`) ese desplazamiento puede quedar distinto de 0.
+- **Cambio:** `src/NominaApp.jsx`: el contenedor raíz pasa a `fixed inset-x-0 top-0 h-[100dvh]` (antes un bloque normal `h-screen h-[100dvh]`). Queda fijo a la pantalla aunque el documento se desplace. El escáner exige `h-[100dvh]` y se conserva.
+- **Pruebas:** `npm run test:responsive` en verde; `npx vitest run src compat` 647/647.
+- **Pendientes:** confirmar en el teléfono tras el deploy (abrir «Marcar ausente», cerrar y hacer scroll). No se pudo iniciar sesión en el navegador de pruebas para verlo en vista móvil.
+
 ## Móvil: zona en blanco al hacer scroll en Asistencia — 20/11/2026
 
 - **Reporte del usuario:** en Android, al hacer scroll en Asistencia → Marcaje real, la pantalla quedaba en blanco debajo de las tarjetas.
