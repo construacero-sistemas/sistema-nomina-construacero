@@ -11,6 +11,10 @@ Toda pantalla, vista, modal, tabla, formulario, selector, navegación y componen
 5. **Modales y Bottom Sheets adaptados**: En móvil los modales deben actuar como hojas inferiores deslizables (`rounded-t-3xl`), con encabezados claros, botón de cierre cómodo con una sola mano y botones de confirmación accesibles sin ser bloqueados por el teclado virtual.
 6. **Validación visual obligatoria**: Toda modificación debe validarse en resoluciones de iPhone (375x667, 390x844, 430x932) y escritorio.
 
+## Regla obligatoria: nombre de la PWA
+
+Al instalar la aplicación en el teléfono, el nombre corto (el que aparece bajo el icono) es **«Gestión»**, no «Construacero», para distinguirla del ERP (decisión del usuario, 20/11/2026). Se define en `public/manifest.webmanifest` (`short_name`) y en `index.html` (`apple-mobile-web-app-title`).
+
 ## Regla obligatoria de fecha y hora
 
 La fecha y hora visibles en la aplicación deben usar el formato amigable del sistema: día de la semana abreviado, día, mes abreviado y hora de 12 horas con minutos y segundos, por ejemplo: **Lun, 24 ago. · 1:59:30 p. m.**. Debe respetarse la zona horaria configurada del negocio.
