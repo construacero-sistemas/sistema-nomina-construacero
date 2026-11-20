@@ -456,8 +456,20 @@ export async function handleEliminarPeriodo(request, env) {
   if ((paidResponse.ok ? await paidResponse.json() : []).length) return jsonError('Hay recibos ya pagados en este período. Revierte los pagos antes de eliminar.', 400, request)
   const deleteLines = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_lineas?periodo_id=eq.${periodoId}${account}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') })
   if (!deleteLines.ok) return jsonError('No se pudieron eliminar los recibos. Los recibos con historial de pago se conservan; revisa el estado del período.', 409, request)
+  // Al cerrar se congelan las tasas del período (nomina_tasas_snapshot, FK que
+  // protege contra borrar el período). Un período reabierto conserva esas tasas y
+  // sin quitarlas la base rechazaba el borrado con un aviso genérico. Aquí ya se
+  // comprobó que no hay recibos pagados, así que esas tasas no respaldan ningún pago.
+  const deleteTasas = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_tasas_snapshot?periodo_id=eq.${periodoId}${account}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') })
+  if (!deleteTasas.ok) return jsonError('No se pudieron quitar las tasas guardadas de este período, por eso no se eliminó. Inténtalo de nuevo; si sigue igual, déjalo abierto y avisa al administrador.', 409, request)
   const deletePeriod = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_periodos?id=eq.${periodoId}${account}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') })
-  if (!deletePeriod.ok) return jsonError('Error al eliminar período', 500, request)
+  if (!deletePeriod.ok) {
+    const detalle = await deletePeriod.text().catch(() => '')
+    const porRelacion = /23503|foreign key|violates/i.test(detalle)
+    return jsonError(porRelacion
+      ? 'Este período todavía tiene registros asociados (por ejemplo, pagos o ajustes) y no se puede eliminar. Déjalo abierto o avisa al administrador.'
+      : 'No se pudo eliminar el período. Inténtalo de nuevo en un momento.', porRelacion ? 409 : 500, request)
+  }
   registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'ELIMINAR_PERIODO', entidadTipo: 'nomina_periodo', entidadId: periodoId, meta: { periodo: period.nombre }, ip }).catch(() => {})
   return json({ ok: true }, 200, request)
 }

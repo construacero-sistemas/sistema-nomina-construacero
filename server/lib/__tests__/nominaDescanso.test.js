@@ -132,6 +132,27 @@ describe('calcularLineaNomina con descanso (art. 119)', () => {
     expect(r.monto_normal_usd).toBe(48)
   })
 
+  it('día hábil pasado SIN ningún registro: no se paga y el recibo lo cuenta como falta (regla 19/11/2026)', () => {
+    // Falta el jueves 10 por completo (ni siquiera una fila de ausencia).
+    const r = calcularLineaNomina(HABILES.slice(1).map(f => dia(f)), FRAILIN, {}, 0, 0, 0, contexto())
+    expect(r.dias_trabajados).toBe(4)
+    expect(r.dias_ausencia).toBe(1)
+    expect(r.monto_normal_usd).toBeCloseTo(56, 3) // 4 + 2 descansos = 6 × 9,33; igual que antes
+  })
+
+  it('sin registro: hoy, los días futuros, los de antes del ingreso y los descansos NO son falta', () => {
+    const base = HABILES.slice(0, 2).map(f => dia(f))
+    // Hoy = viernes 11: el lunes 14, martes 15 y miércoles 16 son futuros; hoy (11) aún puede marcar.
+    const r = calcularLineaNomina(base.slice(0, 1), FRAILIN, {}, 0, 0, 0, contexto({ hoy: '2026-09-11' }))
+    expect(r.dias_ausencia).toBe(0)
+    // Ingresó el lunes 14: jueves y viernes anteriores no cuentan.
+    const ingreso = calcularLineaNomina(HABILES.slice(2).map(f => dia(f)), FRAILIN, {}, 0, 0, 0, contexto({ fechaIngreso: '2026-09-14' }))
+    expect(ingreso.dias_ausencia).toBe(0)
+    // Sábado y domingo sin registro son descanso, no falta.
+    const completa = calcularLineaNomina(HABILES.map(f => dia(f)), FRAILIN, {}, 0, 0, 0, contexto())
+    expect(completa.dias_ausencia).toBe(0)
+  })
+
   it('falta con justificativo: el día se paga y no es ausencia (7 × 9,33 = 65,33)', () => {
     const justificada = dia(HABILES[0], { es_ausencia: true, ausencia_justificada: true, hora_entrada: null, hora_salida: null, horas_normales: 0, horas_trabajadas: 0 })
     const r = calcularLineaNomina([justificada, ...HABILES.slice(1).map(f => dia(f))], FRAILIN, {}, 0, 0, 0, contexto())

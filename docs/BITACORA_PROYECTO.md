@@ -6,6 +6,15 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Corrección: días sin registro cuentan como falta + eliminar un período reabierto — 19/11/2026
+
+Petición del usuario: corregir dos hallazgos «de la manera recomendada».
+
+1. **Día laborable sin ningún registro:** no se pagaba pero el recibo mostraba 0 faltas. Ahora cuenta como **falta sin justificativo** (regla nueva, también en `AGENT.md`). Solo días hábiles ya pasados (hoy y futuros no), desde el ingreso y según el horario de la persona; sábado, domingo y feriados no. No cambia el monto pagado. Archivos: `server/lib/nominaDescanso.js` (`diasSinRegistro`), `server/lib/nominaUtils.js`.
+2. **Período reabierto que no se podía eliminar:** al cerrar se guardan las tasas del período (`nomina_tasas_snapshot`, FK `ON DELETE RESTRICT`); al reabrir seguían ahí y la base rechazaba el borrado con el aviso genérico «Error al eliminar período». Ahora `handleEliminarPeriodo` quita esas tasas (solo si no hay recibos pagados) antes de borrar el período, y los avisos de fallo son específicos (409 «todavía tiene registros asociados…»). Archivo: `server/handlers/nomina.periodos.js`. La causa viene del esquema (no la reproduje en staging).
+- **Pruebas:** `server/lib/__tests__/nominaDescanso.test.js` (+2) y `server/handlers/__tests__/nomina.flujo.test.js` (+1, orden de borrados actualizado); `npx vitest run server` → 977/977 y `server/handlers` 705/705.
+- **Pendiente:** probar el borrado de un período reabierto real en staging; los recibos ya calculados mostrarán las faltas al recalcular.
+
 ## Mejora: «Bono semanal» aclara cuando la semana no llega al bono — 19/11/2026
 
 Petición del usuario: la columna mostraba 8,00 / 9,33 / 18,67 en vez de $35 y preguntó si era buena idea mostrar siempre $35. Decisión: **no** (los números dejarían de cuadrar con el recibo); se muestra el monto real con una aclaración.
