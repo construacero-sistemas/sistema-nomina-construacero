@@ -17,12 +17,14 @@ import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
 
 const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
-/** Devuelve el lunes de la semana que contiene `fecha`. */
-function lunesDe(fecha) {
+// Día en que arranca la semana de nómina si la configuración no lo trae (4 = jueves).
+const INICIO_SEMANA_DEFAULT = 4
+
+/** Devuelve el primer día de la semana que contiene `fecha` (0 = domingo … 6 = sábado). */
+function inicioSemanaDe(fecha, inicio) {
   const d = new Date(fecha)
-  const dow = d.getDay()
-  const diff = dow === 0 ? -6 : 1 - dow // domingo → lunes anterior
-  d.setDate(d.getDate() + diff)
+  const retroceso = (d.getDay() - inicio + 7) % 7
+  d.setDate(d.getDate() - retroceso)
   return d
 }
 
@@ -42,13 +44,20 @@ export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false })
   // navegador puede estar en otra zona y pintar «hoy» en el día equivocado (F-13).
   const hoyIso = fechaOperativaHoy()
   const hoy = useMemo(() => new Date(`${hoyIso}T12:00:00`), [hoyIso])
-  const [inicioSemana, setInicioSemana] = useState(() => lunesDe(new Date(`${fechaOperativaHoy()}T12:00:00`)))
+  const { data: configNomina } = useConfigNomina()
+  // La semana visible arranca el mismo día que la semana de la nómina (jueves por defecto).
+  const diaInicio = Number.isInteger(Number(configNomina?.nomina_semana_inicio)) && configNomina?.nomina_semana_inicio != null
+    && Number(configNomina.nomina_semana_inicio) >= 0 && Number(configNomina.nomina_semana_inicio) <= 6
+    ? Number(configNomina.nomina_semana_inicio) : INICIO_SEMANA_DEFAULT
+  // Se guarda un día cualquiera de la semana visible; el inicio se calcula con la configuración.
+  const [diaAncla, setDiaAncla]       = useState(() => new Date(`${fechaOperativaHoy()}T12:00:00`))
+  const inicioSemana = useMemo(() => inicioSemanaDe(diaAncla, diaInicio), [diaAncla, diaInicio])
   const [modal, setModal]             = useState(null) // { empleado, fecha, registro }
   const [modalMasivo, setModalMasivo] = useState(null) // fecha
   const [modoVistaMovil, setModoVistaMovil] = useState(esAdmin ? 'reloj' : 'manual') // 'reloj' | 'manual' | 'semanal'
   const [fechaSeleccionada, setFechaSeleccionada] = useState(() => fechaOperativaHoy())
 
-  // 7 días desde el lunes
+  // 7 días desde el inicio de la semana
   const dias = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(inicioSemana)
@@ -82,8 +91,6 @@ export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false })
   const feriadosDesde = desde < hoyIso ? desde : hoyIso
   const feriadosHasta = hasta > hoyIso ? hasta : hoyIso
   const { data: feriados = [], isLoading: feriadosCargando, isError: feriadosError, refetch: retryFeriados } = useFeriados(feriadosDesde, feriadosHasta)
-  const { data: configNomina } = useConfigNomina()
-
   const feriadosPorFecha = useMemo(
     () => new Map(feriados.map(f => [f.fecha, f])),
     [feriados],
@@ -113,25 +120,25 @@ export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false })
   const cargando = empCargando || asisCargando || feriadosCargando
 
   function irAHoy() {
-    setInicioSemana(lunesDe(hoy))
+    setDiaAncla(hoy)
     setFechaSeleccionada(hoyIso)
   }
 
   function moverSemana(delta) {
     const d = new Date(inicioSemana)
     d.setDate(d.getDate() + delta * 7)
-    setInicioSemana(d)
+    setDiaAncla(d)
 
-    const nuevoLunes = d
-    const nuevoDomingo = new Date(d)
-    nuevoDomingo.setDate(nuevoDomingo.getDate() + 6)
+    const nuevoInicio = d
+    const nuevoFin = new Date(d)
+    nuevoFin.setDate(nuevoFin.getDate() + 6)
     const fSel = new Date(`${fechaSeleccionada}T12:00:00`)
-    if (fSel < nuevoLunes || fSel > nuevoDomingo) {
-      setFechaSeleccionada(iso(nuevoLunes))
+    if (fSel < nuevoInicio || fSel > nuevoFin) {
+      setFechaSeleccionada(iso(nuevoInicio))
     }
   }
 
-  const esSemanaActual = iso(lunesDe(hoy)) === desde
+  const esSemanaActual = iso(inicioSemanaDe(hoy, diaInicio)) === desde
 
   const marcajeOperativo = esAdmin ? (
     <MarcajeLogisticaPanel
@@ -238,7 +245,7 @@ export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false })
         </div>
 
         {!esSemanaActual && (
-          <button onClick={() => { setInicioSemana(lunesDe(hoy)); setFechaSeleccionada(hoyIso) }}
+          <button onClick={() => { setDiaAncla(hoy); setFechaSeleccionada(hoyIso) }}
             className="min-h-11 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-xs transition-colors hover:bg-slate-50"
             style={{ touchAction: 'manipulation' }}>
             Volver a hoy
