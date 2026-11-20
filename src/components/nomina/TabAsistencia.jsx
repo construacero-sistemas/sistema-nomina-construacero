@@ -431,6 +431,7 @@ export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false })
 
                       <td className="px-3.5 py-2.5 text-right font-black text-slate-800">
                         {totalHoras > 0 ? `${totalHoras.toFixed(1)}h` : <span className="text-slate-300">—</span>}
+                        <span className="block text-[10px] font-semibold text-slate-400">de 40h</span>
                       </td>
                     </tr>
                   )

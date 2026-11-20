@@ -34,6 +34,9 @@ const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate
 // Registrar o corregir un día exige `verNomina` (lo que `esAdmin`/administrarNomina
 // ya implica); ELIMINAR el registro exige `administrarNomina` en el servidor y el
 // botón de borrado se gatea con `puedeGestionarNomina` (la misma llave).
+// Semana laboral de la empresa (decisión del usuario, 20/11/2026): 5 días de 8 horas.
+const HORAS_SEMANA = 40
+
 export default function AsistenciaModal({ empleado, fecha, registro, feriado, esAdmin, puedeGestionarNomina = false, onClose, soloLectura = false, horasDescansoDefault = 1 }) {
   const registrar = useRegistrarAsistencia()
   const eliminar  = useEliminarAsistencia()
@@ -317,39 +320,15 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
                 </div>
               </div>
 
-              {/* Selector de Descanso / Hora Libre */}
-              <div className="pt-1.5 border-t border-slate-200/80 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                    <Coffee size={13} className="text-slate-400" />
-                    Descanso / Hora Libre
-                  </label>
-                  <span className="text-[11px] font-bold text-slate-600 font-mono">
-                    {Number(horasDescanso) === 0 ? 'Sin descanso (0h)' : `${Number(horasDescanso)}h`}
-                  </span>
-                </div>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {[
-                    { label: '0h', val: '0' },
-                    { label: '30 min', val: '0.5' },
-                    { label: '45 min', val: '0.75' },
-                    { label: '1 hora', val: '1' },
-                  ].map(chip => (
-                    <button
-                      key={chip.label}
-                      type="button"
-                      onClick={() => setHorasDescanso(chip.val)}
-                      disabled={cargando || !puedeEditar}
-                      className={`py-1.5 px-1 rounded-xl text-[11px] font-bold transition-all text-center min-h-9 ${
-                        String(horasDescanso) === chip.val
-                          ? 'bg-amber-600 text-white shadow-xs'
-                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                      } disabled:opacity-50`}
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
-                </div>
+              {/* Regla del usuario (20/11/2026): el descanso ya no se elige; sale del horario general. */}
+              <div className="pt-1.5 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1 min-w-0">
+                  <Coffee size={13} className="text-slate-400 shrink-0" aria-hidden="true" />
+                  <span className="truncate">Descanso incluido</span>
+                </span>
+                <span className="text-[11px] font-bold text-slate-600 font-mono shrink-0">
+                  {Number(horasDescanso) === 0 ? 'Sin descanso' : `${Number(horasDescanso)} h · semana de ${HORAS_SEMANA} h`}
+                </span>
               </div>
             </div>
           )}

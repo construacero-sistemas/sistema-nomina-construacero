@@ -6,6 +6,14 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Se quita el selector de descanso del registro de asistencia; semana de 40 horas — 20/11/2026
+
+- **Regla del usuario (20/11/2026):** la semana laboral del sistema es de **40 horas** (5 días de 8 h) y el descanso no se elige a mano. Opción «A»: el descanso sale siempre del horario general.
+- **Archivos:** `src/components/nomina/AsistenciaModal.jsx`, `src/components/nomina/TabAsistencia.jsx`, `src/components/nomina/__tests__/AsistenciaModal.test.jsx`.
+- **Comportamiento:** desaparece «Descanso / Hora Libre» (0 h, 30 min, 45 min, 1 hora). El modal muestra «Descanso incluido: 1 h · semana de 40 h» y descuenta lo que viene del horario de la persona o del horario general. La grilla de escritorio muestra «de 40h» bajo el total de cada persona. No cambian cálculos ni datos guardados; los registros viejos conservan su descanso.
+- **Pruebas:** `npx vitest run src/components/nomina` y `npm run test:responsive` (41/41). `npm run verify` completo no ejecutado.
+- **Pendientes:** validar visualmente en iPhone y escritorio.
+
 ## La grilla de asistencia arranca el día de la semana de nómina — 20/11/2026
 
 - **Objetivo:** la grilla semanal de asistencia mostraba lunes a domingo mientras la nómina corta de jueves a miércoles.

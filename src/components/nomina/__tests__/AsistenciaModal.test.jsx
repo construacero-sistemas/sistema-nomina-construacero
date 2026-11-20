@@ -55,7 +55,10 @@ describe('AsistenciaModal', () => {
 
     // El acceso rápido debe respetar el descanso configurado (0.5h), no un 1h fijo.
     fireEvent.click(screen.getByRole('button', { name: /8h de jornada/i }))
-    expect(screen.getByText('0.5h')).toBeInTheDocument()
+    expect(screen.getByText('0.5 h · semana de 40 h')).toBeInTheDocument()
+    // Ya no hay selector de descanso: el descanso sale del horario general.
+    expect(screen.queryByText(/Hora Libre/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '45 min' })).not.toBeInTheDocument()
 
     fireEvent.submit(document.querySelector('form#asistencia-manual-form'))
 
@@ -83,7 +86,7 @@ describe('AsistenciaModal', () => {
     expect(salida).toHaveValue('17:00')
     expect(screen.queryByText(/Sábado Rotativo/i)).not.toBeInTheDocument()
     // 9 h de permanencia − 8 h de jornada = 1 h de descanso, tomadas de la ficha.
-    expect(screen.getByText('1h')).toBeInTheDocument()
+    expect(screen.getByText('1 h · semana de 40 h')).toBeInTheDocument()
   })
 
   it('sin semana configurada mantiene el estándar de la ficha y su aviso de sábado', () => {
