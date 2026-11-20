@@ -6,6 +6,20 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Móvil: zona en blanco al hacer scroll en Asistencia — 20/11/2026
+
+- **Reporte del usuario:** en Android, al hacer scroll en Asistencia → Marcaje real, la pantalla quedaba en blanco debajo de las tarjetas.
+- **Causa probable:** `html` y `body` tenían `overflow-x: hidden` con `height: 100%`; en Chrome de Android eso vuelve al `body` un segundo contenedor de scroll y deja zonas sin pintar al desplazarse `main`.
+- **Cambio:** `compat/styles/base.css`: `overflow-x: clip` después de `hidden` (que queda de respaldo en navegadores sin soporte). Evita el desborde horizontal sin crear un scroll extra.
+- **Pruebas:** `npm run test:responsive`. No se pudo reproducir sin el teléfono; **falta confirmarlo en el dispositivo** tras el deploy y, si persiste, revisar el contenedor `main` de `NominaApp.jsx`.
+
+## Nombre de la PWA: «Gestión» — 20/11/2026
+
+- **Regla del usuario (20/11/2026):** al instalar la app, el nombre corto (el que se ve bajo el icono) es **«Gestión»**, para distinguirla del ERP que dice «Construacero».
+- **Archivos:** `public/manifest.webmanifest` (`short_name: Gestión`, `name: Gestión · Nómina y Finanzas Construacero`) e `index.html` (`application-name` y `apple-mobile-web-app-title`).
+- **Pruebas:** revisado el manifiesto y las etiquetas; sin pruebas automáticas propias. Quien ya instaló la app debe desinstalarla y volver a instalarla para ver el nombre nuevo.
+- **Pendientes:** deploy para que aplique en producción.
+
 ## Se quita el selector de descanso del registro de asistencia; semana de 40 horas — 20/11/2026
 
 - **Regla del usuario (20/11/2026):** la semana laboral del sistema es de **40 horas** (5 días de 8 h) y el descanso no se elige a mano. Opción «A»: el descanso sale siempre del horario general.
