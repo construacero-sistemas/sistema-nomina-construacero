@@ -183,7 +183,9 @@ function Shell() {
   }
 
   return (
-    <div className="flex h-screen h-[100dvh] app-shell-safe overflow-hidden" style={{ background: '#f1f5f9' }}>
+    // El contenedor va fijo a la pantalla: si el documento queda desplazado (teclado de Android,
+    // bloqueo de scroll de un modal), la app no sube y no deja ver el fondo en blanco.
+    <div className="fixed inset-x-0 top-0 flex h-[100dvh] app-shell-safe overflow-hidden" style={{ background: '#f1f5f9' }}>
       <header
         className="fixed top-0 left-0 right-0 z-40 app-header-safe px-3 md:px-4 flex items-center gap-2.5 md:gap-3 text-white"
         style={{
