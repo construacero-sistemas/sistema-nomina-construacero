@@ -222,6 +222,9 @@ class InMemoryDatabase {
       }
     }
 
+    // Tasas congeladas del cierre: al eliminar un período se quitan (la base las protegía con una FK).
+    if (pathname.includes('/rest/v1/nomina_tasas_snapshot') && method === 'DELETE') return jsonResponse([])
+
     if (pathname.includes('/rest/v1/nomina_periodos')) {
       if (method === 'GET') {
         let res = this.nomina_periodos

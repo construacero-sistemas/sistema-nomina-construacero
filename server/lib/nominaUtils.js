@@ -201,6 +201,9 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
   // justificadas. Van dentro del monto normal (salario diario × días): así
   // cualquier recálculo del total que sume los conceptos sigue cuadrando, y la
   // hoja semanal los cuenta en la semana (no en el bono ni en las extras).
+  // Un día hábil ya pasado sin ningún registro no se paga y cuenta como falta sin
+  // justificativo (solo se muestra: el pago ya lo excluye). Regla del 19/11/2026.
+  if (descanso) diasAusencia += descanso.diasSinRegistro || 0
   const diasDescanso = (descanso ? descanso.diasDescanso : 0) + diasJustificados
   const montoNormal  = round4((Math.max(0, diasNormales) + diasDescanso) * salarioDia)
   const montoSabado  = usaSabadoFijo

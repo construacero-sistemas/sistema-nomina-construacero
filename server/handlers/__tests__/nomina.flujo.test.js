@@ -391,13 +391,28 @@ describe('eliminación de períodos', () => {
       { match: '/nomina_periodos', method: 'GET',    respond: [{ id: IDS.periodo, nombre: 'P', estado: 'abierto' }] },
       { match: '/nomina_lineas',   method: 'GET',    respond: [] },
       { match: '/nomina_lineas',   method: 'DELETE', respond: [] },
+      { match: '/nomina_tasas_snapshot', method: 'DELETE', respond: [] },
       { match: '/nomina_periodos', method: 'DELETE', respond: [] },
     ])
     const res = await H.handleEliminarPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV)
     const { status } = await readResponse(res)
     expect(status).toBe(200)
     const deletes = mock.calls.filter(c => c.method === 'DELETE')
-    expect(deletes).toHaveLength(2)
+    // Recibos, tasas congeladas del cierre (período reabierto) y período, en ese orden.
+    expect(deletes.map(c => c.url.match(/\/rest\/v1\/(\w+)/)[1])).toEqual(['nomina_lineas', 'nomina_tasas_snapshot', 'nomina_periodos'])
+  })
+
+  it('período reabierto: si la base rechaza el borrado por registros asociados, el aviso dice por qué', async () => {
+    mock = installFetchMock([
+      { match: '/nomina_periodos', method: 'GET', respond: [{ id: IDS.periodo, nombre: 'P', estado: 'abierto' }] },
+      { match: '/nomina_lineas', method: 'GET', respond: [] },
+      { match: '/nomina_lineas', method: 'DELETE', respond: [] },
+      { match: '/nomina_tasas_snapshot', method: 'DELETE', respond: [] },
+      { match: '/nomina_periodos', method: 'DELETE', respond: { __raw: { code: '23503', message: 'violates foreign key constraint' }, ok: false, status: 409 } },
+    ])
+    const { status, body } = await readResponse(await H.handleEliminarPeriodo(makeRequest({ periodoId: IDS.periodo }), ENV))
+    expect(status).toBe(409)
+    expect(body.error).toMatch(/registros asociados/)
   })
 })
 // RPC boundary coverage; committed period and receipt effects belong to scripts/test-db.mjs.

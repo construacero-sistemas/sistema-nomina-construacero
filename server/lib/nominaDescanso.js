@@ -64,7 +64,9 @@ function asistenciaPagada(fila) {
  * @param {string|null} [p.hoy]         fecha operativa; los días hábiles futuros no son falta
  * @param {string|null} [p.fechaIngreso]
  * @param {number} [p.faltasPierde]    faltas en la semana desde las que se descuenta un descanso por falta (0 = nunca)
- * @returns {{ diasDescanso:number, diasDescansoPerdidos:number, semanasConPerdida:number, fechasDescanso:string[] }}
+ * @returns {{ diasDescanso:number, diasDescansoPerdidos:number, semanasConPerdida:number, fechasDescanso:string[], diasSinRegistro:number }}
+ *   `diasSinRegistro`: días hábiles ya pasados, desde el ingreso, sin ninguna fila de asistencia
+ *   (regla del usuario, 19/11/2026: cuentan como falta sin justificativo en el recibo).
  */
 export function calcularDescansoRemunerado({
   desde, hasta, diasLaborables, feriados = [], asistencias = [], hoy = null, fechaIngreso = null, faltasPierde = 0,
@@ -79,6 +81,7 @@ export function calcularDescansoRemunerado({
   }
   const ingreso = fechaIngreso && FECHA_RE.test(String(fechaIngreso).slice(0, 10)) ? String(fechaIngreso).slice(0, 10) : null
 
+  let diasSinRegistro = 0
   const semanas = new Map() // índice → { descansos: [], faltas: 0 }
   const fechas = fechasDelRango(desde, hasta)
   fechas.forEach((fecha, i) => {
@@ -93,6 +96,9 @@ export function calcularDescansoRemunerado({
     }
     if (hoy && fecha > hoy) return
     if (!asistenciaPagada(porFecha.get(fecha))) semana.faltas += 1
+    // Día hábil ya pasado sin NINGUNA fila: no se paga y debe verse como falta.
+    // Hoy todavía puede marcar: el día de hoy no cuenta como falta hasta que termine.
+    if (!porFecha.has(fecha) && (!hoy || fecha < hoy)) diasSinRegistro += 1
   })
 
   let diasDescanso = 0
@@ -110,7 +116,7 @@ export function calcularDescansoRemunerado({
     diasDescanso += pagados.length
     fechasDescanso.push(...pagados)
   }
-  return { diasDescanso, diasDescansoPerdidos, semanasConPerdida, fechasDescanso }
+  return { diasDescanso, diasDescansoPerdidos, semanasConPerdida, fechasDescanso, diasSinRegistro }
 }
 
 /** ¿La fila es de un día de descanso/feriado registrado SIN trabajo? (lo cubre el descanso pagado). */
