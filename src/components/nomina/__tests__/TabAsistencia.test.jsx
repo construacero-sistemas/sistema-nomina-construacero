@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 
-const mocks = vi.hoisted(() => ({ asistencia: { registros: [], truncado: false } }))
+const mocks = vi.hoisted(() => ({ asistencia: { registros: [], truncado: false }, inicioSemana: 1 }))
 
 const configs = [
   {
@@ -26,7 +26,7 @@ vi.mock('../../../hooks/useNomina', () => ({
   useConfigEmpleados: () => ({ data: configs, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() }),
   useAsistencia: () => ({ data: mocks.asistencia, isLoading: false, isError: false, refetch: vi.fn() }),
   useFeriados: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }),
-  useConfigNomina: () => ({ data: {} }),
+  useConfigNomina: () => ({ data: { nomina_semana_inicio: mocks.inicioSemana } }),
 }))
 // Los flujos hijos tienen sus propias pruebas: aquí solo interesa la grilla semanal.
 vi.mock('../MarcajeLogisticaPanel', () => ({ default: () => null }))
@@ -74,5 +74,15 @@ describe('TabAsistencia — sábado laborable (F-5)', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent(/la lista y los totales están incompletos/i)
     expect(screen.getByRole('alert')).toHaveTextContent(/Consulta por semana/i)
+  })
+
+  // La semana visible arranca el mismo día que la semana de la nómina (jueves = 4).
+  it('muestra la semana de jueves a miércoles cuando la nómina arranca el jueves', () => {
+    mocks.inicioSemana = 4
+    render(<TabAsistencia esAdmin={false} puedeGestionarNomina />)
+    // Hoy es sábado 12/09: la semana va del jueves 10 al miércoles 16.
+    const cabecera = screen.getAllByRole('columnheader').map(c => c.textContent)
+    expect(cabecera.slice(1, 8)).toEqual(['Jue10', 'Vie11', 'Sáb12', 'Dom13', 'Lun14', 'Mar15', 'Mié16'])
+    mocks.inicioSemana = 1
   })
 })

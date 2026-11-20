@@ -6,6 +6,25 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## La grilla de asistencia arranca el día de la semana de nómina — 20/11/2026
+
+- **Objetivo:** la grilla semanal de asistencia mostraba lunes a domingo mientras la nómina corta de jueves a miércoles.
+- **Archivos:** `src/components/nomina/TabAsistencia.jsx` y `src/components/nomina/__tests__/TabAsistencia.test.jsx`.
+- **Comportamiento:** la semana visible (grilla, totales, «Anterior/Siguiente», «Ir a hoy» y vista móvil) arranca en `nomina_semana_inicio` (jueves por defecto). Si cambia la configuración, la grilla la sigue. Los cálculos de nómina no cambian.
+- **Pruebas:** `npx vitest run src/components/nomina/__tests__/TabAsistencia.test.jsx`, 3 de 3 (incluye la semana jueves a miércoles). `npm run verify` completo no ejecutado.
+- **Pendientes:** validar visualmente en iPhone y escritorio.
+
+## Nómina en cero en producción (solo quedan los trabajadores) — 20/11/2026
+
+- **Objetivo:** pedido del usuario: empezar la nómina desde cero conservando únicamente a los trabajadores.
+- **Entorno:** producción (`wlxcclidnwketrghqaxs`). Staging no se tocó.
+- **Borrado (una sola transacción):** `nomina_descuentos`, `nomina_linea_conceptos`, `nomina_lineas` (10), `nomina_tasas_snapshot` (4), `nomina_periodos` (2: 1 pagado y 1 abierto) y `registro_asistencia` (7).
+- **Se conserva:** `nomina_config_empleado` (11 trabajadores), usuarios, configuración y reglas, y Finanzas completa (1039 movimientos; no había asignaciones de nómina).
+- **Candado:** `finanzas_guard_nomina` bloquea borrar nóminas pagadas fuera de su operación. Se desactivaron `nomina_linea_operation_guard` y `nomina_periodo_operation_guard` dentro de la misma transacción y se reactivaron antes del commit; verificado `tgenabled = O`.
+- **Respaldo:** `local-backups/nomina-reset-prod-2026-11-20.json` (fuera de git).
+- **Verificación:** períodos 0, recibos 0, asistencia 0, tasas 0, trabajadores 11, movimientos 1039.
+- **Pendientes:** ninguno de código; no hubo commit, push ni deploy.
+
 ## Corrección: días sin registro cuentan como falta + eliminar un período reabierto — 19/11/2026
 
 Petición del usuario: corregir dos hallazgos «de la manera recomendada».
