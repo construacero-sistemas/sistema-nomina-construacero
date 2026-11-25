@@ -234,7 +234,7 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
       expect(screen.getByText('$2,50')).toBeTruthy()
       expect(screen.queryByText('Tarifa / hora')).toBeNull()
       expect(screen.queryByText(/Ingreso:/)).toBeNull()
-      expect(screen.getByText('1 de 5 días')).toBeTruthy()
+      expect(screen.getByText('4 de 5 días')).toBeTruthy()
       expect(screen.getByText('· 1 falta')).toBeTruthy()
     } finally {
       vi.useRealTimers()

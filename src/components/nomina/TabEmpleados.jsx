@@ -74,8 +74,8 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
   const { data: feriadosSemana = [] } = useFeriados(semanaActual.desde, semanaActual.hasta)
   const avancePorEmpleado = useMemo(() => avanceSemanaPorEmpleado(
     asistenciaSemana?.registros,
-    { empleados: configs, desde: semanaActual.desde, hasta: semanaActual.hasta, hoy: hoyIso, feriados: feriadosSemana },
-  ), [asistenciaSemana, configs, semanaActual, hoyIso, feriadosSemana])
+    { empleados: configs, desde: semanaActual.desde, hasta: semanaActual.hasta, feriados: feriadosSemana },
+  ), [asistenciaSemana, configs, semanaActual, feriadosSemana])
   const bajas   = useMemo(() => (allConfigs || []).filter(c => c.activo === false), [allConfigs])
 
   const empleadosYaConfigurados = useMemo(() => {

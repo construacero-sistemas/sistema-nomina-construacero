@@ -51,10 +51,10 @@ export function resumenSalario({ salarioDia, horasJornada = 8, divisorMensual = 
 
 /**
  * Cómo va la semana en curso de cada persona trabajando por exclusión (Opción A):
- * cuenta días hábiles transcurridos hasta `hoy` como presentes por defecto
+ * cuenta los días laborables de toda la semana (`desde..hasta`) como presentes por defecto
  * (desde `fecha_ingreso`, excluyendo feriados no laborables), descontando faltas
- * sin justificativo y sumando días de descanso/feriados trabajados.
- * Acepta un `Map` de días laborables (modo legado de pruebas) o `{ empleados, desde, hasta, hoy, feriados }`.
+ * sin justificativo y sumando días de descanso/feriados trabajados, igual que Asistencia.
+ * Acepta un `Map` de días laborables (modo legado de pruebas) o `{ empleados, desde, hasta, feriados }`.
  */
 export function avanceSemanaPorEmpleado(registros = [], diasOOpciones = new Map()) {
   const porEmpleado = new Map()
@@ -75,9 +75,8 @@ export function avanceSemanaPorEmpleado(registros = [], diasOOpciones = new Map(
     return porEmpleado
   }
 
-  const { empleados = [], desde, hasta, hoy, feriados = [] } = diasOOpciones || {}
-  const tope = hoy && hoy < hasta ? hoy : hasta
-  const fechas = rangoFechasHasta(desde, tope)
+  const { empleados = [], desde, hasta, feriados = [] } = diasOOpciones || {}
+  const fechas = rangoFechasHasta(desde, hasta)
   const feriadosPorFecha = new Map((feriados || []).map(f => [String(f.fecha).slice(0, 10), f]))
   const registrosPorClave = new Map()
   for (const fila of registros || []) {
