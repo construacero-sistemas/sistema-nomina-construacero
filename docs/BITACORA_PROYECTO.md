@@ -6,6 +6,12 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Modal diario por excepción y limpieza de textos en Hoja semanal — 24/11/2026
+
+- **Asistencia por excepción en el modal de la grilla (`AsistenciaModal.jsx`):** se eliminaron los campos de hora de entrada/salida, cálculo manual de descanso, checkbox de feriado manual y atajos de 5 columnas. Ahora trabaja 100% por excepción tomando el horario configurado del trabajador (`useHorarios` + ficha): en día laborable permite elegir entre **Horas extras** (chips desde `0.5h` y entrada decimal manual) o **Ausente** (con/sin justificativo) y restaurar con **Volver a presente**; en días de descanso/feriado no laborables oculta ausencias y ofrece **Marcar día trabajado** (con extras opcionales) o **Dejar como día libre**. Los marcajes históricos de reloj siguen en solo lectura.
+- **Limpieza móvil, hoja semanal y contraste:** se retiró el botón obsoleto de carga masiva de horario fijo en `AsistenciaDiariaMovil.jsx` / `TabAsistencia.jsx` (junto con su compuerta en `scripts/check-project.mjs`), se quitó la nota explicativa de reparto semanal y el botón **Descargar Excel** en `HojaSemanal.jsx` (dejando únicamente **Descargar Planilla PDF**), se compactó el subtítulo del bono parcial a `de $35,00` con tooltip informativo para no ensanchar la columna, y se corrigió el contraste del valor de la tasa en modo claro (`RateSelector.jsx`, `text-primary`).
+- **Pruebas:** actualizadas `AsistenciaModal.test.jsx`, `AsistenciaDiariaMovil.test.jsx`, `TabAsistencia.test.jsx` y `npm run verify` completo.
+
 ## Asistencia por excepción, semanas correlativas ISO, cierre asistido con tasa y vista sin recibos — 24/11/2026
 
 - **Regla del usuario (Opción A):** se elimina el marcaje diario de entrada/salida y los avisos de retraso. Todo trabajador activo con `controla_asistencia` queda **presente por defecto** en sus días laborables dentro del período (desde su `fecha_ingreso`) según el horario configurado en su ficha o por día (`nomina_horarios`, respaldo `08:00–17:00`, `8 h`).

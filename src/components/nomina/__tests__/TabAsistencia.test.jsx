@@ -33,7 +33,6 @@ vi.mock('../../../hooks/useNomina', () => ({
 vi.mock('../MarcajeLogisticaPanel', () => ({ default: () => null }))
 vi.mock('../AsistenciaDiariaMovil', () => ({ default: () => null }))
 vi.mock('../AsistenciaModal', () => ({ default: () => null }))
-vi.mock('../AsistenciaMasivaModal', () => ({ default: () => null }))
 
 import TabAsistencia from '../TabAsistencia.jsx'
 

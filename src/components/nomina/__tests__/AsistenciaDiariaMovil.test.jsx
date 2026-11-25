@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import AsistenciaDiariaMovil from '../AsistenciaDiariaMovil.jsx'
 
-const mocks = vi.hoisted(() => ({ abrirMasivo: vi.fn() }))
+const mocks = vi.hoisted(() => ({}))
 
 vi.mock('../../../hooks/useNomina.js', () => ({}))
 
@@ -28,7 +28,6 @@ function renderManual(registros = new Map(), props = {}) {
       esAdmin
       puedeGestionarNomina
       onAbrirDetalle={vi.fn()}
-      onAbrirMasivo={mocks.abrirMasivo}
       {...props}
     />,
   )
@@ -117,16 +116,15 @@ describe('AsistenciaDiariaMovil', () => {
     expect(screen.getAllByRole('button', { name: 'Registrar horas extras / falta' })).toHaveLength(3)
   })
 
-  it('el horario masivo incluye solo empleados sin registro y no los marcajes reales', () => {
+  it('no muestra carga masiva obsoleta y mantiene marcajes reales en solo consulta', () => {
     const registros = new Map([
       ['emp-2|2026-09-10', { id: 'real-2', estado_marcaje: 'completo', hora_entrada: '08:00', hora_salida: '17:00' }],
       ['emp-3|2026-09-10', { id: 'absence-3', estado_marcaje: 'manual', es_ausencia: true }],
     ])
     renderManual(registros)
+    expect(screen.queryByRole('button', { name: /Aplicar a .* sin registro/i })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Excepciones \d+/ }))
     expect(screen.getByText('Marcaje real del reloj')).toBeInTheDocument()
     expect(screen.getByText(/Este registro histórico se consulta en el detalle/i)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 1 sin registro' }))
-    expect(mocks.abrirMasivo).toHaveBeenCalledExactlyOnceWith({ fecha: '2026-09-10', empleadoIds: ['emp-1'] })
   })
 })

@@ -1,7 +1,7 @@
 // src/components/nomina/AsistenciaDiariaMovil.jsx
 // Registro manual previsto para nómina, separado del marcaje real del reloj.
 import { useMemo, useState } from 'react'
-import { CalendarClock, Check, ChevronLeft, ChevronRight, Clock3, Search, Sparkles, UserX } from 'lucide-react'
+import { CalendarClock, Check, ChevronLeft, ChevronRight, Clock3, Search, UserX } from 'lucide-react'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 import { formatRangoHoras12 } from '../../utils/timeUtils.js'
 import { trabajaEseDia } from '../../utils/diasLaborables.js'
@@ -32,11 +32,8 @@ export default function AsistenciaDiariaMovil({
   onMoverSemana,
   onIrHoy,
   esAdmin,
-  // La carga masiva (POST /nomina/asistencia/registrar-masivo) exige
-  // `administrarNomina` en el servidor, la misma llave que `puedeGestionarNomina`.
   puedeGestionarNomina = false,
   onAbrirDetalle,
-  onAbrirMasivo,
 }) {
   const [filtro, setFiltro] = useState('presentes')
   const [busqueda, setBusqueda] = useState('')
@@ -92,8 +89,6 @@ export default function AsistenciaDiariaMovil({
     })
   }, [filas, filtro, busqueda])
 
-  const idsMasivos = filas.filter(fila => !fila.libre && !fila.registro && !fila.real).map(fila => fila.empleado.empleado_id)
-
   return (
     <section className="space-y-3" aria-labelledby="asistencia-manual-title">
       <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
@@ -146,17 +141,10 @@ export default function AsistenciaDiariaMovil({
           <p><strong>Asistencia por día.</strong> Todo trabajador en día hábil cuenta como presente; registra aquí excepciones o días pasados.</p>
         </div>
         {puedeGestionarNomina && !esDomingo && empleados.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-sky-200 pt-2">
+          <div className="mt-2 border-t border-sky-200 pt-2">
             <p className="text-[11px] font-semibold text-sky-950">
-              {conteos.presentes} presentes · {conteos.registrados} con registro · {conteos.faltas} faltas{conteos.reales ? ` · ${conteos.reales} marcajes reloj` : ''}{conteos.libres ? ` · ${conteos.libres} en día libre` : ''}
+              {conteos.presentes} presentes · {conteos.registrados} con excepción · {conteos.faltas} faltas{conteos.reales ? ` · ${conteos.reales} marcajes reloj` : ''}{conteos.libres ? ` · ${conteos.libres} en día libre` : ''}
             </p>
-            <button type="button" onClick={() => onAbrirMasivo?.({ fecha: fechaSeleccionada, empleadoIds: idsMasivos })}
-              disabled={!idsMasivos.length}
-              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-sky-900 px-3 text-xs font-black text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ touchAction: 'manipulation' }}>
-              <Sparkles size={14} aria-hidden="true" />
-              Aplicar a {idsMasivos.length} sin registro
-            </button>
           </div>
         )}
       </div>
