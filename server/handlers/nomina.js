@@ -29,6 +29,11 @@ export {
   handleAnularEntradaComoAusencia,
 } from './nomina.horarios.js'
 
+export {
+  handleRegistrarHorasExtra,
+  handleMarcarDiaTrabajado,
+} from './nomina.excepciones.js'
+
 export { handleDeshacerMarcaje } from './nomina.marcaje-deshacer.js'
 
 export { handleGetHojaSemanal } from './nomina.hoja.js'

@@ -118,7 +118,11 @@ describe('lectura paginada de la tabla de horarios', () => {
   it('resuelve la semana de cada empleado y la de uno en particular', async () => {
     mock = installFetch([[fila({ dia_semana: 2 }), fila({ empleado_id: EMPLEADO2, dia_semana: 4 })]])
     const todas = await fetchDiasLaborablesPorEmpleado(ENV, HEADERS, CUENTA, { fecha: '2026-08-03' })
-    expect(todas.porEmpleado.get(EMPLEADO)).toEqual({ dias: [2], configurado: true })
+    expect(todas.porEmpleado.get(EMPLEADO)).toMatchObject({
+      dias: [2],
+      configurado: true,
+      horariosPorDia: { 2: { hora_inicio: null, hora_fin: null, horas_jornada: null } },
+    })
 
     mock.restore()
     mock = installFetch([[]])

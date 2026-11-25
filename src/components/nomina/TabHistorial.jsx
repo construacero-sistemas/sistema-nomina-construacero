@@ -1,5 +1,5 @@
 // src/components/nomina/TabHistorial.jsx
-// Períodos ya pagados — consulta y reimpresión de recibos (solo lectura).
+// Períodos ya cerrados y pagados — consulta y exportación de hoja semanal (solo lectura).
 import { useState, useMemo } from 'react'
 import { Archive, Eye, Calendar, DollarSign, Users } from 'lucide-react'
 import { useNominaPeriodos } from '../../hooks/useNomina'
@@ -48,8 +48,8 @@ export default function TabHistorial() {
     <div className="space-y-4">
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <KpiCard icon={Calendar}   label="Períodos pagados" value={totales.periodos} color="slate" />
-        <KpiCard icon={Users}      label="Recibos emitidos" value={totales.recibos} color="indigo" />
+        <KpiCard icon={Calendar}   label="Períodos cerrados" value={totales.periodos} color="slate" />
+        <KpiCard icon={Users}      label="Trabajadores liquidados" value={totales.recibos} color="indigo" />
         <KpiCard icon={DollarSign} label="Total liquidado"  value={`$${fmt(totales.neto)}`} color="green" />
       </div>
 
@@ -116,9 +116,9 @@ export default function TabHistorial() {
                     <td className="text-right px-3 py-2.5 text-slate-600">${fmt(p.total_bruto_usd)}</td>
                     <td className="text-right px-3 py-2.5 font-black text-green-600">${fmt(p.total_neto_usd)}</td>
                     <td className="px-3 py-2.5 text-right">
-                      <button onClick={() => setDetalle(p)} aria-label="Ver recibos del período"
+                      <button onClick={() => setDetalle(p)} aria-label="Ver hoja semanal del período"
                         className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-sky-600 hover:bg-sky-50 transition-colors">
-                        <Eye size={14} aria-hidden="true" /> Ver recibos
+                        <Eye size={14} aria-hidden="true" /> Ver hoja semanal
                       </button>
                     </td>
                   </tr>
@@ -154,13 +154,13 @@ export default function TabHistorial() {
                 </div>
                 <button onClick={() => setDetalle(p)}
                   className="w-full mt-3 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-primary/5 text-primary hover:bg-primary/10 text-xs font-bold transition-colors">
-                  <Eye size={14} /> Ver recibos
+                  <Eye size={14} /> Ver hoja semanal
                 </button>
               </article>
             ))}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between text-xs">
               <span className="font-black text-slate-700">Total</span>
-              <span className="font-bold text-slate-600">{totales.recibos} recibos</span>
+              <span className="font-bold text-slate-600">{totales.recibos} liquidaciones</span>
               <span className="font-black text-green-700">${fmt(totales.neto)}</span>
             </div>
           </div>

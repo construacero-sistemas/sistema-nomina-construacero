@@ -21,11 +21,12 @@ function permanenciaEnHoras(entrada, salida) {
   return Math.max(0, (fin - inicio) / 60)
 }
 
-/** Suma horas a un HH:MM (para los atajos de «+1h / +2h extra»). */
+/** Suma horas (incluye fracciones como 0.5 h = 30 min) a un HH:MM. */
 function sumarHoras(hora, horas) {
   const [h, m] = String(hora || '').slice(0, 5).split(':').map(Number)
   if (!Number.isFinite(h)) return null
-  const total = (h * 60 + (m || 0) + horas * 60) % (24 * 60)
+  const deltaMin = Math.round(Number(horas) * 60)
+  const total = ((h * 60 + (m || 0) + deltaMin) % (24 * 60) + 24 * 60) % (24 * 60)
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
 }
 
@@ -212,7 +213,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
               Atajos Rápidos
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
               <button
                 type="button"
                 onClick={() => aplicarPreset(inicioAtajo, finAtajo, descansoAtajo)}
@@ -221,6 +222,16 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
               >
                 {formatHora12(inicioAtajo)} – {formatHora12(finAtajo)}
                 <span className="block text-[9px] font-normal text-emerald-600">{etiquetaJornada}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => aplicarPreset(inicioAtajo, sumarHoras(finAtajo, 0.5), descansoAtajo)}
+                className="py-2 px-2 rounded-xl bg-amber-50 hover:bg-amber-100/80 border border-amber-200 text-amber-800 text-[11px] font-bold transition-all text-center min-h-11 flex flex-col items-center justify-center"
+                style={{ touchAction: 'manipulation' }}
+              >
+                {formatHora12(inicioAtajo)} – {formatHora12(sumarHoras(finAtajo, 0.5))}
+                <span className="block text-[9px] font-normal text-amber-600">+0.5h Extra</span>
               </button>
 
               <button
@@ -246,7 +257,7 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
               <button
                 type="button"
                 onClick={marcarAusenciaRapida}
-                className="py-2 px-2 rounded-xl bg-red-50 hover:bg-red-100/80 border border-red-200 text-red-700 text-[11px] font-bold transition-all text-center min-h-11 flex flex-col items-center justify-center"
+                className="col-span-2 sm:col-span-1 py-2 px-2 rounded-xl bg-red-50 hover:bg-red-100/80 border border-red-200 text-red-700 text-[11px] font-bold transition-all text-center min-h-11 flex flex-col items-center justify-center"
                 style={{ touchAction: 'manipulation' }}
               >
                 Falta / Ausencia
@@ -318,6 +329,30 @@ export default function AsistenciaModal({ empleado, fecha, registro, feriado, es
                   <input type="time" value={horaSalida} onChange={e => setHoraSalida(e.target.value)}
                     className={inputCls} disabled={cargando || !puedeEditar} />
                 </div>
+              </div>
+
+              {/* Ingreso directo de horas extras manuales desde 0.5 h */}
+              <div className="pt-1.5 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1 min-w-0">
+                  Horas extras manuales
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={preview.extra > 0 ? String(Math.round(preview.extra * 100) / 100) : ''}
+                    disabled={cargando || !puedeEditar}
+                    placeholder="0 (ej. 0.5)"
+                    onChange={e => {
+                      const raw = e.target.value.trim().replace(',', '.')
+                      if (raw === '') { aplicarPreset(inicioAtajo, finAtajo, descansoAtajo); return }
+                      const n = Number(raw)
+                      if (Number.isFinite(n) && n >= 0 && n <= 16) {
+                        const nuevaSalida = sumarHoras(finAtajo, n)
+                        if (nuevaSalida) aplicarPreset(inicioAtajo, nuevaSalida, descansoAtajo)
+                      }
+                    }}
+                    className="ml-2 w-24 min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-xs font-mono font-bold text-slate-900"
+                  />
+                </label>
               </div>
 
               {/* Regla del usuario (20/11/2026): el descanso ya no se elige; sale del horario general. */}

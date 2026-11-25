@@ -69,8 +69,40 @@ export function moverSemana({ desde }, semanas, inicio = SEMANA_DEFAULT.inicio) 
   return rangoSemana(aIso(fecha), inicio)
 }
 
-/** «Semana 05 nov – 11 nov 2026». */
+function numeroIsoDeFecha(fecha) {
+  const target = new Date(Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate()))
+  const dayNr = (target.getUTCDay() + 6) % 7 // lunes = 0 .. domingo = 6
+  target.setUTCDate(target.getUTCDate() - dayNr + 3) // jueves de la misma semana ISO
+  const anio = target.getUTCFullYear()
+  const primerJueves = new Date(Date.UTC(anio, 0, 4))
+  const primerDia = (primerJueves.getUTCDay() + 6) % 7
+  primerJueves.setUTCDate(primerJueves.getUTCDate() - primerDia + 3)
+  const numero = 1 + Math.round((target - primerJueves) / (7 * 86400000))
+  return { numero, anio, etiqueta: `Semana ${String(numero).padStart(2, '0')}-${anio}` }
+}
+
+/**
+ * Número correlativo ISO de la semana que contiene el rango `desde..hasta`.
+ * En semanas de 7 días (p. ej. jueves → miércoles) toma el lunes incluido en el
+ * rango para que cada semana tenga un único correlativo consecutivo todo el año.
+ */
+export function numeroSemanaIso(desde, hasta) {
+  if (!desde && !hasta) return null
+  const inicio = aFecha(desde || hasta)
+  const fin = aFecha(hasta || desde)
+  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime())) return null
+  const cursor = new Date(inicio)
+  for (let i = 0; i <= 7 && cursor <= fin; i += 1) {
+    if (cursor.getUTCDay() === 1) return numeroIsoDeFecha(cursor)
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+  return numeroIsoDeFecha(fin)
+}
+
+/** «Semana 46-2026 (12 nov – 18 nov)». */
 export function nombreSemana(desde, hasta) {
   const fmt = iso => aFecha(iso).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', timeZone: 'UTC' })
-  return `Semana ${fmt(desde)} – ${fmt(hasta)} ${hasta.slice(0, 4)}`
+  const info = numeroSemanaIso(desde, hasta)
+  const prefijo = info ? info.etiqueta : `Semana ${hasta.slice(0, 4)}`
+  return `${prefijo} (${fmt(desde)} – ${fmt(hasta)})`
 }

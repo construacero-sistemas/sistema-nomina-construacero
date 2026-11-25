@@ -1,35 +1,25 @@
 // src/components/nomina/MarcajeLogisticaPanel.jsx
-// Marcaje real de hoy: una acción contextual por empleado, mobile-first.
-import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, Clock3, RefreshCw, Search, X } from 'lucide-react'
+// Asistencia de hoy (gestión por excepción): todo empleado en día laborable
+// aparece Presente por defecto según su horario; solo se marcan horas extras,
+// ausencias o días de descanso/feriado trabajados.
+import { useMemo, useState } from 'react'
+import { CalendarDays, Clock3, Lock, RefreshCw, Search, X } from 'lucide-react'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import { tieneCapacidad } from '../../config/accesoModulos.js'
 import {
-  useAnularEntradaComoAusencia, useConfigNomina, useCorregirMarcaje, useDeshacerMarcaje, useMarcajeHoy, useMarcarAusencia, useMarcarEntrada, useMarcarSalida,
+  useConfigNomina, useMarcajeHoy, useMarcarAusencia, useMarcarDiaTrabajado, useRegistrarHorasExtra,
 } from '../../hooks/useNomina'
-import CorreccionMarcajeModal from './CorreccionMarcajeModal.jsx'
 import TarjetaMarcaje from './marcaje/TarjetaMarcaje.jsx'
-import AnularEntradaModal from './marcaje/AnularEntradaModal.jsx'
 import useAccionesMarcaje from './marcaje/useAccionesMarcaje.js'
 import useOrdenEstable from './marcaje/useOrdenEstable.js'
 import {
   FILTROS, estadoDelRegistro, fechaLegible, nombreEmpleado, normalizarBusqueda,
 } from './marcaje/marcajeEstado.js'
 import { trabajaEseDia } from '../../utils/diasLaborables.js'
-import { fechaOperativaHoy, horaOperativaAhora } from '../../utils/fechaOperativa.js'
+import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
 
-// D-2 (PLAN_MARCAJE_BOTONES_UX): se abre en lo que pide acción. Se decide una sola
-// vez, al tener datos; después el filtro solo cambia cuando el operador lo elige.
-function filtroInicial(conteos) {
-  if (conteos.pendiente > 0) return 'pendientes'
-  if (conteos['en-curso'] > 0) return 'en-curso'
-  return 'todos'
-}
+const ES_NOVEDAD = new Set(['extra', 'ausencia', 'descanso-trabajado'])
 
-// `feriadosPorFecha`: Map fecha → feriado del calendario laboral (lo entrega la
-// pestaña de asistencia, que ya consulta el rango). Un feriado NO laborable se
-// comporta como el día libre; uno laborable se trabaja con recargo y sí admite
-// ausencia. Sin este dato el reloj real pedía asistencia en un feriado (F-6).
 export default function MarcajeLogisticaPanel({
   empleados = [],
   feriadosPorFecha = null,
@@ -37,29 +27,20 @@ export default function MarcajeLogisticaPanel({
   empleadosError = false,
   empleadosActualizando = false,
   onReintentarEmpleados,
+  periodoParaCerrar = null,
+  onCerrarPeriodo = null,
 }) {
   const perfil = useAuthStore(state => state.perfil)
   const puedeMarcar = tieneCapacidad(perfil, 'administrarNomina')
   const { data, isLoading, isFetching, isError, refetch } = useMarcajeHoy()
-  const marcarEntrada = useMarcarEntrada()
-  const marcarSalida = useMarcarSalida()
+  const registrarHorasExtra = useRegistrarHorasExtra()
+  const marcarDiaTrabajado = useMarcarDiaTrabajado()
   const marcarAusencia = useMarcarAusencia()
-  const corregirMarcaje = useCorregirMarcaje()
-  const anularEntrada = useAnularEntradaComoAusencia()
-  const deshacerMarcaje = useDeshacerMarcaje()
   const { data: configNomina } = useConfigNomina()
   const [busqueda, setBusqueda] = useState('')
-  const [filtro, setFiltro] = useState(null)
-  const [vistaCompacta, setVistaCompacta] = useState(false)
+  const [filtro, setFiltro] = useState('todos')
+  const [soloNovedades, setSoloNovedades] = useState(false)
   const [semillaOrden, setSemillaOrden] = useState(0)
-  const [registroEnCorreccion, setRegistroEnCorreccion] = useState(null)
-  const [registroParaAnular, setRegistroParaAnular] = useState(null)
-  // M-11: hora operativa para «En jornada» y «Retraso»; un solo reloj por minuto.
-  const [horaActual, setHoraActual] = useState(() => horaOperativaAhora())
-  useEffect(() => {
-    const intervalo = setInterval(() => setHoraActual(horaOperativaAhora()), 60_000)
-    return () => clearInterval(intervalo)
-  }, [])
 
   const registros = useMemo(
     () => new Map((data?.registros || []).map(registro => [registro.empleado_id, registro])),
@@ -74,8 +55,6 @@ export default function MarcajeLogisticaPanel({
   const filas = useMemo(() => (empleados || []).map(empleado => {
     const registro = registros.get(empleado.empleado_id) || null
     const libre = Boolean(fechaMarcaje) && !trabajaEseDia(empleado, fechaMarcaje)
-    // Feriado no laborable: nadie está obligado a asistir, así que no suma pendientes
-    // ni ofrece «Marcar ausente»; si alguien vino, se marca igual.
     const feriadoNoLaborable = Boolean(feriadoDeHoy && feriadoDeHoy.laborable === false)
     return {
       empleado, registro, libre, feriado: feriadoDeHoy,
@@ -87,51 +66,37 @@ export default function MarcajeLogisticaPanel({
   const conteos = useMemo(() => filas.reduce((totales, fila) => {
     totales[fila.estado] += 1
     return totales
-  }, { pendiente: 0, 'en-curso': 0, completado: 0, manual: 0, ausencia: 0, libre: 0 }), [filas])
+  }, { presente: 0, extra: 0, ausencia: 0, libre: 0, 'descanso-trabajado': 0 }), [filas])
 
-  if (filtro === null && data?.fecha && filas.length) setFiltro(filtroInicial(conteos))
   const filtroActual = filtro ?? 'todos'
-
-  // M-5: el orden se congela durante la tanda; cambia con filtro, búsqueda, vista o «Actualizar».
   const termino = normalizarBusqueda(busqueda)
-  const { ordenar, recientes, marcarReciente } = useOrdenEstable(filas, `${semillaOrden}|${filtroActual}|${termino}|${vistaCompacta}`)
+  const { ordenar, recientes, marcarReciente } = useOrdenEstable(filas, `${semillaOrden}|${filtroActual}|${termino}|${soloNovedades}`)
   const filtroActivo = FILTROS.find(item => item.id === filtroActual)
-  const filtroParaVista = vistaCompacta && (filtroActual === 'todos' || filtroActual === 'manuales') ? null : filtroActivo
+
   const listaVisible = ordenar(filas
-    .filter(fila => recientes.has(fila.empleado.empleado_id)
-      || ((!vistaCompacta || fila.estado === 'pendiente' || fila.estado === 'en-curso')
-        && (!filtroParaVista?.estado || fila.estado === filtroParaVista.estado)))
+    .filter(fila => {
+      if (recientes.has(fila.empleado.empleado_id)) return true
+      if (soloNovedades && !ES_NOVEDAD.has(fila.estado)) return false
+      if (filtroActivo?.estados) return filtroActivo.estados.includes(fila.estado)
+      if (filtroActivo?.estado) return fila.estado === filtroActivo.estado
+      return true
+    })
     .filter(fila => !termino || normalizarBusqueda(`${fila.nombre} ${fila.empleado.cargo || ''}`).includes(termino)))
 
-  // M-4: solo la carga inicial, un error o un cambio de fecha bloquean todo el panel.
-  // Una recarga de fondo no: la tarjeta ya refleja lo que el servidor confirmó.
   const consultaEnCurso = isLoading || isFetching || empleadosCargando || empleadosActualizando
   const consultaConError = isError || empleadosError
   const bloqueoGlobal = isLoading || empleadosCargando || consultaConError || !data?.fecha || data.fecha !== fechaOperativaHoy()
+
   const acciones = useAccionesMarcaje({
-    filas, bloqueoGlobal,
-    entrada: marcarEntrada, salida: marcarSalida, ausencia: marcarAusencia, deshacer: deshacerMarcaje,
+    filas,
+    bloqueoGlobal,
+    horasExtraMut: registrarHorasExtra,
+    diaTrabajadoMut: marcarDiaTrabajado,
+    ausenciaMut: marcarAusencia,
     onExito: marcarReciente,
   })
 
   if (!puedeMarcar) return null
-
-  const modalBloqueado = bloqueoGlobal || corregirMarcaje.isPending || anularEntrada.isPending
-
-  async function confirmarAnulacion(motivo, justificada = false) {
-    if (!registroParaAnular || bloqueoGlobal) return
-    await anularEntrada.mutateAsync({
-      registroId: registroParaAnular.registro.id,
-      motivo,
-      resultadoEsperado: registroParaAnular.resultadoEsperado,
-      justificada,
-    })
-    marcarReciente(registroParaAnular.empleado.empleado_id)
-    acciones.anunciar(registroParaAnular.resultadoEsperado === 'sin-registro'
-      ? `Entrada de ${registroParaAnular.nombre} anulada`
-      : `Entrada de ${registroParaAnular.nombre} anulada y ausencia registrada`)
-    setRegistroParaAnular(null)
-  }
 
   function actualizar() {
     acciones.limpiarError()
@@ -148,38 +113,55 @@ export default function MarcajeLogisticaPanel({
             <Clock3 size={19} aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <h3 id="marcaje-real-title" className="text-base font-black text-slate-900">Marcaje real de hoy</h3>
+            <h3 id="marcaje-real-title" className="text-base font-black text-slate-900">Asistencia de hoy</h3>
             <p className="text-xs capitalize text-slate-500">{fechaLegible(data?.fecha)}</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => setVistaCompacta(valor => !valor)}
-          aria-pressed={vistaCompacta}
-          title={vistaCompacta ? 'Mostrar todos los marcajes' : 'Mostrar solo pendientes y jornadas en curso'}
-          className={`inline-flex min-h-11 items-center justify-center rounded-xl border px-3 text-xs font-bold ${vistaCompacta ? 'border-sky-300 bg-sky-50 text-sky-900' : 'border-slate-200 bg-white text-slate-700'}`}
-        >
-          {vistaCompacta ? 'Ver todos' : 'Operativo'}
-        </button>
-        <button
-          type="button"
-          onClick={actualizar}
-          disabled={consultaEnCurso}
-          aria-label="Actualizar marcajes y empleados"
-          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-100 px-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-wait disabled:opacity-60"
-          style={{ touchAction: 'manipulation' }}
-        >
-          <RefreshCw size={15} className={consultaEnCurso ? 'animate-spin' : ''} aria-hidden="true" />
-          <span className="hidden sm:inline">Actualizar</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setSoloNovedades(valor => !valor)}
+            aria-pressed={soloNovedades}
+            title={soloNovedades ? 'Mostrar todo el personal' : 'Mostrar solo horas extras, ausencias y descansos trabajados'}
+            className={`inline-flex min-h-11 items-center justify-center rounded-xl border px-3 text-xs font-bold ${soloNovedades ? 'border-sky-300 bg-sky-50 text-sky-900' : 'border-slate-200 bg-white text-slate-700'}`}
+            style={{ touchAction: 'manipulation' }}
+          >
+            {soloNovedades ? 'Ver todos' : 'Solo novedades'}
+          </button>
+          <button
+            type="button"
+            onClick={actualizar}
+            disabled={consultaEnCurso}
+            aria-label="Actualizar asistencia y empleados"
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-100 px-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-wait disabled:opacity-60"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <RefreshCw size={15} className={consultaEnCurso ? 'animate-spin' : ''} aria-hidden="true" />
+            <span className="hidden sm:inline">Actualizar</span>
+          </button>
         </div>
       </div>
 
       <p className="mt-2 text-sm leading-snug text-slate-600">
-        El servidor registra la hora; marca al empleado con la acción disponible. Quien no trabaja hoy
-        (según los días de su ficha) aparece como <strong>Día libre</strong> y no suma pendientes.
+        Todos los trabajadores en su día laborable están <strong>presentes por defecto</strong> según su horario. Marca solo excepciones: <strong>horas extras</strong>, <strong>ausencias</strong> o <strong>días de descanso trabajados</strong>.
       </p>
+
+      {periodoParaCerrar && onCerrarPeriodo && (
+        <div role="region" aria-label="Cierre del período disponible" className="mt-2.5 flex flex-col gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs font-bold leading-relaxed text-emerald-950">
+            Último día o cierre pendiente de <strong>{periodoParaCerrar.nombre}</strong>. Revisa el resumen semanal y confirma la tasa de pago.
+          </p>
+          <button
+            type="button"
+            onClick={() => onCerrarPeriodo(periodoParaCerrar)}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 text-xs font-black text-white shadow-xs transition-colors hover:bg-emerald-800"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <Lock size={14} aria-hidden="true" />
+            Revisar y cerrar período
+          </button>
+        </div>
+      )}
 
       {feriadoDeHoy && (
         <p className="mt-2 flex items-start gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs leading-relaxed text-violet-950">
@@ -187,24 +169,19 @@ export default function MarcajeLogisticaPanel({
           <span>
             <strong>Feriado{feriadoDeHoy.nombre ? `: ${feriadoDeHoy.nombre}` : ''}</strong>
             {feriadoDeHoy.laborable === false
-              ? ' — no es laborable: nadie suma pendientes y no se registra ausencia. Si alguien vino, márcalo igual.'
-              : ' — laborable: se espera asistencia y se paga con el recargo del feriado.'}
+              ? ' — no es laborable: si alguien vino a trabajar, márcalo como día trabajado.'
+              : ' — laborable: asistencia activa por defecto con recargo de feriado.'}
           </span>
         </p>
       )}
 
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5" aria-label="Resumen de marcajes de hoy">
-        <ResumenEstado label="Pendientes" count={conteos.pendiente} color="amber" />
-        <ResumenEstado label="En jornada" count={conteos['en-curso']} color="emerald" />
-        <ResumenEstado label="Completados" count={conteos.completado} color="slate" />
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5" aria-label="Resumen de asistencia de hoy">
+        <ResumenEstado label="Presentes" count={conteos.presente + conteos.extra} color="emerald" />
+        <ResumenEstado label="Con extras" count={conteos.extra} color="amber" />
         <ResumenEstado label="Ausencias" count={conteos.ausencia} color="rose" />
-        <ResumenEstado label="Día libre" count={conteos.libre} color="slate" />
+        <ResumenEstado label="Descanso" count={conteos.libre} color="slate" />
+        <ResumenEstado label="Trab. descanso" count={conteos['descanso-trabajado']} color="violet" />
       </div>
-      {conteos.manual > 0 && (
-        <p className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-relaxed text-sky-950">
-          {conteos.manual} registro(s) de horario fijo están separados del marcaje real y no habilitan entrada o salida de reloj.
-        </p>
-      )}
 
       <div className="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(12rem,1fr)_auto] sm:items-center">
         <label className="relative block min-w-0">
@@ -231,10 +208,11 @@ export default function MarcajeLogisticaPanel({
         )}
       </div>
 
-      <div className="mt-2 grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap" role="group" aria-label="Filtrar marcajes por estado">
-        {FILTROS.filter(item => !['todos', 'manuales', 'libres'].includes(item.id) || !vistaCompacta)
-          .map(item => {
-          const count = item.estado ? conteos[item.estado] : filas.length
+      <div className="mt-2 grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap" role="group" aria-label="Filtrar asistencia por estado">
+        {FILTROS.map(item => {
+          const count = item.estados
+            ? item.estados.reduce((sum, e) => sum + (conteos[e] || 0), 0)
+            : item.estado ? (conteos[item.estado] || 0) : filas.length
           const seleccionado = filtroActual === item.id
           return (
             <button
@@ -258,7 +236,7 @@ export default function MarcajeLogisticaPanel({
 
       {data?.fecha && data.fecha !== fechaOperativaHoy() && !consultaConError && (
         <div role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          La fecha operativa cambió. Actualiza los marcajes antes de continuar.
+          La fecha operativa cambió. Actualiza la lista antes de continuar.
           <button type="button" onClick={actualizar} className="ml-2 min-h-11 rounded-lg border border-amber-300 bg-white px-3 font-bold" style={{ touchAction: 'manipulation' }}>
             Actualizar
           </button>
@@ -267,7 +245,7 @@ export default function MarcajeLogisticaPanel({
 
       {consultaConError && (
         <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-          <p>No se pudieron actualizar los marcajes o empleados. Para evitar duplicados, las acciones están pausadas hasta que actualices.</p>
+          <p>No se pudieron actualizar los datos de hoy. Para evitar errores, las acciones están pausadas hasta que actualices.</p>
           <button type="button" onClick={actualizar} className="mt-2 min-h-11 rounded-lg border border-rose-300 bg-white px-3 font-bold" style={{ touchAction: 'manipulation' }}>
             Volver a intentar
           </button>
@@ -277,24 +255,11 @@ export default function MarcajeLogisticaPanel({
       {acciones.error && (
         <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">
           {acciones.error}
-          {acciones.hayReintento && (
-            <button
-              type="button"
-              onClick={acciones.reintentar}
-              disabled={bloqueoGlobal}
-              className="mt-2 block min-h-11 rounded-lg border border-rose-300 bg-white px-3 font-bold disabled:opacity-55"
-              style={{ touchAction: 'manipulation' }}
-            >
-              Reintentar
-            </button>
-          )}
         </div>
       )}
 
-      {/* Sin el marcaje del día aún no hay fecha ni registros: tras una actualización
-          la lista de empleados puede llegar primero y leer `data.fecha` tumbaba la app. */}
       {(consultaEnCurso && !filas.length) || (!fechaMarcaje && !consultaConError) ? (
-        <div className="mt-3 grid grid-cols-1 gap-2.5 lg:grid-cols-2" aria-label="Cargando empleados y marcajes" aria-busy="true">
+        <div className="mt-3 grid grid-cols-1 gap-2.5 lg:grid-cols-2" aria-label="Cargando empleados y asistencia" aria-busy="true">
           {[0, 1].map(item => <div key={item} className="h-24 animate-pulse rounded-xl bg-slate-100" />)}
         </div>
       ) : !consultaConError && !filas.length ? (
@@ -303,46 +268,24 @@ export default function MarcajeLogisticaPanel({
         </p>
       ) : !consultaConError && !listaVisible.length ? (
         <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-          {vistaCompacta && filtroActual === 'todos' ? 'No hay entradas pendientes ni jornadas en curso.' : 'No hay empleados que coincidan con esta búsqueda y filtro.'}
+          {soloNovedades ? 'Hoy no hay novedades registradas (todos siguen su horario habitual).' : 'No hay empleados que coincidan con esta búsqueda y filtro.'}
         </p>
       ) : (
-        <div role="list" className="mt-3 grid min-w-0 grid-cols-1 gap-2.5 lg:grid-cols-2" aria-label="Lista de marcajes de hoy" aria-busy={acciones.hayPendientes}>
+        <div role="list" className="mt-3 grid min-w-0 grid-cols-1 gap-2.5 lg:grid-cols-2" aria-label="Lista de asistencia de hoy" aria-busy={acciones.hayPendientes}>
           {listaVisible.map(fila => (
             <TarjetaMarcaje
               key={fila.empleado.empleado_id}
               fila={fila}
               fecha={fechaMarcaje}
-              horaActual={horaActual}
+              horasDescansoDefault={configNomina?.nomina_horas_descanso ?? 1}
               {...acciones.estadoTarjeta(fila.empleado.empleado_id)}
-              onMarcar={acciones.marcar}
+              onHorasExtra={acciones.registrarHorasExtra}
+              onDiaTrabajado={acciones.marcarDiaTrabajado}
               onAusencia={acciones.marcarAusencia}
-              onDeshacer={acciones.deshacerUltima}
-              onCorregir={setRegistroEnCorreccion}
-              onAnular={setRegistroParaAnular}
             />
           ))}
         </div>
       )}
-      {registroEnCorreccion && (
-        <CorreccionMarcajeModal
-          empleado={registroEnCorreccion.empleado}
-          registro={registroEnCorreccion.registro}
-          horasDescansoDefault={configNomina?.nomina_horas_descanso ?? 1}
-          onClose={() => setRegistroEnCorreccion(null)}
-          onGuardar={campos => corregirMarcaje.mutateAsync(campos)}
-          isSaving={corregirMarcaje.isPending}
-        />
-      )}
-      {registroParaAnular && (
-        <AnularEntradaModal
-          objetivo={registroParaAnular}
-          onConfirmar={confirmarAnulacion}
-          onClose={() => setRegistroParaAnular(null)}
-          isPending={anularEntrada.isPending}
-          bloqueado={modalBloqueado}
-        />
-      )}
-      {/* M-14: una sola región viva anuncia la última acción (no una por tarjeta). */}
       <p aria-live="polite" className="sr-only">{acciones.anuncio}</p>
     </section>
   )
@@ -354,6 +297,7 @@ function ResumenEstado({ label, count, color }) {
     emerald: 'border-emerald-200 bg-emerald-50 text-emerald-900',
     slate: 'border-slate-200 bg-slate-50 text-slate-700',
     rose: 'border-rose-200 bg-rose-50 text-rose-800',
+    violet: 'border-violet-200 bg-violet-50 text-violet-900',
   }
   return (
     <div className={`min-w-0 rounded-xl border px-2.5 py-2 ${colors[color]}`}>

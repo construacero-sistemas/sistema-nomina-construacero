@@ -6,7 +6,7 @@ import { useMutation } from '@tanstack/react-query'
 import { useAccountQueryClient as useQueryClient } from '../../compat/lib/accountQueries.js'
 import { showToast } from '../../compat/components/ui/toastBus.js'
 import { formatHora12 } from '../utils/timeUtils'
-import { apiPost, KEY_ASISTENCIA, KEY_MARCAJE } from './nominaApi.js'
+import { apiPost, KEY_ASISTENCIA, KEY_MARCAJE, KEY_PERIODOS } from './nominaApi.js'
 import { makeIdempotencyKey } from './idempotencia.js'
 import { aplicarMarcajeEnCache } from './marcajeCache.js'
 
@@ -16,6 +16,8 @@ import { aplicarMarcajeEnCache } from './marcajeCache.js'
 function refrescar(qc) {
   qc.invalidateQueries({ queryKey: KEY_MARCAJE })
   qc.invalidateQueries({ queryKey: KEY_ASISTENCIA })
+  qc.invalidateQueries({ queryKey: KEY_PERIODOS })
+  qc.invalidateQueries({ queryKey: ['nomina', 'hoja'] })
 }
 
 // «Entrada de Omar Patti · 07:58 AM» (M-12): dice a quién y a qué hora.
@@ -108,6 +110,49 @@ export function useDeshacerMarcaje() {
       showToast.success(variables.tipo === 'entrada' ? 'Entrada deshecha' : 'Salida deshecha: la jornada sigue abierta')
       if (variables.tipo === 'entrada') aplicarMarcajeEnCache(qc, { quitarRegistroId: variables.registroId })
       else if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro })
+      refrescar(qc)
+    },
+  })
+}
+
+export function useRegistrarHorasExtra() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ empleadoId, fecha, horasExtra, nota, confirmarDiaTrabajado }) => apiPost('/api/nomina/marcaje/horas-extra', {
+      empleadoId,
+      ...(fecha ? { fecha } : {}),
+      horasExtra,
+      ...(nota !== undefined ? { nota } : {}),
+      ...(confirmarDiaTrabajado ? { confirmarDiaTrabajado: true } : {}),
+    }),
+    onSuccess: (data, variables) => {
+      const h = Number(variables?.horasExtra) || 0
+      showToast.success(h > 0
+        ? `Horas extras registradas (+${h} h)${variables?.nombre ? ` · ${variables.nombre}` : ''}`
+        : `Horas extras retiradas${variables?.nombre ? ` · ${variables.nombre}` : ''}`)
+      if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
+      else aplicarMarcajeEnCache(qc, { quitarEmpleadoId: variables.empleadoId })
+      refrescar(qc)
+    },
+  })
+}
+
+export function useMarcarDiaTrabajado() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ empleadoId, fecha, quitar = false, horasExtra = 0, nota }) => apiPost('/api/nomina/marcaje/dia-trabajado', {
+      empleadoId,
+      ...(fecha ? { fecha } : {}),
+      quitar,
+      ...(horasExtra ? { horasExtra } : {}),
+      ...(nota !== undefined ? { nota } : {}),
+    }),
+    onSuccess: (data, variables) => {
+      showToast.success(variables?.quitar
+        ? `Día de descanso restaurado${variables?.nombre ? ` · ${variables.nombre}` : ''}`
+        : `Día marcado como trabajado${variables?.nombre ? ` · ${variables.nombre}` : ''}`)
+      if (variables?.quitar) aplicarMarcajeEnCache(qc, { quitarEmpleadoId: variables.empleadoId })
+      else if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
       refrescar(qc)
     },
   })

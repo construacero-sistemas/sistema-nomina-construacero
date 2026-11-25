@@ -41,15 +41,13 @@ vi.mock('../../../../compat/hooks/useConfigNegocio.js', () => ({ useConfigNegoci
 const PeriodoDetalleModal = (await import('../PeriodoDetalleModal.jsx')).default
 
 describe('Detalle del período → Hoja semanal', () => {
-  it('abre la hoja en su pestaña y el descuento manual abre el ajuste de esa persona', () => {
+  it('muestra la hoja semanal directamente y el descuento manual abre el ajuste de esa persona', () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <PeriodoDetalleModal periodo={{ id: 'p1', nombre: 'Semana', estado: 'abierto', desde: '2026-11-05', hasta: '2026-11-11' }} puedeGestionarNomina onClose={vi.fn()} />
       </QueryClientProvider>,
     )
-    expect(screen.getByRole('tab', { name: 'Recibos' })).toHaveAttribute('aria-selected', 'true')
-    fireEvent.click(screen.getByRole('tab', { name: 'Hoja semanal' }))
-    expect(screen.getByRole('tab', { name: 'Hoja semanal' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('tab', { name: 'Recibos' })).not.toBeInTheDocument()
     expect(screen.getByRole('table', { name: 'Hoja semanal del período' })).toBeInTheDocument()
     // Neto en Bs con la tasa activa: 56 × 100.
     expect(screen.getByRole('rowheader', { name: /^Pedro Perez/ }).closest('tr')).toHaveTextContent('5600.00 Bs')

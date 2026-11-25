@@ -72,6 +72,7 @@ export async function handleGetConfigEmpleados(request, env) {
     return {
       dias_laborables: resuelto?.dias ?? [...(defecto || DIAS_LABORABLES_DEFAULT)],
       horario_configurado: Boolean(resuelto?.configurado),
+      horarios_por_dia: resuelto?.horariosPorDia ?? {},
     }
   }
   if (ROLES_NOMINA.includes(operador.rol)) {

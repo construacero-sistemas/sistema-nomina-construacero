@@ -17,6 +17,7 @@ import {
 import {
   booleanNominaValido,
   construirPayloadAsistenciaManual,
+  fechaNominaValida,
   fechaOperativaNomina,
   filtroIgual,
   horaNominaValida,
@@ -156,19 +157,21 @@ export async function handleMarcarAusencia(request, env) {
   if (tenantError) return tenantError
   let body
   try { body = await request.json() } catch { return jsonError('Body inválido', 400, request) }
-  const { empleadoId, quitar, justificada } = body || {}
+  const { empleadoId, quitar, justificada, fecha: fechaBody } = body || {}
   if (!empleadoId || !isValidUuid(empleadoId)) return jsonError('empleadoId inválido', 400, request)
   if (!booleanNominaValido(quitar)) return jsonError('quitar inválido', 400, request)
   if (!booleanNominaValido(justificada)) return jsonError('justificada inválido', 400, request)
 
   const mark = nowInNominaZone(env)
-  const period = await periodoBloqueadoParaFecha(env, headers, operador, mark.fecha)
+  const targetFecha = fechaBody ? String(fechaBody).slice(0, 10) : mark.fecha
+  if (!fechaNominaValida(targetFecha)) return jsonError('fecha inválida (YYYY-MM-DD)', 400, request)
+  const period = await periodoBloqueadoParaFecha(env, headers, operador, targetFecha)
   if (period) return jsonError(`No se puede registrar: el período está ${period.estado}`, 400, request)
   const config = await fetchConfigActiva(env, headers, operador, empleadoId)
   if (!config) return jsonError('El empleado no tiene configuración activa de nómina', 400, request)
   const sinControl = sinControlDeAsistencia(config, request)
   if (sinControl) return sinControl
-  const existing = await fetchRegistroDelDia(env, headers, operador, empleadoId, mark.fecha)
+  const existing = await fetchRegistroDelDia(env, headers, operador, empleadoId, targetFecha)
   if (existing.error) return jsonError('Error al leer la asistencia del día', 500, request)
   const tenantFilter = nominaTenantFilter(operador.cuenta_id)
 
@@ -181,24 +184,27 @@ export async function handleMarcarAusencia(request, env) {
     if (!borrado.ok) return jsonError('No se pudo deshacer la ausencia', 500, request)
     const [deshecha] = await borrado.json()
     if (!deshecha) return jsonError('La ausencia cambió o ya no existe. Actualiza los marcajes del día.', 409, request)
-    registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'DESHACER_AUSENCIA', entidadTipo: 'registro_asistencia', entidadId: registro.id, meta: { empleadoId, fecha: mark.fecha }, ip }).catch(() => {})
+    registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'DESHACER_AUSENCIA', entidadTipo: 'registro_asistencia', entidadId: registro.id, meta: { empleadoId, fecha: targetFecha }, ip }).catch(() => {})
     return json({ ok: true, deshecha: true }, 200, request)
   }
 
   if (existing.row) {
     if (existing.row.es_ausencia) return json({ ok: true, idempotente: true, ya_registrada: true }, 200, request)
+    if (Number(existing.row.horas_extra) > 0) {
+      return jsonError('Este día tiene horas extras registradas. Quítalas antes de marcar ausente.', 409, request)
+    }
     if (['entrada', 'completo', 'corregido'].includes(existing.row.estado_marcaje)) {
       return jsonError('Hoy ya tiene marcaje real del reloj. Corrígelo en «Corregir marcaje» en lugar de registrar una ausencia.', 409, request)
     }
     return jsonError('Hoy ya tiene un registro de asistencia. Edítalo o elimínalo antes de marcarlo como ausente.', 409, request)
   }
 
-  const { ok: diasOk, dias } = await fetchDiasLaborablesEmpleado(env, headers, operador.cuenta_id, empleadoId)
+  const { ok: diasOk, dias } = await fetchDiasLaborablesEmpleado(env, headers, operador.cuenta_id, empleadoId, targetFecha)
   if (!diasOk) return jsonError('No se pudieron verificar sus días laborables', 500, request)
-  if (!trabajaEnFecha(dias, mark.fecha)) {
+  if (!trabajaEnFecha(dias, targetFecha)) {
     return jsonError('Hoy es día libre de esta persona según sus días laborables: una ausencia aquí no corresponde.', 400, request)
   }
-  const holiday = await fetchFeriadoDelDia(env, headers, operador, mark.fecha)
+  const holiday = await fetchFeriadoDelDia(env, headers, operador, targetFecha)
   if (holiday.error) return jsonError('No se pudo consultar el calendario laboral', 500, request)
   // Un feriado NO laborable es como el día libre: nadie está obligado a asistir, así
   // que una ausencia ahí sería una falta inventada (F-6 del plan de flujo de nómina).
@@ -210,10 +216,10 @@ export async function handleMarcarAusencia(request, env) {
 
   let calculation
   try {
-    calculation = calcularCamposAsistencia(mark.fecha, null, null, Number(config.horas_jornada) || 8, !!holiday.row, true, 0)
+    calculation = calcularCamposAsistencia(targetFecha, null, null, Number(config.horas_jornada) || 8, !!holiday.row, true, 0)
   } catch (error) { return jsonError(error.message || 'Horas inválidas', 400, request) }
   const payload = construirPayloadAsistenciaManual({
-    empleadoId, fecha: mark.fecha, horaEntrada: null, horaSalida: null,
+    empleadoId, fecha: targetFecha, horaEntrada: null, horaSalida: null,
     esAusencia: true, ausenciaJustificada: justificada === true, esFeriado: !!holiday.row, nota: null, descanso: 0, operador, calculation,
   })
   const creado = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?select=id,empleado_id,fecha,horas_trabajadas,es_ausencia,ausencia_justificada,estado_marcaje,nota`, {
@@ -221,7 +227,7 @@ export async function handleMarcarAusencia(request, env) {
   })
   if (!creado.ok) return jsonError('No se pudo registrar la ausencia. Actualiza los marcajes del día e inténtalo de nuevo.', creado.status === 409 ? 409 : 500, request)
   const [registro] = await creado.json()
-  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'MARCAR_AUSENCIA', entidadTipo: 'registro_asistencia', entidadId: registro?.id || null, meta: { empleadoId, fecha: mark.fecha, justificada: justificada === true }, ip }).catch(() => {})
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'MARCAR_AUSENCIA', entidadTipo: 'registro_asistencia', entidadId: registro?.id || null, meta: { empleadoId, fecha: targetFecha, justificada: justificada === true }, ip }).catch(() => {})
   return json({ ok: true, registro }, 201, request)
 }
 

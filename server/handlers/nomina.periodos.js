@@ -242,6 +242,7 @@ async function calcularPeriodo({ env, headers, operador, ip, request, periodoId,
         desde: period.desde,
         hasta: period.hasta,
         diasLaborables: (horarios.porEmpleado.get(config.empleado_id) || diasLaborablesResueltos([], null, reglas.diasLaborablesDefault)).dias,
+        horariosPorDia: horarios.porEmpleado.get(config.empleado_id)?.horariosPorDia || {},
         feriados,
         hoy,
         fechaIngreso: config.fecha_ingreso || null,
@@ -338,6 +339,17 @@ export async function handleCerrarPeriodo(request, env) {
   // Si el snapshot no se puede escribir, el período NO se cierra (fail-closed):
   // un período cerrado siempre conserva la tasa con la que se cerró.
   const tasasCierre = []
+  let tasaPagoExplicit = null
+  let fuentePago = null
+  if (body.tasaPago !== undefined && body.tasaPago !== null && body.tasaPago !== '') {
+    const valorPago = Number(String(body.tasaPago).replace(',', '.'))
+    if (!Number.isFinite(valorPago) || valorPago <= 0 || valorPago > 10000000) {
+      return jsonError('Tasa de pago inválida para cerrar el período', 400, request)
+    }
+    const fuenteRaw = String(body.fuenteTasaPago || 'MANUAL').trim().toUpperCase()
+    fuentePago = ['BCV', 'EURO', 'USDT', 'MANUAL'].includes(fuenteRaw) ? fuenteRaw : 'MANUAL'
+    tasaPagoExplicit = valorPago
+  }
   if (body.tasas !== undefined) {
     if (!body.tasas || typeof body.tasas !== 'object' || Array.isArray(body.tasas)) return jsonError('tasas inválidas', 400, request)
     const fuentes = { usd: ['USD', 'BCV'], eur: ['EUR', 'EURO'], usdt: ['USDT', 'USDT'] }
@@ -359,18 +371,36 @@ export async function handleCerrarPeriodo(request, env) {
         cuenta_id: operador.cuenta_id,
       })
     }
-    if (tasasCierre.length) {
-      const freeze = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_tasas_snapshot?on_conflict=cuenta_id,fecha,moneda_origen,fuente,periodo_id`, { method: 'POST', headers: svcHeaders(env, 'resolution=merge-duplicates,return=minimal'), body: JSON.stringify(tasasCierre) })
-      if (!freeze.ok) return jsonError('No se pudo congelar la tasa del período; no se cerró', 500, request)
+  }
+  if (tasaPagoExplicit !== null) {
+    // La tasa elegida explícitamente al cerrar manda para el período y sus pagos en Bs.
+    const idxUsd = tasasCierre.findIndex(t => t.moneda_origen === 'USD')
+    const snapshotPago = {
+      fecha: fechaOperativaNomina(env),
+      moneda_origen: 'USD',
+      moneda_destino: 'VES',
+      valor: tasaPagoExplicit,
+      fuente: fuentePago,
+      observado_en: new Date().toISOString(),
+      aprobado: true,
+      aprobado_por: operador.id,
+      periodo_id: periodoId,
+      cuenta_id: operador.cuenta_id,
     }
+    if (idxUsd >= 0) tasasCierre[idxUsd] = snapshotPago
+    else tasasCierre.push(snapshotPago)
+  }
+  if (tasasCierre.length) {
+    const freeze = await fetch(`${env.SUPABASE_URL}/rest/v1/nomina_tasas_snapshot?on_conflict=cuenta_id,fecha,moneda_origen,fuente,periodo_id`, { method: 'POST', headers: svcHeaders(env, 'resolution=merge-duplicates,return=minimal'), body: JSON.stringify(tasasCierre) })
+    if (!freeze.ok) return jsonError('No se pudo congelar la tasa del período; no se cerró', 500, request)
   }
   // Cerrar y marcar pagado en una sola operación de la base (migración 269): mismo
   // candado y auditoría que un pago, pero sin egreso en Finanzas ni forma de pago.
-  const tasaUsd = tasasCierre.find(t => t.moneda_origen === 'USD')?.valor ?? null
+  const tasaUsd = tasaPagoExplicit ?? tasasCierre.find(t => t.moneda_origen === 'USD')?.valor ?? null
   const resultado = await operarCierre(env, operador, periodoId, 'cerrar', body.idempotencyKey, tasaUsd, ip)
   if (resultado.error) return jsonError(resultado.error, resultado.status, request)
-  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CERRAR_PERIODO_MARCAR_PAGADO', entidadTipo: 'nomina_periodo', entidadId: periodoId, meta: { periodo: period.nombre, tasas_congeladas: tasasCierre.length, recibos_marcados: resultado.data?.recibos_marcados ?? null }, ip }).catch(() => {})
-  return json({ ok: true, pagado: true, recibos_marcados: Number(resultado.data?.recibos_marcados) || 0, tasa_congelada: tasasCierre.length > 0 }, 200, request)
+  registrarAuditoria(env, svcHeaders(env, 'return=minimal'), { usuarioId: operador.id, usuarioNombre: operador.nombre, usuarioRol: operador.rol, cuentaId: operador.cuenta_id, categoria: 'NOMINA', accion: 'CERRAR_PERIODO_MARCAR_PAGADO', entidadTipo: 'nomina_periodo', entidadId: periodoId, meta: { periodo: period.nombre, tasas_congeladas: tasasCierre.length, tasa_pago_usd_ves: tasaUsd, fuente_tasa_pago: fuentePago, recibos_marcados: resultado.data?.recibos_marcados ?? null }, ip }).catch(() => {})
+  return json({ ok: true, pagado: true, recibos_marcados: Number(resultado.data?.recibos_marcados) || 0, tasa_congelada: tasasCierre.length > 0, tasa_pago_usd_ves: tasaUsd }, 200, request)
 }
 
 const MENSAJES_CIERRE = [

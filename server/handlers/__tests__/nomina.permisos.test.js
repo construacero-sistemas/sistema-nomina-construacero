@@ -37,6 +37,8 @@ const ROUTES = [
   ['handleGetMarcajeHoy', undefined],
   ['handleMarcarEntrada', { empleadoId: IDS.empleado, idempotencyKey: 'entrada-test-0001' }],
   ['handleMarcarSalida', { empleadoId: IDS.empleado, idempotencyKey: 'salida-test-0001' }],
+  ['handleRegistrarHorasExtra', { empleadoId: IDS.empleado, horasExtra: 1, idempotencyKey: 'extra-test-0001' }],
+  ['handleMarcarDiaTrabajado', { empleadoId: IDS.empleado, horasExtra: 0, idempotencyKey: 'trabajado-test-0001' }],
   ['handleGetFeriados', undefined],
   ['handleCrearFeriado', { fecha: '2026-12-24', nombre: 'Feriado' }],
   ['handleGetHorarios', undefined],
@@ -65,6 +67,7 @@ const ROUTES = [
 const ESCRITURAS_DE_NOMINA = [
   'handleCrearConfigEmpleado', 'handleActualizarConfigEmpleado',
   'handleRegistrarAsistenciaMasivo', 'handleEliminarAsistencia',
+  'handleRegistrarHorasExtra', 'handleMarcarDiaTrabajado',
   'handleCrearFeriado', 'handleCrearHorario',
   'handleCrearConcepto', 'handleCrearReglaLegal', 'handleCrearTasaSnapshot',
   'handleCrearPeriodo', 'handleCalcularPeriodo', 'handleCerrarPeriodo',

@@ -180,14 +180,14 @@ describe('cálculo de período', () => {
     expect(status).toBe(200)
     expect(body.lineas_generadas).toBe(1)
     const l = insertadas[0]
-    expect(l.dias_trabajados).toBe(2)
-    expect(l.monto_normal_usd).toBe(60)          // 2 × 30
+    expect(l.dias_trabajados).toBe(5)
+    expect(l.monto_normal_usd).toBe(150)         // 5 × 30 (Opción A: hábiles presentes por defecto)
     // Bono semanal guardado en el recibo (migración 268): sale de la semana, no se suma.
     expect(l.bono_semanal_usd).toBe(35)
-    expect(l.sueldo_semanal_usd).toBe(25)        // 60 − 35
+    expect(l.sueldo_semanal_usd).toBe(115)       // 150 − 35
     expect(l.horas_extra).toBe(2)
     expect(l.monto_extra_usd).toBe(11.25)        // 2 × 3.75 × 1.5
-    expect(l.total_neto_usd).toBe(71.25)
+    expect(l.total_neto_usd).toBe(161.25)
   })
   it('preserva las líneas ya pagadas al recalcular', async () => {
     let urlDelete = null
@@ -235,7 +235,7 @@ describe('cálculo de período', () => {
       { match: '/nomina_feriados', respond: [] },
       { match: '/configuracion_negocio', respond: [{ nomina_descanso_remunerado: false }] },
       { match: '/registro_asistencia',   respond: [
-        { empleado_id: IDS.empleado, horas_normales: 8, horas_extra: 0, es_sabado: false, es_feriado: false, es_ausencia: false },
+        { empleado_id: IDS.empleado, fecha: '2026-08-03', horas_normales: 8, horas_extra: 0, es_sabado: false, es_feriado: false, es_ausencia: false },
       ]},
       { match: '/nomina_lineas', method: 'GET', respond: [
         { empleado_id: IDS.empleado, pagado: false, bonos_usd: 20, deducciones_usd: 10,
@@ -252,8 +252,8 @@ describe('cálculo de período', () => {
     expect(l.deducciones_usd).toBe(10)
     expect(l.nota_bonos).toBe('Bono productividad')
     expect(l.nota_deducciones).toBe('Adelanto')
-    expect(l.total_bruto_usd).toBe(50)   // 30 + 20
-    expect(l.total_neto_usd).toBe(40)    // 50 − 10
+    expect(l.total_bruto_usd).toBe(170)  // 150 (5 días hábiles) + 20
+    expect(l.total_neto_usd).toBe(160)   // 170 − 10
   })
 
   it('paga el sábado y el domingo de descanso con la semana completa (LOTTT art. 119)', async () => {

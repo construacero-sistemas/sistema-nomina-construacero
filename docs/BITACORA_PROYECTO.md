@@ -6,6 +6,21 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Asistencia por excepción, semanas correlativas ISO, cierre asistido con tasa y vista sin recibos — 24/11/2026
+
+- **Regla del usuario (Opción A):** se elimina el marcaje diario de entrada/salida y los avisos de retraso. Todo trabajador activo con `controla_asistencia` queda **presente por defecto** en sus días laborables dentro del período (desde su `fecha_ingreso`) según el horario configurado en su ficha o por día (`nomina_horarios`, respaldo `08:00–17:00`, `8 h`).
+- **Excepciones diarias:**
+  - **Horas extras (`POST /api/nomina/marcaje/horas-extra`):** atajos desde `0.5h` (`0.5`, `1`, `1.5`, `2`, `3`, `4`) más entrada manual decimal (`0.5..16`), calculando salida estimada sobre el horario real del empleado. Se bloquea si el día tiene ausencia sin retirar primero.
+  - **Días libres y feriados no laborables (`POST /api/nomina/marcaje/dia-trabajado`):** permanecen libres por defecto; botón «Marcar día trabajado» si vino (con opción de extras).
+  - **Ausencias:** elección explícita entre falta con justificativo (se paga) o sin justificativo (descuenta solo ese día).
+- **Semanas correlativas:** `nominaSemana.js` y `PeriodoFormModal.jsx` nombran cada semana con el estándar ISO `Semana XX-YYYY (dd mmm – dd mmm)`.
+- **Cierre asistido con tasa y simplificación sin recibos:**
+  - Al llegar al último día del período o después (`hoy >= hasta`), `MarcajeLogisticaPanel` y `TabPeriodos` resaltan el cierre hacia `CerrarPeriodoModal`, que resume personal, horas extras, ausencias, descansos/feriados trabajados, total USD/Bs y exige elegir y confirmar la tasa de pago (`BCV $`, `BCV €`, `USDT` o `Manual`) que se congela en `nomina_tasas_snapshot` y en el RPC `nomina_cerrar_marcar_pagado`.
+  - `PeriodoDetalleModal` y `TabHistorial` muestran directamente `HojaSemanal` (se retiraron la pestaña `Recibos`, los botones/PDF individuales por trabajador, `Pagar Recibos Pendientes` y `RecibosEmpleadoModal` de `TabEmpleados`, dejando «Ver hoja semanal»).
+- **Archivos principales:** `server/lib/asistenciaExcepciones.js` (nuevo), `server/lib/nominaHorarios.js`, `server/lib/nominaDescanso.js`, `server/lib/nominaUtils.js`, `server/lib/nominaSemana.js`, `server/handlers/nomina.excepciones.js` (nuevo), `server/handlers/nomina.periodos.js`, `server/handlers/nomina.horarios.js`, `worker.js`, `src/components/nomina/CerrarPeriodoModal.jsx` (nuevo), `MarcajeLogisticaPanel.jsx`, `marcaje/TarjetaMarcaje.jsx`, `marcaje/HorasExtraInline.jsx`, `marcaje/marcajeEstado.js`, `TabAsistencia.jsx`, `AsistenciaModal.jsx`, `AsistenciaDiariaMovil.jsx`, `TabPeriodos.jsx`, `PeriodoDetalleModal.jsx`, `TabHistorial.jsx`, `TabEmpleados.jsx` y pruebas.
+- **Pruebas:** nuevas pruebas unitarias/handler/componente en `asistenciaExcepciones.test.js`, `nominaSemana.test.js`, `nomina.excepciones.test.js`, `CerrarPeriodoModal.test.jsx` y actualización de la suite completa + `npm run verify`.
+- **Pendientes:** sin commit, push ni deploy; validar visualmente en iPhone y escritorio en staging.
+
 ## Móvil: la app ya no se desplaza entera dejando el fondo en blanco — 20/11/2026
 
 - **Reporte del usuario:** tras el cambio anterior (`overflow-x: clip`) seguía saliendo en blanco la zona de asistencia en el teléfono.

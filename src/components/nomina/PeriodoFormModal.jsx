@@ -6,7 +6,7 @@ import { useCrearPeriodo } from '../../hooks/useNomina'
 import { useConfigNegocio } from '../../../compat/hooks/useConfigNegocio.js'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import DatePicker from '../../../compat/components/ui/DatePicker.jsx'
-import { moverSemana, rangoSemana, semanaDeConfig } from '../../../server/lib/nominaSemana.js'
+import { moverSemana, nombreSemana, rangoSemana, semanaDeConfig } from '../../../server/lib/nominaSemana.js'
 
 const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all font-medium'
 
@@ -44,6 +44,7 @@ function rangoSugerido(tipo, inicioSemana) {
 
 function nombreSugerido(tipo, desde, hasta) {
   if (!desde || !hasta) return ''
+  if (tipo === 'semanal') return nombreSemana(desde, hasta)
   const d = new Date(`${desde}T12:00:00`)
   const h = new Date(`${hasta}T12:00:00`)
   const mes = h.toLocaleDateString('es-VE', { month: 'long', year: 'numeric' })
@@ -53,8 +54,7 @@ function nombreSugerido(tipo, desde, hasta) {
   }
   const dd = d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })
   const hh = h.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })
-  const prefijo = tipo === 'quincenal' ? 'Quincena' : 'Semana'
-  return `${prefijo} ${dd} – ${hh} ${h.getFullYear()}`
+  return `Quincena ${dd} – ${hh} ${h.getFullYear()}`
 }
 
 export default function PeriodoFormModal({ onClose }) {

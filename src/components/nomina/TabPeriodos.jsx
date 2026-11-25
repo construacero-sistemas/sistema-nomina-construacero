@@ -2,10 +2,10 @@
 // Gestión visual y fluida de períodos de nómina, cálculo y pagos.
 // Regla: La moneda principal es SIEMPRE USD ($), y la secundaria es Bs, calculada con la tasa seleccionada.
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { Plus, ClipboardList, Calculator, Lock, Unlock, Eye, DollarSign, Users, Sparkles, CheckCircle2, ArrowRight, Trash2, MoreVertical, AlertCircle } from 'lucide-react'
-import { useNominaPeriodos, useCalcularPeriodo, useCerrarPeriodo, useEliminarPeriodo, useConfigNomina, useAsegurarSemanaActual } from '../../hooks/useNomina'
+import { Plus, ClipboardList, Calculator, Lock, Unlock, Eye, DollarSign, Trash2, MoreVertical, AlertCircle } from 'lucide-react'
+import { useNominaPeriodos, useCalcularPeriodo, useEliminarPeriodo, useConfigNomina, useAsegurarSemanaActual } from '../../hooks/useNomina'
 import { semanaDeConfig, DIAS_SEMANA } from '../../../server/lib/nominaSemana.js'
-import useMonedaNomina, { formatBs, formatUsd } from '../../hooks/useMonedaNomina.js'
+import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
@@ -13,6 +13,7 @@ import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
 import RateSelector from './RateSelector.jsx'
 import PeriodoFormModal from './PeriodoFormModal'
 import PeriodoDetalleModal from './PeriodoDetalleModal'
+import CerrarPeriodoModal from './CerrarPeriodoModal.jsx'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 
 function fmt(n) {
@@ -36,6 +37,7 @@ export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNo
   const { fmtBs, shortLabelTasa } = useMonedaNomina()
   const [modalNuevo, setModalNuevo] = useState(false)
   const [detalle, setDetalle] = useState(null)
+  const [cerrando, setCerrando] = useState(null)
   const [tarjetaEliminar, setTarjetaEliminar] = useState(null)
 
   // Períodos automáticos (por defecto) o manuales: se elige en Configuración.
@@ -53,9 +55,8 @@ export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNo
   }, [puedeGestionarNomina, configNomina.isSuccess, automatico, asegurarSemana])
 
   const activos = useMemo(() => periodos.filter(p => p.estado !== 'pagado'), [periodos])
-  // Mejora del 19/11/2026: aviso de semanas que ya terminaron y siguen abiertas.
   const hoy = fechaOperativaHoy()
-  const terminadas = useMemo(() => activos.filter(p => p.estado !== 'pagado' && String(p.hasta) < hoy), [activos, hoy])
+  const listasParaCerrar = useMemo(() => activos.filter(p => p.estado !== 'pagado' && String(p.hasta) <= hoy), [activos, hoy])
   const kpis = useMemo(() => ({
     abiertos: activos.filter(p => p.estado === 'abierto').length,
     cerrados: activos.filter(p => p.estado === 'cerrado').length,
@@ -89,14 +90,28 @@ export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNo
         )}
       </div>
 
-      {terminadas.length > 0 && (
-        <div role="status" className="flex min-w-0 items-start gap-2.5 rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-amber-950">
-          <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <p className="min-w-0 break-words text-xs font-semibold leading-relaxed">
-            {terminadas.length === 1
-              ? <>La semana <strong>{terminadas[0].nombre}</strong> ya terminó y sigue abierta. Revísala y pulsa <strong>«Cerrar y marcar pagado»</strong>.</>
-              : <>{terminadas.length} semanas ya terminaron y siguen abiertas ({terminadas.map(t => t.nombre).join(', ')}). Revísalas y pulsa <strong>«Cerrar y marcar pagado»</strong> en cada una.</>}
-          </p>
+      {listasParaCerrar.length > 0 && (
+        <div role="status" className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <p className="min-w-0 break-words text-xs font-semibold leading-relaxed">
+              {listasParaCerrar.length === 1
+                ? (String(listasParaCerrar[0].hasta) === hoy
+                  ? <>Hoy es el último día de <strong>{listasParaCerrar[0].nombre}</strong>. Revisa el resumen semanal y confirma la tasa para cerrarla.</>
+                  : <>La semana <strong>{listasParaCerrar[0].nombre}</strong> ya terminó y sigue abierta. Revísala y confirma la tasa para cerrarla.</>)
+                : <>{listasParaCerrar.length} semanas están listas para cerrar ({listasParaCerrar.map(t => t.nombre).join(', ')}).</>}
+            </p>
+          </div>
+          {puedeGestionarNomina && (
+            <button
+              type="button"
+              onClick={() => setCerrando(listasParaCerrar[0])}
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 text-xs font-black text-white shadow-xs hover:bg-emerald-800"
+            >
+              <Lock size={14} aria-hidden="true" />
+              Revisar y cerrar
+            </button>
+          )}
         </div>
       )}
 
@@ -113,13 +128,14 @@ export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNo
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {activos.map(p => (
-            <PeriodoCard key={p.id} periodo={p} puedeGestionarNomina={puedeGestionarNomina} puedePagarNomina={puedePagarNomina} onVerDetalle={() => setDetalle(p)} onEliminar={() => setTarjetaEliminar(p)} />
+            <PeriodoCard key={p.id} periodo={p} puedeGestionarNomina={puedeGestionarNomina} onVerDetalle={() => setDetalle(p)} onCerrar={() => setCerrando(p)} onEliminar={() => setTarjetaEliminar(p)} />
           ))}
         </div>
       )}
 
       {modalNuevo && <PeriodoFormModal onClose={() => setModalNuevo(false)} />}
-      {detalle && <PeriodoDetalleModal periodo={detalle} puedeGestionarNomina={puedeGestionarNomina} puedePagarNomina={puedePagarNomina} onClose={() => setDetalle(null)} />}
+      {detalle && <PeriodoDetalleModal periodo={detalle} puedeGestionarNomina={puedeGestionarNomina} onClose={() => setDetalle(null)} />}
+      {cerrando && <CerrarPeriodoModal periodo={cerrando} onClose={() => setCerrando(null)} onVerHoja={setDetalle} />}
       {tarjetaEliminar && <ConfirmarEliminarPeriodo periodo={tarjetaEliminar} onCancel={() => setTarjetaEliminar(null)} />}
     </div>
   )
@@ -145,15 +161,12 @@ function ConfirmarEliminarPeriodo({ periodo, onCancel }) {
   )
 }
 
-function PeriodoCard({ periodo, puedeGestionarNomina = false, puedePagarNomina = false, onVerDetalle, onEliminar }) {
+function PeriodoCard({ periodo, puedeGestionarNomina = false, onVerDetalle, onCerrar, onEliminar }) {
   const calcular = useCalcularPeriodo()
-  const cerrar = useCerrarPeriodo()
   const { fmtBs } = useMonedaNomina()
-  const [confirmandoCierre, setConfirmandoCierre] = useState(false)
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [jornadasAbiertas, setJornadasAbiertas] = useState(null)
 
-  // `origen`: si las jornadas sin salida aparecieron al calcular o al cerrar.
   const mostrarJornadas = origen => error => {
     const detalle = error?.payload?.jornadas_abiertas
     if (!Array.isArray(detalle)) return
@@ -164,27 +177,28 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, puedePagarNomina =
     calcular.mutate(periodo.id, { onError: mostrarJornadas('calcular') })
   }
 
-  // Regla del usuario (19/11/2026): cerrar = poner al día y marcar TODO pagado.
-  function cerrarPeriodo(confirmarJornadasAbiertas = false) {
-    cerrar.mutate(confirmarJornadasAbiertas ? { periodoId: periodo.id, confirmarJornadasAbiertas: true } : periodo.id, {
-      onSuccess: () => setConfirmandoCierre(false),
-      onError: mostrarJornadas('cerrar'),
-    })
-  }
-
   const estBase = ESTADO_STYLE[periodo.estado] ?? ESTADO_STYLE.abierto
   const abierto = periodo.estado === 'abierto'
   const tieneLineas = (periodo.total_empleados ?? 0) > 0
-  const terminada = periodo.estado !== 'pagado' && String(periodo.hasta) < fechaOperativaHoy()
+  const hoy = fechaOperativaHoy()
+  const ultimoDia = periodo.estado !== 'pagado' && String(periodo.hasta) === hoy
+  const terminada = periodo.estado !== 'pagado' && String(periodo.hasta) < hoy
+  const listoParaCerrar = ultimoDia || terminada
   const est = abierto
-    ? { ...estBase, detail: terminada ? 'La semana terminó · ciérrala para marcarla pagada' : tieneLineas ? 'Calculado · se cierra al terminar la semana' : 'Pendiente de cálculo' }
+    ? {
+        ...estBase,
+        detail: terminada
+          ? 'La semana terminó · ciérrala con su tasa de pago'
+          : ultimoDia
+            ? 'Último día del período · listo para revisar y cerrar'
+            : tieneLineas ? 'Calculado · se cierra al terminar la semana' : 'Pendiente de cálculo',
+      }
     : estBase
   const puedeCerrar = puedeGestionarNomina && (abierto || periodo.estado === 'cerrado')
-  const ocupado = calcular.isPending || cerrar.isPending
+  const ocupado = calcular.isPending
   const bruto = Number(periodo.total_bruto_usd) || 0
   const deducciones = Number(periodo.total_deducciones_usd) || 0
   const neto = Number(periodo.total_neto_usd) || 0
-  const accionesCierre = confirmandoCierre
   const tieneAccionesPrincipales = puedeCerrar
 
   return (
@@ -236,7 +250,7 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, puedePagarNomina =
 
       <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-white p-3">
         <button type="button" onClick={onVerDetalle} className={`inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 ${tieneAccionesPrincipales ? '' : 'col-span-2'}`}>
-          <Eye size={14} /><span>Ver recibos</span>
+          <Eye size={14} /><span>Ver hoja semanal</span>
         </button>
 
         {puedeGestionarNomina && abierto && (
@@ -246,23 +260,9 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, puedePagarNomina =
         )}
 
         {puedeCerrar && (
-          accionesCierre ? (
-            <div role="group" aria-label={`Confirmar cierre de ${periodo.nombre}`} className="col-span-2 grid w-full grid-cols-1 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <span className="text-xs font-bold text-amber-950">
-                {abierto
-                  ? 'Se pondrán los recibos al día con la asistencia y se marcarán TODOS como pagados. ¿Confirmas?'
-                  : 'Se marcarán TODOS los recibos como pagados. ¿Confirmas?'}
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => cerrarPeriodo()} disabled={ocupado} className="min-h-11 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50">{cerrar.isPending ? 'Cerrando…' : 'Sí, cerrar'}</button>
-                <button type="button" onClick={() => setConfirmandoCierre(false)} disabled={ocupado} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancelar</button>
-              </div>
-            </div>
-          ) : (
-            <button type="button" onClick={() => setConfirmandoCierre(true)} disabled={ocupado} className={`col-span-2 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors disabled:opacity-50 active:scale-95 ${terminada ? 'bg-emerald-700 text-white shadow-sm hover:bg-emerald-800' : 'border border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'}`}>
-              <Lock size={13} /><span>{abierto ? 'Cerrar y marcar pagado' : 'Marcar pagado'}</span>
-            </button>
-          )
+          <button type="button" onClick={onCerrar} disabled={ocupado} className={`col-span-2 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors disabled:opacity-50 active:scale-95 ${listoParaCerrar ? 'bg-emerald-700 text-white shadow-sm hover:bg-emerald-800' : 'border border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'}`}>
+            <Lock size={13} /><span>{listoParaCerrar ? 'Revisar y cerrar período' : 'Cerrar período'}</span>
+          </button>
         )}
       </div>
 
@@ -270,8 +270,7 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, puedePagarNomina =
         <Modal isOpen onClose={() => setJornadasAbiertas(null)} title="Jornadas sin hora de salida" className="max-w-md" busy={calcular.isPending}>
           <div className="space-y-3">
             <p className="text-sm font-medium text-slate-700">
-              {jornadasAbiertas.total === 1 ? '1 marcaje tiene entrada y no tiene salida.' : `${jornadasAbiertas.total} marcajes tienen entrada y no tienen salida.`}
-              {' '}Esas jornadas no se pagan ni cuentan como ausencia: corrígelas en el reloj real o en el registro manual, o confirma que se liquidan sin pago.
+              {jornadasAbiertas.total === 1 ? '1 marcaje histórico tiene entrada y no tiene salida.' : `${jornadasAbiertas.total} marcajes históricos tienen entrada y no tienen salida.`}
             </p>
             <ul className="max-h-56 space-y-1.5 overflow-y-auto custom-scrollbar">
               {jornadasAbiertas.detalle.map(jornada => (
@@ -281,14 +280,9 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, puedePagarNomina =
                 </li>
               ))}
             </ul>
-            {jornadasAbiertas.total > jornadasAbiertas.detalle.length && <p className="text-[11px] font-medium text-slate-500">…y {jornadasAbiertas.total - jornadasAbiertas.detalle.length} más.</p>}
             <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setJornadasAbiertas(null)} disabled={ocupado} className="min-h-11 rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Corregir marcajes</button>
-              {jornadasAbiertas.origen === 'cerrar' ? (
-                <button type="button" onClick={() => { cerrarPeriodo(true); setJornadasAbiertas(null) }} disabled={ocupado} className="min-h-11 rounded-xl bg-amber-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-50">Cerrar sin pagarlas</button>
-              ) : (
-                <button type="button" onClick={() => { calcular.mutate({ periodoId: periodo.id, confirmarJornadasAbiertas: true }); setJornadasAbiertas(null) }} disabled={ocupado} className="min-h-11 rounded-xl bg-amber-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-50">Calcular sin pagarlas</button>
-              )}
+              <button type="button" onClick={() => setJornadasAbiertas(null)} disabled={ocupado} className="min-h-11 rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancelar</button>
+              <button type="button" onClick={() => { calcular.mutate({ periodoId: periodo.id, confirmarJornadasAbiertas: true }); setJornadasAbiertas(null) }} disabled={ocupado} className="min-h-11 rounded-xl bg-amber-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-50">Calcular sin pagarlas</button>
             </div>
           </div>
         </Modal>

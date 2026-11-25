@@ -29,6 +29,28 @@ export function diaSemanaDeFecha(fecha) {
 }
 
 /**
+ * Horarios permanentes por día (`diaSemana → { hora_inicio, hora_fin, horas_jornada }`).
+ * Respeta vigencia `fecha_desde <= fecha` cuando se pasa `fecha`.
+ */
+export function horariosPorDiaResueltos(filasPropias = [], fecha = null) {
+  const mapa = {}
+  for (const fila of filasPropias || []) {
+    if (!fila || (fila.semana_ciclo !== null && fila.semana_ciclo !== undefined)
+      || (fila.fecha_hasta !== null && fila.fecha_hasta !== undefined)) continue
+    if (fecha && fila.fecha_desde && String(fila.fecha_desde).slice(0, 10) > fecha) continue
+    if (fila.trabaja === false) continue
+    const dia = Number(fila.dia_semana)
+    if (!Number.isInteger(dia) || dia < DIA_LABORABLE_MIN || dia > DIA_LABORABLE_MAX) continue
+    mapa[dia] = {
+      hora_inicio: fila.hora_inicio ? String(fila.hora_inicio).slice(0, 5) : null,
+      hora_fin: fila.hora_fin ? String(fila.hora_fin).slice(0, 5) : null,
+      horas_jornada: fila.horas_jornada != null ? Number(fila.horas_jornada) : null,
+    }
+  }
+  return mapa
+}
+
+/**
  * Días laborables a partir de las filas permanentes del empleado.
  * Devuelve `{ dias, configurado }`: sin filas, lunes a viernes.
  */
@@ -83,7 +105,7 @@ export async function fetchFilasHorarioPorEmpleado(env, headers, cuentaId, { emp
   // `fecha` acota a los horarios ya vigentes ese día: uno programado a futuro no
   // debe resolver la semana de hoy (F-9).
   const filtroVigencia = fecha ? `&fecha_desde=lte.${fecha}` : ''
-  const base = `${env.SUPABASE_URL}/rest/v1/nomina_horarios?semana_ciclo=is.null&fecha_hasta=is.null${filtroEmpleados}${filtroVigencia}${nominaTenantFilter(cuentaId)}&select=empleado_id,dia_semana,trabaja,fecha_desde&order=empleado_id.asc,dia_semana.asc&limit=${HORARIOS_POR_PAGINA}`
+  const base = `${env.SUPABASE_URL}/rest/v1/nomina_horarios?semana_ciclo=is.null&fecha_hasta=is.null${filtroEmpleados}${filtroVigencia}${nominaTenantFilter(cuentaId)}&select=empleado_id,dia_semana,trabaja,fecha_desde,hora_inicio,hora_fin,horas_jornada&order=empleado_id.asc,dia_semana.asc&limit=${HORARIOS_POR_PAGINA}`
   const rows = []
   for (let pagina = 0; pagina < HORARIOS_MAX_PAGINAS; pagina += 1) {
     let response
@@ -139,15 +161,20 @@ export async function fetchDiasLaborablesPorEmpleado(env, headers, cuentaId, opc
   ])
   if (!ok) return { ok: false, porEmpleado: new Map(), defecto }
   const resuelto = new Map()
-  for (const [empleadoId, filas] of porEmpleado) resuelto.set(empleadoId, diasLaborablesResueltos(filas, fecha, defecto))
+  for (const [empleadoId, filas] of porEmpleado) {
+    resuelto.set(empleadoId, {
+      ...diasLaborablesResueltos(filas, fecha, defecto),
+      horariosPorDia: horariosPorDiaResueltos(filas, fecha),
+    })
+  }
   return { ok: true, porEmpleado: resuelto, defecto }
 }
 
 /** Días laborables resueltos de una persona: sin filas, los días por defecto de la cuenta. */
 export async function fetchDiasLaborablesEmpleado(env, headers, cuentaId, empleadoId, fecha = null) {
   const { ok, porEmpleado, defecto } = await fetchDiasLaborablesPorEmpleado(env, headers, cuentaId, { empleadoIds: [empleadoId], fecha })
-  if (!ok) return { ok: false, ...diasLaborablesResueltos([], fecha, defecto) }
-  return { ok: true, ...(porEmpleado.get(empleadoId) || diasLaborablesResueltos([], fecha, defecto)) }
+  if (!ok) return { ok: false, ...diasLaborablesResueltos([], fecha, defecto), horariosPorDia: {} }
+  return { ok: true, ...(porEmpleado.get(empleadoId) || { ...diasLaborablesResueltos([], fecha, defecto), horariosPorDia: {} }) }
 }
 
 /** Empleados de la lista que no trabajan esa fecha. */

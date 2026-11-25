@@ -28,14 +28,16 @@ describe('calcularDescansoRemunerado', () => {
   })
 
   it('regla del usuario (19/11/2026): faltar sin justificativo NO quita el descanso', () => {
-    const r = calcularDescansoRemunerado({ ...contexto(), asistencias: HABILES.slice(1).map(f => dia(f)) })
+    const falta = dia(HABILES[0], { es_ausencia: true, hora_entrada: null, horas_normales: 0 })
+    const r = calcularDescansoRemunerado({ ...contexto(), asistencias: [falta, ...HABILES.slice(1).map(f => dia(f))] })
     expect(r.diasDescanso).toBe(2)
     expect(r.diasDescansoPerdidos).toBe(0)
     expect(r.fechasDescanso).toEqual(['2026-09-12', '2026-09-13'])
   })
 
   it('con el umbral en 1 (regla anterior), faltar UN día descuenta UN día de descanso', () => {
-    const r = calcularDescansoRemunerado({ ...contexto(), asistencias: HABILES.slice(1).map(f => dia(f)), faltasPierde: 1 })
+    const falta = dia(HABILES[0], { es_ausencia: true, hora_entrada: null, horas_normales: 0 })
+    const r = calcularDescansoRemunerado({ ...contexto(), asistencias: [falta, ...HABILES.slice(1).map(f => dia(f))], faltasPierde: 1 })
     expect(r.diasDescanso).toBe(1)
     expect(r.diasDescansoPerdidos).toBe(1)
     expect(r.semanasConPerdida).toBe(1)
@@ -43,19 +45,27 @@ describe('calcularDescansoRemunerado', () => {
   })
 
   it('con el umbral de la ley (2), faltar UN día no quita el descanso', () => {
-    const r = calcularDescansoRemunerado({ ...contexto(), asistencias: HABILES.slice(1).map(f => dia(f)), faltasPierde: 2 })
+    const falta = dia(HABILES[0], { es_ausencia: true, hora_entrada: null, horas_normales: 0 })
+    const r = calcularDescansoRemunerado({ ...contexto(), asistencias: [falta, ...HABILES.slice(1).map(f => dia(f))], faltasPierde: 2 })
     expect(r.diasDescanso).toBe(2)
     expect(r.diasDescansoPerdidos).toBe(0)
   })
 
   it('nunca se descuentan más descansos de los que tiene la semana (3 faltas → pierde 2)', () => {
-    const r = calcularDescansoRemunerado({ ...contexto(), asistencias: HABILES.slice(3).map(f => dia(f)), faltasPierde: 1 })
+    const faltas = HABILES.slice(0, 3).map(f => dia(f, { es_ausencia: true, hora_entrada: null, horas_normales: 0 }))
+    const r = calcularDescansoRemunerado({ ...contexto(), asistencias: [...faltas, ...HABILES.slice(3).map(f => dia(f))], faltasPierde: 1 })
     expect(r.diasDescanso).toBe(0)
     expect(r.diasDescansoPerdidos).toBe(2)
   })
 
   it('con el umbral de la ley (2), faltar DOS días hábiles hace perder el descanso de esa semana', () => {
-    const asistencias = [dia(HABILES[0]), dia(HABILES[1], { es_ausencia: true, hora_entrada: null, horas_normales: 0 }), dia(HABILES[3]), dia(HABILES[4])]
+    const asistencias = [
+      dia(HABILES[0]),
+      dia(HABILES[1], { es_ausencia: true, hora_entrada: null, horas_normales: 0 }),
+      dia(HABILES[2], { es_ausencia: true, hora_entrada: null, horas_normales: 0 }),
+      dia(HABILES[3]),
+      dia(HABILES[4]),
+    ]
     const r = calcularDescansoRemunerado({ ...contexto(), asistencias, faltasPierde: 2 })
     expect(r.diasDescanso).toBe(0)
     expect(r.diasDescansoPerdidos).toBe(2)
@@ -100,9 +110,15 @@ describe('calcularDescansoRemunerado', () => {
   })
 
   it('período quincenal: cada bloque de 7 días se evalúa por separado', () => {
-    // 10 → 23 de septiembre: dos semanas; en la segunda falta dos días.
+    // 10 → 23 de septiembre: dos semanas; en la segunda falta dos días explícitos.
     const primera = HABILES.map(f => dia(f))
-    const segunda = ['2026-09-17', '2026-09-18', '2026-09-21'].map(f => dia(f))
+    const segunda = [
+      dia('2026-09-17'),
+      dia('2026-09-18'),
+      dia('2026-09-21'),
+      dia('2026-09-22', { es_ausencia: true, hora_entrada: null, horas_normales: 0 }),
+      dia('2026-09-23', { es_ausencia: true, hora_entrada: null, horas_normales: 0 }),
+    ]
     const r = calcularDescansoRemunerado({ ...contexto({ hasta: '2026-09-23' }), asistencias: [...primera, ...segunda], faltasPierde: 2 })
     expect(r.diasDescanso).toBe(2)
     expect(r.diasDescansoPerdidos).toBe(2)
@@ -128,16 +144,17 @@ describe('calcularLineaNomina con descanso (art. 119)', () => {
   })
 
   it('ejemplo del usuario: $240 al mes y 1 falta sin justificativo → 6 días × $8 = $48 (antes $40)', () => {
-    const r = calcularLineaNomina(HABILES.slice(1).map(f => dia(f)), { salario_dia_usd: 8, horas_jornada: 8 }, {}, 0, 0, 0, contexto())
+    const falta = dia(HABILES[0], { es_ausencia: true, hora_entrada: null, hora_salida: null, horas_normales: 0, horas_trabajadas: 0 })
+    const r = calcularLineaNomina([falta, ...HABILES.slice(1).map(f => dia(f))], { salario_dia_usd: 8, horas_jornada: 8 }, {}, 0, 0, 0, contexto())
     expect(r.monto_normal_usd).toBe(48)
   })
 
-  it('día hábil pasado SIN ningún registro: no se paga y el recibo lo cuenta como falta (regla 19/11/2026)', () => {
-    // Falta el jueves 10 por completo (ni siquiera una fila de ausencia).
+  it('día hábil pasado SIN ningún registro: presume presente por Opción A y paga la semana completa', () => {
+    // Sin fila para el jueves 10: asistencia presunta según su horario.
     const r = calcularLineaNomina(HABILES.slice(1).map(f => dia(f)), FRAILIN, {}, 0, 0, 0, contexto())
-    expect(r.dias_trabajados).toBe(4)
-    expect(r.dias_ausencia).toBe(1)
-    expect(r.monto_normal_usd).toBeCloseTo(56, 3) // 4 + 2 descansos = 6 × 9,33; igual que antes
+    expect(r.dias_trabajados).toBe(5)
+    expect(r.dias_ausencia).toBe(0)
+    expect(r.monto_normal_usd).toBeCloseTo(65.3333, 3)
   })
 
   it('sin registro: hoy, los días futuros, los de antes del ingreso y los descansos NO son falta', () => {

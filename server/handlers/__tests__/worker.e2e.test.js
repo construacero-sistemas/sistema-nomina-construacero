@@ -194,4 +194,44 @@ describe('Worker E2E determinista', () => {
       }
     }
   })
+
+  it('enruta POST /api/nomina/marcaje/horas-extra y /dia-trabajado por el worker con aislamiento de tenant', async () => {
+    const upstream = vi.fn(async (url, init = {}) => {
+      const target = String(url)
+      const method = (init.method || 'GET').toUpperCase()
+      if (target.endsWith('/auth/v1/user')) {
+        return supabaseResponse({ id: ACCOUNT_ID, app_metadata: { operator_id: OPERATOR_ID } })
+      }
+      if (target.includes('/rest/v1/usuarios?')) {
+        return supabaseResponse([{ id: OPERATOR_ID, nombre: 'Administración', rol: 'jefe', cuenta_id: ACCOUNT_ID }])
+      }
+      if (target.includes('/rest/v1/auditoria')) return supabaseResponse([])
+      if (target.includes('/rest/v1/configuracion_negocio')) return supabaseResponse([{ nomina_semana_inicio: 4 }])
+      if (target.includes('/rest/v1/nomina_periodos')) return supabaseResponse([])
+      if (target.includes('/rest/v1/nomina_feriados')) return supabaseResponse([])
+      if (target.includes('/rest/v1/nomina_horarios')) return supabaseResponse([])
+      if (target.includes('/rest/v1/nomina_config_empleado')) {
+        return supabaseResponse([{ empleado_id: movement.id, hora_inicio: '08:00', hora_fin: '17:00', horas_jornada: 8 }])
+      }
+      if (target.includes('/rest/v1/registro_asistencia') && method === 'GET') return supabaseResponse([])
+      if (target.includes('/rest/v1/registro_asistencia') && method === 'POST') {
+        return supabaseResponse([{ id: movement.id, horas_extra: 1.5 }])
+      }
+      throw new Error(`Ruta inesperada: ${method} ${target}`)
+    })
+    vi.stubGlobal('fetch', upstream)
+    const auth = { Authorization: 'Bearer e2e-nomina-token', 'Content-Type': 'application/json' }
+
+    const resExtra = await worker.fetch(request('/api/nomina/marcaje/horas-extra', {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({ empleadoId: movement.id, fecha: '2026-11-16', horasExtra: 1.5, idempotencyKey: 'e2e-extra-0001' }),
+    }), ENV)
+    expect(resExtra.status).toBe(201)
+
+    const resLibre = await worker.fetch(request('/api/nomina/marcaje/dia-trabajado', {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({ empleadoId: movement.id, fecha: '2026-11-15', horasExtra: 0, idempotencyKey: 'e2e-libre-0001' }),
+    }), ENV)
+    expect(resLibre.status).toBe(201)
+  })
 })

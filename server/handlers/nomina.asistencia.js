@@ -88,7 +88,7 @@ function horaCoincideConOriginal(value, esperado) {
 }
 
 export async function fetchRegistroDelDia(env, headers, operador, empleadoId, fecha) {
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?empleado_id=eq.${empleadoId}&fecha=eq.${fecha}${nominaTenantFilter(operador.cuenta_id)}&select=id,hora_entrada,hora_salida,es_feriado,es_ausencia,estado_marcaje,nota,entrada_idempotency_key,salida_idempotency_key&limit=1`, { headers })
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/registro_asistencia?empleado_id=eq.${empleadoId}&fecha=eq.${fecha}${nominaTenantFilter(operador.cuenta_id)}&select=id,empleado_id,fecha,hora_entrada,hora_salida,horas_trabajadas,horas_normales,horas_extra,horas_descanso,es_sabado,es_domingo,es_feriado,es_ausencia,ausencia_justificada,estado_marcaje,nota,entrada_idempotency_key,salida_idempotency_key&limit=1`, { headers })
   if (!response.ok) return { error: true, row: null }
   const [row] = await response.json()
   return { error: false, row: row || null }
@@ -104,7 +104,7 @@ export async function periodoBloqueadoParaFecha(env, headers, operador, fecha) {
 export async function fetchConfigActiva(env, headers, operador, empleadoId) {
   const { ok, rows } = await fetchConfigsConControl(env, headers, {
     filtros: `empleado_id=eq.${empleadoId}&activo=eq.true${nominaTenantFilter(operador.cuenta_id)}`,
-    select: 'horas_jornada',
+    select: 'horas_jornada,hora_inicio,hora_fin',
   })
   if (!ok) return null
   return rows[0] || null

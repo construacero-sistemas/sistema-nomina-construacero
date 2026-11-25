@@ -239,6 +239,7 @@ async function run() {
   const tabPeriodos = await read('src/components/nomina/TabPeriodos.jsx')
   const tabAsistencia = await read('src/components/nomina/TabAsistencia.jsx')
   const periodoDetalle = await read('src/components/nomina/PeriodoDetalleModal.jsx')
+  const hojaSemanal = await read('src/components/nomina/HojaSemanal.jsx')
   const movimientoTable = await read('src/components/finanzas/MovimientoTable.jsx')
 
   test('TabEmpleados: Tarjetas de empleados se adaptan responsivamente en cuadrícula (grid-cols-1 sm:grid-cols-2)', () => {
@@ -261,9 +262,9 @@ async function run() {
     }
   })
 
-  test('PeriodoDetalleModal: Tabla financiera de recibos envuelta en contenedor scrollable horizontal exclusivo', () => {
-    if (!hasHScroll(periodoDetalle)) {
-      throw new Error('PeriodoDetalleModal debe encapsular su tabla en overflow-x-auto (o HorizontalScroll)')
+  test('PeriodoDetalleModal / HojaSemanal: Tabla financiera envuelta en contenedor scrollable horizontal exclusivo', () => {
+    if (!periodoDetalle.includes('<HojaSemanal') || !hasHScroll(hojaSemanal)) {
+      throw new Error('PeriodoDetalleModal debe delegar su tabla en HojaSemanal con overflow-x-auto (o HorizontalScroll)')
     }
   })
 
