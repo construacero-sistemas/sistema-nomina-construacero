@@ -62,9 +62,9 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const divisorMensual = reglasLey.divisorMensual
 
   // Semana laboral de la persona: qué días trabaja y con qué jornada cada uno.
-  // De ella depende el estado «Libre» de la asistencia, del reloj real y el
-  // guardarraíl de la carga masiva, así que se guarda junto con la ficha. Se
-  // declara ANTES del salario porque el divisor del monto semanal sale de aquí.
+  // De ella depende el estado «Libre» y el horario por defecto en asistencia, así
+  // que se guarda junto con la ficha. Se declara ANTES del salario porque el divisor
+  // del monto semanal sale de aquí.
   const horariosEmpleadoId = esEdicion ? (config?.empleado_id || '') : ''
   const { data: horarios = [] } = useHorarios(horariosEmpleadoId)
   // La semana se deriva de sus horarios guardados; `semanaOverride` solo existe si

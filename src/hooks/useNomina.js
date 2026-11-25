@@ -247,7 +247,7 @@ export function useCalcularPeriodo() {
       const extra = data.lineas_preservadas > 0
         ? ` (${data.lineas_preservadas} ya pagado(s) sin cambios)`
         : ''
-      showToast.success(`Nómina calculada: ${data.lineas_generadas} recibo(s)${extra}`)
+      showToast.success(`Nómina calculada: ${data.lineas_generadas} trabajador(es)${extra}`)
       qc.invalidateQueries({ queryKey: KEY_PERIODOS })
       qc.invalidateQueries({ queryKey: KEY_LINEAS })
     },
@@ -266,7 +266,7 @@ export function useCerrarPeriodo() {
   return useMutation({
     // El cierre congela la tasa del mercado en este momento (quién y cuándo):
     // el servidor guarda el snapshot ANTES de cerrar y, si no puede, no cierra.
-    // Regla del usuario (19/11/2026): cerrar = poner los recibos al día y marcarlos
+    // Regla del usuario (19/11/2026): cerrar = poner la planilla al día y marcarla
     // TODOS como pagados, sin pago aparte. Acepta el id o `{ periodoId,
     // confirmarJornadasAbiertas }` cuando se decide cerrar con jornadas sin salida.
     mutationFn: (vars) => {
@@ -349,11 +349,11 @@ export function useAjustarLinea() {
   return useMutation({
     mutationFn: (campos) => apiPost('/api/nomina/lineas/ajustar', campos),
     onSuccess: () => {
-      showToast.success('Recibo ajustado')
+      showToast.success('Liquidación ajustada')
       qc.invalidateQueries({ queryKey: KEY_LINEAS })
       qc.invalidateQueries({ queryKey: KEY_PERIODOS })
     },
-    onError: (e) => showToast.error(e.message || 'Error al ajustar recibo'),
+    onError: (e) => showToast.error(e.message || 'Error al ajustar liquidación'),
   })
 }
 
@@ -363,7 +363,7 @@ export function usePagarLineas() {
     ...operation,
     mutateAsync: async fields => {
       const data = await operation.mutateAsync(fields)
-      showToast.success(`${data.recibos_pagados} recibo(s) pagados — $${Number(data.total_usd).toFixed(2)}`)
+      showToast.success(`${data.recibos_pagados} liquidación(es) pagadas — $${Number(data.total_usd).toFixed(2)}`)
       return data
     },
   }
@@ -432,7 +432,7 @@ export function useCrearHorario() {
 }
 
 // Semana laboral del empleado (qué días trabaja y con qué jornada cada uno).
-// Es la fuente del estado «Libre» en asistencia y en el reloj real.
+// Es la fuente del estado «Libre» y del horario por defecto en asistencia.
 export function useGuardarHorarioEmpleado() {
   const qc = useQueryClient()
   return useMutation({

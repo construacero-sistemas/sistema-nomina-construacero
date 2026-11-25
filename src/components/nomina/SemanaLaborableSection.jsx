@@ -1,7 +1,7 @@
 // src/components/nomina/SemanaLaborableSection.jsx
 // Días que trabaja cada persona y con qué jornada cada uno. Es la fuente del
-// estado «Libre» en Asistencia y en el reloj real, y del guardarraíl de la carga
-// masiva. Extraído de EmpleadoConfigModal.jsx para respetar el límite de 600 líneas.
+// estado «Libre» y del horario por defecto en Asistencia. Extraído de
+// EmpleadoConfigModal.jsx para respetar el límite de 600 líneas.
 import { CalendarDays } from 'lucide-react'
 import { NOMBRE_DIA, NOMBRE_DIA_CORTO, diasLaborablesTexto } from '../../utils/diasLaborables.js'
 
@@ -40,7 +40,7 @@ export default function SemanaLaborableSection({
         </span>
       </div>
       <p className="text-[11px] leading-relaxed text-slate-500">
-        Solo estos días cuentan como pendientes en Asistencia y en el reloj real. El domingo se paga como
+        Solo estos días se toman como laborables por defecto en Asistencia. El domingo se paga como
         feriado y nunca se exige.
       </p>
 

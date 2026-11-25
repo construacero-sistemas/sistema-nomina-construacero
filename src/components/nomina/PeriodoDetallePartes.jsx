@@ -75,11 +75,11 @@ export function EstadoAutoCalculo({ resultado }) {
   const { estado, jornadas } = resultado
   if (estado === 'inactivo') return null
   const textos = {
-    comprobando: ['border-slate-200 bg-slate-50 text-slate-600', RefreshCw, 'Poniendo los recibos al día con la asistencia…'],
-    'al-dia': ['border-emerald-200 bg-emerald-50 text-emerald-800', CheckCircle2, 'Recibos y hoja al día con la asistencia.'],
-    actualizado: ['border-sky-200 bg-sky-50 text-sky-800', RefreshCw, 'Recibos y hoja actualizados con la asistencia más reciente.'],
-    'jornadas-abiertas': ['border-amber-200 bg-amber-50 text-amber-900', AlertTriangle, `Hay ${jornadas} jornada(s) con entrada y sin salida: los recibos no se actualizaron. Corrige el marcaje o calcula desde Períodos.`],
-    error: ['border-rose-200 bg-rose-50 text-rose-800', AlertTriangle, 'No se pudieron poner al día los recibos. Usa «Calcular» en Períodos.'],
+    comprobando: ['border-slate-200 bg-slate-50 text-slate-600', RefreshCw, 'Actualizando la hoja semanal con la asistencia…'],
+    'al-dia': ['border-emerald-200 bg-emerald-50 text-emerald-800', CheckCircle2, 'Hoja semanal al día con la asistencia.'],
+    actualizado: ['border-sky-200 bg-sky-50 text-sky-800', RefreshCw, 'Hoja semanal actualizada con la asistencia más reciente.'],
+    'jornadas-abiertas': ['border-amber-200 bg-amber-50 text-amber-900', AlertTriangle, `Hay ${jornadas} registro(s) con entrada y sin salida: la hoja semanal no se actualizó. Ajusta la excepción o calcula desde Períodos.`],
+    error: ['border-rose-200 bg-rose-50 text-rose-800', AlertTriangle, 'No se pudo poner al día la hoja semanal. Usa «Calcular» en Períodos.'],
   }
   const [clases, Icono, texto] = textos[estado] || textos.error
   return (

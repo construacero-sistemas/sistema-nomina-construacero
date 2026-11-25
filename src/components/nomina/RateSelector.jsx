@@ -129,8 +129,8 @@ export function RateSelector({ className = '', compact = false, light = false, a
         onClick={() => setOpen(o => !o)}
         className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:py-1 rounded-xl ${light ? 'bg-white hover:bg-slate-50 border border-slate-300 text-slate-800' : 'bg-white/10 hover:bg-white/15 border border-white/15 text-white'} transition-all text-xs font-bold active:scale-95 min-h-11 sm:min-h-0 ${compact ? 'text-[11px] px-2' : ''}`} 
         style={{ touchAction: 'manipulation' }}
-        title={personal ? 'Tu tasa para los recibos y la hoja semanal' : 'Cambiar tasa de conversión a Bolívares'}
-        aria-label={`${personal ? 'Cambiar mi tasa para recibos y hoja' : 'Cambiar tasa de conversión'}: ${shortLabelTasa} ${formatBs(tasaActiva)}`}
+        title={personal ? 'Tu tasa para la hoja semanal' : 'Cambiar tasa de conversión a Bolívares'}
+        aria-label={`${personal ? 'Cambiar mi tasa para la hoja semanal' : 'Cambiar tasa de conversión'}: ${shortLabelTasa} ${formatBs(tasaActiva)}`}
         aria-expanded={open}
       >
         <span className={`${light ? 'text-slate-600' : 'text-white/60'} font-semibold`}>{shortLabelTasa}:</span>
@@ -235,7 +235,7 @@ export function RateSelector({ className = '', compact = false, light = false, a
                     {guardandoTasaManual ? 'Guardando…' : 'Fijar'}
                   </button>
                 </div>
-                <p className="text-[10px] font-semibold text-slate-500">{personal ? 'Solo para ti: se usa en los recibos y la hoja semanal; no cambia la tasa de nadie más.' : 'Solo cambia la tasa de Nómina; Finanzas tiene su propia tasa.'}</p>
+                <p className="text-[10px] font-semibold text-slate-500">{personal ? 'Solo para ti: se usa en la hoja semanal y su PDF; no cambia la tasa de nadie más.' : 'Solo cambia la tasa de Nómina; Finanzas tiene su propia tasa.'}</p>
                 {(errorManual || errorTasaManual) && (
                   <p role="alert" className="text-[10px] font-bold text-rose-700">{errorManual || errorTasaManual}</p>
                 )}
@@ -244,7 +244,7 @@ export function RateSelector({ className = '', compact = false, light = false, a
 
             <div className="mt-2 pt-1.5 border-t border-slate-100 px-1 text-[10px] text-slate-400 text-center space-y-0.5">
               <p>Moneda principal: <strong>USD ($)</strong> · Secundaria: <strong>Bs</strong></p>
-              {personal && <p>Esta tasa es solo tuya: sirve para calcular los recibos y la hoja semanal.</p>}
+              {personal && <p>Esta tasa es solo tuya: sirve para calcular la hoja semanal y su PDF.</p>}
               {tasaManualInfo?.fijada_por_nombre && (
                 <p>
                   Tasa manual fijada por <strong>{tasaManualInfo.fijada_por_nombre}</strong>

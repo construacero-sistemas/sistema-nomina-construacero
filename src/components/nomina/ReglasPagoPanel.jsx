@@ -237,7 +237,7 @@ export default function ReglasPagoPanel({ config }) {
             <input type="text" inputMode="decimal" className={inputCls} disabled={bloqueado} aria-label="Bono semanal en dólares"
               value={actual.bono} onChange={e => cambiar({ bono: e.target.value })} />
           </label>
-          <p className="text-[11px] text-slate-500">Sale de la semana (días trabajados + días pagados sin trabajar); no se suma al sueldo: el sueldo semanal es lo que queda. Se aplica una vez por semana del período y cada recibo guarda el bono que le tocó al calcular, así que cambiarlo no altera recibos ya calculados o pagados. Por defecto: ${REGLAS_LEY_DEFAULT.bonoSemanalUsd}.</p>
+          <p className="text-[11px] text-slate-500">Sale de la semana (días trabajados + días pagados sin trabajar); no se suma al sueldo: el sueldo semanal es lo que queda. Se aplica una vez por semana del período y cada semana guarda el bono que le tocó al calcular, así que cambiarlo no altera períodos ya calculados o pagados. Por defecto: ${REGLAS_LEY_DEFAULT.bonoSemanalUsd}.</p>
         </Bloque>
       </div>
 

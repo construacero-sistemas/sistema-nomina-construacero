@@ -1,5 +1,5 @@
 // src/components/nomina/TabAsistencia.jsx
-// Grilla semanal de horarios manuales y asistencia, separada del reloj real de hoy.
+// Grilla semanal de asistencia por excepción, separada del panel diario de hoy.
 import { useState, useMemo } from 'react'
 import { ChevronLeft, ChevronRight, CalendarClock, Users, Clock, LogIn, AlertTriangle } from 'lucide-react'
 import { useConfigEmpleados, useAsistencia, useFeriados, useConfigNomina, useNominaPeriodos } from '../../hooks/useNomina'
@@ -38,8 +38,8 @@ function fmtCorto(d) {
   return d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })
 }
 
-// `esAdmin` (administrarNomina) controla las vistas de asistencia y el marcaje real,
-// que ese rol sí puede operar. La carga masiva y la eliminación de registros exigen
+// `esAdmin` (administrarNomina) controla las vistas de asistencia y el panel diario de hoy,
+// que ese rol sí puede operar. Los ajustes y la eliminación de registros exigen
 // `administrarNomina` en el servidor y se gatean con `puedeGestionarNomina`.
 export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false }) {
   // La fecha operativa sale de un único helper (America/Caracas): el reloj del
@@ -93,7 +93,7 @@ export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false })
   const { data: asistencia, isLoading: asisCargando, isError: asisError, refetch: retryAsistencia } = useAsistencia({ desde, hasta })
   const registros = asistencia?.registros ?? []
   const asistenciaTruncada = asistencia?.truncado === true
-  // El reloj real muestra HOY aunque la semana visible sea otra: el rango de feriados
+  // El panel diario muestra HOY aunque la semana visible sea otra: el rango de feriados
   // se ensancha para incluir la fecha operativa (la fija el servidor en America/Caracas)
   // y el panel no quede sin su feriado al navegar a otra semana.
   const feriadosDesde = desde < hoyIso ? desde : hoyIso
