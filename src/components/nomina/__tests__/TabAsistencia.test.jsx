@@ -85,4 +85,19 @@ describe('TabAsistencia — sábado laborable (F-5)', () => {
     expect(cabecera.slice(1, 8)).toEqual(['Jue10', 'Vie11', 'Sáb12', 'Dom13', 'Lun14', 'Mar15', 'Mié16'])
     mocks.inicioSemana = 1
   })
+
+  it('muestra solo 2 vistas móviles (Hoy / Semana) para admin y oculta avisos obsoletos de reloj real', () => {
+    mocks.asistencia = {
+      registros: [{ empleado_id: 'emp-1', fecha: '2026-09-10', estado_marcaje: 'entrada' }],
+      truncado: false,
+    }
+    render(<TabAsistencia esAdmin puedeGestionarNomina />)
+
+    const grupo = screen.getByRole('group', { name: /Vista de asistencia/i })
+    expect(within(grupo).getByRole('button', { name: 'Hoy' })).toBeInTheDocument()
+    expect(within(grupo).getByRole('button', { name: 'Semana' })).toBeInTheDocument()
+    expect(within(grupo).queryByRole('button', { name: /Manual nómina|Asistencia hoy/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/reloj real/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/entrada y no la salida/i)).not.toBeInTheDocument()
+  })
 })

@@ -8,6 +8,7 @@ import { useCerrarPeriodo, useNominaLineas } from '../../hooks/useNomina'
 import useAutoCalculoPeriodo from '../../hooks/useAutoCalculoPeriodo.js'
 import useTasaCambioNomina from '../../hooks/useTasaCambioNomina.js'
 import useMonedaNomina, { formatBs } from '../../hooks/useMonedaNomina.js'
+import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
 
 const FUENTES = [
   { id: 'BCV', label: 'BCV $', key: 'usd' },
@@ -86,6 +87,24 @@ export default function CerrarPeriodoModal({ periodo, onClose, onVerHoja = null 
     }
     return r
   }, [lineas])
+
+  const novedades = useMemo(() => (lineas || []).reduce((acc, l) => {
+    const tags = []
+    const extras = Number(l.horas_extra || 0)
+    const faltas = Number(l.dias_ausencia || 0)
+    const especiales = Number(l.dias_sabado || 0) + Number(l.dias_feriado || 0)
+    const bonos = Number(l.bonos_usd || 0)
+    const deduc = Number(l.deducciones_usd || 0)
+    if (extras > 0) tags.push({ id: 'extra', txt: `+${extras} h extra`, cls: 'border-amber-200 bg-amber-100 text-amber-900' })
+    if (faltas > 0) tags.push({ id: 'falta', txt: `${faltas} falta${faltas === 1 ? '' : 's'}`, cls: 'border-rose-200 bg-rose-100 text-rose-800' })
+    if (especiales > 0) tags.push({ id: 'esp', txt: `${especiales} desc./fer.`, cls: 'border-violet-200 bg-violet-100 text-violet-900' })
+    if (bonos > 0) tags.push({ id: 'bono', txt: `+$${fmt(bonos)} bono`, cls: 'border-emerald-200 bg-emerald-100 text-emerald-800' })
+    if (deduc > 0) tags.push({ id: 'ded', txt: `-$${fmt(deduc)} desc.`, cls: 'border-rose-200 bg-rose-50 text-rose-700' })
+    if (tags.length) {
+      acc.push({ id: l.id || l.empleado_id, nombre: capitalizarPalabras(l.empleado?.nombre) || 'Trabajador', tags })
+    }
+    return acc
+  }, []), [lineas])
 
   function elegirFuente(nuevaFuente) {
     setFuente(nuevaFuente)
@@ -182,6 +201,29 @@ export default function CerrarPeriodoModal({ periodo, onClose, onVerHoja = null 
           <DatoResumen label="Ausencias" value={resumen.ausencias} sub={resumen.especiales > 0 ? `${resumen.especiales} esp.` : null} tone={resumen.ausencias > 0 ? 'rose' : 'slate'} icon={resumen.ausencias > 0 ? UserX : CalendarCheck2} />
         </div>
 
+        {/* Novedades por trabajador antes de cerrar */}
+        {!isLoading && resumen.empleados > 0 && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3" aria-label="Novedades de la semana">
+            <p className="text-[11px] font-black uppercase tracking-wide text-slate-600">Novedades de la semana</p>
+            {novedades.length === 0 ? (
+              <p className="mt-1 text-xs font-semibold text-emerald-800">Semana sin excepciones (asistencia completa de todo el personal).</p>
+            ) : (
+              <ul className="mt-2 max-h-36 space-y-1.5 overflow-y-auto custom-scrollbar">
+                {novedades.map(n => (
+                  <li key={n.id} className="flex flex-wrap items-center justify-between gap-1.5 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-xs">
+                    <span className="min-w-0 truncate font-bold text-slate-800">{n.nombre}</span>
+                    <span className="flex flex-wrap gap-1">
+                      {n.tags.map(t => (
+                        <span key={t.id} className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${t.cls}`}>{t.txt}</span>
+                      ))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         {/* Bloque obligatorio: Tasa con la que se pagará el período */}
         <div className="space-y-3 rounded-2xl border border-primary/25 bg-primary/[0.03] p-3.5">
           <div>
@@ -243,7 +285,7 @@ export default function CerrarPeriodoModal({ periodo, onClose, onVerHoja = null 
         {jornadasAbiertas && (
           <div role="alert" className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
             <p className="font-bold">
-              Hay {jornadasAbiertas.total} marcaje(s) históricos con entrada sin salida. Puedes confirmar para cerrar sin pagar esos marcajes incompletos.
+              Hay {jornadasAbiertas.total} registro(s) con entrada sin salida. Puedes confirmar para cerrar sin pagar esos registros incompletos.
             </p>
             <button
               type="button"
@@ -251,7 +293,7 @@ export default function CerrarPeriodoModal({ periodo, onClose, onVerHoja = null 
               onClick={() => confirmar(true)}
               className="min-h-11 rounded-xl bg-amber-700 px-3.5 text-xs font-bold text-white hover:bg-amber-800 disabled:opacity-50"
             >
-              Cerrar sin pagar marcajes incompletos
+              Cerrar sin pagar registros incompletos
             </button>
           </div>
         )}

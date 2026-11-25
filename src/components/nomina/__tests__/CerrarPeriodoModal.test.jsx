@@ -6,7 +6,7 @@ import '@testing-library/jest-dom/vitest'
 const mocks = vi.hoisted(() => ({
   cerrar: vi.fn().mockResolvedValue({ ok: true, pagado: true }),
   lineas: [
-    { id: 'l1', total_bruto_usd: 75, deducciones_usd: 5, total_neto_usd: 70, horas_extra: 2, monto_extra_usd: 5, dias_ausencia: 1, dias_sabado: 0, dias_feriado: 1 },
+    { id: 'l1', empleado: { nombre: 'edgar ramirez' }, total_bruto_usd: 75, deducciones_usd: 5, total_neto_usd: 70, horas_extra: 2, monto_extra_usd: 5, dias_ausencia: 1, dias_sabado: 0, dias_feriado: 1 },
   ],
 }))
 
@@ -38,6 +38,9 @@ describe('CerrarPeriodoModal', () => {
     render(<CerrarPeriodoModal periodo={periodo} onClose={onClose} />)
 
     expect(screen.getByText(/Cerrar Semana 47-2026/)).toBeInTheDocument()
+    expect(screen.getByText('Edgar Ramirez')).toBeInTheDocument()
+    expect(screen.getByText('+2 h extra')).toBeInTheDocument()
+    expect(screen.getByText('1 falta')).toBeInTheDocument()
     expect(screen.getByText('$70,00 USD')).toBeInTheDocument()
     expect(screen.getByText('2.0 h')).toBeInTheDocument()
     // 70 * 420 (BCV $) = Bs 29.400,00
@@ -65,5 +68,11 @@ describe('CerrarPeriodoModal', () => {
     render(<CerrarPeriodoModal periodo={periodo} onClose={vi.fn()} />)
     fireEvent.change(screen.getByLabelText(/Tasa aplicada/), { target: { value: '0' } })
     expect(screen.getByRole('button', { name: /Confirmar cierre y pagar/ })).toBeDisabled()
+  })
+
+  it('indica «Semana sin excepciones» cuando no hay extras, faltas ni ajustes', () => {
+    mocks.lineas = [{ id: 'l2', empleado: { nombre: 'ana perez' }, total_bruto_usd: 56, deducciones_usd: 0, total_neto_usd: 56, horas_extra: 0, dias_ausencia: 0, dias_sabado: 0, dias_feriado: 0, bonos_usd: 0 }]
+    render(<CerrarPeriodoModal periodo={periodo} onClose={vi.fn()} />)
+    expect(screen.getByText(/Semana sin excepciones/i)).toBeInTheDocument()
   })
 })

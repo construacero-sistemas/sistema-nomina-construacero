@@ -55,4 +55,25 @@ describe('avanceSemanaPorEmpleado', () => {
     expect(mapa.get('a')).toEqual({ trabajados: 5, descansoTrabajados: 2, faltas: 0 })
     expect(mapa.get('s')).toEqual({ trabajados: 1, descansoTrabajados: 0, faltas: 0 })
   })
+
+  it('en modo por exclusión presume presentes hasta hoy respetando fecha_ingreso, feriados y faltas', () => {
+    const empleados = [
+      { empleado_id: 'e1', dias_laborables: [1, 2, 3, 4, 5] },
+      { empleado_id: 'e2', dias_laborables: [1, 2, 3, 4, 5], fecha_ingreso: '2026-11-23' },
+    ]
+    const mapa = avanceSemanaPorEmpleado([
+      { empleado_id: 'e1', fecha: '2026-11-20', es_ausencia: true, ausencia_justificada: false },
+      { empleado_id: 'e1', fecha: '2026-11-22', es_domingo: true, hora_entrada: '08:00', hora_salida: '12:00' },
+    ], {
+      empleados,
+      desde: '2026-11-19', // jue 19 → mié 25 nov; hoy = lun 23 nov
+      hasta: '2026-11-25',
+      hoy: '2026-11-23',
+      feriados: [{ fecha: '2026-11-19', laborable: false }],
+    })
+    // e1: jue 19 (feriado no lab.), vie 20 (falta), sáb 21 libre, dom 22 trabajado (descanso), lun 23 presente = 1 trab, 1 desc, 1 falta
+    expect(mapa.get('e1')).toEqual({ trabajados: 1, descansoTrabajados: 1, faltas: 1 })
+    // e2: ingresó lun 23 -> solo cuenta lun 23 como presente
+    expect(mapa.get('e2')).toEqual({ trabajados: 1, descansoTrabajados: 0, faltas: 0 })
+  })
 })

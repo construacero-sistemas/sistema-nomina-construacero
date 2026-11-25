@@ -33,6 +33,7 @@ vi.mock('../../../hooks/useNomina', () => ({
   }),
   usePosVendedores: () => ({ data: [] }),
   useAsistencia: () => ({ data: mockAsistencia }),
+  useFeriados: () => ({ data: [] }),
   useConfigNomina: () => ({ data: mockConfigNomina }),
   useCrearConfigEmpleado: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
@@ -214,24 +215,30 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
   })
 
   it('la tarjeta muestra sueldo mensual, la semana con su bono, la hora extra y cómo va la semana', () => {
-    mockClientes = [{ id: 'emp-1', nombre: 'Alejandra Hidalgo', tipo_cliente: 'personal', activo: true }]
-    mockAllConfigs = [{ id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Administración', salario_dia_usd: 9.3333, horas_jornada: 8, hora_inicio: '08:00', hora_fin: '17:00', activo: true, empleado: mockClientes[0], dias_laborables: [1, 2, 3, 4, 5], horario_configurado: true }]
-    mockConfigNomina = { nomina_monto_hora_extra_usd: 2.5, nomina_semana_inicio: 4 }
-    mockAsistencia = { registros: [
-      { empleado_id: 'emp-1', fecha: '2026-11-12', hora_entrada: '08:00', hora_salida: '17:00', horas_normales: 8 },
-      { empleado_id: 'emp-1', fecha: '2026-11-13', es_ausencia: true },
-    ] }
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-13T12:00:00'))
+    try {
+      mockClientes = [{ id: 'emp-1', nombre: 'Alejandra Hidalgo', tipo_cliente: 'personal', activo: true }]
+      mockAllConfigs = [{ id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Administración', salario_dia_usd: 9.3333, horas_jornada: 8, hora_inicio: '08:00', hora_fin: '17:00', activo: true, empleado: mockClientes[0], dias_laborables: [1, 2, 3, 4, 5], horario_configurado: true }]
+      mockConfigNomina = { nomina_monto_hora_extra_usd: 2.5, nomina_semana_inicio: 4 }
+      mockAsistencia = { registros: [
+        { empleado_id: 'emp-1', fecha: '2026-11-12', hora_entrada: '08:00', hora_salida: '17:00', horas_normales: 8 },
+        { empleado_id: 'emp-1', fecha: '2026-11-13', es_ausencia: true },
+      ] }
 
-    renderTab(true, true, true)
+      renderTab(true, true, true)
 
-    expect(screen.getByText('$280,00')).toBeTruthy()
-    expect(screen.getByText('$65,33')).toBeTruthy()
-    expect(screen.getByText('Sueldo $30,33 + bono $35,00')).toBeTruthy()
-    expect(screen.getByText('$2,50')).toBeTruthy()
-    expect(screen.queryByText('Tarifa / hora')).toBeNull()
-    expect(screen.queryByText(/Ingreso:/)).toBeNull()
-    expect(screen.getByText('1 de 5 días')).toBeTruthy()
-    expect(screen.getByText('· 1 falta')).toBeTruthy()
+      expect(screen.getByText('$280,00')).toBeTruthy()
+      expect(screen.getByText('$65,33')).toBeTruthy()
+      expect(screen.getByText('Sueldo $30,33 + bono $35,00')).toBeTruthy()
+      expect(screen.getByText('$2,50')).toBeTruthy()
+      expect(screen.queryByText('Tarifa / hora')).toBeNull()
+      expect(screen.queryByText(/Ingreso:/)).toBeNull()
+      expect(screen.getByText('1 de 5 días')).toBeTruthy()
+      expect(screen.getByText('· 1 falta')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('el interruptor de Asistencia aplica el cambio directo cuando el perfil cobra por comisión', () => {
@@ -302,5 +309,22 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
     expect(mockEliminarMutate).toHaveBeenCalledWith({
       id: 'cfg-2', incluirHistorial: false, empleadoId: 'emp-2', confirmarNombre: '',
     })
+  })
+
+  it('calcula Esta semana por exclusión sin marcajes y la oculta en perfiles sin control de asistencia', () => {
+    mockClientes = [
+      { id: 'emp-1', nombre: 'Alejandra Hidalgo', tipo_cliente: 'personal', activo: true },
+      { id: 'emp-2', nombre: 'Vendedor Fijo', tipo_cliente: 'personal', activo: true },
+    ]
+    mockAllConfigs = [
+      { id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Admin', salario_dia_usd: 15, horas_jornada: 8, activo: true, controla_asistencia: true, dias_laborables: [1, 2, 3, 4, 5], empleado: mockClientes[0] },
+      { id: 'cfg-2', empleado_id: 'emp-2', cargo: 'Ventas', salario_dia_usd: 15, horas_jornada: 8, activo: true, controla_asistencia: false, dias_laborables: [1, 2, 3, 4, 5], empleado: mockClientes[1] },
+    ]
+    mockAsistencia = { registros: [] }
+
+    renderTab(true)
+
+    expect(screen.getByText(/Esta semana:/i)).toBeTruthy()
+    expect(screen.getAllByText(/Esta semana:/i)).toHaveLength(1)
   })
 })

@@ -6,6 +6,13 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Limpieza de flujo por exclusión y mejoras de cierre/empleados (Opción A) — 24/11/2026
+
+- **Coherencia en ficha de empleados (`resumenFichaEmpleado.js`, `TabEmpleados.jsx`):** `avanceSemanaPorEmpleado` calcula «Esta semana: X de Y días» por exclusión (días laborables vencidos hasta hoy dentro de la semana de nómina, descontando feriados no laborables, faltas y descansos no trabajados sin exigir marcaje previo), respetando `fecha_ingreso` (con etiqueta `· Ingresó dd mmm`) y ocultando el contador en perfiles con `controla_asistencia: false`.
+- **Asistencia móvil y limpieza de alertas/archivos (`TabAsistencia.jsx`):** en móvil (`< md`) pasa de 3 sub-vistas a 2 para admin (`Hoy` y `Semana`, ocultando la tarjeta duplicada de 7 columnas y el antiguo `Manual nómina`), elimina `salidasPendientes` y el aviso de reloj real sin salida, y borra los 5 modales/pruebas huérfanos del flujo anterior (`AsistenciaMasivaModal`, `CorreccionMarcajeModal`, `RecibosEmpleadoModal`, `PagarNominaModal`, `marcaje/AnularEntradaModal`).
+- **Desglose por trabajador al cerrar y menos fricción en períodos (`CerrarPeriodoModal.jsx`, `TabPeriodos.jsx`, `TabHistorial.jsx`):** `CerrarPeriodoModal` muestra el desglose por trabajador con sus novedades de la semana (extras, ausencias pagadas/no pagadas, descansos/feriados trabajados, ingreso parcial o bono ajustado) o «Semana sin excepciones»; `TabPeriodos` cambia el botón principal a «Ver hoja semanal», rebaja «Calcular» / «Recalcular» a acción secundaria, y limpia textos heredados de «recibos»/«marcajes».
+- **Pruebas y verificación:** actualizados `resumenFichaEmpleado.test.js`, `TabEmpleados.test.jsx`, `TabAsistencia.test.jsx`, `CerrarPeriodoModal.test.jsx`, `TabPeriodos.test.jsx` y verificado con `npm run verify`.
+
 ## Modal diario por excepción y limpieza de textos en Hoja semanal — 24/11/2026
 
 - **Asistencia por excepción en el modal de la grilla (`AsistenciaModal.jsx`):** se eliminaron los campos de hora de entrada/salida, cálculo manual de descanso, checkbox de feriado manual y atajos de 5 columnas. Ahora trabaja 100% por excepción tomando el horario configurado del trabajador (`useHorarios` + ficha): en día laborable permite elegir entre **Horas extras** (chips desde `0.5h` y entrada decimal manual) o **Ausente** (con/sin justificativo) y restaurar con **Volver a presente**; en días de descanso/feriado no laborables oculta ausencias y ofrece **Marcar día trabajado** (con extras opcionales) o **Dejar como día libre**. Los marcajes históricos de reloj siguen en solo lectura.

@@ -5,7 +5,7 @@ import {
   Users, Plus, Pencil, DollarSign, Clock, Briefcase, Search, RotateCcw,
   AlertTriangle, CalendarDays, Sparkles, Filter, Trash2
 } from 'lucide-react'
-import { useNominaEmpleados, useConfigEmpleados, useActualizarConfigEmpleado, useEliminarConfigEmpleado, useAsistencia, useConfigNomina } from '../../hooks/useNomina'
+import { useNominaEmpleados, useConfigEmpleados, useActualizarConfigEmpleado, useEliminarConfigEmpleado, useAsistencia, useConfigNomina, useFeriados } from '../../hooks/useNomina'
 import useReglasLey from '../../hooks/useReglasLey.js'
 import { semanaDeConfig, rangoSemana } from '../../../server/lib/nominaSemana.js'
 import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
@@ -68,12 +68,14 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
   const configNominaQuery = useConfigNomina()
   const configNomina = configNominaQuery.data?.config || configNominaQuery.data || null
   const { divisorMensual } = useReglasLey()
-  const semanaActual = useMemo(() => rangoSemana(fechaOperativaHoy(), semanaDeConfig(configNomina || {}).inicio), [configNomina])
+  const hoyIso = fechaOperativaHoy()
+  const semanaActual = useMemo(() => rangoSemana(hoyIso, semanaDeConfig(configNomina || {}).inicio), [configNomina, hoyIso])
   const { data: asistenciaSemana } = useAsistencia({ desde: semanaActual.desde, hasta: semanaActual.hasta })
+  const { data: feriadosSemana = [] } = useFeriados(semanaActual.desde, semanaActual.hasta)
   const avancePorEmpleado = useMemo(() => avanceSemanaPorEmpleado(
     asistenciaSemana?.registros,
-    new Map(configs.map(c => [c.empleado_id, Array.isArray(c.dias_laborables) && c.dias_laborables.length ? c.dias_laborables : [1, 2, 3, 4, 5]])),
-  ), [asistenciaSemana, configs])
+    { empleados: configs, desde: semanaActual.desde, hasta: semanaActual.hasta, hoy: hoyIso, feriados: feriadosSemana },
+  ), [asistenciaSemana, configs, semanaActual, hoyIso, feriadosSemana])
   const bajas   = useMemo(() => (allConfigs || []).filter(c => c.activo === false), [allConfigs])
 
   const empleadosYaConfigurados = useMemo(() => {
@@ -293,7 +295,8 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
               config={c}
               esAdmin={esAdmin}
               resumen={resumenSalario({ salarioDia: c.salario_dia_usd, horasJornada: c.horas_jornada, divisorMensual, configNomina })}
-              avance={asistenciaSemana ? (avancePorEmpleado.get(c.empleado_id) || { trabajados: 0, descansoTrabajados: 0, faltas: 0 }) : null}
+              avance={asistenciaSemana && c.controla_asistencia !== false ? (avancePorEmpleado.get(c.empleado_id) || { trabajados: 0, descansoTrabajados: 0, faltas: 0 }) : null}
+              semanaActual={semanaActual}
               puedeGestionar={puedeGestionarNomina}
               puedePagarComision={puedePagarComision}
               mostrarMontos={esAdmin}
@@ -410,11 +413,13 @@ function EmpleadoBajaCard({ config, puedeGestionar, cargando, onReactivar, onEli
   )
 }
 
-function EmpleadoNominaCard({ config, resumen, avance = null, puedeGestionar = false, puedePagarComision = false, mostrarMontos = true, cargando = false, onEditar, onPagarComision, onDarDeBaja, onCambiarAsistencia }) {
+function EmpleadoNominaCard({ config, resumen, avance = null, semanaActual = null, puedeGestionar = false, puedePagarComision = false, mostrarMontos = true, cargando = false, onEditar, onPagarComision, onDarDeBaja, onCambiarAsistencia }) {
   const { fmtBs } = useMonedaNomina()
   const nombre = capitalizarPalabras(config.empleado?.nombre) || 'Sin nombre'
   const esVendedorRol = esVendedor(config)
   const diasPorSemana = Array.isArray(config.dias_laborables) && config.dias_laborables.length ? config.dias_laborables.length : 5
+  const ingreso = config.fecha_ingreso ? String(config.fecha_ingreso).slice(0, 10) : null
+  const ingresoReciente = Boolean(ingreso && semanaActual?.desde && ingreso > semanaActual.desde && ingreso <= semanaActual.hasta)
   const color = esVendedorRol ? '#0d2238' : '#1B365D'
 
   return (
@@ -467,6 +472,7 @@ function EmpleadoNominaCard({ config, resumen, avance = null, puedeGestionar = f
                 </span>
               )}
               {avance.faltas > 0 && <span className="ml-1 font-bold text-rose-700">· {avance.faltas} falta{avance.faltas === 1 ? '' : 's'}</span>}
+              {ingresoReciente && <span className="ml-1 font-semibold text-sky-700">· Ingresó {new Date(`${ingreso}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}</span>}
             </span>
           </div>
         )}

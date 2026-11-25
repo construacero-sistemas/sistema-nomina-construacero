@@ -148,7 +148,7 @@ function ConfirmarEliminarPeriodo({ periodo, onCancel }) {
       <div className="space-y-4">
         <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-900">
           <AlertCircle size={18} className="mt-0.5 shrink-0" />
-          <p className="text-sm">Se eliminará <strong>{periodo.nombre}</strong> junto con sus recibos. No se puede eliminar si ya tiene pagos registrados. Esta acción no se puede deshacer.</p>
+          <p className="text-sm">Se eliminará <strong>{periodo.nombre}</strong> junto con su planilla calculada. No se puede eliminar si ya tiene pagos registrados. Esta acción no se puede deshacer.</p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" onClick={onCancel} disabled={eliminar.isPending} className="min-h-11 rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancelar</button>
@@ -191,7 +191,7 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, onVerDetalle, onCe
           ? 'La semana terminó · ciérrala con su tasa de pago'
           : ultimoDia
             ? 'Último día del período · listo para revisar y cerrar'
-            : tieneLineas ? 'Calculado · se cierra al terminar la semana' : 'Pendiente de cálculo',
+            : tieneLineas ? 'Calculado · se cierra al terminar la semana' : 'Se calcula automáticamente al abrir la hoja',
       }
     : estBase
   const puedeCerrar = puedeGestionarNomina && (abierto || periodo.estado === 'cerrado')
@@ -249,13 +249,13 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, onVerDetalle, onCe
       </div>
 
       <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-white p-3">
-        <button type="button" onClick={onVerDetalle} className={`inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-slate-900 ${tieneAccionesPrincipales ? '' : 'col-span-2'}`}>
+        <button type="button" onClick={onVerDetalle} className={`inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition-colors ${!tieneLineas ? 'border border-primary/25 bg-primary/5 text-primary hover:bg-primary/10' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'} ${tieneAccionesPrincipales ? '' : 'col-span-2'}`}>
           <Eye size={14} /><span>Ver hoja semanal</span>
         </button>
 
         {puedeGestionarNomina && abierto && (
-          <button type="button" onClick={calcularPeriodo} disabled={ocupado} className={`inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition-colors disabled:opacity-50 active:scale-95 ${tieneLineas ? 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50' : 'bg-primary text-white shadow-sm hover:bg-primary-hover'}`}>
-            <Calculator size={14} /><span>{calcular.isPending ? 'Calculando…' : tieneLineas ? 'Recalcular' : 'Calcular nómina'}</span>
+          <button type="button" onClick={calcularPeriodo} disabled={ocupado} className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50 active:scale-95">
+            <Calculator size={14} /><span>{calcular.isPending ? 'Calculando…' : tieneLineas ? 'Recalcular' : 'Calcular'}</span>
           </button>
         )}
 
@@ -270,7 +270,7 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, onVerDetalle, onCe
         <Modal isOpen onClose={() => setJornadasAbiertas(null)} title="Jornadas sin hora de salida" className="max-w-md" busy={calcular.isPending}>
           <div className="space-y-3">
             <p className="text-sm font-medium text-slate-700">
-              {jornadasAbiertas.total === 1 ? '1 marcaje histórico tiene entrada y no tiene salida.' : `${jornadasAbiertas.total} marcajes históricos tienen entrada y no tienen salida.`}
+              {jornadasAbiertas.total === 1 ? '1 registro histórico tiene entrada y no tiene salida.' : `${jornadasAbiertas.total} registros históricos tienen entrada y no tienen salida.`}
             </p>
             <ul className="max-h-56 space-y-1.5 overflow-y-auto custom-scrollbar">
               {jornadasAbiertas.detalle.map(jornada => (

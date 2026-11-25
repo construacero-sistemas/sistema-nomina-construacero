@@ -41,7 +41,7 @@ export default function TabHistorial() {
     periodos: filtrados.length,
     bruto: filtrados.reduce((s, p) => s + (Number(p.total_bruto_usd) || 0), 0),
     neto: filtrados.reduce((s, p) => s + (Number(p.total_neto_usd) || 0), 0),
-    recibos: filtrados.reduce((s, p) => s + (Number(p.total_empleados) || 0), 0),
+    trabajadores: filtrados.reduce((s, p) => s + (Number(p.total_empleados) || 0), 0),
   }), [filtrados])
 
   return (
@@ -49,7 +49,7 @@ export default function TabHistorial() {
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard icon={Calendar}   label="Períodos cerrados" value={totales.periodos} color="slate" />
-        <KpiCard icon={Users}      label="Trabajadores liquidados" value={totales.recibos} color="indigo" />
+        <KpiCard icon={Users}      label="Trabajadores liquidados" value={totales.trabajadores} color="indigo" />
         <KpiCard icon={DollarSign} label="Total liquidado"  value={`$${fmt(totales.neto)}`} color="green" />
       </div>
 
@@ -125,7 +125,7 @@ export default function TabHistorial() {
                 ))}
                 <tr className="border-t-2 border-slate-200 bg-slate-50">
                   <td colSpan={3} className="px-3 py-2.5 font-black text-slate-700">Total</td>
-                  <td className="text-right px-3 py-2.5 font-bold text-slate-600">{totales.recibos}</td>
+                  <td className="text-right px-3 py-2.5 font-bold text-slate-600">{totales.trabajadores}</td>
                   <td className="text-right px-3 py-2.5 font-bold text-slate-700">${fmt(totales.bruto)}</td>
                   <td className="text-right px-3 py-2.5 font-black text-green-700">${fmt(totales.neto)}</td>
                   <td />
@@ -160,7 +160,7 @@ export default function TabHistorial() {
             ))}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between text-xs">
               <span className="font-black text-slate-700">Total</span>
-              <span className="font-bold text-slate-600">{totales.recibos} liquidaciones</span>
+              <span className="font-bold text-slate-600">{totales.trabajadores} liquidaciones</span>
               <span className="font-black text-green-700">${fmt(totales.neto)}</span>
             </div>
           </div>
