@@ -6,25 +6,25 @@
 // los totales suman TODAS las filas. El descuento manual se agrega desde aquí.
 // Responsiva sin recortar datos: en teléfono y tablet, una ficha por persona con
 // TODOS los campos (sin desplazamiento lateral); desde 1024 px, la tabla completa.
-import { Download, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import HorizontalScroll from '../../../compat/components/ui/HorizontalScroll.jsx'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import useHojaSemanal from '../../hooks/useHojaSemanal.js'
 import { capitalizarPalabras } from '../../utils/cuentasCustodiaUtils.js'
-import { GRUPOS_PANTALLA, columnasVisibles, hojaACsv, usd } from './hojaSemanalCsv.js'
+import { GRUPOS_PANTALLA, columnasVisibles, usd } from './hojaSemanalCsv.js'
 import { formatBs } from '../../hooks/useMonedaNomina.js'
 
 // Monto con su cantidad debajo (en gris), para no gastar una columna en cada una.
-function Celda({ monto, detalle, fuerte = false }) {
+function Celda({ monto, detalle, titulo, fuerte = false }) {
   return (
     <>
       <span className={`block ${fuerte ? 'font-black text-slate-900' : ''}`}>{usd(monto)}</span>
-      {detalle && <span className="block text-[10px] font-semibold text-slate-400">{detalle}</span>}
+      {detalle && <span title={titulo} className="block whitespace-nowrap text-[10px] font-semibold text-slate-400">{detalle}</span>}
     </>
   )
 }
 
-function FichaPersona({ fila, columnas, detalleDe, bs, puedeDescontar, onAgregarDescuento }) {
+function FichaPersona({ fila, columnas, detalleDe, tituloDe, bs, puedeDescontar, onAgregarDescuento }) {
   const nombre = capitalizarPalabras(fila.nombre)
   return (
     <li className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -42,7 +42,7 @@ function FichaPersona({ fila, columnas, detalleDe, bs, puedeDescontar, onAgregar
       <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 border-t border-slate-100 pt-2 text-xs min-[360px]:grid-cols-2">
         {columnas.map(c => (
           <div key={c.id} className="flex items-baseline justify-between gap-2">
-            <dt className="min-w-0 text-slate-500">{c.titulo}{detalleDe(c, fila) && <span className="text-slate-400"> · {detalleDe(c, fila)}</span>}</dt>
+            <dt title={tituloDe?.(c, fila)} className="min-w-0 text-slate-500">{c.titulo}{detalleDe(c, fila) && <span className="text-slate-400"> · {detalleDe(c, fila)}</span>}</dt>
             <dd className={`shrink-0 tabular-nums ${c.fuerte ? 'font-black text-slate-900' : 'font-semibold text-slate-800'}`}>{usd(fila[c.id])}</dd>
           </div>
         ))}
@@ -97,9 +97,12 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
   const topeBono = Number(data.bonoSemanal || 0) * Math.max(1, Number(data.semanas) || 1)
   const detalleDe = (c, fila) => {
     if (c.id === 'totalACobrar') return tasaDe(fila) > 0 ? formatBs(Number(fila.totalACobrar) * tasaDe(fila)) : null
-    if (c.id === 'bonoSemanal') return topeBono > 0 && Number(fila.bonoSemanal) < topeBono - 0.005 ? `de $${usd(topeBono)} · semana incompleta` : null
+    if (c.id === 'bonoSemanal') return topeBono > 0 && Number(fila.bonoSemanal) < topeBono - 0.005 ? `de $${usd(topeBono)}` : null
     return c.detalle?.(fila) || null
   }
+  const tituloDe = (c, fila) => (c.id === 'bonoSemanal' && topeBono > 0 && Number(fila.bonoSemanal) < topeBono - 0.005
+    ? `Semana incompleta · tope $${usd(topeBono)}`
+    : undefined)
   const totalACobrarBs = filas.reduce((s, fila) => s + Number(fila.totalACobrar) * tasaDe(fila), 0)
   const detalleTotalDe = c => (c.id === 'totalACobrar' ? (totalACobrarBs > 0 ? formatBs(totalACobrarBs) : null) : c.detalleTotal?.(totales) || null)
   // Franja de grupos sobre los encabezados: un tramo por grupo consecutivo.
@@ -110,41 +113,19 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
     else tramos.push({ grupo: c.grupo || null, span: 1 })
   }
 
-  function descargar() {
-    const csv = hojaACsv({ periodo, filas, totales, bsDe })
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    const enlace = document.createElement('a')
-    enlace.href = url
-    enlace.download = `hoja-semanal-${periodo.desde}-a-${periodo.hasta}.csv`
-    enlace.click()
-    URL.revokeObjectURL(url)
-  }
-
   return (
     <section aria-label="Hoja semanal" className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0 space-y-1">
-          <p className="text-[11px] text-slate-500">
-            Semana = días trabajados + días pagados sin trabajar. El bono semanal (${usd(data.bonoSemanal)}{Number(data.semanas) > 1 ? ` por semana × ${data.semanas} semanas` : ''}) sale de la semana y no se suma; el sueldo semanal es lo que queda. Si la semana vale menos que el bono (por ejemplo, solo hay un día contado), el bono es lo que alcanza y se indica «semana incompleta». Cada recibo guarda el bono que le tocó al calcular.
-          </p>
-          {Number(tasa) > 0 && (
-            <p className="inline-flex flex-wrap items-baseline gap-x-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-800">
-              Tasa de nómina <strong className="text-sm font-black tabular-nums">Bs {usd(tasa)}</strong> por $1
-              <span className="text-emerald-700">({tasaOrigen === 'cierre' ? 'cierre del período' : 'activa'}{filas.some(f => f.pagado && Number(f.tasaPago) > 0) ? '; los pagados usan la tasa guardada al pagar' : ''})</span>
-            </p>
-          )}
-        </div>
-        <button type="button" onClick={descargar}
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50"
-          style={{ touchAction: 'manipulation' }}>
-          <Download size={14} aria-hidden="true" /> Descargar Excel
-        </button>
-      </div>
+      {Number(tasa) > 0 && (
+        <p className="inline-flex flex-wrap items-baseline gap-x-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-800">
+          Tasa de nómina <strong className="text-sm font-black tabular-nums">Bs {usd(tasa)}</strong> por $1
+          <span className="text-emerald-700">({tasaOrigen === 'cierre' ? 'cierre del período' : 'activa'}{filas.some(f => f.pagado && Number(f.tasaPago) > 0) ? '; los pagados usan la tasa guardada al pagar' : ''})</span>
+        </p>
+      )}
       <ul className="space-y-2.5 lg:hidden" aria-label="Hoja semanal por persona">
         {filas.map(fila => {
           const linea = lineaPorId.get(fila.lineaId)
           return (
-            <FichaPersona key={fila.lineaId} fila={fila} columnas={columnas} detalleDe={detalleDe} bs={bsDe(fila)}
+            <FichaPersona key={fila.lineaId} fila={fila} columnas={columnas} detalleDe={detalleDe} tituloDe={tituloDe} bs={bsDe(fila)}
               puedeDescontar={Boolean(abierto && puedeGestionarNomina && !fila.pagado && linea)}
               onAgregarDescuento={() => onAgregarDescuento(linea)} />
           )
@@ -206,7 +187,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
                   </th>
                   {columnas.map(c => (
                     <td key={c.id} className={`whitespace-nowrap px-2 py-2 text-right ${c.fuerte ? '' : 'text-slate-700'}`}>
-                      <Celda monto={fila[c.id]} detalle={detalleDe(c, fila)} fuerte={c.fuerte} />
+                      <Celda monto={fila[c.id]} detalle={detalleDe(c, fila)} titulo={tituloDe(c, fila)} fuerte={c.fuerte} />
                     </td>
                   ))}
                   <td className="px-2 py-2 text-right">

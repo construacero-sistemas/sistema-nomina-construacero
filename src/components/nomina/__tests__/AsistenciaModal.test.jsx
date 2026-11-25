@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import '@testing-library/jest-dom/vitest'
 import AsistenciaModal from '../AsistenciaModal.jsx'
 
 const mocks = vi.hoisted(() => ({
@@ -9,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   horarios: [],
 }))
 
-vi.mock('../../../hooks/useNomina.js', () => ({
+vi.mock('../../../hooks/useNomina', () => ({
   useRegistrarAsistencia: () => ({ mutateAsync: mocks.registrar, isPending: false }),
   useEliminarAsistencia: () => ({ mutateAsync: mocks.eliminar, isPending: false }),
   useHorarios: () => ({ data: mocks.horarios, isLoading: false }),
@@ -23,98 +24,124 @@ const empleado = {
   hora_fin: '17:00:00',
 }
 
-// `esAdmin` (administrarNomina) permite registrar y corregir; `puedeGestionarNomina`
-// (administrarNomina) es lo que el servidor exige para ELIMINAR el registro.
 const baseProps = {
-  empleado, fecha: '2026-09-10', feriado: null, esAdmin: true,
-  puedeGestionarNomina: true, onClose: vi.fn(),
+  empleado,
+  fecha: '2026-09-10', // jueves
+  feriado: null,
+  esAdmin: true,
+  puedeGestionarNomina: true,
+  onClose: vi.fn(),
 }
 
-beforeEach(() => { vi.clearAllMocks(); mocks.horarios = [] })
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.horarios = []
+})
+
 afterEach(() => cleanup())
 
-describe('AsistenciaModal', () => {
-  it('shows a real clock mark as read-only and hides edit/delete actions', () => {
-    render(<AsistenciaModal
-      {...baseProps}
-      registro={{ id: 'r1', estado_marcaje: 'completo', hora_entrada: '08:00:00', hora_salida: '17:00:00' }}
-    />)
+describe('AsistenciaModal (100% por excepción)', () => {
+  it('muestra marcaje real histórico en modo solo lectura y oculta guardar/restaurar', () => {
+    render(
+      <AsistenciaModal
+        {...baseProps}
+        registro={{ id: 'r1', estado_marcaje: 'completo', hora_entrada: '08:00:00', hora_salida: '17:00:00', horas_trabajadas: 8 }}
+      />,
+    )
 
-    expect(screen.getByText(/marcaje real del reloj/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /guardar asistencia/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /eliminar registro de asistencia/i })).not.toBeInTheDocument()
-    expect(document.querySelector('input[type="time"]')).toBeDisabled()
+    expect(screen.getByText(/marcaje real del reloj — solo lectura/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /guardar horas extras|guardar ausencia|marcar día trabajado/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /volver a presente/i })).not.toBeInTheDocument()
   })
 
-  it('uses the configured rest default for manual presets and sends guard fields', async () => {
-    render(<AsistenciaModal
-      {...baseProps}
-      registro={{ id: 'r1', estado_marcaje: 'manual' }}
-      horasDescansoDefault={0.5}
-    />)
+  it('trabaja por excepción en día laborable sin inputs de entrada/salida y toma el horario de la ficha', async () => {
+    render(
+      <AsistenciaModal
+        {...baseProps}
+        registro={{ id: 'r1', estado_marcaje: 'manual', horas_extra: 0 }}
+        horasDescansoDefault={0.5}
+      />,
+    )
 
-    // El acceso rápido debe respetar el descanso configurado (0.5h), no un 1h fijo.
-    fireEvent.click(screen.getByRole('button', { name: /8h de jornada/i }))
-    expect(screen.getByText('0.5 h · semana de 40 h')).toBeInTheDocument()
-    // Ya no hay selector de descanso: el descanso sale del horario general.
-    expect(screen.queryByText(/Hora Libre/i)).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '45 min' })).not.toBeInTheDocument()
+    expect(document.querySelector('input[type="time"]')).toBeNull()
+    expect(screen.queryByText(/Día feriado/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/Presente por defecto · 08:00 AM – 05:00 PM \(8 h\)/)).toBeInTheDocument()
 
-    fireEvent.submit(document.querySelector('form#asistencia-manual-form'))
+    fireEvent.click(screen.getByRole('button', { name: '+0.5h' }))
+    expect(screen.getByText(/8 h normales \+ 0\.5 h extras · salida est\. 05:30 PM/)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText(/Horas extras manuales/i), { target: { value: '1,5' } })
+    fireEvent.submit(document.querySelector('form#asistencia-excepcion-form'))
 
     await waitFor(() => expect(mocks.registrar).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       empleadoId: 'emp-1',
       fecha: '2026-09-10',
+      horaEntrada: '08:00',
+      horaSalida: '18:30',
+      horasDescanso: 1,
+      esAusencia: false,
+      ausenciaJustificada: false,
       registroIdEsperado: 'r1',
       estadoMarcajeEsperado: 'manual',
-      horaEntrada: '08:00',
-      horaSalida: '17:00',
-      horasDescanso: 0.5,
     })))
   })
 
-  // F-8: la ficha manda. Con semana configurada (sábado 08:00–17:00, 8 h) el modal
-  // abre con esas horas y su descanso derivado, sin el aviso de «Sábado Rotativo».
-  it('abre con las horas de su semana configurada y sin dar por hecho el medio sábado', () => {
+  it('usa el horario específico del día configurado en useHorarios y distingue sábado trabajado', () => {
     mocks.horarios = [
-      { dia_semana: 6, hora_inicio: '08:00', hora_fin: '17:00', horas_jornada: 8, semana_ciclo: null, fecha_hasta: null, trabaja: true },
+      { dia_semana: 6, hora_inicio: '07:30', hora_fin: '16:30', horas_jornada: 8, trabaja: true },
     ]
-    render(<AsistenciaModal {...baseProps} fecha="2026-09-12" registro={{ id: 'r1', estado_marcaje: 'manual' }} horasDescansoDefault={0.5} />)
-
-    const [entrada, salida] = document.querySelectorAll('input[type="time"]')
-    expect(entrada).toHaveValue('08:00')
-    expect(salida).toHaveValue('17:00')
-    expect(screen.queryByText(/Sábado Rotativo/i)).not.toBeInTheDocument()
-    // 9 h de permanencia − 8 h de jornada = 1 h de descanso, tomadas de la ficha.
-    expect(screen.getByText('1 h · semana de 40 h')).toBeInTheDocument()
-  })
-
-  it('sin semana configurada mantiene el estándar de la ficha y su aviso de sábado', () => {
     render(<AsistenciaModal {...baseProps} fecha="2026-09-12" />)
 
-    const [entrada, salida] = document.querySelectorAll('input[type="time"]')
-    expect(entrada).toHaveValue('08:00')
-    expect(salida).toHaveValue('17:00')
-    // La insignia y la nota del sábado (dos textos) siguen ahí cuando no hay semana.
-    expect(screen.getAllByText(/Sábado Rotativo/i)).toHaveLength(2)
-    // El atajo ya no da por hecho un medio sábado de 5 h: sale de la ficha.
-    expect(screen.queryByText(/medio sábado/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /8h de jornada/i })).toBeInTheDocument()
+    expect(screen.getByText(/Presente por defecto · 07:30 AM – 04:30 PM \(8 h\)/)).toBeInTheDocument()
   })
 
-  it('keeps the delete action available for manual rows', () => {
-    render(<AsistenciaModal {...baseProps} registro={{ id: 'r1', estado_marcaje: 'manual' }} />)
-    expect(screen.getByRole('button', { name: /eliminar registro de asistencia/i })).toBeInTheDocument()
+  it('permite marcar ausencia con o sin justificativo', async () => {
+    render(<AsistenciaModal {...baseProps} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ausente' }))
+    fireEvent.click(screen.getByRole('button', { name: /Con justificativo/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar ausencia' }))
+
+    await waitFor(() => expect(mocks.registrar).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      empleadoId: 'emp-1',
+      fecha: '2026-09-10',
+      horaEntrada: null,
+      horaSalida: null,
+      horasDescanso: 0,
+      esAusencia: true,
+      ausenciaJustificada: true,
+    })))
   })
 
-  it('oculta el borrado —pero no la corrección— cuando falta la capacidad de gestionar nómina', () => {
-    render(<AsistenciaModal
-      {...baseProps}
-      puedeGestionarNomina={false}
-      registro={{ id: 'r1', estado_marcaje: 'manual' }}
-    />)
+  it('en día de descanso o feriado no laborable oculta Ausente y ofrece Marcar día trabajado', async () => {
+    render(<AsistenciaModal {...baseProps} fecha="2026-09-13" />)
 
-    expect(screen.queryByRole('button', { name: /eliminar registro de asistencia/i })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /guardar asistencia/i })).toBeInTheDocument()
+    expect(screen.getByText(/Día de descanso · libre por defecto/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Ausente' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '+2h' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar día trabajado' }))
+
+    await waitFor(() => expect(mocks.registrar).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      empleadoId: 'emp-1',
+      fecha: '2026-09-13',
+      horaEntrada: '08:00',
+      horaSalida: '19:00',
+      esAusencia: false,
+    })))
+  })
+
+  it('permite restaurar a presente solo cuando puedeGestionarNomina es true', async () => {
+    const view = render(
+      <AsistenciaModal {...baseProps} puedeGestionarNomina={false} registro={{ id: 'r1', estado_marcaje: 'manual' }} />,
+    )
+    expect(screen.queryByRole('button', { name: 'Volver a presente' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Guardar horas extras' })).toBeInTheDocument()
+    view.unmount()
+
+    render(<AsistenciaModal {...baseProps} puedeGestionarNomina registro={{ id: 'r1', estado_marcaje: 'manual' }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Volver a presente' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, restaurar' }))
+    await waitFor(() => expect(mocks.eliminar).toHaveBeenCalledExactlyOnceWith('r1'))
   })
 })

@@ -58,12 +58,16 @@ describe('HojaSemanal', () => {
     expect(fralin).toHaveTextContent('9,341 día')
   })
 
-  it('aclara «de $35,00 · semana incompleta» solo cuando el bono pagado es menor al configurado', () => {
+  it('aclara «de $35,00» compacto con tooltip «Semana incompleta» solo cuando el bono pagado es menor al configurado', () => {
     mocks.hoja = { data: { periodo: PERIODO, bonoSemanal: 35, filas: [FILAS[0], fila({ lineaId: 'l-3', empleadoId: 'e-3', nombre: 'ana perez', bonoSemanal: 8, sueldoSemanal: 0 })], totales: TOTALES }, isLoading: false, isError: false, refetch: vi.fn() }
     renderHoja()
     const tabla = screen.getByRole('table', { name: 'Hoja semanal del período' })
-    expect(within(tabla).getByRole('rowheader', { name: /^Ana Perez/ }).closest('tr')).toHaveTextContent('de $35,00 · semana incompleta')
-    expect(within(tabla).getByRole('rowheader', { name: /^Fralin Lozano/ }).closest('tr')).not.toHaveTextContent('semana incompleta')
+    const filaAna = within(tabla).getByRole('rowheader', { name: /^Ana Perez/ }).closest('tr')
+    expect(filaAna).toHaveTextContent('de $35,00')
+    expect(filaAna).not.toHaveTextContent('semana incompleta')
+    expect(within(filaAna).getByText('de $35,00')).toHaveAttribute('title', 'Semana incompleta · tope $35,00')
+    const filaFralin = within(tabla).getByRole('rowheader', { name: /^Fralin Lozano/ }).closest('tr')
+    expect(filaFralin).not.toHaveTextContent('de $35,00')
   })
 
   it('agrupa las columnas (Semana · Pago · Adicionales) y no corta palabras a la mitad', () => {
@@ -154,16 +158,9 @@ describe('HojaSemanal', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('No se muestran totales en cero')
   })
 
-  it('«Descargar Excel» genera el archivo de la semana', () => {
-    const crear = vi.fn(() => 'blob:hoja')
-    URL.createObjectURL = crear
-    URL.revokeObjectURL = vi.fn()
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  it('no muestra botón «Descargar Excel» (solo se conserva la Planilla PDF)', () => {
     renderHoja()
-    fireEvent.click(screen.getByRole('button', { name: 'Descargar Excel' }))
-    expect(crear).toHaveBeenCalledTimes(1)
-    expect(click).toHaveBeenCalledTimes(1)
-    click.mockRestore()
+    expect(screen.queryByRole('button', { name: /Descargar Excel/i })).toBeNull()
   })
 })
 

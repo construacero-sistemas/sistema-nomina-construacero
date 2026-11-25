@@ -113,7 +113,7 @@ export function RateSelector({ className = '', compact = false, light = false, a
         aria-label={`Tasa de cambio ${shortLabelTasa} ${formatBs(tasaActiva)} (solo informativa)`}
       >
         <span className={`${light ? 'text-slate-600' : 'text-white/60'} font-semibold`}>{shortLabelTasa}:</span>
-        <span className={`font-black ${light ? 'text-amber-700' : 'text-amber-300'}`}>
+        <span className={`font-black tabular-nums ${light ? 'text-primary' : 'text-amber-300'}`}>
           {loading ? '...' : formatBs(tasaActiva).replace('Bs ', '')}
         </span>
       </span>
@@ -134,7 +134,7 @@ export function RateSelector({ className = '', compact = false, light = false, a
         aria-expanded={open}
       >
         <span className={`${light ? 'text-slate-600' : 'text-white/60'} font-semibold`}>{shortLabelTasa}:</span>
-        <span className="font-black text-amber-300">
+        <span className={`font-black tabular-nums ${light ? 'text-primary' : 'text-amber-300'}`}>
           {loading ? '...' : formatBs(tasaActiva).replace('Bs ', '')}
         </span>
         <ChevronDown size={13} className={`${light ? 'text-slate-500' : 'text-white/60'} transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />

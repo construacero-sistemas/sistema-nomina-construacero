@@ -8,7 +8,6 @@ import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
 import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
 import HorizontalScroll from '../../../compat/components/ui/HorizontalScroll.jsx'
 import AsistenciaModal from './AsistenciaModal'
-import AsistenciaMasivaModal from './AsistenciaMasivaModal'
 import MarcajeLogisticaPanel from './MarcajeLogisticaPanel'
 import AsistenciaDiariaMovil from './AsistenciaDiariaMovil'
 import CerrarPeriodoModal from './CerrarPeriodoModal.jsx'
@@ -57,7 +56,6 @@ export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false })
   const [diaAncla, setDiaAncla]       = useState(() => new Date(`${fechaOperativaHoy()}T12:00:00`))
   const inicioSemana = useMemo(() => inicioSemanaDe(diaAncla, diaInicio), [diaAncla, diaInicio])
   const [modal, setModal]             = useState(null) // { empleado, fecha, registro }
-  const [modalMasivo, setModalMasivo] = useState(null) // fecha
   const [cerrandoPeriodo, setCerrandoPeriodo] = useState(null)
   const [detallePeriodo, setDetallePeriodo] = useState(null)
   const [modoVistaMovil, setModoVistaMovil] = useState(esAdmin ? 'reloj' : 'manual') // 'reloj' | 'manual' | 'semanal'
@@ -303,7 +301,6 @@ export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false })
                 esAdmin={esAdmin}
                 puedeGestionarNomina={puedeGestionarNomina}
                 onAbrirDetalle={setModal}
-                onAbrirMasivo={payload => setModalMasivo(payload)}
                 onIrHoy={irAHoy}
               />
             ) : (
@@ -493,15 +490,6 @@ export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false })
         />
       )}
 
-      {modalMasivo && (
-        <AsistenciaMasivaModal
-          fechaInicial={modalMasivo.fecha}
-          empleadoIds={modalMasivo.empleadoIds}
-          empleados={empleados}
-          registrosPorEmpleado={indice}
-          onClose={() => setModalMasivo(null)}
-        />
-      )}
       {cerrandoPeriodo && (
         <CerrarPeriodoModal
           periodo={cerrandoPeriodo}

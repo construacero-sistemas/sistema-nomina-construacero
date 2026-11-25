@@ -147,4 +147,12 @@ describe('RateSelector — tasa manual de Nómina', () => {
     abrirMenu()
     expect(screen.getByText(/fijada por/i)).toHaveTextContent('Admin Test')
   })
+
+  it('en modo claro (light) usa alto contraste y evita amarillo sobre fondo blanco', () => {
+    render(<RateSelector light />)
+    const trigger = screen.getByRole('button', { name: /Cambiar tasa/i })
+    const valor = trigger.querySelectorAll('span')[1]
+    expect(valor).toHaveClass('text-primary')
+    expect(valor).not.toHaveClass('text-amber-300')
+  })
 })
