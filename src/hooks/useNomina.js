@@ -8,7 +8,7 @@ import { showToast } from '../../compat/components/ui/toastBus.js'
 import { tieneCapacidad } from '../config/accesoModulos.js'
 import useFinancialOperation from './useFinancialOperation.js'
 import useTasaCambioNomina from './useTasaCambioNomina.js'
-export { useMarcarEntrada, useMarcarSalida, useMarcarAusencia, useCorregirMarcaje, useAnularEntradaComoAusencia, useDeshacerMarcaje } from './useNominaMarcaje.js'
+export { useMarcarEntrada, useMarcarSalida, useMarcarAusencia, useCorregirMarcaje, useAnularEntradaComoAusencia, useDeshacerMarcaje, useRegistrarHorasExtra, useMarcarDiaTrabajado } from './useNominaMarcaje.js'
 import {
   KEY_ASISTENCIA,
   KEY_CONFIG,
@@ -269,20 +269,20 @@ export function useCerrarPeriodo() {
     // Regla del usuario (19/11/2026): cerrar = poner los recibos al día y marcarlos
     // TODOS como pagados, sin pago aparte. Acepta el id o `{ periodoId,
     // confirmarJornadasAbiertas }` cuando se decide cerrar con jornadas sin salida.
-    mutationFn: (vars) => apiPost('/api/nomina/periodos/cerrar', {
-      ...(typeof vars === 'string' ? { periodoId: vars } : vars),
-      tasas: {
-        usd: Number(rates.usd) || 0,
-        eur: Number(rates.eur) || 0,
-        usdt: Number(rates.usdt) || 0,
-      },
-    }),
+    mutationFn: (vars) => {
+      const body = typeof vars === 'string' ? { periodoId: vars } : (vars || {})
+      return apiPost('/api/nomina/periodos/cerrar', {
+        ...body,
+        tasas: body.tasas || { usd: Number(rates.usd) || 0, eur: Number(rates.eur) || 0, usdt: Number(rates.usdt) || 0 },
+      })
+    },
     onSuccess: (data) => {
-      const recibos = Number(data?.recibos_marcados) || 0
-      showToast.success(`Período cerrado: ${recibos} recibo(s) marcados como pagados`)
+      const pagados = Number(data?.recibos_marcados) || 0
+      showToast.success(`Período cerrado y pagado (${pagados} empleados)`)
       qc.invalidateQueries({ queryKey: KEY_PERIODOS })
       qc.invalidateQueries({ queryKey: KEY_LINEAS })
       qc.invalidateQueries({ queryKey: ['nomina', 'tasas'] })
+      qc.invalidateQueries({ queryKey: ['nomina', 'hoja'] })
     },
     onError: (e) => {
       // Las jornadas sin salida las muestra la tarjeta del período en su diálogo.

@@ -55,7 +55,8 @@ describe('cálculo automático (soloSiCambio)', () => {
     const { status, body } = await readResponse(await H.handleCalcularPeriodo(makeRequest({ periodoId: IDS.periodo, soloSiCambio: true }), ENV))
     expect(status).toBe(200)
     expect(body.sin_cambios).toBeUndefined()
-    expect(insertadas[0]).toMatchObject({ dias_trabajados: 1, monto_normal_usd: 30 })
+    // Opción A: los 5 días hábiles del período cuentan como presentes salvo ausencia explícita
+    expect(insertadas[0]).toMatchObject({ dias_trabajados: 5, monto_normal_usd: 150 })
   })
 
   it('un período sin recibos todavía se calcula (la hoja se llena sola)', async () => {

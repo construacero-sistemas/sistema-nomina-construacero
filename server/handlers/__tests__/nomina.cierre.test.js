@@ -53,6 +53,20 @@ describe('cerrar = marcar todo pagado', () => {
     expect(registrarAuditoria).toHaveBeenCalledWith(ENV, expect.anything(), expect.objectContaining({ accion: 'CERRAR_PERIODO_MARCAR_PAGADO' }))
   })
 
+  it('acepta tasaPago explícita y fuenteTasaPago MANUAL, la congela en snapshot y la pasa al RPC', async () => {
+    mock = installFetchMock(rutasAbierto())
+    const { status, body } = await readResponse(await H.handleCerrarPeriodo(
+      makeRequest({ periodoId: IDS.periodo, tasaPago: 465.25, fuenteTasaPago: 'MANUAL' }),
+      ENV,
+    ))
+    expect(status).toBe(200)
+    expect(body.tasa_congelada).toBe(true)
+    const snapCall = mock.calls.find(c => c.method === 'POST' && c.url.includes('/nomina_tasas_snapshot'))
+    expect(snapCall.body[0]).toMatchObject({ fuente: 'MANUAL', valor: 465.25 })
+    const rpcCall = mock.calls.find(c => c.url.includes(RPC))
+    expect(rpcCall.body.p_tasa_usd_ves).toBe(465.25)
+  })
+
   it('con jornadas sin salida no cierra y devuelve el 409 del cálculo', async () => {
     mock = installFetchMock(rutasAbierto({ asistencia: [
       { empleado_id: IDS.empleado, fecha: '2026-08-03', hora_entrada: '08:00', hora_salida: null, estado_marcaje: 'entrada', es_ausencia: false },

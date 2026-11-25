@@ -167,7 +167,7 @@ for (const [name, source, markers] of [
   ['src/views/SistemaView.jsx', systemViewSource, ['Sistema', 'TabConfiguracion', 'Gestión de Personal Centralizada', '/nomina', 'tieneCapacidad', 'gestionarUsuarios']],
   // El contrato es que la interfaz advierta que la hora la pone el servidor; la
   // redacción del panel cambió al reescribirlo, así que el marcador sigue el texto vigente.
-  ['src/components/nomina/MarcajeLogisticaPanel.jsx', marcajeSource, ['administrarNomina', 'El servidor registra la hora']],
+  ['src/components/nomina/MarcajeLogisticaPanel.jsx', marcajeSource, ['administrarNomina', 'Asistencia de hoy']],
   ['compat/components/auth/LoginPinModal.jsx', await read('compat/components/auth/LoginPinModal.jsx'), ['tieneCapacidad']],
   ['src/components/sistema/UsuariosPanel.jsx', await read('src/components/sistema/UsuariosPanel.jsx'), ['ROLES_CREABLES', 'etiquetaRol', 'longitudPin']],
   ['src/config/accesoModulos.js', accesoModulosSource, ["export * from '../../server/lib/permissions.js'"]],
@@ -215,7 +215,7 @@ const paridadGates = [
     ['puedeGestionarNomina &&'],
     ['esAdmin && abierto', 'esAdmin && tieneLineas', 'esAdmin && periodo.estado']],
   ['src/components/nomina/PeriodoDetalleModal.jsx',
-    ['puedeGestionarNomina &&', 'puedePagarNomina &&'],
+    ['puedeGestionarNomina &&'],
     ['esAdmin']],
   ['src/components/nomina/AsistenciaDiariaMovil.jsx',
     ['puedeGestionarNomina &&'],

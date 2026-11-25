@@ -70,7 +70,7 @@ describe('cálculo de período con jornadas abiertas', () => {
     expect(status).toBe(200)
     expect(body.lineas_generadas).toBe(1)
     expect(insertadas[0]).toMatchObject({
-      dias_trabajados: 0, dias_ausencia: 0, monto_normal_usd: 0, total_bruto_usd: 0,
+      dias_trabajados: 4, dias_ausencia: 0, monto_normal_usd: 120, total_bruto_usd: 120,
     })
     expect(registrarAuditoria).toHaveBeenCalledWith(ENV, expect.anything(), expect.objectContaining({
       accion: 'CALCULAR_PERIODO',

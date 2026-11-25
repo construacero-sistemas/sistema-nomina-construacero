@@ -32,6 +32,14 @@ vi.mock('../../../hooks/useMonedaNomina.js', () => ({
 vi.mock('../RateSelector.jsx', () => ({ default: () => <div data-testid="rate-selector" /> }))
 vi.mock('../PeriodoFormModal', () => ({ default: () => <div role="dialog" aria-label="Nuevo período" /> }))
 vi.mock('../PeriodoDetalleModal', () => ({ default: () => <div role="dialog" aria-label="Detalle del período" /> }))
+vi.mock('../CerrarPeriodoModal.jsx', () => ({
+  default: ({ periodo, onClose }) => (
+    <div role="dialog" aria-label={`Cerrar ${periodo.nombre}`}>
+      <span>Tasa de pago</span>
+      <button type="button" onClick={onClose}>Cancelar</button>
+    </div>
+  ),
+}))
 vi.mock('../../../compat/components/ui/Modal.jsx', () => ({
   Modal: ({ isOpen, title, children }) => isOpen ? <div role="dialog" aria-label={title}>{children}</div> : null,
 }))
@@ -41,53 +49,47 @@ function renderTab(props = {}) {
 }
 
 describe('TabPeriodos — tarjetas de período y permisos', () => {
-  // Regla del usuario (19/11/2026): cerrar = marcar todo pagado (sin «Pagar» aparte).
-  it('muestra importe neto, deducciones y el cierre que marca todo pagado', () => {
+  // Cierre simplificado: sin recibos aparte, muestra Ver hoja semanal y abre CerrarPeriodoModal con tasa.
+  it('muestra importe neto, deducciones y abre el modal de cierre con tasa al pulsar Revisar y cerrar período', () => {
     renderTab({ puedeGestionarNomina: true, puedePagarNomina: true })
 
     expect(screen.getAllByText('Neto a pagar · USD')).toHaveLength(3)
     expect(screen.getAllByText('Deducciones')).toHaveLength(3)
     expect(screen.getByRole('button', { name: 'Calcular nómina' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Recalcular' })).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Cerrar y marcar pagado' })).toHaveLength(2)
-    // Un período «cerrado» de antes de la regla solo se marca pagado.
-    expect(screen.getByRole('button', { name: 'Marcar pagado' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Revisar y cerrar período' })).toHaveLength(3)
     expect(screen.queryByRole('button', { name: 'Pagar recibos' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Cerrar para pago' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Cerrar y marcar pagado' })[1])
-    const confirmacion = screen.getByRole('group', { name: 'Confirmar cierre de Semana 36' })
-    expect(confirmacion).toHaveClass('col-span-2')
-    expect(within(confirmacion).getByText(/se marcarán TODOS como pagados/)).toBeInTheDocument()
-    expect(within(confirmacion).getByRole('button', { name: 'Sí, cerrar' })).toBeInTheDocument()
-    expect(within(confirmacion).getByRole('button', { name: 'Cancelar' })).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Revisar y cerrar período' })[1])
+    expect(screen.getByRole('dialog', { name: 'Cerrar Semana 36' })).toBeInTheDocument()
     expect(screen.getByText('≈ Bs 175')).toBeInTheDocument()
   })
 
-  it('avisa las semanas que ya terminaron y siguen abiertas', () => {
+  it('avisa las semanas listas para cerrar cuando ya llegaron al último día o terminaron', () => {
     renderTab({ puedeGestionarNomina: true })
-    expect(screen.getByText(/semanas ya terminaron y siguen abiertas/)).toBeInTheDocument()
-    expect(screen.getAllByText('La semana terminó · ciérrala para marcarla pagada')).toHaveLength(2)
+    expect(screen.getByText(/semanas están listas para cerrar/)).toBeInTheDocument()
+    expect(screen.getAllByText('La semana terminó · ciérrala con su tasa de pago')).toHaveLength(2)
   })
 
   it('oculta las acciones de escritura sin su capacidad correspondiente', () => {
     renderTab()
     expect(screen.queryByRole('button', { name: /Crear Nuevo Período/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Calcular nómina/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Cerrar y marcar pagado|Marcar pagado/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Cerrar período|Revisar y cerrar período/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Pagar recibos/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Más acciones para/i })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: /Ver recibos/i })).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: /Ver hoja semanal/i })).toHaveLength(3)
   })
 
   it('cerrar (y marcar pagado) requiere gestionar la nómina; pagar por sí solo no basta', () => {
     const view = renderTab({ puedeGestionarNomina: true })
     expect(screen.getByRole('button', { name: 'Calcular nómina' })).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Cerrar y marcar pagado' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: /Revisar y cerrar período|Cerrar período/ }).length).toBeGreaterThan(0)
     view.unmount()
 
     renderTab({ puedePagarNomina: true })
-    expect(screen.queryByRole('button', { name: /Cerrar y marcar pagado|Marcar pagado|Pagar recibos/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Cerrar período|Revisar y cerrar período|Pagar recibos/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Recalcular' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Más acciones para/i })).not.toBeInTheDocument()
   })

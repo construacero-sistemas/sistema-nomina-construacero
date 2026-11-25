@@ -97,7 +97,10 @@ describe('armarHojaSemanal', () => {
   })
 
   it('si la semana no llega a $35, el bono es la semana y el sueldo queda en 0 (Alejandra, 1 día)', () => {
-    const caso = recibo({ id: 'e-6', nombre: 'Alejandra Hidalgo', mensual: 280, asistencias: [dia(DIAS[0])] })
+    const caso = recibo({ id: 'e-6', nombre: 'Alejandra Hidalgo', mensual: 280, asistencias: [
+      dia(DIAS[0]),
+      ...DIAS.slice(1).map(f => dia(f, { ausencia: true })),
+    ] })
     const [fila] = hoja([caso]).filas
     expect(fila.semana).toBeGreaterThan(0)
     expect(fila.semana).toBeLessThanOrEqual(30.33)

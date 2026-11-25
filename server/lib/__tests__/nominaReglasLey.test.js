@@ -57,7 +57,13 @@ describe('reglas aplicadas al cálculo', () => {
   const habiles = ['2026-09-10', '2026-09-11', '2026-09-14', '2026-09-15', '2026-09-16']
   const dia = (fecha, extra = {}) => ({ fecha, horas_normales: 8, horas_extra: 0, es_ausencia: false, hora_entrada: '08:00', hora_salida: '17:00', ...extra })
   const ctx = { desde: '2026-09-10', hasta: '2026-09-16', diasLaborables: [1, 2, 3, 4, 5], feriados: [], hoy: '2026-11-17' }
-  const dosFaltas = [dia(habiles[0]), dia(habiles[1]), dia(habiles[2])]
+  const dosFaltas = [
+    dia(habiles[0]),
+    dia(habiles[1]),
+    dia(habiles[2]),
+    dia(habiles[3], { es_ausencia: true }),
+    dia(habiles[4], { es_ausencia: true }),
+  ]
 
   it('faltasPierde = 0: el descanso nunca se pierde', () => {
     expect(calcularDescansoRemunerado({ ...ctx, asistencias: dosFaltas, faltasPierde: 0 }).diasDescanso).toBe(2)

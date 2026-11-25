@@ -2,8 +2,8 @@
 // Motor de cálculo de nómina: campos de asistencia + línea de liquidación.
 // Se usa desde api/handlers/nomina.js para calcular antes de insertar.
 
-import { calcularDescansoRemunerado, esDescansoSinTrabajo, esFaltaJustificada } from './nominaDescanso.js'
-import { trabajaEnFecha } from './nominaHorarios.js'
+import { calcularDescansoRemunerado, diasHabilesPresuntos, esDescansoSinTrabajo, esFaltaJustificada } from './nominaDescanso.js'
+import { diaSemanaDeFecha, trabajaEnFecha } from './nominaHorarios.js'
 
 /**
  * Calcula los campos derivados de un registro de asistencia.
@@ -185,6 +185,23 @@ export function calcularLineaNomina(asistencias, configEmpleado, configNomina, b
 
     horasNormales += Number(a.horas_normales || 0)
     horasExtra    += Number(a.horas_extra    || 0)
+  }
+
+  // Asistencia por defecto (Opción A, 24/11/2026): todo día hábil del período
+  // sin registro explícito en DB cuenta como trabajado con su horario del día.
+  if (contexto) {
+    const presuntos = diasHabilesPresuntos({ ...contexto, asistencias })
+    for (const p of presuntos) {
+      diasTrabajados += 1
+      const dow = diaSemanaDeFecha(p.fecha)
+      const horasDia = Number(contexto.horariosPorDia?.[dow]?.horas_jornada) || horasJornada
+      horasNormales += horasDia
+      if (p.esFeriadoLaborable) diasFeriado += 1
+      if (p.esSabado) {
+        diasSabado += 1
+        if (!p.esFeriadoLaborable) diasSabadoSinFeriado += 1
+      }
+    }
   }
 
   // Montos. Con monto fijo por hora extra: cada hora extra paga la cifra fija.

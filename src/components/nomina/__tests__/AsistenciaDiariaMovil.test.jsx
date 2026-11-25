@@ -39,23 +39,23 @@ beforeEach(() => vi.clearAllMocks())
 afterEach(() => cleanup())
 
 describe('AsistenciaDiariaMovil', () => {
-  it('prioriza pendientes y ofrece Hoy para regresar desde otra fecha', () => {
+  it('muestra presentes por defecto en día hábil y ofrece Hoy para regresar desde otra fecha', () => {
     const view = renderManual()
     expect(screen.getByRole('heading', { name: /jueves, 10 de septiembre/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Hoy' })).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Registrar asistencia' })).toHaveLength(3)
-    expect(screen.getAllByText('Pendiente')).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: 'Registrar horas extras / falta' })).toHaveLength(3)
+    expect(screen.getAllByText('Presente por defecto')).toHaveLength(3)
     expect(view.container.querySelector('[aria-label="Elegir fecha de asistencia"]')).toBeInTheDocument()
   })
 
   it('filtra por estado y búsqueda de nombre', () => {
     const registros = new Map([
-      ['emp-2|2026-09-10', { id: 'manual-2', estado_marcaje: 'manual', hora_entrada: '08:00', hora_salida: '17:00' }],
+      ['emp-2|2026-09-10', { id: 'manual-2', estado_marcaje: 'manual', hora_entrada: '08:00', hora_salida: '17:00', horas_extra: 1 }],
       ['emp-3|2026-09-10', { id: 'absence-3', estado_marcaje: 'manual', es_ausencia: true }],
     ])
     renderManual(registros)
 
-    fireEvent.click(screen.getByRole('button', { name: /Registrados 1/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Excepciones 1/ }))
     expect(screen.getByText('María Rodríguez')).toBeInTheDocument()
     expect(screen.queryByText('Carlos Mendoza')).not.toBeInTheDocument()
 
@@ -65,7 +65,7 @@ describe('AsistenciaDiariaMovil', () => {
     expect(screen.queryByText('María Rodríguez')).not.toBeInTheDocument()
   })
 
-  it('no cuenta como pendiente el día que no le toca y lo separa en Día libre', () => {
+  it('no cuenta como presente el día que no le toca y lo separa en Día libre', () => {
     renderManual(new Map(), {
       empleados: [
         { id: 'cfg-1', empleado_id: 'emp-1', cargo: 'Chofer', empleado: { nombre: 'Carlos Mendoza' }, dias_laborables: [1, 2, 3, 5, 6] },
@@ -74,7 +74,7 @@ describe('AsistenciaDiariaMovil', () => {
     })
 
     // El 10 de septiembre de 2026 es jueves: Carlos no trabaja los jueves.
-    expect(screen.getByRole('button', { name: /Pendientes 1/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Presentes 1/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Día libre 1/ })).toBeInTheDocument()
     expect(screen.getByText(/· 1 en día libre/)).toBeInTheDocument()
     expect(screen.queryByText('Carlos Mendoza')).not.toBeInTheDocument()
@@ -87,9 +87,7 @@ describe('AsistenciaDiariaMovil', () => {
     expect(screen.queryByText('María Rodríguez')).not.toBeInTheDocument()
   })
 
-  // F-4: el filtro «Registrados» quedó sin actualizar cuando se añadió el estado
-  // «Día libre»: mostraba personas que no tenían ningún registro ese día.
-  it('«Registrados» solo lista a quien tiene registro y deja el día libre en su filtro', () => {
+  it('«Excepciones» solo lista a quien tiene registro y deja el día libre en su filtro', () => {
     const registros = new Map([
       ['emp-2|2026-09-10', { id: 'manual-2', estado_marcaje: 'manual', hora_entrada: '08:00', hora_salida: '17:00' }],
     ])
@@ -100,7 +98,7 @@ describe('AsistenciaDiariaMovil', () => {
       ],
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /Registrados 1/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Excepciones 1/ }))
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByText('María Rodríguez')).toBeInTheDocument()
     expect(screen.queryByText('Carlos Mendoza')).not.toBeInTheDocument()
@@ -114,21 +112,21 @@ describe('AsistenciaDiariaMovil', () => {
   it('oculta la carga masiva sin la capacidad que exige el servidor, y sigue registrando día a día', () => {
     renderManual(new Map(), { puedeGestionarNomina: false })
 
-    expect(screen.queryByRole('button', { name: /Aplicar a \\d+ pendientes/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Aplicar a \d+ sin registro/i })).not.toBeInTheDocument()
     // Registrar un día a la vez es su tarea real: sigue disponible.
-    expect(screen.getAllByRole('button', { name: 'Registrar asistencia' })).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: 'Registrar horas extras / falta' })).toHaveLength(3)
   })
 
-  it('el horario masivo incluye solo empleados pendientes y no los marcajes reales', () => {
+  it('el horario masivo incluye solo empleados sin registro y no los marcajes reales', () => {
     const registros = new Map([
       ['emp-2|2026-09-10', { id: 'real-2', estado_marcaje: 'completo', hora_entrada: '08:00', hora_salida: '17:00' }],
       ['emp-3|2026-09-10', { id: 'absence-3', estado_marcaje: 'manual', es_ausencia: true }],
     ])
     renderManual(registros)
-    fireEvent.click(screen.getByRole('button', { name: /Registrados 1/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Excepciones \d+/ }))
     expect(screen.getByText('Marcaje real del reloj')).toBeInTheDocument()
-    expect(screen.getByText(/no se sobrescribe como horario manual/i)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 1 pendientes' }))
+    expect(screen.getByText(/Este registro histórico se consulta en el detalle/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 1 sin registro' }))
     expect(mocks.abrirMasivo).toHaveBeenCalledExactlyOnceWith({ fecha: '2026-09-10', empleadoIds: ['emp-1'] })
   })
 })

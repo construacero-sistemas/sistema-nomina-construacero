@@ -3,16 +3,13 @@ import { esMarcajeReal, estadoDelRegistro, normalizarBusqueda } from '../marcaje
 
 describe('estadoDelRegistro', () => {
   it.each([
-    ['sin registro en día laborable', null, false, 'pendiente'],
-    ['sin registro en día libre', null, true, 'libre'],
+    ['sin registro en día laborable → presente por defecto', null, false, 'presente'],
+    ['sin registro en día libre → libre', null, true, 'libre'],
     ['ausencia manual (aunque sea día libre)', { es_ausencia: true, estado_marcaje: 'manual' }, true, 'ausencia'],
-    ['horario fijo', { estado_marcaje: 'manual', hora_entrada: '08:00', hora_salida: '17:00' }, false, 'manual'],
-    ['registro sin entrada', { estado_marcaje: 'entrada', hora_entrada: null }, false, 'pendiente'],
-    ['entrada abierta', { estado_marcaje: 'entrada', hora_entrada: '08:00' }, false, 'en-curso'],
-    ['entrada abierta en día libre', { estado_marcaje: 'entrada', hora_entrada: '08:00' }, true, 'en-curso'],
-    ['corregido sin salida', { estado_marcaje: 'corregido', hora_entrada: '08:00' }, false, 'en-curso'],
-    ['completo', { estado_marcaje: 'completo', hora_entrada: '08:00', hora_salida: '17:00' }, false, 'completado'],
-    ['corregido con salida', { estado_marcaje: 'corregido', hora_entrada: '08:00', hora_salida: '17:00' }, false, 'completado'],
+    ['horario fijo sin horas extras', { estado_marcaje: 'manual', hora_entrada: '08:00', hora_salida: '17:00', horas_extra: 0 }, false, 'presente'],
+    ['con horas extras en día laborable', { estado_marcaje: 'manual', horas_extra: 1.5 }, false, 'extra'],
+    ['día libre/feriado marcado como trabajado', { estado_marcaje: 'manual', horas_extra: 0 }, true, 'descanso-trabajado'],
+    ['día libre/feriado trabajado con extras sigue siendo descanso-trabajado', { estado_marcaje: 'manual', horas_extra: 2 }, true, 'descanso-trabajado'],
   ])('%s → %s', (_caso, registro, libre, esperado) => {
     expect(estadoDelRegistro(registro, libre)).toBe(esperado)
   })

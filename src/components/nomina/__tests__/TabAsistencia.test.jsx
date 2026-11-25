@@ -27,6 +27,7 @@ vi.mock('../../../hooks/useNomina', () => ({
   useAsistencia: () => ({ data: mocks.asistencia, isLoading: false, isError: false, refetch: vi.fn() }),
   useFeriados: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }),
   useConfigNomina: () => ({ data: { nomina_semana_inicio: mocks.inicioSemana } }),
+  useNominaPeriodos: () => ({ data: [], isLoading: false }),
 }))
 // Los flujos hijos tienen sus propias pruebas: aquí solo interesa la grilla semanal.
 vi.mock('../MarcajeLogisticaPanel', () => ({ default: () => null }))
@@ -57,12 +58,12 @@ describe('TabAsistencia — sábado laborable (F-5)', () => {
     expect(carlos).toBeTruthy()
     expect(maria).toBeTruthy()
 
-    // Carlos trabaja de lunes a sábado: seis «+» de registro y solo el domingo libre.
-    expect(within(carlos).getAllByLabelText('Registrar asistencia')).toHaveLength(6)
+    // Carlos trabaja de lunes a sábado: 6 días presentes por defecto y solo el domingo libre.
+    expect(within(carlos).getAllByLabelText('Presente por defecto (toca para excepciones)')).toHaveLength(6)
     expect(within(carlos).getAllByLabelText(/Día no laborable/)).toHaveLength(1)
 
-    // María no trabaja sábado ni domingo: cinco «+» y dos celdas de día libre.
-    expect(within(maria).getAllByLabelText('Registrar asistencia')).toHaveLength(5)
+    // María no trabaja sábado ni domingo: 5 días presentes por defecto y 2 celdas de día libre.
+    expect(within(maria).getAllByLabelText('Presente por defecto (toca para excepciones)')).toHaveLength(5)
     expect(within(maria).getAllByLabelText(/Día no laborable/)).toHaveLength(2)
   })
 

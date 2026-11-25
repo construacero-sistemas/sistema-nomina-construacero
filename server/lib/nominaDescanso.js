@@ -47,11 +47,45 @@ export function esFaltaJustificada(fila) {
   return Boolean(fila && fila.es_ausencia && fila.ausencia_justificada === true)
 }
 
-/** ¿La fila de asistencia paga el día? (no es ausencia, o es una falta justificada). */
+/** ¿La fila de asistencia paga el día? Con asistencia por defecto, sin fila = presente (pagado). */
 function asistenciaPagada(fila) {
-  if (!fila) return false
+  if (!fila) return true
   if (fila.es_ausencia) return esFaltaJustificada(fila)
   return true
+}
+
+/**
+ * Días hábiles del período `desde..hasta` sin fila en `registro_asistencia` que
+ * cuentan como presentes por defecto (Opción A: todo el período desde `fechaIngreso`).
+ * Devuelve `{ fecha, esSabado, esFeriadoLaborable }` para sumar días, horas y recargos.
+ */
+export function diasHabilesPresuntos({
+  desde, hasta, diasLaborables, feriados = [], asistencias = [], fechaIngreso = null,
+}) {
+  const feriadosNoLaborables = new Set((feriados || [])
+    .filter(f => f && f.laborable !== true && FECHA_RE.test(String(f.fecha).slice(0, 10)))
+    .map(f => String(f.fecha).slice(0, 10)))
+  const feriadosLaborables = new Set((feriados || [])
+    .filter(f => f && f.laborable === true && FECHA_RE.test(String(f.fecha).slice(0, 10)))
+    .map(f => String(f.fecha).slice(0, 10)))
+  const registrados = new Set((asistencias || [])
+    .filter(f => f?.fecha)
+    .map(f => String(f.fecha).slice(0, 10)))
+  const ingreso = fechaIngreso && FECHA_RE.test(String(fechaIngreso).slice(0, 10)) ? String(fechaIngreso).slice(0, 10) : null
+
+  const presuntos = []
+  for (const fecha of fechasDelRango(desde, hasta)) {
+    if (ingreso && fecha < ingreso) continue
+    const dow = diaSemanaDeFecha(fecha)
+    if (dow === 0 || !trabajaEnFecha(diasLaborables, fecha) || feriadosNoLaborables.has(fecha)) continue
+    if (registrados.has(fecha)) continue
+    presuntos.push({
+      fecha,
+      esSabado: dow === 6,
+      esFeriadoLaborable: feriadosLaborables.has(fecha),
+    })
+  }
+  return presuntos
 }
 
 /**
@@ -96,9 +130,6 @@ export function calcularDescansoRemunerado({
     }
     if (hoy && fecha > hoy) return
     if (!asistenciaPagada(porFecha.get(fecha))) semana.faltas += 1
-    // Día hábil ya pasado sin NINGUNA fila: no se paga y debe verse como falta.
-    // Hoy todavía puede marcar: el día de hoy no cuenta como falta hasta que termine.
-    if (!porFecha.has(fecha) && (!hoy || fecha < hoy)) diasSinRegistro += 1
   })
 
   let diasDescanso = 0

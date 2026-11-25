@@ -82,4 +82,30 @@ describe('aislamiento de tenant en nómina', () => {
     expect(mock.calls[0].url).toContain('tasa_pago_usd_ves')
     expect(mock.calls[0].url).toContain('total_pagado_bs')
   })
+
+  it('filtra por cuenta_id del operador al registrar horas extras por excepción', async () => {
+    mock = installFetchMock([
+      { match: '/configuracion_negocio', respond: [{ nomina_semana_inicio: 4 }] },
+      { match: '/nomina_periodos', respond: [] },
+      { match: '/nomina_feriados', respond: [] },
+      { match: '/nomina_horarios', respond: [] },
+      { match: '/nomina_config_empleado', respond: [{ empleado_id: IDS.empleado, hora_inicio: '08:00', hora_fin: '17:00', horas_jornada: 8 }] },
+      { match: '/registro_asistencia', method: 'GET', respond: [] },
+      { match: '/registro_asistencia', method: 'POST', respond: [{ id: IDS.registro, horas_extra: 1.5 }] },
+    ])
+
+    const res = await H.handleRegistrarHorasExtra(makeRequest({
+      empleadoId: IDS.empleado,
+      fecha: '2026-08-03',
+      horasExtra: 1.5,
+      idempotencyKey: 'tenant-extra-0001',
+    }), ENV)
+    const { status } = await readResponse(res)
+
+    expect(status).toBe(201)
+    const tenantId = OPERADORES.administracion.cuenta_id
+    expect(mock.calls.filter(c => c.method === 'GET').every(c => c.url.includes(tenantId))).toBe(true)
+    const postCall = mock.calls.find(c => c.method === 'POST')
+    expect(postCall.body.cuenta_id).toBe(tenantId)
+  })
 })
