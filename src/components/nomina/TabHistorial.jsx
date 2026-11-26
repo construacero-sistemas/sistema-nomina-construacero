@@ -17,7 +17,7 @@ function fmtFecha(f) {
   return new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export default function TabHistorial() {
+export default function TabHistorial({ puedeGestionarNomina = false }) {
   const { data: periodos = [], isLoading, isError, refetch } = useNominaPeriodos()
   const [detalle, setDetalle] = useState(null)
   const [anio, setAnio] = useState('todos')
@@ -167,10 +167,11 @@ export default function TabHistorial() {
         </>
       )}
 
-      {/* Historial es solo consulta: sin las llaves de escritura el modal queda de lectura. */}
+      {/* Permite a quien gestiona nómina reabrir un período pagado por error para corregirlo o eliminarlo en Períodos. */}
       {detalle && (
         <PeriodoDetalleModal
           periodo={detalle}
+          puedeGestionarNomina={puedeGestionarNomina}
           onClose={() => setDetalle(null)}
         />
       )}

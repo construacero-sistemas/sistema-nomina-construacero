@@ -93,7 +93,7 @@ export default function NominaView() {
             puedePagarNomina={puedePagarNomina}
           />
         )}
-        {tabActivo === 'historial' && esAdmin && <TabHistorial />}
+        {tabActivo === 'historial' && esAdmin && <TabHistorial puedeGestionarNomina={puedeGestionarNomina} />}
         </Suspense>
       </div>
     </div>

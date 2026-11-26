@@ -6,6 +6,12 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Planilla PDF horizontal alineada con Hoja semanal — 26/11/2026
+
+- **Planilla PDF (`nominaResumenPDF.impl.js`, `PeriodoDetalleModal.jsx`):** pasado el PDF de planilla a Carta horizontal (`landscape`) con todas las columnas de `HojaSemanal` (`Días trab.`, `Descanso`, `Sueldo sem.`, `Bono sem.`, `H. extra`, `Desc./Fer.`, `Otros`, `Tot. cobrar`, `Descuentos` y `Neto` con Bs congelados y tasa de cierre cuando el período ya cerró).
+- **Reabrir período desde Historial (`NominaView.jsx`, `TabHistorial.jsx`):** se pasa `puedeGestionarNomina` a `PeriodoDetalleModal` en Historial para habilitar el botón `Reabrir período` cuando un período fue cerrado/pagado por error y necesita corregirse o eliminarse en `Períodos`.
+- **Pruebas:** añadida `nominaResumenPDF.test.jsx` y verificado con `npm run verify`.
+
 ## Nómina sin visor ni selector de tasa activa (tasa solo al cerrar período) — 25/11/2026
 
 - **Cabecera (`NominaApp.jsx`):** `RateHeader` (`Tasa Activa` y cotizaciones en vivo) solo se muestra en `/finanzas`; queda oculto en `/nomina` y `/sistema`.

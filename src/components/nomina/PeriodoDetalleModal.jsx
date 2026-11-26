@@ -4,6 +4,7 @@
 import { useState, useMemo } from 'react'
 import { FileText, Lock, RotateCcw, ShoppingBag } from 'lucide-react'
 import { useNominaLineas, useReabrirPeriodo, useTasasPeriodo } from '../../hooks/useNomina'
+import useHojaSemanal from '../../hooks/useHojaSemanal.js'
 import { formatBs } from '../../hooks/useMonedaNomina.js'
 import { useConfigNegocio } from '../../../compat/hooks/useConfigNegocio.js'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
@@ -20,6 +21,7 @@ import { fmt } from './periodoDetalleUtils.js'
 
 export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = false, onClose }) {
   const { data: lineas = [], isLoading, isError, refetch } = useNominaLineas(periodo.id)
+  const { data: hojaData } = useHojaSemanal(periodo.id)
   const { data: configNegocio } = useConfigNegocio()
   const reabrir = useReabrirPeriodo()
 
@@ -65,7 +67,12 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
     try {
       const { generarNominaResumenPDF } = await import('../../services/pdf/nominaResumenPDF')
       await generarNominaResumenPDF({
-        periodo, lineas, config: configNegocio ?? {}, action: 'download',
+        periodo,
+        lineas,
+        hoja: hojaData || null,
+        tasaCongelada: tasaCongelada || null,
+        config: configNegocio ?? {},
+        action: 'download',
       })
     } catch (e) {
       logClientError({ mensaje: `Error exportando planilla: ${e?.message || e}`, stack: e?.stack, categoria: 'NOMINA_PDF' })
