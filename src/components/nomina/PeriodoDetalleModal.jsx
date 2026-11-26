@@ -4,13 +4,10 @@
 import { useState, useMemo } from 'react'
 import { FileText, Lock, RotateCcw, ShoppingBag } from 'lucide-react'
 import { useNominaLineas, useReabrirPeriodo, useTasasPeriodo } from '../../hooks/useNomina'
-import useMonedaNomina, { formatBs } from '../../hooks/useMonedaNomina.js'
+import { formatBs } from '../../hooks/useMonedaNomina.js'
 import { useConfigNegocio } from '../../../compat/hooks/useConfigNegocio.js'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
-import RateSelector from './RateSelector.jsx'
-import useAuthStore from '../../../compat/store/useAuthStore.js'
-import { tieneCapacidad } from '../../config/accesoModulos.js'
 import LiquidacionModal from './LiquidacionModal'
 import HojaSemanal from './HojaSemanal.jsx'
 import ImportarComisionesPosModal from './ImportarComisionesPosModal.jsx'
@@ -24,9 +21,6 @@ import { fmt } from './periodoDetalleUtils.js'
 export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = false, onClose }) {
   const { data: lineas = [], isLoading, isError, refetch } = useNominaLineas(periodo.id)
   const { data: configNegocio } = useConfigNegocio()
-  const perfil = useAuthStore(state => state.perfil)
-  const tasaPersonal = !tieneCapacidad(perfil, 'administrarSistema')
-  const { aBs, fmtBs } = useMonedaNomina({ ambito: tasaPersonal ? 'personal' : 'nomina' })
   const reabrir = useReabrirPeriodo()
 
   const [confirmandoReabrir, setConfirmandoReabrir] = useState(false)
@@ -44,19 +38,18 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
     return tasasCierre.find(t => t.moneda_origen === 'USD') || tasasCierre[0] || null
   }, [abierto, tasasCierre])
 
-  const fmtBsPeriodo = tasaCongelada
-    ? (monto) => formatBs((Number(monto) || 0) * (Number(tasaCongelada.valor) || 0))
-    : fmtBs
-
   const netoReciboUsd = fila => {
     const linea = lineas.find(l => l.id === fila.lineaId)
     return Number(linea ? linea.total_neto_usd : fila.neto) || 0
   }
-  const tasaPeriodo = tasaCongelada ? Number(tasaCongelada.valor) || 0 : (aBs(1) || 0)
-  const origenTasaPeriodo = tasaCongelada ? 'cierre' : 'activa'
-  const bsDeFilaHoja = fila => (fila.pagado && Number(fila.tasaPago) > 0 && fila.totalPagadoBs != null
-    ? Number(fila.totalPagadoBs)
-    : netoReciboUsd(fila) * tasaPeriodo)
+  const tasaPeriodo = tasaCongelada ? (Number(tasaCongelada.valor) || 0) : 0
+  const origenTasaPeriodo = 'cierre'
+  const bsDeFilaHoja = fila => {
+    if (fila.pagado && Number(fila.tasaPago) > 0 && fila.totalPagadoBs != null) {
+      return Number(fila.totalPagadoBs)
+    }
+    return tasaPeriodo > 0 ? netoReciboUsd(fila) * tasaPeriodo : 0
+  }
 
   const totales = useMemo(() => ({
     empleados: lineas.length,
@@ -129,25 +122,23 @@ export default function PeriodoDetalleModal({ periodo, puedeGestionarNomina = fa
               </div>
               <span className="mt-0.5 block text-sm font-black text-emerald-800">${fmt(totales.neto)}</span>
               <span className="block font-mono text-[11px] font-bold text-emerald-700">
-                {fmtBsPeriodo(totales.neto)}
+                {tasaCongelada ? formatBs((Number(totales.neto) || 0) * (Number(tasaCongelada.valor) || 0)) : 'Bs: se define al cerrar'}
               </span>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-medium text-slate-500">Tasa:</span>
-              {tasaCongelada ? (
+            {tasaCongelada && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium text-slate-500">Tasa de cierre:</span>
                 <span
                   title={`Tasa congelada al cierre el ${tasaCongelada.fecha} (${tasaCongelada.fuente})`}
                   className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-black text-emerald-800"
                 >
                   {Number(tasaCongelada.valor).toLocaleString('es-VE')} Bs/$ · {tasaCongelada.fuente}
                 </span>
-              ) : (
-                <RateSelector light personal={tasaPersonal} />
-              )}
-            </div>
+              </div>
+            )}
 
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {VENDEDORES_EN_NOMINA && puedeGestionarNomina && abierto && lineas.length > 0 && (

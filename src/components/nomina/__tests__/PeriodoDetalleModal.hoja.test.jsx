@@ -49,8 +49,9 @@ describe('Detalle del período → Hoja semanal', () => {
     )
     expect(screen.queryByRole('tab', { name: 'Recibos' })).not.toBeInTheDocument()
     expect(screen.getByRole('table', { name: 'Hoja semanal del período' })).toBeInTheDocument()
-    // Neto en Bs con la tasa activa: 56 × 100.
-    expect(screen.getByRole('rowheader', { name: /^Pedro Perez/ }).closest('tr')).toHaveTextContent('5600.00 Bs')
+    // Período abierto: sin conversión en vivo con tasa activa; la tasa se define al cerrar.
+    expect(screen.getByText(/se define al cerrar/i)).toBeInTheDocument()
+    expect(screen.getByRole('rowheader', { name: /^Pedro Perez/ }).closest('tr')).not.toHaveTextContent('5600.00 Bs')
 
     fireEvent.click(screen.getByRole('button', { name: 'Descuento a Pedro Perez' }))
     expect(screen.getByRole('dialog', { name: /Ajustar pago: Pedro Perez/ })).toBeInTheDocument()

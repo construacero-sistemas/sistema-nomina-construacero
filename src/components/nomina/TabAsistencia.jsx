@@ -160,6 +160,7 @@ export default function TabAsistencia({ esAdmin, puedeGestionarNomina = false })
       empleadosActualizando={empActualizando}
       empleadosError={empError}
       onReintentarEmpleados={retryEmpleados}
+      periodos={periodos}
       periodoParaCerrar={periodoParaCerrar}
       onCerrarPeriodo={setCerrandoPeriodo}
     />

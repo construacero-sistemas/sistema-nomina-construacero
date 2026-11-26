@@ -10,12 +10,10 @@ import useReglasLey from '../../hooks/useReglasLey.js'
 import { semanaDeConfig, rangoSemana } from '../../../server/lib/nominaSemana.js'
 import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
 import { resumenSalario, avanceSemanaPorEmpleado } from '../../utils/resumenFichaEmpleado.js'
-import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
 import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
 
-import RateSelector from './RateSelector.jsx'
 import EmpleadoConfigModal from './EmpleadoConfigModal'
 import ComisionPagoModal from './ComisionPagoModal.jsx'
 import { VENDEDORES_EN_NOMINA } from '../../config/comisionesVendedores.js'
@@ -50,7 +48,6 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
   const puedePagarComision = VENDEDORES_EN_NOMINA && puedePagarComisionRol
   const { data: allConfigs = [], isLoading, isError, refetch } = useConfigEmpleados({ incluirInactivas: true })
   const { data: clientes = [] } = useNominaEmpleados({ enabled: esAdmin && puedeGestionarNomina })
-  const { fmtBs, shortLabelTasa } = useMonedaNomina()
   const actualizarConfig = useActualizarConfigEmpleado()
   const eliminarConfig = useEliminarConfigEmpleado()
   const [modal, setModal] = useState(null)
@@ -150,7 +147,6 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
             icon={DollarSign}
             label="Masa salarial fija / día"
             value={`$${fmt(kpis.masaDiaria)}`}
-            sub={`~ ${fmtBs(kpis.masaDiaria)} (${shortLabelTasa})`}
             color="indigo"
           />
         )}
@@ -228,11 +224,6 @@ export default function TabEmpleados({ esAdmin, puedePagarComision: puedePagarCo
         </div>
 
         <div className="flex flex-wrap items-center gap-2 ml-auto">
-          <div className="hidden xl:flex items-center gap-1">
-            <span className="text-[11px] text-slate-400 font-medium">Tasa:</span>
-            <RateSelector light />
-          </div>
-
           {puedePagarComision && kpis.vendedoresCount > 0 && (
             <button
               type="button"
@@ -414,7 +405,6 @@ function EmpleadoBajaCard({ config, puedeGestionar, cargando, onReactivar, onEli
 }
 
 function EmpleadoNominaCard({ config, resumen, avance = null, semanaActual = null, puedeGestionar = false, puedePagarComision = false, mostrarMontos = true, cargando = false, onEditar, onPagarComision, onDarDeBaja, onCambiarAsistencia }) {
-  const { fmtBs } = useMonedaNomina()
   const nombre = capitalizarPalabras(config.empleado?.nombre) || 'Sin nombre'
   const esVendedorRol = esVendedor(config)
   const diasPorSemana = Array.isArray(config.dias_laborables) && config.dias_laborables.length ? config.dias_laborables.length : 5
@@ -514,7 +504,6 @@ function EmpleadoNominaCard({ config, resumen, avance = null, semanaActual = nul
               </span>
               <div className="text-right">
                 <span className="text-xs font-black text-slate-800 block">${fmt(resumen.semana)}</span>
-                <span className="text-[10px] text-slate-400 font-mono block">{fmtBs(resumen.semana)}</span>
               </div>
             </div>
             <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/60 text-[10px] text-slate-500">

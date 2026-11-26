@@ -1,48 +1,29 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { RefreshCw, Trash2 } from 'lucide-react'
 import {
   useNominaEmpleados,
   useCrearConfigEmpleado,
   useActualizarConfigEmpleado,
-  useGuardarHorarioEmpleado,
-  useHorarios,
+  useConfigNomina,
 } from '../../hooks/useNomina'
-import { diasActivosSemana, semanaEditable } from '../../utils/diasLaborables.js'
 import { Modal } from '../../../compat/components/ui/Modal.jsx'
 import CustomSelect from '../../../compat/components/ui/CustomSelect.jsx'
 import EmpleadoBajaModal from './EmpleadoBajaModal.jsx'
 import ModalidadSalarioSection from './ModalidadSalarioSection.jsx'
 import PuestosSugeridos from './PuestosSugeridos.jsx'
 import { VENDEDORES_EN_NOMINA } from '../../config/comisionesVendedores.js'
-import SemanaLaborableSection from './SemanaLaborableSection.jsx'
 import useReglasLey from '../../hooks/useReglasLey.js'
+import { formatRangoHoras12 } from '../../utils/timeUtils.js'
 
 // D-1: la semana pagada son 7 días (laborables + descanso), como la hoja semanal.
 const DIAS_SEMANA_PAGADOS = 7
 
 const inputCls = 'w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[16px] sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 transition-all'
 
-/**
- * Semana mostrada en la ficha: días y horas guardados en `nomina_horarios` y, si la
- * consulta aún no llegó, los días que el listado ya conoce. `hayHorario` evita el
- * aviso de "sin semana guardada" cuando la ficha sí la tiene.
- */
-function semanaBaseDe(config, horarios, diasDefecto) {
-  const base = semanaEditable(horarios, {
-    horaInicio: config?.hora_inicio, horaFin: config?.hora_fin, horasJornada: config?.horas_jornada, diasDefecto,
-  })
-  const dias = config?.dias_laborables
-  const conDias = Array.isArray(dias)
-    ? { ...base, dias: base.dias.map(dia => ({ ...dia, activo: dias.includes(dia.diaSemana) })) }
-    : base
-  return { ...conDias, hayHorario: base.hayHorario || config?.horario_configurado === true }
-}
-
 export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina = [], onClose }) {
   const esEdicion = modo === 'editar'
   const crear      = useCrearConfigEmpleado()
   const actualizar = useActualizarConfigEmpleado()
-  const guardarHorario = useGuardarHorarioEmpleado()
 
   const {
     data: clientes = [],
@@ -57,29 +38,21 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
   const [cargo, setCargo]           = useState(config?.cargo ?? '')
   const [posVendedorId] = useState(config?.pos_vendedor_id ?? '')
 
-  // Reglas de la ley editables (divisor mensual, días por defecto).
+  // Por ahora todo el personal comparte el horario general configurado para la empresa.
+  const configNominaQuery = useConfigNomina()
+  const configGeneral = configNominaQuery.data?.config || configNominaQuery.data || {}
+  const horaInicioGeneral = String(configGeneral.nomina_hora_inicio || '08:00').slice(0, 5)
+  const horaFinGeneral = String(configGeneral.nomina_hora_fin || '17:00').slice(0, 5)
+  const jornadaConfigRaw = Number(configGeneral.nomina_horas_jornada)
+  const horasJornadaGeneral = Number.isFinite(jornadaConfigRaw) && jornadaConfigRaw > 0 ? jornadaConfigRaw : 8
+
   const reglasLey = useReglasLey()
   const divisorMensual = reglasLey.divisorMensual
 
-  // Semana laboral de la persona: qué días trabaja y con qué jornada cada uno.
-  // De ella depende el estado «Libre» y el horario por defecto en asistencia, así
-  // que se guarda junto con la ficha. Se declara ANTES del salario porque el divisor
-  // del monto semanal sale de aquí.
-  const horariosEmpleadoId = esEdicion ? (config?.empleado_id || '') : ''
-  const { data: horarios = [] } = useHorarios(horariosEmpleadoId)
-  // La semana se deriva de sus horarios guardados; `semanaOverride` solo existe si
-  // el usuario ya marcado o editado algún día en este formulario.
-  const semanaBase = useMemo(() => semanaBaseDe(config, horarios, reglasLey.diasLaborablesDefault), [config, horarios, reglasLey.diasLaborablesDefault])
-  const [semanaOverride, setSemanaOverride] = useState(null)
-  const semana = semanaOverride ?? semanaBase
-
   // D-1 (PLAN_HOJA_SEMANAL): la semana se paga con 7 días (los laborables más los
-  // de descanso), igual que la hoja semanal y el cálculo de la nómina. Antes se
-  // dividía entre los días marcados (5) y «$65/semana» guardaba $13 diarios, que
-  // la nómina terminaba pagando como $91 a la semana.
+  // de descanso), igual que la hoja semanal y el cálculo de la nómina.
   const divisorSemana = DIAS_SEMANA_PAGADOS
-  // Jornada de referencia para la tarifa por hora: la del primer día marcado.
-  const jornadaReferencia = Number(diasActivosSemana(semana.dias)[0]?.horasJornada) || 8
+  const jornadaReferencia = horasJornadaGeneral
 
   // Modalidad: 'mes' | 'semana' | 'dia' | 'comision'. Siempre abre en «Por Mes»
   // (igual en todos los navegadores): lo que se guarda es el sueldo diario.
@@ -99,37 +72,6 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
 
   const [confirmandoBaja, setConfirmandoBaja] = useState(false)
   const [error, setError]           = useState('')
-
-  function actualizarSemana(transformar) {
-    setSemanaOverride(actual => transformar(actual ?? semanaBase))
-  }
-
-  function alternarDiaLaborable(diaSemana) {
-    actualizarSemana(actual => ({
-      ...actual,
-      dias: actual.dias.map(dia => (dia.diaSemana === diaSemana ? { ...dia, activo: !dia.activo } : dia)),
-    }))
-  }
-
-  function cambiarJornadaDelDia(diaSemana, campo, valor) {
-    actualizarSemana(actual => ({
-      ...actual,
-      dias: actual.dias.map(dia => (dia.diaSemana === diaSemana ? { ...dia, [campo]: valor } : dia)),
-    }))
-  }
-
-  function copiarJornadaAlResto() {
-    actualizarSemana(actual => {
-      const [modelo] = actual.dias.filter(dia => dia.activo)
-      if (!modelo) return actual
-      return {
-        ...actual,
-        dias: actual.dias.map(dia => (dia.activo
-          ? { ...dia, horaInicio: modelo.horaInicio, horaFin: modelo.horaFin, horasJornada: modelo.horasJornada }
-          : dia)),
-      }
-    })
-  }
 
   // Cálculo del salario diario en USD según la modalidad elegida
   const salarioDiaCalculado = useMemo(() => {
@@ -176,7 +118,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
       .map(c => ({ value: c.id, label: c.nombre }))
   }, [empleadosPersonales, empleadosYaEnNomina])
 
-  const cargando = crear.isPending || actualizar.isPending || guardarHorario.isPending
+  const cargando = crear.isPending || actualizar.isPending
 
   // Elegir "comisión" implica el puesto de Vendedor; el resto de la modalidad solo
   // cambia el monto convertido.
@@ -185,77 +127,40 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
     handleCambioModalidad(nuevoModo)
   }
 
-  // Horario estándar en todos los días marcados (antes vivía en una sección aparte
-  // que repetía el horario de «Días que trabaja»).
-  function aplicarHorarioEstandar() {
-    actualizarSemana(actual => ({
-      ...actual,
-      dias: actual.dias.map(dia => (dia.activo ? { ...dia, horaInicio: '08:00', horaFin: '17:00', horasJornada: 8 } : dia)),
-    }))
-  }
-
   async function guardar(e) {
     if (e) e.preventDefault()
     setError('')
 
     if (!esEdicion && !empleadoId && !nombre.trim()) { setError('Escribe el nombre del empleado'); return }
     if (modalidad !== 'comision' && salarioDiaCalculado <= 0) { setError('El salario debe ser mayor a 0'); return }
-    // La semana se guarda tal como se ve en «Días que trabaja»; el horario general
-    // de la ficha (jornada, entrada y salida) es el del primer día marcado.
-    const diasPayload = diasActivosSemana(semana.dias)
-    if (diasPayload.some(dia => !(Number(dia.horasJornada) > 0))) { setError('La jornada de cada día debe ser mayor a 0 horas'); return }
-    if (!diasPayload.length) {
-      setError('Marca al menos un día laborable. Si esta persona no debe controlar asistencia, desactiva el interruptor de Asistencia en su ficha.')
-      return
-    }
 
     try {
       const salarioFinal = modalidad === 'comision' ? 0 : Math.round(salarioDiaCalculado * 10000) / 10000
-      const [primerDia] = diasPayload
       const horarioFicha = {
-        horasJornada: Number(primerDia.horasJornada) || 8,
-        horaInicio: String(primerDia.horaInicio || '08:00').slice(0, 5),
-        horaFin: String(primerDia.horaFin || '17:00').slice(0, 5),
+        horasJornada: horasJornadaGeneral,
+        horaInicio: horaInicioGeneral,
+        horaFin: horaFinGeneral,
       }
       if (esEdicion) {
-        const res = await actualizar.mutateAsync({
+        await actualizar.mutateAsync({
           id: config.id,
           cargo,
           salarioDiaUsd: salarioFinal,
           ...horarioFicha,
           posVendedorId: posVendedorId || null,
         })
-        await guardarSemana(res?.config?.empleado_id || config?.empleado_id, diasPayload)
       } else {
-        const res = await crear.mutateAsync({
+        await crear.mutateAsync({
           empleadoId: empleadoId || undefined, nombre, documento, cargo,
           salarioDiaUsd: salarioFinal,
           ...horarioFicha,
           posVendedorId: posVendedorId || null,
         })
-        const targetId = res?.config?.empleado_id || res?.config?.id || empleadoId
-        await guardarSemana(targetId, diasPayload)
       }
       onClose()
     } catch (err) {
       setError(err.message || 'Error al guardar')
     }
-  }
-
-  // La ficha se guardó: si los días laborables fallan, se avisa sin perder el resto.
-  // El guardado de la semana es idempotente (cada día se actualiza en su fila), así
-  // que reintentar completa el cambio sin duplicar días (F-7).
-  async function guardarSemana(empleadoIdDestino, dias) {
-    if (!empleadoIdDestino || !dias.length) return
-    let res
-    try {
-      res = await guardarHorario.mutateAsync({ empleadoId: empleadoIdDestino, dias })
-    } catch (err) {
-      throw new Error(`La ficha se guardó, pero no se pudieron guardar sus días laborables: ${err.message}`)
-    }
-    // Si el servidor no pudo retirar los días anteriores, la semana nueva igual quedó
-    // guardada: se dice en voz alta en vez de cerrar como si todo hubiera salido bien.
-    if (res?.aviso) throw new Error(res.aviso)
   }
 
   async function ejecutarDarDeBaja() {
@@ -276,7 +181,7 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
     <Modal
       isOpen onClose={onClose}
       title={esEdicion ? `Configurar: ${config?.empleado?.nombre ?? 'empleado'}` : 'Agregar empleado a nómina'}
-      className="max-w-lg lg:max-w-4xl">
+      className="max-w-lg">
       <form onSubmit={guardar} className="space-y-4">
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5 text-xs text-red-700 font-medium">
@@ -319,8 +224,6 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
           </div>
         )}
 
-        {/* En PC, dos columnas: cargo y salario a la izquierda, semana a la derecha. */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <div className="space-y-4 min-w-0">
         {/* Cargo y puestos */}
         <div className="space-y-2">
@@ -356,18 +259,10 @@ export default function EmpleadoConfigModal({ modo, config, empleadosYaEnNomina 
           onSeleccionarModalidad={seleccionarModalidad}
           onCambiarMonto={valor => { setMontoInput(valor); setDiaExacto(null) }}
         />
-        </div>
 
-        <div className="min-w-0">
-        <SemanaLaborableSection
-          semana={semana}
-          cargando={cargando}
-          onAlternarDia={alternarDiaLaborable}
-          onCambiarJornada={cambiarJornadaDelDia}
-          onCopiarJornada={copiarJornadaAlResto}
-          onHorarioEstandar={aplicarHorarioEstandar}
-        />
-        </div>
+        <p className="rounded-xl border border-slate-200/80 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-600">
+          Horario de la empresa (Configuración): <strong className="text-slate-800">{formatRangoHoras12(horaInicioGeneral, horaFinGeneral)}</strong> ({horasJornadaGeneral} h).
+        </p>
         </div>
 
       </form>

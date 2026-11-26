@@ -231,6 +231,8 @@ describe('TabEmpleados — Alerta de configuración y Bajas', () => {
       expect(screen.getByText('$280,00')).toBeTruthy()
       expect(screen.getByText('$65,33')).toBeTruthy()
       expect(screen.getByText('Sueldo $30,33 + bono $35,00')).toBeTruthy()
+      expect(screen.queryByTestId('rate-selector')).toBeNull()
+      expect(screen.queryByText(/^Tasa:$/)).toBeNull()
       expect(screen.getByText('$2,50')).toBeTruthy()
       expect(screen.queryByText('Tarifa / hora')).toBeNull()
       expect(screen.queryByText(/Ingreso:/)).toBeNull()

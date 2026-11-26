@@ -36,7 +36,7 @@ function FichaPersona({ fila, columnas, detalleDe, tituloDe, bs, puedeDescontar,
         <div className="shrink-0 text-right">
           <span className="block text-[10px] font-bold uppercase text-slate-500">Neto</span>
           <strong className="block text-base font-black tabular-nums text-emerald-800">${usd(fila.neto)}</strong>
-          <span className="block font-mono text-[11px] font-bold text-emerald-700">{formatBs(bs)}</span>
+          {bs > 0 && <span className="block font-mono text-[11px] font-bold text-emerald-700">{formatBs(bs)}</span>}
         </div>
       </div>
       <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 border-t border-slate-100 pt-2 text-xs min-[360px]:grid-cols-2">
@@ -135,7 +135,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
             <h4 className="text-sm font-black text-slate-900">Totales ({totales.empleados})</h4>
             <div className="shrink-0 text-right">
               <strong className="block text-base font-black tabular-nums text-emerald-800">${usd(totales.neto)}</strong>
-              <span className="block font-mono text-[11px] font-bold text-emerald-700">{formatBs(totalBs)}</span>
+              {totalBs > 0 && <span className="block font-mono text-[11px] font-bold text-emerald-700">{formatBs(totalBs)}</span>}
             </div>
           </div>
           <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 border-t border-slate-200 pt-2 text-xs min-[360px]:grid-cols-2">
@@ -205,7 +205,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right">
                     <span className="block font-black text-emerald-800">{usd(fila.neto)}</span>
-                    <span className="block font-mono text-[10px] font-bold text-emerald-700">{formatBs(bsDe(fila))}</span>
+                    {bsDe(fila) > 0 && <span className="block font-mono text-[10px] font-bold text-emerald-700">{formatBs(bsDe(fila))}</span>}
                   </td>
                 </tr>
               )
@@ -222,7 +222,7 @@ export default function HojaSemanal({ periodo, lineas = [], abierto, puedeGestio
               <td className="px-2 py-2.5 text-right text-red-600">{usd(totales.descuentos)}</td>
               <td className="whitespace-nowrap px-3 py-2.5 text-right">
                 <span className="block text-emerald-800">{usd(totales.neto)}</span>
-                <span className="block font-mono text-[10px] text-emerald-700">{formatBs(totalBs)}</span>
+                {totalBs > 0 && <span className="block font-mono text-[10px] text-emerald-700">{formatBs(totalBs)}</span>}
               </td>
             </tr>
           </tfoot>

@@ -13,7 +13,6 @@ import LogoutConfirmModal from './components/LogoutConfirmModal.jsx'
 import { accesoUI, etiquetaRol, rutaParaRol } from './config/accesoModulos.js'
 import { filtrarNavPorRol } from './config/navModulos.js'
 import { decisionPorteroPrivado, decisionPorteroPublico } from './utils/porterosSesion.js'
-import useTasaCambioNomina from './hooks/useTasaCambioNomina.js'
 import RateHeader from './components/layout/RateHeader.jsx'
 import HeaderDate from './components/layout/HeaderDate.jsx'
 import MobileDrawerContent from './components/layout/MobileDrawerContent.jsx'
@@ -224,7 +223,7 @@ function Shell() {
         </div>
 
         <div className="flex-1" />
-        <RateHeader ambito={current.to === '/finanzas' ? 'finanzas' : 'nomina'} />
+        {current.to === '/finanzas' && <RateHeader ambito="finanzas" />}
       </header>
 
       {menuOpen && <MobileDrawerOverlay onClose={() => setMenuOpen(false)} onLogout={() => { setMenuOpen(false); setConfirmLogoutOpen(true) }} onChangeUser={ejecutarCambiarUsuario} />}

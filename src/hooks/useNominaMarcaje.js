@@ -54,20 +54,28 @@ export function useMarcarSalida() {
   })
 }
 
+function cacheEsDeMismaFecha(qc, fecha) {
+  if (!fecha) return true
+  const actual = qc.getQueryData(KEY_MARCAJE)?.fecha
+  return !actual || actual === fecha
+}
+
 // Ausencia del día con su reversa. Solo escribe sobre días laborables del empleado
 // y nunca borra horas reales del reloj (eso vive en «Corregir marcaje»).
 export function useMarcarAusencia() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ empleadoId, quitar = false, justificada = false }) => apiPost('/api/nomina/marcaje/ausencia', quitar
-      ? { empleadoId, quitar }
-      : { empleadoId, quitar, justificada: justificada === true }),
+    mutationFn: ({ empleadoId, fecha, quitar = false, justificada = false }) => apiPost('/api/nomina/marcaje/ausencia', quitar
+      ? { empleadoId, quitar, ...(fecha ? { fecha } : {}) }
+      : { empleadoId, quitar, justificada: justificada === true, ...(fecha ? { fecha } : {}) }),
     onSuccess: (data, variables) => {
       showToast.success(variables?.quitar
         ? 'Ausencia deshecha'
         : variables?.justificada ? 'Falta justificada registrada: el día se paga' : 'Falta sin justificativo registrada: se descuenta ese día')
-      if (variables?.quitar) aplicarMarcajeEnCache(qc, { quitarEmpleadoId: variables.empleadoId })
-      else if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
+      if (cacheEsDeMismaFecha(qc, variables?.fecha)) {
+        if (variables?.quitar) aplicarMarcajeEnCache(qc, { quitarEmpleadoId: variables.empleadoId })
+        else if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
+      }
       refrescar(qc)
     },
   })
@@ -130,8 +138,10 @@ export function useRegistrarHorasExtra() {
       showToast.success(h > 0
         ? `Horas extras registradas (+${h} h)${variables?.nombre ? ` · ${variables.nombre}` : ''}`
         : `Horas extras retiradas${variables?.nombre ? ` · ${variables.nombre}` : ''}`)
-      if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
-      else aplicarMarcajeEnCache(qc, { quitarEmpleadoId: variables.empleadoId })
+      if (cacheEsDeMismaFecha(qc, variables?.fecha)) {
+        if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
+        else aplicarMarcajeEnCache(qc, { quitarEmpleadoId: variables.empleadoId })
+      }
       refrescar(qc)
     },
   })
@@ -151,8 +161,10 @@ export function useMarcarDiaTrabajado() {
       showToast.success(variables?.quitar
         ? `Día de descanso restaurado${variables?.nombre ? ` · ${variables.nombre}` : ''}`
         : `Día marcado como trabajado${variables?.nombre ? ` · ${variables.nombre}` : ''}`)
-      if (variables?.quitar) aplicarMarcajeEnCache(qc, { quitarEmpleadoId: variables.empleadoId })
-      else if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
+      if (cacheEsDeMismaFecha(qc, variables?.fecha)) {
+        if (variables?.quitar) aplicarMarcajeEnCache(qc, { quitarEmpleadoId: variables.empleadoId })
+        else if (data?.registro) aplicarMarcajeEnCache(qc, { registro: data.registro, empleadoId: variables.empleadoId })
+      }
       refrescar(qc)
     },
   })

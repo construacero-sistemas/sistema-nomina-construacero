@@ -2,7 +2,7 @@
 // src/components/nomina/__tests__/PeriodoDetalleModal.tasaPago.test.jsx
 // Guardrail de tasa congelada al cerrar/pagar en el detalle simplificado (Hoja semanal):
 // - Un período/línea pagado conserva su monto congelado en Bs (total_pagado_bs / tasa congelada).
-// - Sin pagar, calcula con la tasa activa del sistema.
+// - Abierto sin cerrar, no muestra tasa activa ni conversión en vivo (se define al cerrar).
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
@@ -145,21 +145,26 @@ describe('PeriodoDetalleModal — Hoja semanal y tasa congelada', () => {
     expect(fila.textContent).not.toContain(enVivo)
   })
 
-  it('período abierto sin pagar: muestra el Bs calculado con la tasa activa', async () => {
+  it('período abierto sin cerrar: no muestra selector ni Bs con tasa activa y avisa que se define al cerrar', async () => {
     renderModal(lineaBase({ pagado: false, total_neto_usd: 50 }))
     await screen.findAllByText('Pedro Perez', { exact: false })
 
-    const esperado = (5000).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    expect(screen.getByText(/se define al cerrar/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Cambiar.*tasa/i })).toBeNull()
+    expect(screen.queryByText(/Tasa de nómina/)).toBeNull()
+    const enVivo = (5000).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const fila = screen.getByRole('rowheader', { name: /^Pedro Perez/ }).closest('tr')
-    expect(fila).toHaveTextContent(`${esperado} Bs`)
+    expect(fila).toHaveTextContent('50,00')
+    expect(fila.textContent).not.toContain(`${enVivo} Bs`)
   })
 
-  it('línea pagada sin total_pagado_bs guardado (tasa NULL): cae a tasa activa sin romper', async () => {
+  it('línea pagada sin total_pagado_bs guardado (tasa NULL): no inventa Bs con tasa activa ni rompe', async () => {
     renderModal(lineaBase({ pagado: true, tasa_pago_usd_ves: null, total_pagado_bs: null }))
     await screen.findAllByText('Pedro Perez', { exact: false })
-    const esperado = (5000).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const enVivo = (5000).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const fila = screen.getByRole('rowheader', { name: /^Pedro Perez/ }).closest('tr')
-    expect(fila).toHaveTextContent(`${esperado} Bs`)
+    expect(fila).toHaveTextContent('50,00')
+    expect(fila.textContent).not.toContain(`${enVivo} Bs`)
   })
 
   it('muestra el sueldo mensual (salario_dia × 30) bajo el nombre en la Hoja semanal', async () => {

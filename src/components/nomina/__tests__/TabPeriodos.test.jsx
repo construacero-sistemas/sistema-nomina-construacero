@@ -55,6 +55,8 @@ describe('TabPeriodos — tarjetas de período y permisos', () => {
 
     expect(screen.getAllByText('Neto a pagar · USD')).toHaveLength(3)
     expect(screen.getAllByText('Deducciones')).toHaveLength(3)
+    expect(screen.queryByTestId('rate-selector')).toBeNull()
+    expect(screen.queryByText(/^Tasa:$/)).toBeNull()
     expect(screen.getByRole('button', { name: 'Calcular' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Recalcular' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Revisar y cerrar período' })).toHaveLength(3)
@@ -63,7 +65,7 @@ describe('TabPeriodos — tarjetas de período y permisos', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Revisar y cerrar período' })[1])
     expect(screen.getByRole('dialog', { name: 'Cerrar Semana 36' })).toBeInTheDocument()
-    expect(screen.getByText('≈ Bs 175')).toBeInTheDocument()
+    expect(screen.queryByText(/≈ Bs/)).toBeNull()
   })
 
   it('avisa las semanas listas para cerrar cuando ya llegaron al último día o terminaron', () => {

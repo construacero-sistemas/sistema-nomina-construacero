@@ -6,6 +6,14 @@
 
 Esta bitácora reúne el trabajo realizado desde el inicio de la auditoría hasta el estado actual. En adelante, cada cambio debe agregar una entrada antes de considerarse terminado.
 
+## Nómina sin visor ni selector de tasa activa (tasa solo al cerrar período) — 25/11/2026
+
+- **Cabecera (`NominaApp.jsx`):** `RateHeader` (`Tasa Activa` y cotizaciones en vivo) solo se muestra en `/finanzas`; queda oculto en `/nomina` y `/sistema`.
+- **Nómina en USD hasta el cierre y horario único desde Configuración (`TabEmpleados.jsx`, `TabPeriodos.jsx`, `PeriodoDetalleModal.jsx`, `HojaSemanal.jsx`, `EmpleadoConfigModal.jsx`):** se retiró `<RateSelector light />` y las conversiones en vivo a Bs de fichas, tarjetas de períodos abiertos y hoja semanal abierta (mostrando «Bs: se define al cerrar»; `CerrarPeriodoModal` y los períodos ya cerrados conservan su tasa de cierre congelada). En `EmpleadoConfigModal.jsx` (crear/editar empleado) se oculta temporalmente la sección de días y horarios individuales (`SemanaLaborableSection`) y se usa el horario general de Configuración (`nomina_hora_inicio`, `nomina_hora_fin`, `nomina_horas_jornada`).
+- **Selector simple de fecha en Asistencia diaria (`MarcajeLogisticaPanel.jsx`, `useAccionesMarcaje.js`, `useNominaMarcaje.js`, `TabAsistencia.jsx`):** añadida barra compacta `<  Fecha [Hoy / Otro día]  >` + calendario nativo + botón `Ir a hoy` en la cabecera, permitiendo consultar y editar cualquier día abierto (pasando `fecha` también en `useMarcarAusencia` y protegiendo la caché del día actual y períodos cerrados como solo lectura).
+- **Nombre descriptivo de períodos (`server/lib/nominaSemana.js`):** `nombreSemana` identifica cada nueva semana con número ISO, mes y día de la semana (`Semana 47 · Noviembre 2026 (Jueves 12 – Miércoles 18)` o `Semana 49 · Nov / Dic 2026 (Jueves 26 – Miércoles 02)`).
+- **Pruebas:** actualizados `PeriodoDetalleModal.hoja.test.jsx`, `PeriodoDetalleModal.tasaPago.test.jsx`, `TabPeriodos.test.jsx`, `TabEmpleados.test.jsx`, `EmpleadoConfigModal.test.jsx`, `MarcajeLogisticaPanel.test.jsx`, `MarcajeLogisticaPanel.flujo.test.jsx`, `nominaSemana.test.js`, `nomina.semana-automatica.test.js` y `npm run verify`.
+
 ## Limpieza de flujo por exclusión y mejoras de cierre/empleados (Opción A) — 24/11/2026
 
 - **Coherencia en ficha de empleados (`resumenFichaEmpleado.js`, `TabEmpleados.jsx`):** `avanceSemanaPorEmpleado` calcula «Esta semana: X de Y días» por exclusión sobre toda la semana activa (`desde..hasta`, descontando feriados no laborables, faltas y descansos no trabajados sin exigir marcaje previo ni cortar en `hoy`, alineado con `TabAsistencia`), respetando `fecha_ingreso` (con etiqueta `· Ingresó dd mmm`) y ocultando el contador en perfiles con `controla_asistencia: false`.

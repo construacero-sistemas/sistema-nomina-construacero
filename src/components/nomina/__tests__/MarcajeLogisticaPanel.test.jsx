@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   hora: '12:00',
   session: { perfil: { rol: 'nomina', nombre: 'Operadora' } },
   query: { data: null, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() },
+  asistenciaQuery: { data: { registros: [] }, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() },
   horasExtra: vi.fn().mockResolvedValue({ ok: true }),
   diaTrabajado: vi.fn().mockResolvedValue({ ok: true }),
   ausencia: vi.fn().mockResolvedValue({ ok: true }),
@@ -22,6 +23,7 @@ vi.mock('../../../utils/fechaOperativa.js', () => ({
 }))
 vi.mock('../../../hooks/useNomina.js', () => ({
   useMarcajeHoy: () => mocks.query,
+  useAsistencia: () => mocks.asistenciaQuery,
   useConfigNomina: () => ({ data: { nomina_horas_descanso: 1 } }),
   useRegistrarHorasExtra: () => ({ mutateAsync: mocks.horasExtra, isPending: false }),
   useMarcarDiaTrabajado: () => ({ mutateAsync: mocks.diaTrabajado, isPending: false }),
@@ -214,5 +216,39 @@ describe('Asistencia de hoy (excepciones)', () => {
     expect(banner).toHaveTextContent('Semana 39-2026')
     fireEvent.click(screen.getByRole('button', { name: 'Revisar y cerrar período' }))
     expect(onCerrarPeriodo).toHaveBeenCalledWith(expect.objectContaining({ id: 'p-1' }))
+  })
+
+  it('muestra la fecha con badge Hoy, permite cambiar de día y envía esa fecha al registrar novedades', async () => {
+    renderPanel({
+      periodos: [{ id: 'p-cerrado', nombre: 'Semana 37', desde: '2026-09-14', hasta: '2026-09-20', estado: 'pagado' }],
+    })
+
+    expect(screen.getByText('Hoy')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Día siguiente' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Día anterior' }))
+    expect(screen.getByRole('heading', { name: 'Asistencia del día' })).toBeInTheDocument()
+    expect(screen.getByText('Otro día')).toBeInTheDocument()
+    expect(screen.getByLabelText('Seleccionar fecha de asistencia')).toHaveValue('2026-09-24')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Horas extras de Alejandra Hidalgo' }))
+    fireEvent.click(screen.getByRole('button', { name: '+0.5h' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar horas extras de Alejandra Hidalgo' }))
+    await waitFor(() => expect(mocks.horasExtra).toHaveBeenCalledWith({
+      empleadoId: 'emp-1',
+      horasExtra: 0.5,
+      nombre: 'Alejandra Hidalgo',
+      fecha: '2026-09-24',
+    }))
+
+    // Cambiar a una fecha dentro de un período pagado bloquea la edición.
+    fireEvent.change(screen.getByLabelText('Seleccionar fecha de asistencia'), { target: { value: '2026-09-18' } })
+    expect(screen.getByText(/Período Semana 37 \(pagado\): solo lectura/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Horas extras de Alejandra Hidalgo' })).toBeDisabled()
+
+    // Volver a hoy con un toque.
+    fireEvent.click(screen.getByRole('button', { name: 'Ir a hoy' }))
+    expect(screen.getByRole('heading', { name: 'Asistencia de hoy' })).toBeInTheDocument()
+    expect(screen.getByText('Hoy')).toBeInTheDocument()
   })
 })

@@ -12,6 +12,7 @@ function sinClave(mapa, clave) {
 
 export default function useAccionesMarcaje({
   filas,
+  fecha = null,
   bloqueoGlobal,
   horasExtraMut,
   diaTrabajadoMut,
@@ -45,6 +46,7 @@ export default function useAccionesMarcaje({
         empleadoId,
         horasExtra,
         nombre: fila?.nombre,
+        ...(fecha ? { fecha } : {}),
       }))
       const h = Number(horasExtra) || 0
       setAnuncio(h > 0
@@ -63,6 +65,7 @@ export default function useAccionesMarcaje({
         empleadoId,
         quitar,
         nombre: fila?.nombre,
+        ...(fecha ? { fecha } : {}),
       }))
       setAnuncio(quitar
         ? `Día de descanso de ${fila?.nombre || 'la persona'} restaurado`
@@ -77,8 +80,8 @@ export default function useAccionesMarcaje({
     const fila = filaDe(empleadoId)
     try {
       await ejecutar(empleadoId, quitar ? 'quitar-ausencia' : 'ausencia', () => ausenciaMut.mutateAsync(quitar
-        ? { empleadoId, quitar }
-        : { empleadoId, quitar, justificada: justificada === true }))
+        ? { empleadoId, quitar, ...(fecha ? { fecha } : {}) }
+        : { empleadoId, quitar, justificada: justificada === true, ...(fecha ? { fecha } : {}) }))
       const texto = quitar
         ? 'Ausencia retirada (vuelve a presente)'
         : justificada ? 'Falta justificada registrada' : 'Falta sin justificativo registrada'

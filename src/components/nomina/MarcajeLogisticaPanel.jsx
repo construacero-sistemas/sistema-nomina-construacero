@@ -3,11 +3,11 @@
 // aparece Presente por defecto según su horario; solo se marcan horas extras,
 // ausencias o días de descanso/feriado trabajados.
 import { useMemo, useState } from 'react'
-import { CalendarDays, Clock3, Lock, RefreshCw, Search, X } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Lock, RefreshCw, Search, X } from 'lucide-react'
 import useAuthStore from '../../../compat/store/useAuthStore.js'
 import { tieneCapacidad } from '../../config/accesoModulos.js'
 import {
-  useConfigNomina, useMarcajeHoy, useMarcarAusencia, useMarcarDiaTrabajado, useRegistrarHorasExtra,
+  useAsistencia, useConfigNomina, useMarcajeHoy, useMarcarAusencia, useMarcarDiaTrabajado, useRegistrarHorasExtra,
 } from '../../hooks/useNomina'
 import TarjetaMarcaje from './marcaje/TarjetaMarcaje.jsx'
 import useAccionesMarcaje from './marcaje/useAccionesMarcaje.js'
@@ -20,6 +20,12 @@ import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
 
 const ES_NOVEDAD = new Set(['extra', 'ausencia', 'descanso-trabajado'])
 
+function sumarDias(iso, delta) {
+  const d = new Date(`${iso}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + delta)
+  return d.toISOString().slice(0, 10)
+}
+
 export default function MarcajeLogisticaPanel({
   empleados = [],
   feriadosPorFecha = null,
@@ -27,12 +33,20 @@ export default function MarcajeLogisticaPanel({
   empleadosError = false,
   empleadosActualizando = false,
   onReintentarEmpleados,
+  periodos = [],
   periodoParaCerrar = null,
   onCerrarPeriodo = null,
 }) {
   const perfil = useAuthStore(state => state.perfil)
   const puedeMarcar = tieneCapacidad(perfil, 'administrarNomina')
-  const { data, isLoading, isFetching, isError, refetch } = useMarcajeHoy()
+  const hoyOperativo = fechaOperativaHoy()
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(hoyOperativo)
+  const esHoy = fechaSeleccionada === hoyOperativo
+
+  const hoyQuery = useMarcajeHoy()
+  const diaQuery = useAsistencia({ desde: esHoy ? null : fechaSeleccionada, hasta: esHoy ? null : fechaSeleccionada })
+  const { data, isLoading, isFetching, isError, refetch } = esHoy ? hoyQuery : diaQuery
+
   const registrarHorasExtra = useRegistrarHorasExtra()
   const marcarDiaTrabajado = useMarcarDiaTrabajado()
   const marcarAusencia = useMarcarAusencia()
@@ -47,7 +61,7 @@ export default function MarcajeLogisticaPanel({
     [data?.registros],
   )
 
-  const fechaMarcaje = data?.fecha ?? null
+  const fechaMarcaje = esHoy ? (hoyQuery.data?.fecha ?? null) : fechaSeleccionada
   const feriadoDeHoy = useMemo(
     () => (fechaMarcaje ? (feriadosPorFecha?.get(fechaMarcaje) || null) : null),
     [feriadosPorFecha, fechaMarcaje],
@@ -83,12 +97,18 @@ export default function MarcajeLogisticaPanel({
     })
     .filter(fila => !termino || normalizarBusqueda(`${fila.nombre} ${fila.empleado.cargo || ''}`).includes(termino)))
 
+  const periodoBloqueado = useMemo(
+    () => (periodos || []).find(p => p.estado !== 'abierto' && fechaMarcaje && String(p.desde) <= fechaMarcaje && String(p.hasta) >= fechaMarcaje) || null,
+    [periodos, fechaMarcaje],
+  )
+
   const consultaEnCurso = isLoading || isFetching || empleadosCargando || empleadosActualizando
   const consultaConError = isError || empleadosError
-  const bloqueoGlobal = isLoading || empleadosCargando || consultaConError || !data?.fecha || data.fecha !== fechaOperativaHoy()
+  const bloqueoGlobal = isLoading || empleadosCargando || consultaConError || !fechaMarcaje || (esHoy && (!data?.fecha || data.fecha !== hoyOperativo)) || Boolean(periodoBloqueado)
 
   const acciones = useAccionesMarcaje({
     filas,
+    fecha: esHoy ? null : fechaSeleccionada,
     bloqueoGlobal,
     horasExtraMut: registrarHorasExtra,
     diaTrabajadoMut: marcarDiaTrabajado,
@@ -97,6 +117,11 @@ export default function MarcajeLogisticaPanel({
   })
 
   if (!puedeMarcar) return null
+
+  function moverDia(delta) {
+    const siguiente = sumarDias(fechaSeleccionada, delta)
+    if (siguiente <= hoyOperativo) setFechaSeleccionada(siguiente)
+  }
 
   function actualizar() {
     acciones.limpiarError()
@@ -113,8 +138,7 @@ export default function MarcajeLogisticaPanel({
             <Clock3 size={19} aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <h3 id="marcaje-real-title" className="text-base font-black text-slate-900">Asistencia de hoy</h3>
-            <p className="text-xs capitalize text-slate-500">{fechaLegible(data?.fecha)}</p>
+            <h3 id="marcaje-real-title" className="text-base font-black text-slate-900">{esHoy ? 'Asistencia de hoy' : 'Asistencia del día'}</h3>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -141,6 +165,66 @@ export default function MarcajeLogisticaPanel({
           </button>
         </div>
       </div>
+
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <div className={`inline-flex min-w-0 flex-1 sm:flex-initial items-center gap-1 rounded-xl border p-1 ${esHoy ? 'border-slate-200 bg-slate-50' : 'border-amber-300 bg-amber-50/70'}`}>
+          <button
+            type="button"
+            onClick={() => moverDia(-1)}
+            aria-label="Día anterior"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-700 hover:bg-white transition-colors"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <ChevronLeft size={18} aria-hidden="true" />
+          </button>
+
+          <label className="relative flex min-h-11 min-w-0 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-2.5 text-center hover:bg-white/80 transition-colors">
+            <CalendarDays size={15} className={esHoy ? 'shrink-0 text-primary' : 'shrink-0 text-amber-700'} aria-hidden="true" />
+            <span className="truncate text-xs sm:text-sm font-black capitalize text-slate-900">
+              {fechaLegible(fechaSeleccionada)}
+            </span>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${esHoy ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-200 text-amber-950'}`}>
+              {esHoy ? 'Hoy' : 'Otro día'}
+            </span>
+            <input
+              type="date"
+              aria-label="Seleccionar fecha de asistencia"
+              value={fechaSeleccionada}
+              max={hoyOperativo}
+              onChange={e => { if (e.target.value && e.target.value <= hoyOperativo) setFechaSeleccionada(e.target.value) }}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={() => moverDia(1)}
+            disabled={esHoy}
+            aria-label="Día siguiente"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-700 hover:bg-white disabled:opacity-35 disabled:pointer-events-none transition-colors"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <ChevronRight size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        {!esHoy && (
+          <button
+            type="button"
+            onClick={() => setFechaSeleccionada(hoyOperativo)}
+            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+            style={{ touchAction: 'manipulation' }}
+          >
+            Ir a hoy
+          </button>
+        )}
+      </div>
+
+      {periodoBloqueado && (
+        <p role="status" className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+          Período {periodoBloqueado.nombre} ({periodoBloqueado.estado}): solo lectura.
+        </p>
+      )}
 
       <p className="mt-2 text-sm leading-snug text-slate-600">
         Todos los trabajadores en su día laborable están <strong>presentes por defecto</strong> según su horario. Marca solo excepciones: <strong>horas extras</strong>, <strong>ausencias</strong> o <strong>días de descanso trabajados</strong>.
@@ -234,7 +318,7 @@ export default function MarcajeLogisticaPanel({
         })}
       </div>
 
-      {data?.fecha && data.fecha !== fechaOperativaHoy() && !consultaConError && (
+      {esHoy && data?.fecha && data.fecha !== hoyOperativo && !consultaConError && (
         <div role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           La fecha operativa cambió. Actualiza la lista antes de continuar.
           <button type="button" onClick={actualizar} className="ml-2 min-h-11 rounded-lg border border-amber-300 bg-white px-3 font-bold" style={{ touchAction: 'manipulation' }}>

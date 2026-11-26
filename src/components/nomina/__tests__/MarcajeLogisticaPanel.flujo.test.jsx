@@ -22,6 +22,7 @@ vi.mock('../../../utils/fechaOperativa.js', () => ({
 }))
 vi.mock('../../../hooks/useNomina.js', () => ({
   useMarcajeHoy: () => mocks.query,
+  useAsistencia: () => ({ data: { registros: [] }, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() }),
   useConfigNomina: () => ({ data: { nomina_horas_descanso: 1 } }),
   useRegistrarHorasExtra: () => ({ mutateAsync: mocks.horasExtra, isPending: false }),
   useMarcarDiaTrabajado: () => ({ mutateAsync: mocks.diaTrabajado, isPending: false }),

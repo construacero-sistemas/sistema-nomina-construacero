@@ -99,10 +99,23 @@ export function numeroSemanaIso(desde, hasta) {
   return numeroIsoDeFecha(fin)
 }
 
-/** «Semana 46-2026 (12 nov – 18 nov)». */
+const MESES = Object.freeze([
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+])
+const MESES_CORTOS = Object.freeze(['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'])
+const capitalizar = s => s.charAt(0).toUpperCase() + s.slice(1)
+
+/** «Semana 47 · Noviembre 2026 (Jueves 12 – Miércoles 18)» o «Semana 48 · Nov / Dic 2026 (Jueves 26 – Miércoles 02)». */
 export function nombreSemana(desde, hasta) {
-  const fmt = iso => aFecha(iso).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', timeZone: 'UTC' })
+  const dDesde = aFecha(desde)
+  const dHasta = aFecha(hasta)
   const info = numeroSemanaIso(desde, hasta)
-  const prefijo = info ? info.etiqueta : `Semana ${hasta.slice(0, 4)}`
-  return `${prefijo} (${fmt(desde)} – ${fmt(hasta)})`
+  const prefijo = info ? `Semana ${String(info.numero).padStart(2, '0')}` : 'Semana'
+  const anio = info ? info.anio : dHasta.getUTCFullYear()
+  const mes = dDesde.getUTCMonth() === dHasta.getUTCMonth()
+    ? MESES[dDesde.getUTCMonth()]
+    : `${MESES_CORTOS[dDesde.getUTCMonth()]} / ${MESES_CORTOS[dHasta.getUTCMonth()]}`
+  const fmtDia = d => `${capitalizar(DIAS_SEMANA[d.getUTCDay()])} ${String(d.getUTCDate()).padStart(2, '0')}`
+  return `${prefijo} · ${mes} ${anio} (${fmtDia(dDesde)} – ${fmtDia(dHasta)})`
 }

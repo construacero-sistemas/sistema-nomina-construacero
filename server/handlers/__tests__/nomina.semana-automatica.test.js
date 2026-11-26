@@ -47,7 +47,7 @@ describe('nominaSemana — cálculo de la semana', () => {
   })
 
   it('arma el nombre con las fechas de la semana', () => {
-    expect(nombreSemana('2026-11-12', '2026-11-18')).toMatch(/^Semana 47-2026 \(12.*nov.*18.*nov.*\)$/)
+    expect(nombreSemana('2026-11-12', '2026-11-18')).toBe('Semana 47 · Noviembre 2026 (Jueves 12 – Miércoles 18)')
   })
 })
 

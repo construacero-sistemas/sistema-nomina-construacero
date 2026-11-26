@@ -1,16 +1,14 @@
 ﻿// src/components/nomina/TabPeriodos.jsx
-// Gestión visual y fluida de períodos de nómina, cálculo y pagos.
-// Regla: La moneda principal es SIEMPRE USD ($), y la secundaria es Bs, calculada con la tasa seleccionada.
+// Gestión visual y fluida de períodos de nómina, cálculo y cierre con tasa.
+// Regla: En Nómina la moneda principal es USD ($); la tasa en Bs se define únicamente al cerrar el período.
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Plus, ClipboardList, Calculator, Lock, Unlock, Eye, DollarSign, Trash2, MoreVertical, AlertCircle } from 'lucide-react'
 import { useNominaPeriodos, useCalcularPeriodo, useEliminarPeriodo, useConfigNomina, useAsegurarSemanaActual } from '../../hooks/useNomina'
 import { semanaDeConfig, DIAS_SEMANA } from '../../../server/lib/nominaSemana.js'
-import useMonedaNomina from '../../hooks/useMonedaNomina.js'
 import Skeleton from '../../../compat/components/ui/Skeleton.jsx'
 import { fechaOperativaHoy } from '../../utils/fechaOperativa.js'
 import EmptyState from '../../../compat/components/ui/EmptyState.jsx'
 import KpiCard from '../../../compat/components/ui/KpiCard.jsx'
-import RateSelector from './RateSelector.jsx'
 import PeriodoFormModal from './PeriodoFormModal'
 import PeriodoDetalleModal from './PeriodoDetalleModal'
 import CerrarPeriodoModal from './CerrarPeriodoModal.jsx'
@@ -34,7 +32,6 @@ const ESTADO_STYLE = {
 // falta un gate de lectura: cada ESCRITURA se gatea con la capacidad que exige su endpoint.
 export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNomina = false }) {
   const { data: periodos = [], isLoading, isError, refetch } = useNominaPeriodos()
-  const { fmtBs, shortLabelTasa } = useMonedaNomina()
   const [modalNuevo, setModalNuevo] = useState(false)
   const [detalle, setDetalle] = useState(null)
   const [cerrando, setCerrando] = useState(null)
@@ -68,21 +65,15 @@ export default function TabPeriodos({ puedeGestionarNomina = false, puedePagarNo
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <KpiCard icon={Unlock} label="Períodos en curso" value={kpis.abiertos} color="green" />
         <KpiCard icon={Lock} label="Calculados por pagar" value={kpis.cerrados} color="amber" />
-        <KpiCard icon={DollarSign} label="Monto Total a Pagar" value={`$${fmt(kpis.totalNeto)}`} subtext={`~ ${fmtBs(kpis.totalNeto)} (${shortLabelTasa})`} color="indigo" />
+        <KpiCard icon={DollarSign} label="Monto Total a Pagar" value={`$${fmt(kpis.totalNeto)}`} color="indigo" />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <p className="text-xs text-slate-500 font-medium hidden sm:block">
-            {automatico
-              ? <>Automático: cada semana va de <strong>{DIAS_SEMANA[inicio]}</strong> a <strong>{diaFin}</strong> y se abre sola. Cámbialo en Configuración.</>
-              : 'Modo manual: crea cada período con sus fechas.'}
-          </p>
-          <div className="hidden md:flex items-center gap-1">
-            <span className="text-[11px] text-slate-400 font-medium">Tasa:</span>
-            <RateSelector light />
-          </div>
-        </div>
+        <p className="text-xs text-slate-500 font-medium hidden sm:block">
+          {automatico
+            ? <>Automático: cada semana va de <strong>{DIAS_SEMANA[inicio]}</strong> a <strong>{diaFin}</strong> y se abre sola. Cámbialo en Configuración.</>
+            : 'Modo manual: crea cada período con sus fechas.'}
+        </p>
         {puedeGestionarNomina && !automatico && (
           <button type="button" onClick={() => setModalNuevo(true)} className="ml-auto flex items-center gap-2 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-primary/20 hover:brightness-110 active:scale-95 bg-primary">
             <Plus size={15} /><span>Crear Nuevo Período</span>
@@ -163,7 +154,6 @@ function ConfirmarEliminarPeriodo({ periodo, onCancel }) {
 
 function PeriodoCard({ periodo, puedeGestionarNomina = false, onVerDetalle, onCerrar, onEliminar }) {
   const calcular = useCalcularPeriodo()
-  const { fmtBs } = useMonedaNomina()
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [jornadasAbiertas, setJornadasAbiertas] = useState(null)
 
@@ -244,7 +234,6 @@ function PeriodoCard({ periodo, puedeGestionarNomina = false, onVerDetalle, onCe
             <span className="block text-[10px] font-bold text-primary/75">Neto a pagar · USD</span>
             <span className="block truncate text-base font-black tabular-nums text-primary">${fmt(neto)}</span>
           </div>
-          <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-600 sm:mt-0.5 sm:block sm:text-[10px]">≈ {fmtBs(neto)}</span>
         </div>
       </div>
 
